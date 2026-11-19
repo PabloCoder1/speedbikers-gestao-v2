@@ -184,17 +184,17 @@ export function RelistPanel({
     const operacaoNoEnvio = operacaoAtual;
     setEstado({ kind: "enviando" });
 
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-
-    if (token === undefined) {
-      setEstado({ kind: "erro", mensagem: "Sessão expirada — atualize a página e entre de novo." });
-
-      return;
-    }
-
     try {
+      const supabase = createClient();
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+
+      if (token === undefined) {
+        setEstado({ kind: "erro", mensagem: "Sessão expirada — atualize a página e entre de novo." });
+
+        return;
+      }
+
       const response = await fetch(`${API_URL}${caminho}`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },

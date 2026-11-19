@@ -118,38 +118,44 @@ export function DocumentItemRow({
     setAcao("vinculando");
     setError(null);
 
-    const result = await linkDocumentItem(itemId, selected.id, documentId);
+    try {
+      const result = await linkDocumentItem(itemId, selected.id, documentId);
 
-    if (!result.ok) {
-      setError(result.message);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+
+      setCurrent(selected);
+      setEditing(false);
+      setSelected(null);
+      setQuery("");
+    } catch {
+      setError("Não foi possível confirmar o vínculo. Confira o item.");
+    } finally {
       setAcao(null);
-
-      return;
     }
-
-    setCurrent(selected);
-    setEditing(false);
-    setSelected(null);
-    setQuery("");
-    setAcao(null);
   }
 
   async function unlink(): Promise<void> {
     setAcao("desvinculando");
     setError(null);
 
-    const result = await linkDocumentItem(itemId, null, documentId);
+    try {
+      const result = await linkDocumentItem(itemId, null, documentId);
 
-    if (!result.ok) {
-      setError(result.message);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+
+      setCurrent(null);
+      setEditing(false);
+    } catch {
+      setError("Não foi possível confirmar a remoção. Confira o item.");
+    } finally {
       setAcao(null);
-
-      return;
     }
-
-    setCurrent(null);
-    setEditing(false);
-    setAcao(null);
   }
 
   if (!editable) {

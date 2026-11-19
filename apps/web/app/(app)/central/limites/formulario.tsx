@@ -1,13 +1,10 @@
 "use client";
 
-import { useActionState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import type { CampoDosLimites } from "../../../../lib/limites-central";
-import type { ResultadoDoCadastro } from "../metas/actions";
-import { Campo, Mensagem } from "../metas/formularios";
+import { Campo, Mensagem, useCadastro } from "../metas/formularios";
 import { salvarLimites } from "./actions";
-
-const INICIAL: ResultadoDoCadastro = { ok: false, mensagem: null, erros: {} };
 
 export interface DescricaoDoLimite {
   readonly campo: CampoDosLimites;
@@ -32,10 +29,13 @@ export interface GrupoDeLimites {
  * Os nomes dos campos não mudam: a ação lê os nove de uma vez.
  */
 export function FormularioLimites({ grupos }: { grupos: readonly GrupoDeLimites[] }): ReactNode {
-  const [resultado, enviar, salvando] = useActionState(salvarLimites, INICIAL);
+  const { resultado, enviar, salvando, entrada, aoResetar } = useCadastro(
+    salvarLimites,
+    Object.fromEntries(grupos.flatMap((grupo) => grupo.limites.map((limite) => [limite.campo, limite.atual] as const))),
+  );
 
   return (
-    <form action={enviar} className="sb-limites-form" aria-label="Limites da central">
+    <form action={enviar} onReset={aoResetar} className="sb-limites-form" aria-label="Limites da central">
       <p className="sb-form-legenda">
         Todos os campos são obrigatórios. Cada um mostra o padrão do sistema; &quot;Voltar aos padrões&quot; desfaz tudo de uma vez.
       </p>
@@ -56,7 +56,7 @@ export function FormularioLimites({ grupos }: { grupos: readonly GrupoDeLimites[
                 ajuda={{ pergunta: "O que muda se eu aumentar ou diminuir?", texto: <p>{l.ajuda}</p> }}
               >
                 {(props) => (
-                  <input {...props} className="sb-input" name={l.campo} inputMode="decimal" defaultValue={l.atual} required />
+                  <input {...props} {...entrada(l.campo)} className="sb-input" name={l.campo} inputMode="decimal" required />
                 )}
               </Campo>
             ))}

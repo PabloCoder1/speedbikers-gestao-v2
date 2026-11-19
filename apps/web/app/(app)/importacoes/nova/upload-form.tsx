@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
-import { createClient } from "../../../../lib/supabase/browser";
+import { lerTokenDeSessao } from "../../../../lib/chamar-api";
 import { describeUploadResponse, type UploadMessage } from "./describe-response";
 
 /**
@@ -41,12 +41,10 @@ export function UploadForm(): ReactNode {
     setBusy(true);
     setMessage(null);
 
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    const sessao = await lerTokenDeSessao("Sua sessão expirou. Entre de novo.");
 
-    if (token === undefined) {
-      setMessage({ tone: "bad", text: "Sua sessão expirou. Entre de novo." });
+    if (!sessao.ok) {
+      setMessage({ tone: "bad", text: sessao.mensagem });
       setBusy(false);
 
       return;
@@ -62,7 +60,7 @@ export function UploadForm(): ReactNode {
     try {
       response = await fetch(`${API_URL}/v1/erp-imports`, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: `Bearer ${sessao.token}` },
         body,
       });
     } catch {

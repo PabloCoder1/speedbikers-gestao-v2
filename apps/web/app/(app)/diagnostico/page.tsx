@@ -1,5 +1,5 @@
 import { diagnoseSalesAnomaly, estimateImpactBrl, shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
-import type { CorrelatedEvent, SalesAnomalyDiagnosis } from "@sb/domain";
+import type { SalesAnomalyDiagnosis } from "@sb/domain";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -14,6 +14,11 @@ import {
   resolveDiagnosticFilters,
   selectDiagnosis,
 } from "../../../lib/diagnostic-filters";
+import {
+  lerBaselineDoDiagnostico,
+  lerEvidenciasDoDiagnostico,
+  lerPrecosMediosDoDiagnostico,
+} from "../../../lib/diagnostico-leitura";
 import { formatBusinessDate, formatCount, formatCurrency } from "../../../lib/format";
 import { eventTypeLabel } from "../../../lib/labels";
 import { createClient } from "../../../lib/supabase/server";
@@ -41,28 +46,6 @@ export const dynamic = "force-dynamic";
  * secao 21); a interpretação (é anomalia? qual a causa?) é
  * `diagnoseSalesAnomaly`, pura, em `@sb/domain/diagnostics`.
  */
-
-/**
- * `title` é anulável de verdade (`skus.title`), mas o gerador de tipos do
- * Supabase não infere nulidade em coluna de retorno de RPC — mesma lacuna
- * já documentada em `/cobertura`/`/curva-abc`.
- */
-interface BaselineRow {
-  sku_id: string;
-  sku: string;
-  title: string | null;
-  weekday: number;
-  current_units_sold: number;
-  baseline_mean: number;
-  baseline_stddev: number;
-  sample_count: number;
-}
-
-const CORRELATION_WINDOW_DAYS_BEFORE = 3;
-
-/** Janela do preço médio para o impacto — a mesma dos outros dois consumidores. */
-const AVERAGE_PRICE_WINDOW_DAYS = 30;
-const CORRELATION_WINDOW_DAYS_AFTER = 1;
 
 export default async function DiagnosticoPage({
   searchParams,
@@ -107,12 +90,11 @@ export default async function DiagnosticoPage({
 
   const asOf = shiftBusinessDate(toSalesMetricDate(new Date()), -1);
 
-  const { data, error: baselineError } = await supabase.rpc("get_sku_sales_baseline", {
-    p_organization_id: organizationId,
-    p_as_of: asOf,
-  });
-
-  const signals = (data ?? []) as BaselineRow[];
+  const { data: signals, error: baselineError } = await lerBaselineDoDiagnostico(
+    supabase,
+    organizationId,
+    asOf,
+  );
 
   // Primeira passada, sem eventos: só para achar QUAIS SKUs são anomalia,
   // evitando buscar domain_events de SKU nenhum sem necessidade.
@@ -137,68 +119,12 @@ export default async function DiagnosticoPage({
     )
     .map((row) => row.sku_id);
 
-  const eventsBySku = new Map<string, CorrelatedEvent[]>();
-  let eventsError: { message: string } | null = null;
-  // T-R6: a evidência adicional continua sem derrubar o diagnóstico, mas a
-  // falha dela é DITA — "sem sinal de SAC" e "impacto —" lidos de uma leitura
-  // que falhou não são o mesmo que "não houve".
-  let claimsError: { message: string } | null = null;
-  let precosError: { message: string } | null = null;
-
-  // D-116 — SAC como evidência: reclamações ABERTAS por SKU candidato, sob
-  // a MESMA RLS da tela. Falha degrada para "sem sinal de SAC" (evidência
-  // adicional nunca derruba o diagnóstico).
-  const openClaimsBySku = new Map<string, Set<string>>();
-
-  // Eram DOIS `if (candidateSkuIds.length > 0)` seguidos, cada um com sua
-  // leitura, e a segunda esperava a primeira sem usar nada dela (D-197). A
-  // condição é a mesma e as duas leituras partem do mesmo `candidateSkuIds`:
-  // um `if` só, com as duas juntas. Sem anomalia nenhuma o custo era zero
-  // antes e continua zero agora — o ganho aparece justamente nas visitas em
-  // que a tela tem algo a mostrar.
-  //
-  // Aqui não cabe embed: um dos lados é RPC, o outro é tabela.
-  if (candidateSkuIds.length > 0) {
-    const windowStart = shiftBusinessDate(asOf, -CORRELATION_WINDOW_DAYS_BEFORE);
-    const windowEnd = shiftBusinessDate(asOf, CORRELATION_WINDOW_DAYS_AFTER);
-
-    const [eventsResult, claimLinks] = await Promise.all([
-      // D-152: a correlação deixou de filtrar entity_type='sku' — a RPC mapeia
-      // também eventos de ANÚNCIO (preço/título/status, via listings) e de
-      // PEDIDO (cancelamento/devolução, via order_items congelados) ao SKU.
-      // Mesmo raciocínio nos outros dois consumidores (painel do SKU e worker).
-      supabase.rpc("get_sku_correlated_events", {
-        p_organization_id: organizationId,
-        p_sku_ids: candidateSkuIds,
-        p_from: windowStart,
-        p_to: windowEnd,
-      }),
-      supabase
-        .from("support_case_links")
-        .select("sku_id, support_case_id, support_cases!inner(internal_status, channel)")
-        .in("sku_id", candidateSkuIds)
-        .eq("support_cases.channel", "CLAIM")
-        .neq("support_cases.internal_status", "RESOLVIDO"),
-    ]);
-
-    eventsError = eventsResult.error;
-    claimsError = claimLinks.error;
-
-    for (const event of eventsResult.data ?? []) {
-      const list = eventsBySku.get(event.sku_id) ?? [];
-      list.push({ eventType: event.event_type, occurredAt: new Date(event.occurred_at) });
-      eventsBySku.set(event.sku_id, list);
-    }
-
-    for (const link of claimLinks.data ?? []) {
-      if (link.sku_id === null) continue;
-
-      const set = openClaimsBySku.get(link.sku_id) ?? new Set<string>();
-
-      set.add(link.support_case_id);
-      openClaimsBySku.set(link.sku_id, set);
-    }
-  }
+  const { eventsBySku, openClaimsBySku, eventsError, claimsError } = await lerEvidenciasDoDiagnostico(
+    supabase,
+    organizationId,
+    asOf,
+    candidateSkuIds,
+  );
 
   // Falha ao ler domain_events ficava invisível antes: o diagnóstico
   // reportava "nenhuma causa candidata encontrada" com confiança normal,
@@ -244,31 +170,19 @@ export default async function DiagnosticoPage({
     `null` quando não há preço médio no período: **impacto desconhecido é
     diferente de impacto zero** (D-067), e a tela mostra "—".
   */
+  const { precoPorSku, error: precosError } = await lerPrecosMediosDoDiagnostico(
+    supabase,
+    organizationId,
+    asOf,
+    diagnoses.map((d) => d.escopo.skuId),
+  );
   const impactoPorSku = new Map<string, number | null>();
 
-  if (diagnoses.length > 0) {
-    const precos = await supabase.rpc("get_sku_average_prices", {
-      p_organization_id: organizationId,
-      p_sku_ids: diagnoses.map((d) => d.escopo.skuId),
-      // Janela do PREÇO, não a da correlação: são coisas diferentes e eu
-      // tinha reusado a errada. 30 dias é o que `/skus/[skuId]/actions.ts` e o
-      // worker de detecção já usam — três consumidores, uma janela.
-      p_date_from: shiftBusinessDate(asOf, -AVERAGE_PRICE_WINDOW_DAYS),
-      p_date_to: asOf,
-    });
-
-    precosError = precos.error;
-
-    const precoPorSku = new Map(
-      (precos.data ?? []).map((linha) => [linha.sku_id, linha.average_price]),
+  for (const diagnosis of diagnoses) {
+    impactoPorSku.set(
+      diagnosis.escopo.skuId,
+      estimateImpactBrl(diagnosis.unitsDelta, precoPorSku.get(diagnosis.escopo.skuId) ?? null),
     );
-
-    for (const diagnosis of diagnoses) {
-      impactoPorSku.set(
-        diagnosis.escopo.skuId,
-        estimateImpactBrl(diagnosis.unitsDelta, precoPorSku.get(diagnosis.escopo.skuId) ?? null),
-      );
-    }
   }
 
   // O recorte de confiança age sobre diagnósticos JÁ calculados — mesmo

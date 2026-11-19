@@ -26,21 +26,26 @@ export function TemplateRow({ template, canManage }: { template: TemplateRowData
   // pente fino, 18/09 — antes o primeiro clique já apagava).
   const [confirmando, setConfirmando] = useState(false);
 
-  async function run(action: () => Promise<TemplateActionResult>): Promise<void> {
+  async function run(action: () => Promise<TemplateActionResult>, fallbackMessage: string): Promise<void> {
     setBusy(true);
     setError(null);
 
-    const result = await action();
+    try {
+      const result = await action();
 
-    setBusy(false);
+      if (!result.ok) {
+        setError(result.message ?? fallbackMessage);
 
-    if (!result.ok) {
-      setError(result.message);
+        return;
+      }
 
-      return;
+      setEditing(false);
+      setConfirmando(false);
+    } catch {
+      setError(fallbackMessage);
+    } finally {
+      setBusy(false);
     }
-
-    setEditing(false);
   }
 
   return (
@@ -57,7 +62,17 @@ export function TemplateRow({ template, canManage }: { template: TemplateRowData
             onChange={(event) => { setBody(event.target.value); }}
           />
           <div className="sb-template-actions">
-            <button className="sb-button" type="button" disabled={busy} onClick={() => void run(() => updateTemplate(template.id, name, body))}>
+            <button
+              className="sb-button"
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void run(
+                  () => updateTemplate(template.id, name, body),
+                  "Não foi possível confirmar a alteração. Confira a lista antes de tentar novamente.",
+                )
+              }
+            >
               {busy ? "Salvando…" : "Salvar"}
             </button>
             <button
@@ -81,10 +96,10 @@ export function TemplateRow({ template, canManage }: { template: TemplateRowData
           <p className="sb-template-body">{template.body}</p>
           {canManage && !confirmando && (
             <div className="sb-template-actions">
-              <button className="sb-button" type="button" disabled={busy} onClick={() => { setEditing(true); }}>
+              <button className="sb-button" type="button" disabled={busy} onClick={() => { setError(null); setEditing(true); }}>
                 Editar
               </button>
-              <button className="sb-button sb-template-danger" type="button" disabled={busy} onClick={() => { setConfirmando(true); }}>
+              <button className="sb-button sb-template-danger" type="button" disabled={busy} onClick={() => { setError(null); setConfirmando(true); }}>
                 Apagar
               </button>
             </div>
@@ -96,11 +111,16 @@ export function TemplateRow({ template, canManage }: { template: TemplateRowData
                 className="sb-button sb-template-danger"
                 type="button"
                 disabled={busy}
-                onClick={() => void run(() => deleteTemplate(template.id))}
+                onClick={() =>
+                  void run(
+                    () => deleteTemplate(template.id),
+                    "Não foi possível confirmar a exclusão. Confira a lista antes de tentar novamente.",
+                  )
+                }
               >
                 {busy ? "Apagando…" : "Sim, apagar"}
               </button>
-              <button className="sb-button" type="button" disabled={busy} onClick={() => { setConfirmando(false); }}>
+              <button className="sb-button" type="button" disabled={busy} onClick={() => { setConfirmando(false); setError(null); }}>
                 Cancelar
               </button>
             </div>

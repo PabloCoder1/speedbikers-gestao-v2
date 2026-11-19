@@ -19807,6 +19807,290 @@ A rotina trata a exceção e volta ao anúncio encontrado, com um alerta que diz
 
 A regressão confere que o POST bloqueado não gravou vínculo e que a nova tentativa grava o vínculo para o SKU e fecha o diálogo. O vínculo da fixture é apagado ao fim.
 
+## D-726 - Curadoria trata falhas de transporte e conserva os alvos de Desfazer
+
+A tabela de Produtos disparava uma função assíncrona com `void` dentro de `startTransition`, sem tratar a exceção da ação. Interromper o POST de classificar, aplicar marca, limpar marca ou desfazer não mostrava aviso. Outra reprodução segurou o POST: a confirmação já ficava bloqueada, mas os checkboxes de seleção e o campo de marca continuavam editáveis durante a gravação.
+
+O callback agora é assíncrono diretamente e trata a exceção localmente. A falha conserva seleção, marca e painel de confirmação; o resultado é anunciado como alerta e pede conferir os produtos antes de tentar novamente. Não há repetição automática. Os checkboxes da página e das linhas e o campo de marca ficam bloqueados durante a ação, para o lote em andamento conservar seu significado.
+
+Se a falha ocorre em Desfazer, o aviso mantém o botão e somente os IDs que a ação original alterou. A regressão envia um SKU pendente junto de outro já virtual, interrompe o desfazer e tenta novamente: só o primeiro volta a não classificado. As recusas declaradas e o resultado por linha seguem o fluxo existente. As fixtures devolvem os sete campos de classificação e marca aos valores anteriores, incluindo autores e datas.
+
+## D-727 - Regra de reposição conserva a gaveta após falha da ação
+
+Criar e editar regra aguardavam a Server Action no callback de `useActionState`; remover aguardava a ação em `useTransition`. Nenhum dos dois tratava a exceção. Nos três caminhos, bloquear o POST substituiu a gaveta pela fronteira de erro do segmento, perdendo os campos e a confirmação de remoção.
+
+O salvamento agora devolve um `ResultadoDaRegra` de falha quando a comunicação é interrompida, sem erros de validação antigos. A remoção trata a exceção na própria transição. Os hooks liberam os controles, os campos controlados permanecem preenchidos e a confirmação continua disponível. Os avisos pedem conferir as regras antes de tentar novamente, pois uma falha de resposta não prova ausência de gravação. Não há repetição automática. As ações, validações e regras de autorização no servidor não mudam; a gaveta só fecha no sucesso.
+
+Três regressões conferem o banco intacto após o POST bloqueado e o resultado da nova tentativa: inserção, edição com identidade de escopo preservada e remoção. Um quarto caso remove a regra no banco enquanto a edição está aberta e confirma a recusa real de salvar uma linha ausente, sem fechar nem apagar o rascunho. As regras temporárias são removidas no fim. Esta fatia encerra a verificação dos cinco componentes com `useTransition` inventariados em 17/11; os quatro formulários diretos de `useActionState` da Central ficam para a próxima reprodução.
+
+## D-728 - Cadastros da Central preservam os campos após falha ou recusa
+
+Limites, meta geral, meta por marketplace e alíquota entregavam a Server Action diretamente ao `useActionState`. Interromper o POST derrubou os quatro formulários para a fronteira de erro. Duas recusas reais de validação também reproduziram perda de preenchimento: o mês da meta e os limites voltavam aos padrões, porque os campos não eram controlados pelo estado do formulário.
+
+Os quatro usam um hook local compartilhado, `useCadastro`, que trata a exceção e guarda somente os campos editados. O alerta informa que o salvamento não foi confirmado e pede conferir os valores salvos antes de repetir; não há tentativa automática. O reset nativo é cancelado, pois ele trocava o seletor de Shopee para ML mesmo após uma resposta de falha. Depois do sucesso, os campos editados são liberados e as props do servidor voltam a ser a fonte: metas e alíquota limpam valor e nota e retomam mês/data padrão; limites refletem os valores gravados. Isso também permite a “Voltar aos padrões” atualizar os próprios campos após remover a configuração.
+
+As ações de servidor, permissões, normalização monetária e percentual, escopos e vigências não mudam. Seis regressões conferem os quatro caminhos de transporte e duas recusas de validação, com banco intacto na falha e escrita na nova tentativa. A meta da Shopee precisa continuar na Shopee; os nove limites são conferidos juntos. O caso dos limites inclui salvar e restaurar os padrões sem sair da página. As fixtures de meta e alíquota usam datas futuras e são removidas; o estado anterior dos limites é devolvido ao terminar.
+
+## D-729 - Confirmação de remoção conserva a ação após falha de transporte
+
+O componente `RemoverComConfirmacao` entregava a Server Action diretamente ao formulário. Interromper o POST nas três remoções da Central (meta geral, meta por marketplace e alíquota) e na restauração dos limites substituiu a confirmação pela fronteira de erro da página.
+
+A ação agora passa por `useActionState`, que trata a exceção e mantém a confirmação com alerta de alteração não confirmada. O aviso pede conferir os dados antes de tentar novamente: resposta perdida não prova ausência de gravação. Não há repetição automática. A confirmação e Cancelar ficam desabilitados durante o envio, evitando desmontar a ação ainda pendente; o foco ao cancelar continua voltando ao botão original. As ações do servidor, RLS e regras de exclusão não mudam.
+
+Quatro regressões usam dados futuros/únicos ou preservam os limites anteriores. Conferem a linha intacta no POST bloqueado, a confirmação disponível, o foco ao cancelar e o resultado da nova tentativa. Uma resposta segurada confere os dois botões bloqueados. O conjunto de Central, configurações, reposição e navegação passou em 43 casos Chromium. Publicação e aceite pós-recuperação continuam separados.
+
+## D-730 - Remoções da Central conferem erro e linhas afetadas
+
+A etapa D-729 tratou a interrupção da Server Action, mas as ações de remover metas/alíquota e restaurar os limites ignoravam o resultado do DELETE. A RLS pode filtrar uma remoção sem produzir erro: ao mudar GESTOR para OPERADOR com a confirmação aberta, as quatro ações terminavam e revalidavam a página sem informar que nada fora removido.
+
+As ações agora devolvem uma mensagem de recusa ou null após uma remoção confirmada. O componente compartilhado mostra o resultado, além de continuar tratando exceções de transporte. O próprio DELETE retorna somente a chave afetada; não há leitura prévia adicional. Erro do banco ou zero linhas não revalidam consumidores. A mensagem distingue resposta incerta de registro ausente/acesso alterado, sem divulgar detalhes internos do banco. RLS, filtros de alvo e schema permanecem os mesmos.
+
+Quatro regressões de navegador revogam a escrita após abrir a confirmação, conferem a linha intacta e o aviso, restauram o papel e confirmam a remoção na tentativa autorizada. Elas reaproveitam as fixtures dos quatro casos de transporte, que continuam passando. Oito testes de contrato cobrem erro do banco, zero linhas, sucesso e invalidação de consumidores, alvo fora da lista e sessão sem organização. Esta etapa fica restrita à Central; não altera compras/reposição, branch, worktree ou migrations do Claude.
+
+## D-731 - Usuários confirma a escrita antes de anunciar mudança de papel ou acesso
+
+`changeMemberRole`, `revokeAccountAccess` e `revokeShopeeShopAccess` conferiam apenas o erro da resposta. A RLS podia filtrar a escrita e devolver zero linhas sem erro, mas a ação retornava ok=true e revalidava a tela. Três regressões retiraram a autorização do operador entre abrir a gaveta e confirmar: o papel/concessão permaneceu no banco e não houve aviso. Outros dois casos removeram a concessão por outra sessão antes do clique: o mesmo retorno vazio não demonstrava uma nova remoção.
+
+As três escritas agora retornam somente user_id do alvo afetado. Erro continua com a tradução existente, incluindo a guarda do último ADMIN; zero linhas devolve resultado não confirmado e orienta atualizar a página. A mensagem menciona membro/acesso já removido ou permissões alteradas, sem afirmar uma causa que a resposta não distingue. Apenas uma escrita com linha afetada revalida Usuários e devolve ok=true. Não há consulta prévia nem alteração da RLS, dos filtros de organização/usuário/conta/loja ou das concessões por INSERT.
+
+Cinco regressões de navegador conferem dados após a ação, aviso, controles liberados e nova tentativa autorizada, ou releitura para confirmar que o acesso já estava ausente. Os cenários de perda de autorização criam um ADMIN de reserva local, preservando a proteção contra lockout, e restauram papéis/concessões e removem a conta temporária. Treze contratos cobrem resposta vazia, sucesso e filtros, autorização, erro inesperado e último ADMIN. Não é uma mudança de autorização: corrige a confirmação do resultado. Compras/reposição e migrations do Claude permanecem fora da etapa.
+
+O teste antigo do histórico supunha uma célula única por papel e a presença das entradas iniciais na janela de 50 eventos. Ele agora confere as entradas do seed no banco, produz duas mudanças conhecidas e compara a janela exibida com a leitura limitada. A auditoria é lida por ADMIN autenticado: a service_role não tem SELECT nessa tabela. Nenhum grant foi ampliado nem evento apagado para acomodar as regressões.
+
+## D-732 - Notificações e preferências confirmam a escrita antes de anunciar sucesso
+
+`updatePreference`, `deletePreference` e `markNotificationRead` conferiam apenas `error` sem pedir a chave afetada na escrita. Quando outra sessão removia a regra ou o destinatário antes do clique, ou quando a RLS filtrava a linha sem produzir erro, o Supabase retornava zero linhas sem falha e as ações devolviam `ok: true` com `revalidatePath`, anunciando sucesso em falso. Em `PreferenceRow`, cancelar ou fechar o diálogo de remoção com `Esc` também mantinha o erro do modal visível na linha da tabela.
+
+As três escritas passam a retornar somente a chave afetada (`id` em `notification_preferences`, `notification_id` em `notification_recipients`). Erro inesperado do banco continua com a tradução existente sem expor detalhes internos; zero linhas afetadas devolvem `ok: false` orientando atualizar a página e não revalidam as rotas. `PreferenceRow` centraliza o fechamento do modal em `fecharConfirmacao`, limpando o erro ao cancelar ou pressionar `Esc`. RLS, schema, grants e filtros de usuário/organização não mudam.
+
+Nove testes de contrato em `apps/web/lib/notificacoes-resultados.test.ts` cobrem zero linhas, erro do banco e confirmação com chave retornada para criação, atualização, remoção e marcação individual. Quinze regressões Chromium em `notificacoes-preferencias.spec.ts` (4) e `notificacoes.spec.ts` (11) conferem falhas de transporte e remoções concorrentes por outra sessão antes de alterar severidade, estado, remover regra ou marcar notificação como lida, sem alterar compras/reposição nem trabalho do Claude.
+
+## D-733 - Sugestões e atendimento tratam falha de transporte e confirmam escrita de status
+
+`updateSuggestionStatus` (`sugestoes/actions.ts`) conferia apenas `error` sem pedir o `id` afetado, permitindo que zero linhas filtradas pela RLS ou por remoção concorrente retornassem `ok: true` e revalidassem `/sugestoes`. Na mesma tela, `<SuggestionDetail>` não usava `key` da sugestão selecionada, preservando status e alerta anteriores ao navegar entre sugestões, e `handleStatusChange` aguardava a Server Action sem `try/catch/finally`. Em `/atendimento`, `/atendimento/conhecimento` e `/atendimento/templates` (`TriageCell`, `KnowledgeRow`, `NewKnowledgeForm`, `NewTemplateForm`, `TemplateRow`), falhas de conexão deixavam botões/seletores bloqueados ou propagavam exceção sem preservar os campos, e cancelar a exclusão em `TemplateRow` mantinha o erro visível na linha.
+
+`updateSuggestionStatus` passa a retornar `.select("id")` e recusa zero linhas com aviso explícito (`ok: false`, orientando atualizar a página) sem revalidar consumidores. `SuggestionDetail` recebe `key={selecionada.id}` em `sugestoes/page.tsx` e trata exceções em `handleStatusChange` preservando o status anterior. Os cinco componentes clientes de atendimento agora tratam rejeições em `try/catch/finally`, preservam campos preenchidos e confirmações abertas, liberam controles ao concluir sem repetição automática, e `TemplateRow` limpa o erro ao cancelar ou alternar modo. RLS, schema, RPCs e filtros não mudam.
+
+Três testes de contrato em `apps/web/lib/sugestoes-resultados.test.ts` (suíte `@sb/web`: 139 arquivos, 1.489 testes) e 32 regressões Chromium em `sugestoes.spec.ts`, `conhecimento.spec.ts`, `templates.spec.ts` e `atendimento.spec.ts` cobrem perda de autorização via RLS e falhas de transporte com nova tentativa, sem alterar compras/reposição nem worktrees/migrations do Claude.
+
+## D-734 - Worker separa falha transitória de banco da ausência de conta ou credencial no Mercado Livre
+
+Em `ensureAccessToken` (`apps/worker/src/handlers/ml-token.ts`), erros de leitura em `ml_credentials` eram agrupados com `credentials.data === null` e devolviam `{ ok: false, retryable: false, reason: "conta CONNECTED sem credenciais gravadas" }`, descartando webhooks e sincronizações em quedas transitórias do Postgres/PostgREST; erro na reserva da trava de refresh (`claimed`) também reutilizava o motivo de corrida entre instâncias. Nos dez handlers mais antigos do Mercado Livre (`webhook-received`, `backfill-orders`, `sync-orders-window`, `sync-ads-campaigns`, `sync-fulfillment-snapshot`, `sync-listings-snapshot`, `sync-listing-visits-snapshot`, `sync-support-claims-reconcile`, `sync-support-messages-reconcile` e `sync-support-questions-reconcile`), `account.error !== null` era tratado igual a `account.data === null`, registrando `*_account_missing` e encerrando em `{ status: "done", processed: 0 }`.
+
+`ml-token.ts` passa a distinguir erros de banco ao ler `ml_credentials` e reservar a trava como `{ ok: false, retryable: true }` com motivo explícito, preservando `retryable: false` somente para credenciais genuinamente ausentes (`data === null`). Os dez handlers passam a usar o helper compartilhado `resolveMlAccountRead` (`apps/worker/src/handlers/ml-account-read.ts`): falha na leitura de `ml_accounts` devolve `{ status: "failed", retryable: true }`, enquanto `data === null` sem erro mantém o log de conta ausente e `{ status: "done", processed: 0 }`, igual a `lerLojaConectada` (D-426) e aos handlers mais recentes. Schema, travas de token, RPCs e políticas de fila não mudam.
+
+A suíte `@sb/worker` passou em `typecheck`, `lint` e 68 arquivos / 1.038 testes, incluindo 20 casos em `ml-account-read.test.ts` (os dez handlers em erro transitório e ausência genuína) e 13 em `ml-token.test.ts`.
+
+## D-735 - Confirmação de importação ERP e NF-e exige linha afetada e reverte PARSED se a fila falhar
+
+Em `confirmApply` (`erp-import.ts`) e `confirmNfeApply` (`nfe-import.ts`), a transição condicional de `'PARSED'` para `'APPLYING'` não selecionava o `id` afetado (`.select("id").maybeSingle()`). Em uma corrida concorrente entre duas confirmações ou mudança simultânea de estado, o chamador perdedor recebia erro nulo com zero linhas alteradas, seguia para `enqueuer.enqueue` e devolvia `{ status: "queued" }` (HTTP 200) em falso. Se `enqueuer.enqueue` falhasse após a escrita de `'APPLYING'`, o lote ou documento ficava preso em `'APPLYING'` e recusava novas confirmações.
+
+O helper compartilhado `confirmAndEnqueueApply` (`apps/api/src/confirm-import-apply.ts`) passa a exigir retorno do `id` na transição `PARSED -> APPLYING`: zero linhas devolve `rejected` (HTTP 409) sem tocar a fila. Quando `enqueuer.enqueue` falha, executa compensação condicional devolvendo `{ status: "PARSED", applied_by: null }` apenas se o registro seguir em `'APPLYING'` com o mesmo `applied_by`, registra log explícito em eventual falha da compensação e relança o erro para resposta 500. Schema, filas, worker e contrato de sucesso não mudam.
+
+A suíte `@sb/api` passou em `typecheck`, `eslint` e 39 arquivos / 513 testes (`erp-import.test.ts`: 24 casos; `nfe-import.test.ts`: 29 casos), cobrindo corrida de zero linhas e rollback condicional quando o enfileiramento falha.
+
+## D-736 - Jobs do worker paginam supressões, candidatos e outcomes acima de 1.000 linhas e memoizam snapshot por SKU
+
+Em `measure-decision-outcomes.ts`, as leituras de `action_decisions`, `action_outcomes` e `actions` rodavam sem paginação nem fatiamento de `.in(...)`; além de 1.000 decisões ou mais de 1.000 outcomes (334+ decisões medidas em 3 janelas), o PostgREST truncava silenciosamente em 1.000 linhas ou recebia listas grandes demais na query string, ignorando decisões novas ou remediando janelas já gravadas. O laço também repetia a RPC `get_sku_decision_snapshot` para o mesmo `(organization_id, sku_id, as_of)` em várias janelas ou decisões do mesmo SKU na mesma execução. Em `erp-import-apply.ts`, `sku_listing_link_events` (`REMOVED`/`HUMAN`) e `link_candidates` (`ERP_IMPORT`/`OPEN`) também podiam cortar além de 1.000 registros históricos.
+
+Extrai `chunk` (`apps/worker/src/chunk.ts`, `LOOKUP_CHUNK = 200`) reutilizado pelos dois handlers. `erp-import-apply.ts` passa `sku_listing_link_events` e `link_candidates` para `readAllPages` ordenado por `id`. `measure-decision-outcomes.ts` passa `action_decisions` e blocos de 200 IDs de `action_outcomes` para `readAllPages` ordenado por `id`, fatia leituras de `actions` por 200, memoiza `get_sku_decision_snapshot` por `sku_id` na execução e faz `upsert` em lotes de 500. Schema, RPCs, regras de janela e semântica de falha não mudam.
+
+`@sb/worker` verde em `typecheck`, `eslint` e 68 arquivos / 1.042 testes (`measure-decision-outcomes.test.ts`: 14 casos cobrindo 1.250 decisões, 1.350 outcomes e chamada única da RPC por SKU; `erp-import-apply.test.ts`: 26 casos cobrindo 1.006 remoções humanas sob simulação do limite de 1.000 linhas do PostgREST).
+
+## D-737 - Next.js atualizado de 16.4.1 para 16.4.6 para encerrar os avisos moderados do framework
+
+O `next@16.4.1` carregava dois avisos moderados (`GHSA-mfr8-8qww-v76h` e `GHSA-vc7v-qv4w-wrv8`, corrigidos em `>=16.4.5`) e fazia o `next build` interromper a primeira tentativa com `SecurityFatalError`. O plano técnico (A03) já previa atualização compatível dentro da série `16.4.x`.
+
+Atualiza `next` para `16.4.6` em `apps/web/package.json` e `pnpm-lock.yaml`, sem alterar dependências principais do React nem forçar major em `@google-cloud/storage` ou `exceljs` pelo `uuid` transitivo (`<11.1.1`), que segue como único aviso moderado em `pnpm audit --prod`. O corte alto de `pnpm audit --prod --audit-level high` continua passando com saída zero.
+
+`@sb/web` verde em `vitest` (139 arquivos / 1.489 testes), `typecheck`, `eslint`, as sete guardas estáticas e `next build` em `16.4.6` na primeira tentativa sem `SecurityFatalError`.
+
+## D-738 - Detectores diários do worker paginam RPCs e vínculos além de 1.000 linhas com lotes `.in` de 200
+
+Os handlers `detect-sales-anomaly-actions.ts` (`get_sku_sales_baseline`, `get_sku_correlated_events`, `support_case_links` e `get_sku_average_prices`) e `detect-support-pattern-actions.ts` (`support_case_links` de SKUs e pedidos) consultavam tabelas e RPCs sem `.range()` nem fatiamento de `.in(...)`. Com o crescimento do catálogo, dos canais (`ML` e `SHOPEE`) e das reclamações abertas além de `max_rows = 1000`, o PostgREST cortava linhas silenciosamente sem erro nem ordenação estável — anomalias ou padrões após a linha 1.000 sumiam daquele dia (levando episódios abertos a envelhecerem) e listas grandes de `candidateSkuIds` ou `caseIds` cresciam na URL do `.in(...)`.
+
+Os dois handlers passam a reutilizar `readAllPages` com ordenação estável (`(marketplace, sku_id)` em baseline/preços, `(sku_id, occurred_at, event_type, marketplace)` em eventos correlacionados e `id` em `support_case_links`) e fatiamento em lotes de `LOOKUP_CHUNK = 200` (`apps/worker/src/chunk.ts`) nos `.in(...)` de `support_case_links`. Em `detect-sales-anomaly-actions.ts`, erro em qualquer lote do sinal adicional de SAC continua degradando o sinal inteiro para `sem sinal de SAC` sem misturar sinal parcial nem derrubar o diagnóstico. Schema, RPCs e regras de domínio não mudam.
+
+Reprodução antes da correção registrou 4 falhas simulando o corte de 1.000 linhas; após a correção, `@sb/worker` passou em `tsc`, `eslint` e 68 arquivos / 1.048 testes (`detect-sales-anomaly-actions.test.ts`: 15 casos; `detect-support-pattern-actions.test.ts`: 8 casos).
+
+## D-739 - /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
+
+A página `/diagnostico` (`apps/web/app/(app)/diagnostico/page.tsx`) chamava `get_sku_sales_baseline`, `get_sku_correlated_events`, `support_case_links` (`.in("sku_id", candidateSkuIds)`) e `get_sku_average_prices` sem paginação nem fatiamento. Acima de `max_rows = 1000` (o catálogo completo já passa de 1.490 SKUs na Curva ABC), o PostgREST cortava linhas em silêncio sem erro e sem ordenação estável — omitindo SKUs e anomalias reais — além de montar query strings potencialmente grandes quando muitos candidatos entravam no `.in` de `support_case_links`.
+
+Extrai as três leituras para `apps/web/lib/diagnostico-leitura.ts`, reutilizando `lerPaginasDaRpc` (`apps/web/lib/rpc-pages.ts`) com `{ count: "exact" }` apenas na primeira página (`offset === 0`) para não pagar ida extra quando o catálogo cabe em 1.000 linhas, ordenação estável (`sku_id` no baseline ML, `(sku_id, occurred_at, event_type, marketplace)` nos eventos, `id` nos vínculos de SAC e `(sku_id, marketplace)` nos preços médios) e fatiamento em lotes de 200 (`DIAGNOSTICO_CHUNK`) em paralelo para `support_case_links`. Erro em qualquer lote de SAC descarta dados parciais e propaga `claimsError` para o banner `Parte do diagnóstico não foi lida` (`D-067`/`D-468`).
+
+Reprodução pré-correção em `apps/web/lib/diagnostico-leitura.test.ts` registrou 4 falhas simulando o corte de 1.000 linhas; após a correção, os 5 novos contratos e a checagem completa de `@sb/web` passaram (`tsc`, `eslint`, `vitest` e guardas `check:waterfalls`/`check:navegacao-suave`/`check:loading`).
+
+## D-740 - Ações, painel de diagnóstico, vínculo, republicação e quatro gavetas recuperam controles em falha de transporte
+
+Oito componentes clientes ainda deixavam indicadores de carregamento ou botões presos sem aviso quando uma Server Action, consulta ao catálogo ou leitura de sessão rejeitava na camada de transporte:
+
+1. `ActionCard` (`apps/web/app/(app)/acoes/action-card.tsx`): `run` e `handleRegisterDecision` chamavam Server Actions sem `try/catch/finally` (prendendo `emCurso` para sempre), e `handleExplain` mantinha `supabase.auth.getSession()` e `response.json()` fora do bloco `try/finally`.
+2. `DiagnosisPanel` (`apps/web/app/(app)/skus/[skuId]/diagnosis-panel.tsx`): `handleClick` chamava `diagnoseSku` sem `try/catch/finally` (prendendo `"Analisando…"`), e `handleNarrate` mantinha `getSession()` e `response.json()` fora do `try/finally`.
+3. `VincularAnuncio` (`apps/web/app/(app)/skus/[skuId]/vincular-anuncio.tsx`): `buscar` mantinha a consulta ao catálogo `listings` fora de `try/catch` em `{ kind: "buscando" }`.
+4. `RelistPanel` (`apps/web/app/(app)/anuncios/[itemId]/relist-panel.tsx`): `chamar` executava `getSession()` antes de entrar no `try/catch` já em `{ kind: "enviando" }`.
+5. Quatro gavetas de inspeção (`inspecao-anuncio.tsx`, `gaveta-pedido.tsx`, `inspecao-fornecedor.tsx`, `inspecao-rapida.tsx`): disparavam `await inspecionar*()` dentro de `startTransition(void (async () => ...))` sem `try/catch`, gerando rejeição não tratada e mantendo o estado de `"Lendo…"` eternamente.
+
+Extrai `useLeituraDeGaveta` em `apps/web/components/drawer.tsx` (compartilhado pelas quatro gavetas com controle de sequência contra resposta atrasada ao fechar/reabrir e fallback de erro de transporte em `role="alert"`) e envolve todas as chamadas assíncronas dos outros quatro componentes em `try/catch/finally`. Schema e Server Actions subjacentes não mudam.
+
+Reprodução pré-correção em Playwright (`acoes.spec.ts`, `gavetas.spec.ts` e `sku-dashboard.spec.ts` com `derrubarPrimeiraAcao`) registrou as 3 falhas exatas de travamento sem alerta; após a correção, `@sb/web` passou em `typecheck`, `eslint`, `next build` e 40 de 40 casos nos 6 specs E2E selecionados (`acoes`, `diagnostico`, `gavetas`, `produtos`, `republicacao` e `sku-dashboard`).
+
+## D-741 - Conectores OAuth, SAC e confirmação de aplicação protegem leitura de sessão e JSON de resposta
+
+Cinco componentes cliente restantes (e o helper compartilhado `chamarApi` em `apps/web/lib/chamar-api.ts`) ainda executavam `supabase.auth.getSession()` antes de entrar em `try/catch` ou consumiam `response.json()` de resposta `200 OK` sem recuperação nem validação de payload:
+
+1. Conectores OAuth em `/contas` (`apps/web/app/(app)/contas/connect-button.tsx` e `shopee-connect-button.tsx`): `getSession()` ficava fora de `try/catch`, e uma resposta `200 OK` com HTML/JSON inválido ou `authorizationUrl` ausente quebrava fora de tratamento, travando o botão em estado ocupado. Extraído `iniciarConexaoOAuth` (`apps/web/app/(app)/contas/iniciar-conexao.ts`) compartilhando `lerTokenDeSessao` e validando `authorizationUrl` como string não vazia antes do redirecionamento.
+2. Confirmação de aplicação (`apps/web/app/(app)/importacoes/[id]/confirm-apply-form.tsx` e `notas-fiscais/[id]/confirm-apply-form.tsx`): compartilhavam lógica duplicada com `getSession()` fora do `try/catch`, travando `busy = true` em falha do cliente de sessão. Extraído `confirmarAplicacaoNaApi` em `apps/web/lib/chamar-api.ts` (reutilizando `lerTokenDeSessao`), também protegendo `chamarApi` em falha de `getSession()`.
+3. Resposta de SAC (`apps/web/app/(app)/atendimento/[caseId]/reply-form.tsx`): `enviar` e o fluxo `Sugerir com IA` chamavam `getSession()` antes do `try/catch` (impedindo limpeza de estado/`suggesting`) e liam `await response.json()` sem `.catch(() => null)` para erros `!response.ok` com HTML de proxy. Ambos passam a usar `lerTokenDeSessao` dentro do fluxo protegido e parsing seguro para erros HTTP, tratando resposta `200` sem JSON válido sem marcar envio na fila.
+
+Reprodução pré-correção em Playwright (`apps/web/e2e/contas.spec.ts`, caso `D-741` com mock `200 OK` HTML em `/v1/shopee/connect` e `/v1/ml-accounts/connect`) falhou sem exibir `role="alert"`; após a correção e ajuste do caso E2E para também criar e limpar conta ML temporária, `@sb/web` passou em `typecheck`, `eslint` e 5 de 5 casos de `e2e/contas.spec.ts` no Chromium.
+
+## D-742 - `relist.prepare` grava preflight reprovado atomicamente e retenta falhas transitórias do multiget
+
+Três defeitos de consistência e recuperação foram confirmados em `apps/worker/src/handlers/relist-prepare.ts`:
+
+1. **Preflight reprovado podia ficar preso em `REQUESTED`:** o handler inseria `listing_relists` como `REQUESTED` e só depois avaliava `evaluateRelistPreflight` e disparava um `UPDATE` para `PREFLIGHT_FAILED`. Se o `UPDATE` falhasse transitoriamente e o Cloud Tasks retentasse o job, a segunda tentativa batia no índice único parcial `listing_relists_one_live_per_parent` (`23505`) e retornava `{ status: "done", processed: 0 }`, mantendo uma operação reprovada como `REQUESTED` (aprovável na interface). Agora `evaluateRelistPreflight` roda antes da escrita e a operação já nasce atomicamente em `PREFLIGHT_FAILED` (com `failure_reason`) ou `REQUESTED` num único `INSERT`, preservando a mesma trilha append-only em `listing_relist_events`.
+2. **Checagem prévia de operação ativa:** antes de consultar o Mercado Livre, o handler verifica se já existe operação viva (`status not in RELIST_REOPENABLE_STATES`), evitando chamadas externas desnecessárias e evitando gravar um `PREFLIGHT_FAILED` paralelo quando já há operação ativa para o mesmo anúncio. Falha transitória nessa leitura retorna `retryable: true`.
+3. **Erros transitórios no multiget (`429`, `5xx` ou resposta vazia):** `entry?.code !== 200` encerrava como `{ status: "done", processed: 0 }`, descartando silenciosamente o pedido de preparação em instabilidade do Mercado Livre. Agora `entry === undefined`, `429` e `>= 500` retornam `{ status: "failed", retryable: true }`; apenas códigos definitivos (`4xx` exceto `429`) seguem como indisponibilidade definitiva.
+
+Reprodução pré-correção em `apps/worker/src/handlers/relist-prepare.test.ts` registrou 3 falhas (`3 failed | 18 passed (21)`); após a correção, `@sb/worker` passou integralmente em `typecheck`, `eslint` e `vitest` (`68` arquivos / `1.052` testes).
+
+## D-743 - Copiloto filtra `replenishment_settings`, lê últimas mensagens do SAC e corrige limite/papel
+
+Quatro defeitos confirmados nos fluxos do Copiloto em `apps/api`:
+
+1. **`runSkuReplenishment` truncava `replenishment_settings` acima de 1.000 regras (`apps/api/src/copilot.ts`):** a ferramenta lia `from("replenishment_settings").select(...)` sem filtro em paralelo com `get_purchase_suggestions`, sujeita ao limite silencioso `max_rows = 1000` do PostgREST e fazendo leitura desnecessária mesmo quando o SKU não existia. Agora consulta `get_purchase_suggestions` primeiro, retorna erro cedo se o SKU exato não existir e filtra `replenishment_settings` pelos até 3 escopos possíveis (`organization_id` + `.or(...)` com SKU, marca e padrão da organização, mesma regra de `D-680`).
+2. **`structure_feature_suggestion` gastava LLM antes de checar papel (`apps/api/src/copilot.ts`):** `TOOLS.structure_feature_suggestion.run` chamava `anthropic.narrate(...)` antes da RLS rejeitar o `UPDATE` de `feature_suggestions` para papéis fora de `ADMIN`/`GESTOR`. Agora valida `caller.role` antes de chamar `runStructureFeatureSuggestion`.
+3. **`runSuggestSupportReply` lia as 40 mensagens mais antigas em conversas longas (`apps/api/src/copilot-generation.ts`):** `support_messages` era ordenado em `ascending: true` com `.limit(40)`, cortando justamente as mensagens mais recentes que o operador precisa responder. Agora lê em ordem decrescente (`occurred_at desc, id desc`, `.limit(40)`) e inverte em memória para ordem cronológica, além de deduplicar `skuIds` antes do `.in()`.
+4. **`runCopilotChat` sobrescrevia o erro de limite de rodadas com `done` e deixava `emit` rejeitar sem tratamento (`apps/api/src/copilot-chat.ts`):** ao atingir `MAX_ROUNDS`, emitia `{ type: "error" }` seguido imediatamente de `{ type: "done" }`, fazendo a interface (`chat.tsx`) apagar o erro e marcar o turno como concluído. Também chamava `void emit(...)` em `onText` e `await emit(...)` no `catch` sem `.catch(() => undefined)`, gerando rejeição não tratada ou impedindo `recordAiRun` se o cliente SSE desconectasse. Agora `limitReached` suprime o `done` final e os `emit` de streaming/erro protegem desconexão mantendo o registro de `ai_runs`.
+
+Reprodução pré-correção em `copilot.test.ts`, `copilot-generation.test.ts` e `copilot-chat.test.ts` registrou 4 falhas (`4 failed | 65 passed (69)`); após a correção, `@sb/api` passou integralmente em `typecheck`, `eslint` e `vitest` (`39` arquivos / `517` testes).
+
+## D-744 - Uploads ERP/NF-e compensam falha na fila, validam erro de duplicado, convites deduplicam ids e rotas validam entrada
+
+Quatro classes de defeitos operacionais confirmadas na camada HTTP/serviço de `apps/api`:
+
+1. **Checagem de duplicado ignorava erro do banco em `receiveUpload` (`erp-import.ts`) e `receiveNfeUpload` (`nfe-import.ts`):** quando a leitura por `(organization_id, content_hash)` falhava com erro transitório (`existing.error !== null`), `existing.data` vinha `null` e o fluxo prosseguia para enviar o arquivo ao bucket e tentar `INSERT`. Agora ambos verificam `existing.error !== null` antes de tocar o storage e devolvem `{ status: "error", reason }`, mapeado por `erroInterno` (HTTP 500 com `request_id` sem vazar detalhes).
+2. **Falha ao enfileirar parse prendia lote/documento em `UPLOADED` (`erp-import.ts` e `nfe-import.ts`):** se `enqueuer.enqueue` falhasse depois do `INSERT` (ou depois da transição `FAILED -> UPLOADED` no reenvio de NF-e), o registro permanecia em `UPLOADED` sem job na fila e todo reenvio futuro retornava `{ status: "duplicate" }` em vez de processar. Agora o bloco `catch` compensa condicionalmente antes de propagar o erro (`DELETE ... WHERE id = ? AND status = 'UPLOADED'` para registros recém-inseridos; `UPDATE ... SET status = 'FAILED', last_error = ... WHERE id = ? AND status = 'UPLOADED'` para reenvio de NF-e), seguindo o mesmo padrão de compensação condicional de `confirmAndEnqueueApply`.
+3. **Convites não deduplicavam `mlAccountIds`/`shopeeShopIds` (`invites.ts`):** repetir um UUID no payload fazia `contas.data.length !== contasPedidas.length` (porque `IN (...)` no Postgres devolve cada linha uma vez) e rejeitava um convite legítimo como "não pertence a esta organização". Agora ambos são deduplicados com `[...new Set(...)]` antes da validação e do `INSERT`.
+4. **Validação de entrada faltante em `app.ts`:** `POST /v1/ml-accounts/connect` não validava `mlAccountId` com `z.uuid().safeParse(...)` (ao contrário das demais rotas auditadas em 28/09), enviando strings inválidas ao Postgres; e `POST /v1/erp-imports` e `POST /v1/nfe-imports` chamavam `context.req.parseBody()` fora de `try/catch`, respondendo 500 em vez de 400 para corpo multipart malformado.
+
+Reprodução pré-correção em `erp-import.test.ts`, `nfe-import.test.ts`, `invites.test.ts` e `app.test.ts` registrou 9 falhas (`9 failed | 171 passed (180)`); após a correção, `@sb/api` passou integralmente em `typecheck`, `eslint` e `vitest` (`39` arquivos / `526` testes).
+
+## D-745 - Sessão, flush final do SSE e preservação do link de convite nos sete componentes cliente restantes da web
+
+Fecha o inventário de leituras diretas de `supabase.auth.getSession()` fora de `try/catch` nos componentes cliente de `apps/web` e corrige três falhas associadas de transporte/streaming:
+
+1. **Preservação do link de convite de uso único e validação de payload em `usuarios/convidar.tsx`:** `getSession()` migrado para `lerTokenDeSessao`; a checagem pós-convite `conferirLojas` (leitura em `user_shopee_shop_permissions` executada depois que `POST /v1/organization/invites` já criou o usuário e emitiu `inviteLink`) agora captura exceções de rede/cliente dentro de `try/catch` para nunca descartar o link de uso único em erro transitório; e respostas `200 OK` sem JSON válido ou com `status` inesperado não caem mais no ramo `"vinculado"`.
+2. **Flush final do stream SSE e proteção de `busy` em `copiloto/chat.tsx`:** `lerTokenDeSessao` entra no bloco `try/finally` (impedindo `busy = true` eterno); o parsing SSE foi extraído para `apps/web/lib/copilot-sse.ts` (`extrairEventosSse`), normalizando CRLF (`\r\n`) e descarregando `decoder.decode()` + eventual evento final no `buffer` ao atingir EOF (`done: true`) antes do fallback de erro.
+3. **JSON seguro e `try/finally` em `sugestoes/suggestion-detail.tsx`:** `structure()` passa a usar `lerTokenDeSessao` dentro do `try/finally` e faz `await response.json().catch(() => null)` para que páginas HTML de erro HTTP (`502`/`504`) ou respostas `200` sem JSON não quebrem nem pareçam sucesso.
+4. **Leitura segura de sessão em `usuarios/reemitir-link.tsx`, `faturamento/calculadora-preco.tsx`, `importacoes/nova/upload-form.tsx` e `notas-fiscais/nova/upload-form.tsx`:** todos passam a reutilizar `lerTokenDeSessao` (`apps/web/lib/chamar-api.ts`), eliminando travamento de botões/estado ocupado em falha do cliente Auth.
+
+Validação local: contratos novos em `apps/web/lib/copilot-sse.test.ts` (3) e `apps/web/lib/chamar-api.test.ts` (4) + `@sb/web` completo em `typecheck`, `eslint` e `vitest` (`142` arquivos / `1.501` testes).
+
+## D-746 - Handlers de parse/apply ERP e NF-e no worker barram `APPLYING`, verificam erros de `DELETE`/`UPDATE` e paginam `document_items`
+
+Quatro defeitos de consistência e tratamento silencioso de erro confirmados nos handlers de importação do worker (`apps/worker/src/handlers/`):
+
+1. **Reentrega tardia de parse podia sobrescrever `APPLYING` e apagar staging/itens vinculados (`erp-import-parse.ts` e `nfe-import-parse.ts`):** ambos recusavam apenas `status === "APPLIED"`, permitindo que um job atrasado de `erp.import.parse` ou `nfe.import.parse` executasse durante `APPLYING`, apagasse `erp_import_rows`/`erp_stock_snapshots` ou `document_items` (incluindo vínculos humanos de SKU) e voltasse o registro para `PARSING`. Agora ambos recusam também `APPLYING` (`retryable: false`).
+2. **Erros nos `DELETE` de limpeza e na transição para `PARSING` eram ignorados (`erp-import-parse.ts` e `nfe-import-parse.ts`):** falhas transitórias ao marcar `PARSING` ou limpar staging/itens antes de reinserir prosseguiam em silêncio e podiam colidir na inserção ou corromper a reexecução. Agora retornam `{ status: "failed", retryable: true }`.
+3. **Falha transitória nas gravações finais de status ou `markRows` encerrava como `done` (`erp-import-parse.ts`, `erp-import-apply.ts` e `nfe-import-apply.ts`):** se o `UPDATE` final (`status = 'PARSED'` ou `status = 'APPLIED'`) ou `markRows` (`erp_import_rows.apply_status`) falhasse no banco, o worker registrava sucesso e devolvia `{ status: "done" }`, deixando o lote ou documento preso para sempre em `PARSING`/`APPLYING`. Agora todas essas escritas conferem `.error !== null` e devolvem `{ status: "failed", retryable: true }`.
+4. **Leitura de `document_items` sem paginação em `nfe-import-apply.ts`:** trocada por `readAllPages` ordenado por `position`, eliminando truncamento silencioso acima de 1.000 itens sem custo extra quando há menos de 1.000 linhas.
+
+Reprodução pré-correção em `erp-import-parse.test.ts`, `erp-import-apply.test.ts`, `nfe-import-parse.test.ts` e `nfe-import-apply.test.ts` registrou 9 falhas (`9 failed | 72 passed (81)`); após a correção, `@sb/worker` passou integralmente em `typecheck`, `eslint` e `vitest` (`68` arquivos / `1.061` testes).
+
+## D-747 - Worker valida os itens conferidos antes de aplicar NF-e
+
+A paginação de D-746 permite ler todas as linhas. Antes de gravar o estoque, a aplicação agora exige que os contadores do documento concordem e que a leitura tenha exatamente o total conferido com SKU em cada item. Em três reproduções, o cabeçalho indicava conferência completa e o worker encerrava com sucesso mesmo com uma linha ausente, uma linha excedente ou um item sem SKU.
+
+Se a leitura divergir, o job retorna falha retentável antes de gravar movimentos ou marcar `APPLIED`. A reentrega relê as linhas e, quando a conferência coincide, usa as chaves de idempotência existentes por documento e posição. Divergência persistente fica para investigação do lote após as tentativas da fila. A mudança usa os itens que já foram paginados e preserva a autorização, as tabelas e as regras fiscais.
+
+## D-748 - Início da leitura de NF-e depende do estado e da versão lidos
+
+Entre ler o documento e buscar o CNPJ da organização, outra entrega pode mudar o status ou avançar a versão de `PARSING`. O worker só atualiza para `PARSING` quando o identificador, o status e o `updated_at` ainda correspondem à leitura. O trigger de `documents` altera a versão mesmo em `PARSING` para `PARSING`. Se a atualização condicional não encontrar a linha, o worker retorna falha retentável antes de ler o bucket, apagar ou inserir itens. A próxima entrega decide a partir do estado atual.
+
+Uma entrega tardia para documento `PARSED`, `CANCELLED` ou com `parsed_at` preenchido é encerrada preservando os itens e os vínculos da conferência. Uma retentativa que lê a versão atual de `PARSING` pode recuperar uma execução interrompida. Resta ensaiar a persistência quando essa retentativa coincide com a primeira execução ainda ativa.
+
+## D-749 - Início da leitura de ERP depende do estado e da versão do lote
+
+O parse do UpSeller passa a comparar o status e o `updated_at` de `erp_import_batches` antes de entrar em `PARSING`. Se a versão foi superada, devolve falha retentável antes do bucket e das tabelas de conferência. A API cadastra um lote por arquivo e trata o mesmo hash como duplicado. Entregas atrasadas preservam lotes `PARSED`, cancelados ou com `parsed_at` preenchido, inclusive se a aplicação posterior falhou. Lotes `PARSING` e `FAILED` sem leitura concluída continuam recuperáveis.
+
+O ensaio de A104 em NF-e confirmou que a comparação de entrada deixa uma segunda entrega prosseguir se ela leu a versão mais recente de `PARSING`. Uma vez iniciada, a gravação em etapas ainda permite que a entrega tardia remova itens depois de a nota mudar para `PARSED`. A proteção de persistência deve validar a versão no mesmo limite transacional da substituição das linhas. D-748/D-749 tratam a transição de entrada e preservam a recuperação depois de falha.
+
+## D-750 - Parse de NF-e grava itens e cabeçalho com a versão da tentativa
+
+Ao iniciar `PARSING`, o worker recebe o `updated_at` da atualização. A RPC `persist_nfe_parse` verifica a versão e bloqueia a linha do documento durante a substituição dos itens e a atualização de estado. Uma versão superada retorna `false` sem gravar. Falha de validação reverte a exclusão e a inserção. As falhas de leitura que só alteram o cabeçalho usam o mesmo filtro de versão e estado.
+
+A migração de trabalho `20261119094000` foi aplicada à stack isolada. A RPC é `SECURITY INVOKER` e tem execução restrita a `service_role`. O worker usa um contrato local para evitar alteração no arquivo de tipos gerados que também integra a frente de compras. A versão da migration e a regeneração conjunta dos tipos dependem da aplicação no Supabase Dev, que está inativo.
+
+## D-751 - Parser ERP registra erro apenas para a versão ativa do lote
+
+A falha de leitura do bucket e a falta de colunas no UpSeller agora exigem o estado `PARSING` e o `updated_at` que a execução recebeu ao iniciar a leitura. Se a tentativa foi substituída ou a gravação do erro falhar, o job retorna falha retentável. Quando a versão ainda é atual, uma falha de bucket continua retentável e colunas ausentes continuam uma rejeição definitiva, com a contagem de linhas preservada.
+
+A105 continua aberto para a substituição da conferência. O importador opera em lotes de mil linhas, com upload de 25 MiB e histórico de planilhas com 23.924 linhas. O próximo ensaio deve preservar essa capacidade e validar a troca das linhas de uma tentativa como unidade.
+
+## D-752 - ERP publica a conferência completa em uma transação
+
+O worker envia as linhas normalizadas à `stage_erp_parse_chunk` em blocos de até mil. Cada bloco fica em `private.erp_parse_chunks`, com identidade por lote, versão e posição. Uma tentativa superada é recusada tanto ao enviar blocos quanto ao publicar. A mudança de versão ou de estado limpa os blocos anteriores por trigger. Excluir um lote também exclui seus blocos. Se o job esgotar as retentativas em `PARSING`, os blocos da tentativa atual ainda ficam vinculados ao lote até nova tentativa, mudança de estado ou exclusão.
+
+A `publish_erp_parse` bloqueia a linha do lote, substitui as linhas e os snapshots anteriores, calcula os totais em SQL e muda o estado para `PARSED` na mesma transação. Quantidade, posições extremas e unicidade garantem uma conferência completa. Falha em qualquer etapa reverte a substituição. A leitura do bucket e a escrita de blocos não mantêm aberto o bloqueio da publicação.
+
+A migration de trabalho `20261119101000` mantém as duas RPCs em modo invocador com execução restrita a `service_role`. O worker usa um contrato local até a regeneração coordenada dos tipos a partir do Dev. A migration precisa ser aplicada antes da revisão do worker que usa as RPCs.
+
+## D-753 - Índice de decisões exige IDs únicos antes de gravar
+
+A integração documental pode juntar decisões diferentes com o mesmo ID. A checagem anterior reduzia os IDs a um conjunto, o que aceitava uma duplicidade nova se o índice antigo continuasse presente. `docs:check` agora acusa IDs duplicados na fonte ou no índice. `docs:index` valida a fonte antes de regravar o arquivo gerado e preserva o arquivo existente se encontrar uma colisão.
+
+## D-754 - Notificações e preferências recuperam os controles após falha da ação
+
+Marcar uma notificação como lida, marcar todas, criar uma regra de alerta e alterar ou remover uma regra ligavam o estado pendente antes da Server Action e só o desligavam depois da resposta. A interrupção da conexão rejeitava a promessa e deixava o botão em Marcando ou Adicionando, a linha da regra desabilitada ou o diálogo de remoção preso, sem aviso. Os quatro componentes foram reproduzidos em Chromium derrubando o POST da ação.
+
+Cada rotina trata a exceção e desliga o estado pendente em `finally`, como nas D-716 a D-719. Marcar como lida é idempotente, e o aviso pede só nova tentativa. Criar, alterar e remover uma regra podem ter sido gravados antes da queda, e o aviso pede conferir a lista ou recarregar a página antes de tentar novamente. A mensagem do diálogo de remoção passa a ser anunciada como alerta.
+
+As regressões usam um helper comum, `derrubarPrimeiraAcao`, e conferem no banco que nada foi gravado na tentativa derrubada. Marcar todas não repete a tentativa, porque zeraria a caixa que os outros casos contam. Cada caso devolve as leituras e as regras do usuário ao estado em que as encontrou.
+
+## D-755 - Usuários e o nome do perfil recuperam os controles após falha da ação
+
+Na gaveta de um membro, trocar o papel, alternar uma conta ou loja permitida e remover da organização ligavam o estado pendente antes da Server Action e só o desligavam depois da resposta. Salvar o próprio nome fazia o mesmo. A interrupção da conexão deixava o seletor de papel, as caixas de acesso, o diálogo de remoção ou o formulário do nome desabilitados e sem aviso. Os casos foram reproduzidos em Chromium derrubando o POST da ação.
+
+Cada rotina trata a exceção e desliga o estado pendente em `finally`, como nas D-716 a D-754. Papel, acesso e remoção podem ter sido gravados antes da queda, e o aviso pede recarregar a página antes de tentar novamente. Salvar o nome é idempotente, e o aviso pede só nova tentativa, com o nome digitado preservado. Suspender e reativar o acesso usam `chamarApi`, que já tratava a falha de rede.
+
+A regressão da gaveta não repete as tentativas, porque mudariam o GESTOR que os outros casos usam, e confere no banco que o membro e o papel continuam iguais. A do nome repete a tentativa e devolve o nome original no fim.
+
+## D-756 - Contas, Sugestões e visões salvas recuperam os controles após falha da ação
+
+Os formulários de cadastrar conta e enviar sugestão, e as ações de salvar e apagar visão, ligavam o estado pendente antes de aguardar a Server Action e só o desligavam após a resposta. Derrubar o POST reproduziu os quatro caminhos presos e sem aviso.
+
+Cada ação trata a exceção e libera os controles em `finally`. Os campos continuam preenchidos, e a mensagem informa que a operação não pôde ser confirmada e pede conferir a lista antes de tentar de novo. A comunicação pode falhar depois da gravação no servidor. Os campos só são limpos no sucesso, e o cliente aguarda nova iniciativa da pessoa.
+
+Em visões salvas, o aviso de salvamento fica dentro do diálogo aberto. Fora dele, o aviso de exclusão continua junto aos controles da página. A regressão de nome maior que o limite do banco confere a recusa no diálogo e a correção do nome para salvar. As regressões de transporte conferem nenhuma inserção ou exclusão no POST bloqueado, a conta criada como PENDING, a sugestão com texto preservado e os parâmetros da visão na nova tentativa. As fixtures são removidas ao final.
+
+## D-757 - Compras e o vínculo de item da NF-e recuperam os controles após falha da ação
+
+As duas ações do formulário de compra e as de vincular e desvincular item da NF-e aguardavam a Server Action antes de liberar o estado pendente. O POST bloqueado reproduziu os quatro caminhos presos, sem aviso. A correção informa que a operação não pôde ser confirmada e pede conferir o pedido ou o item antes de tentar novamente. Os dados do formulário, o SKU escolhido e o vínculo anterior são mantidos.
+
+Em compras, a exceção libera o botão. O sucesso conserva Salvando até a navegação para o detalhe, como antes, para evitar novo envio entre a resposta e a troca de tela. A regressão segura a requisição RSC do detalhe e confere o botão ainda desabilitado. No item da NF-e, `finally` libera o estado da ação tanto na recusa quanto na exceção.
+
+As regressões de criação de compra e vínculo da nota foram incorporadas aos fluxos existentes. A criação mantém a mesma quantidade de pedidos do teste anterior. A edição usa um rascunho do seed, mantém SKU, quantidade e custo e devolve o destino no fim. A remoção do vínculo da NF-e devolve o SKU e o contador inicial ao terminar. As consultas conferem a ausência de gravação no POST bloqueado e o resultado após nova tentativa, com custo ausente preservado.
+
+Na integração com o #335, a parte de NF-e segue neste recorte. A mudança e as regressões do formulário de compras permanecem na branch Sentinel até coordenação com a frente de compras.
+
+## D-758 - Ajuste de estoque preserva o formulário quando a ação falha no transporte
+
+O ajuste manual aguardava a Server Action dentro de `useTransition`, sem tratar a exceção. Bloquear o POST trocou o formulário pela fronteira de erro do segmento, com “Algo deu errado nesta tela”, perdendo o preenchimento. O problema difere dos estados pendentes manuais das D-716 a D-757: a transição encaminha a exceção para a fronteira de erro.
+
+A chamada agora tem tratamento local, conservando operação, local, quantidade, motivo, referência e observação. A própria transição libera os controles ao terminar. O alerta informa que o ajuste não foi confirmado e orienta conferir as movimentações antes de tentar novamente: uma resposta perdida pode ocorrer depois da gravação. Não há repetição automática. A recusa declarada e a limpeza dos campos após sucesso seguem o fluxo existente.
+
+A regressão bloqueia a primeira ação, confere saldo intacto e ausência do movimento identificado pela referência, e tenta novamente. O banco precisa ter uma única saída de cinco unidades, com motivo e autor corretos. Ao terminar, o teste registra a contrapartida da fixture e confere o saldo original; não apaga movimentos nem desliga a proteção do ledger.
+
+## D-759 - Ações do fornecedor conservam a edição após falha de transporte
+
+Reativar, inativar e excluir fornecedor aguardavam a Server Action dentro de `useTransition`, sem tratar a exceção. Nos três casos, bloquear o POST substituiu a edição pela fronteira de erro do segmento, perdendo o rascunho. Os componentes de alternar ativo e excluir agora tratam a exceção localmente, mantendo a confirmação e o formulário montados; a própria transição libera os controles.
+
+O aviso de alteração pede conferir o fornecedor, e o de exclusão pede conferir a lista antes de tentar novamente. A falha de resposta não prova que a operação deixou de acontecer, portanto não há repetição automática. Recusas declaradas pelo servidor e as navegações após sucesso seguem o comportamento existente. A confirmação e a proteção de fornecedor com pedido não mudam.
+
+Três regressões usam fornecedores temporários sem pedidos. Além de conservar o nome ainda não salvo, conferem todos os campos selecionados do cadastro após o POST bloqueado. A nova tentativa precisa alterar só o estado ativo ou excluir o registro, conforme a ação. A limpeza remove as fixtures, sem alterar fornecedores do seed.
+
 ## D-760 - O pedido feito fora do sistema é um pedido de compra comum, com origem e referência externa
 
 Parte das importações foi negociada antes da tela de pedidos, e a reposição continuava recomendando comprar o que já estava a caminho. A solução não cria um segundo controle de compras nem de trânsito: o pedido externo é um `purchase_orders` como qualquer outro, com três colunas novas, `origin` (INTERNO, EXTERNO_MANUAL, PLANILHA), `external_reference` (o número ou a referência como o usuário informou) e `supplier_ordered_on` (a data do pedido no fornecedor, quando informada; `ordered_at` continua sendo quando o sistema registrou). A referência é comparada sem espaço e sem caixa (`external_reference_key`, gerada), preservando zeros à esquerda e letras, e é única por fornecedor entre os pedidos não cancelados. Sem fornecedor, as referências sem fornecedor se comparam entre si.

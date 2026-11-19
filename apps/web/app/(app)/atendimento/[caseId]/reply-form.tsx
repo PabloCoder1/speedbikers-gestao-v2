@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 import { applyTemplate } from "../../../../lib/apply-template";
+import { lerTokenDeSessao } from "../../../../lib/chamar-api";
 import type { PendingSupportReply } from "../../../../lib/pending-support-reply";
-import { createClient } from "../../../../lib/supabase/browser";
 
 /**
  * Confirmação humana de resposta (Fase 7B, D-096).
@@ -90,12 +90,10 @@ export function ReplyForm({
   async function enviar(): Promise<void> {
     setEstado({ kind: "sending" });
 
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    const sessao = await lerTokenDeSessao("Sessão expirada — atualize a página e entre de novo.");
 
-    if (token === undefined) {
-      setEstado({ kind: "error", message: "Sessão expirada — atualize a página e entre de novo." });
+    if (!sessao.ok) {
+      setEstado({ kind: "error", message: sessao.mensagem });
 
       return;
     }
@@ -104,7 +102,7 @@ export function ReplyForm({
       const confirmacao = pendingReply ?? { clientRequestId: requestId, text: text.trim(), suggestedText: aiSuggestion };
       const response = await fetch(`${API_URL}/v1/support/cases/${caseId}/reply`, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        headers: { "content-type": "application/json", authorization: `Bearer ${sessao.token}` },
         body: JSON.stringify({
           clientRequestId: confirmacao.clientRequestId,
           text: confirmacao.text,
@@ -115,15 +113,24 @@ export function ReplyForm({
         }),
       });
 
-      const body = (await response.json()) as {
+      const body = (await response.json().catch(() => null)) as {
         status?: string;
         error?: { message?: string };
-      };
+      } | null;
 
       if (!response.ok) {
         setEstado({
           kind: "error",
-          message: body.error?.message ?? "Não foi possível enviar a resposta.",
+          message: body?.error?.message ?? "Não foi possível enviar a resposta.",
+        });
+
+        return;
+      }
+
+      if (body === null) {
+        setEstado({
+          kind: "error",
+          message: "Falha de conexão. Tente de novo — a mesma confirmação não envia duas vezes.",
         });
 
         return;
@@ -222,35 +229,32 @@ export function ReplyForm({
             setSuggesting(true);
 
             void (async () => {
-              const supabase = createClient();
-              const { data } = await supabase.auth.getSession();
-              const token = data.session?.access_token;
-
-              if (token === undefined) {
-                setEstado({ kind: "error", message: "Sessão expirada — atualize a página e entre de novo." });
-                setSuggesting(false);
-
-                return;
-              }
-
               try {
+                const sessao = await lerTokenDeSessao("Sessão expirada — atualize a página e entre de novo.");
+
+                if (!sessao.ok) {
+                  setEstado({ kind: "error", message: sessao.mensagem });
+
+                  return;
+                }
+
                 const response = await fetch(`${API_URL}/v1/copilot/query`, {
                   method: "POST",
-                  headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+                  headers: { "content-type": "application/json", authorization: `Bearer ${sessao.token}` },
                   body: JSON.stringify({ tool: "suggest_support_reply", input: { supportCaseId: caseId } }),
                 });
 
-                const body = (await response.json()) as {
+                const body = (await response.json().catch(() => null)) as {
                   data?: { suggestedText?: string };
                   error?: { message?: string };
-                };
+                } | null;
 
-                const suggested = body.data?.suggestedText;
+                const suggested = body?.data?.suggestedText;
 
                 if (!response.ok || suggested === undefined) {
                   setEstado({
                     kind: "error",
-                    message: body.error?.message ?? "Não foi possível gerar a sugestão.",
+                    message: body?.error?.message ?? "Não foi possível gerar a sugestão.",
                   });
 
                   return;

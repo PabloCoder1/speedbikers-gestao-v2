@@ -1,9 +1,92 @@
 import { expect, test } from "@playwright/test";
 
 import { E2E_PURCHASE_ORDERS, E2E_SUPPLIER, E2E_SUPPLIER_INATIVO } from "./constants.js";
-import { login } from "./helpers.js";
+import { derrubarPrimeiraAcao, login } from "./helpers.js";
 import { clienteDeServico } from "./loja-shopee-live.js";
 import { readSeedOutput } from "./seed-output.js";
+
+async function criarFornecedorTemporario(ativo: boolean) {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const criado = await db.from("suppliers").insert({
+    organization_id: seed.organizationId,
+    name: `E2E Transporte ${crypto.randomUUID()}`,
+    is_active: ativo,
+    contact_name: "Contato preservado",
+    email: "transporte@example.test",
+    notes: "Condições preservadas após falha de conexão",
+  }).select("id,name,is_active,contact_name,email,notes").single();
+  if (criado.error !== null) throw new Error(criado.error.message);
+  return { db, fornecedor: criado.data };
+}
+
+for (const novoAtivo of [true, false]) {
+  test(`fornecedor: falha de conexão ao ${novoAtivo ? "reativar" : "inativar"} conserva a edição e permite nova tentativa`, async ({ page }) => {
+    const { db, fornecedor } = await criarFornecedorTemporario(!novoAtivo);
+    const ler = () => db.from("suppliers").select("id,name,is_active,contact_name,email,notes").eq("id", fornecedor.id).single();
+    const rascunho = `${fornecedor.name} pendente`;
+    try {
+      await login(page, `/fornecedores/${fornecedor.id}/editar`);
+      await page.getByLabel("Nome").fill(rascunho);
+      if (!novoAtivo) await page.getByRole("button", { name: "Inativar", exact: true }).click();
+      const acao = novoAtivo
+        ? page.getByRole("button", { name: "Reativar", exact: true })
+        : page.getByRole("group", { name: "Confirmar inativação" }).getByRole("button", { name: "Inativar", exact: true });
+      const caiu = await derrubarPrimeiraAcao(page);
+      await acao.click();
+      await expect(page.getByRole("alert").filter({ hasText: "Não foi possível confirmar a alteração" })).toBeVisible();
+      await expect(acao).toBeEnabled();
+      await expect(page.getByLabel("Nome")).toHaveValue(rascunho);
+      if (!novoAtivo) await expect(page.getByRole("group", { name: "Confirmar inativação" }).getByRole("button", { name: "Cancelar" })).toBeEnabled();
+      expect(caiu()).toBe(true);
+      const falha = await ler();
+      expect(falha.error).toBeNull();
+      expect(falha.data).toEqual(fornecedor);
+
+      await acao.click();
+      await expect(page.getByRole("button", { name: novoAtivo ? "Inativar" : "Reativar", exact: true })).toBeVisible();
+      const depois = await ler();
+      expect(depois.error).toBeNull();
+      expect(depois.data).toEqual({ ...fornecedor, is_active: novoAtivo });
+    } finally {
+      const limpeza = await db.from("suppliers").delete().eq("id", fornecedor.id);
+      expect.soft(limpeza.error).toBeNull();
+    }
+  });
+}
+
+test("fornecedor: falha de conexão ao excluir mantém a confirmação e permite nova tentativa", async ({ page }) => {
+  const { db, fornecedor } = await criarFornecedorTemporario(true);
+  const rascunho = `${fornecedor.name} pendente`;
+  try {
+    await login(page, `/fornecedores/${fornecedor.id}/editar`);
+    await page.getByLabel("Nome").fill(rascunho);
+    await page.getByRole("button", { name: "Excluir", exact: true }).click();
+    const confirmacao = page.getByRole("group", { name: "Confirmar exclusão" });
+    const excluir = confirmacao.getByRole("button", { name: "Excluir de vez", exact: true });
+    const caiu = await derrubarPrimeiraAcao(page);
+    await excluir.click();
+    await expect(confirmacao.getByRole("alert")).toContainText("Não foi possível confirmar a exclusão");
+    await expect(excluir).toBeEnabled();
+    await expect(confirmacao.getByRole("button", { name: "Cancelar" })).toBeEnabled();
+    await expect(page.getByLabel("Nome")).toHaveValue(rascunho);
+    expect(caiu()).toBe(true);
+    const falha = await db.from("suppliers").select("id,name,is_active,contact_name,email,notes").eq("id", fornecedor.id).single();
+    expect(falha.error).toBeNull();
+    expect(falha.data).toEqual(fornecedor);
+
+    await excluir.click();
+    await expect(page).toHaveURL(/\/fornecedores$/u);
+    const depois = await db.from("suppliers").select("id").eq("id", fornecedor.id).maybeSingle();
+    expect(depois.error).toBeNull();
+    expect(depois.data).toBeNull();
+  } finally {
+    const limpeza = await db.from("suppliers").delete().eq("id", fornecedor.id);
+    expect.soft(limpeza.error).toBeNull();
+  }
+});
 
 /**
  * `/fornecedores` — a Base de Fornecedores depois da migração para o frame

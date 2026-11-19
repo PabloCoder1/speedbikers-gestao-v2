@@ -23,18 +23,24 @@ export function NewAccountForm(): ReactNode {
     setBusy(true);
     setError(null);
 
-    const result = await createMlAccount(label, slug);
+    let result: Awaited<ReturnType<typeof createMlAccount>>;
+    try {
+      result = await createMlAccount(label, slug);
+    } catch {
+      setError("Não foi possível confirmar o cadastro. Confira a lista antes de tentar novamente.");
+      return;
+    } finally {
+      setBusy(false);
+    }
 
     if (!result.ok) {
       setError(result.message);
-      setBusy(false);
 
       return;
     }
 
     setLabel("");
     setSlug("");
-    setBusy(false);
   }
 
   return (

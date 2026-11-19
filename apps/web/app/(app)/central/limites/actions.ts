@@ -56,13 +56,17 @@ export async function salvarLimites(_anterior: ResultadoDoCadastro, formData: Fo
 }
 
 /** Apaga a linha da organização: a central volta aos padrões. A RLS decide se a pessoa pode. */
-export async function voltarAosPadroes(): Promise<void> {
+export async function voltarAosPadroes(): Promise<string | null> {
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
 
-  if (membership.organizationId === null) return;
+  if (membership.organizationId === null) return "Sessão sem organização. Atualize a página para conferir seu acesso.";
 
-  await supabase.from("central_thresholds").delete().eq("organization_id", membership.organizationId);
+  const { data, error } = await supabase.from("central_thresholds").delete().eq("organization_id", membership.organizationId).select("organization_id");
+
+  if (error !== null) return "Não foi possível confirmar a restauração. Confira os limites antes de tentar novamente.";
+  if (data.length === 0) return "Nada foi removido. Os limites podem ter mudado ou seu acesso foi alterado. Atualize a página para conferir.";
 
   revalidar();
+  return null;
 }

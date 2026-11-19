@@ -7,6 +7,7 @@ import { CampoFoto } from "../../../components/campo-foto";
 import { Icone } from "../../../components/icons";
 import { lojasNaoConcedidas } from "../../../lib/alcance-shopee";
 import { explicar404 } from "../../../lib/api-desatualizada";
+import { lerTokenDeSessao } from "../../../lib/chamar-api";
 import { salvarFoto } from "../../../lib/foto-perfil";
 import { createClient } from "../../../lib/supabase/browser";
 import { LinkDeAcesso } from "./link-de-acesso";
@@ -110,24 +111,29 @@ export function ConvidarUsuario({
       return "Não foi possível confirmar o acesso às lojas Shopee. Confira na gaveta da pessoa.";
     }
 
-    const { data, error } = await createClient()
-      .from("user_shopee_shop_permissions")
-      .select("shopee_shop_id")
-      .eq("user_id", userId)
-      .in("shopee_shop_id", pedidas);
+    try {
+      const { data, error } = await createClient()
+        .from("user_shopee_shop_permissions")
+        .select("shopee_shop_id")
+        .eq("user_id", userId)
+        .in("shopee_shop_id", pedidas);
 
-    if (error !== null) {
+      if (error !== null) {
+        return "Não foi possível confirmar o acesso às lojas Shopee. Confira na gaveta da pessoa.";
+      }
+
+      const faltam = lojasNaoConcedidas(
+        pedidas,
+        data.map((linha) => linha.shopee_shop_id),
+      ).length;
+
+      return faltam === 0
+        ? null
+        : `${String(faltam)} de ${String(pedidas.length)} lojas Shopee não foram concedidas — a API no ar pode ainda não conhecer lojas. Conceda na gaveta da pessoa.`;
+    } catch {
+      // D-745: falha transitória na conferência pós-convite nunca pode descartar o link de uso único.
       return "Não foi possível confirmar o acesso às lojas Shopee. Confira na gaveta da pessoa.";
     }
-
-    const faltam = lojasNaoConcedidas(
-      pedidas,
-      data.map((linha) => linha.shopee_shop_id),
-    ).length;
-
-    return faltam === 0
-      ? null
-      : `${String(faltam)} de ${String(pedidas.length)} lojas Shopee não foram concedidas — a API no ar pode ainda não conhecer lojas. Conceda na gaveta da pessoa.`;
   }
 
   async function convidar(): Promise<void> {
@@ -143,12 +149,10 @@ export function ConvidarUsuario({
 
     setEstado({ kind: "enviando" });
 
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    const sessao = await lerTokenDeSessao();
 
-    if (token === undefined) {
-      setEstado({ kind: "erro", mensagem: "Sessão expirada — atualize a página e entre de novo." });
+    if (!sessao.ok) {
+      setEstado({ kind: "erro", mensagem: sessao.mensagem });
 
       return;
     }
@@ -156,7 +160,7 @@ export function ConvidarUsuario({
     try {
       const response = await fetch(`${API_URL}/v1/organization/invites`, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        headers: { "content-type": "application/json", authorization: `Bearer ${sessao.token}` },
         body: JSON.stringify({
           email: email.trim(),
           fullName: nome.trim().replace(/\s+/g, " "),
@@ -201,11 +205,24 @@ export function ConvidarUsuario({
         return;
       }
 
-      const [fotoErro, lojasAviso] = await Promise.all([enviarFoto(corpo?.userId), conferirLojas(corpo?.userId)]);
+      if (
+        corpo === null ||
+        (corpo.status !== "linked" &&
+          !(corpo.status === "invited" && typeof corpo.inviteLink === "string" && corpo.inviteLink.length > 0))
+      ) {
+        setEstado({
+          kind: "erro",
+          mensagem: "A API respondeu em formato inesperado. Atualize a página e confira se o usuário foi criado.",
+        });
+
+        return;
+      }
+
+      const [fotoErro, lojasAviso] = await Promise.all([enviarFoto(corpo.userId), conferirLojas(corpo.userId)]);
 
       router.refresh();
 
-      if (corpo?.status === "invited" && corpo.inviteLink !== undefined) {
+      if (corpo.status === "invited" && corpo.inviteLink !== undefined) {
         setEstado({ kind: "convidado", link: corpo.inviteLink, fotoErro, lojasAviso });
       } else {
         setEstado({ kind: "vinculado", fotoErro, lojasAviso });

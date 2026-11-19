@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **634** (D-001 a D-766).
+Decisões registradas: **668** (D-001 a D-766).
 
 ## Por domínio
 
-### atendimento (62)
+### atendimento (66)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -80,8 +80,12 @@ Decisões registradas: **634** (D-001 a D-766).
 - **D-658** — Retomada do enfileiramento e autorização única do POST no SAC
 - **D-663** — Retomada da confirmação do SAC após recarregar
 - **D-664** — Cartão de Perguntas lê a primeira mensagem recebida
+- **D-726** — Curadoria trata falhas de transporte e conserva os alvos de Desfazer
+- **D-733** — Sugestões e atendimento tratam falha de transporte e confirmam escrita de status
+- **D-740** — Ações, painel de diagnóstico, vínculo, republicação e quatro gavetas recuperam controles em falha de transporte
+- **D-743** — Copiloto filtra `replenishment_settings`, lê últimas mensagens do SAC e corrige limite/papel
 
-### banco/rls (47)
+### banco/rls (48)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -129,9 +133,10 @@ Decisões registradas: **634** (D-001 a D-766).
 - **D-469** — get_sales_expanded_summary: os pedidos do periodo pelo indice da organizacao e os itens so na faixa de ids deles
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
+- **D-753** — Índice de decisões exige IDs únicos antes de gravar
 - **D-766** — Saída Manual e itens editáveis na conferência, sem migration
 
-### estoque (53)
+### estoque (55)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -184,10 +189,12 @@ Decisões registradas: **634** (D-001 a D-766).
 - **D-695** — A tabela de Reposição abre o detalhe do SKU ao clicar
 - **D-701** — A tabela de Movimentações abre o SKU e a origem ao clicar
 - **D-704** — As exceções por SKU da Configuração de Reposição abrem o SKU ao clicar
+- **D-727** — Regra de reposição conserva a gaveta após falha da ação
+- **D-758** — Ajuste de estoque preserva o formulário quando a ação falha no transporte
 - **D-763** — A reposição mostra o que já está encomendado, sem recalcular a sugestão
 - **D-765** — O envio ao Full conferido dá saída no estoque da loja
 
-### interface (75)
+### interface (76)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -264,8 +271,9 @@ Decisões registradas: **634** (D-001 a D-766).
 - **D-673** — Séries diárias encerram na primeira página quando a contagem confirma o total
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
+- **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
 
-### mercado-livre (127)
+### mercado-livre (130)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -394,8 +402,11 @@ Decisões registradas: **634** (D-001 a D-766).
 - **D-714** — A leitura dos anúncios ML do SKU é completa e conserva a conta do vínculo sem leitura
 - **D-715** — O painel Shopee do SKU lê todos os anúncios em páginas
 - **D-719** — O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
+- **D-734** — Worker separa falha transitória de banco da ausência de conta ou credencial no Mercado Livre
+- **D-741** — Conectores OAuth, SAC e confirmação de aplicação protegem leitura de sessão e JSON de resposta
+- **D-742** — `relist.prepare` grava preflight reprovado atomicamente e retenta falhas transitórias do multiget
 
-### outros (94)
+### outros (105)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -490,6 +501,17 @@ Decisões registradas: **634** (D-001 a D-766).
 - **D-716** — Os diálogos do vínculo Shopee recuperam os controles após falha da ação
 - **D-717** — O popup de Vinculações recupera os controles após falha da ação
 - **D-718** — O diálogo de remover vínculo do SKU recupera os controles após falha da ação
+- **D-728** — Cadastros da Central preservam os campos após falha ou recusa
+- **D-729** — Confirmação de remoção conserva a ação após falha de transporte
+- **D-730** — Remoções da Central conferem erro e linhas afetadas
+- **D-737** — Next.js atualizado de 16.4.1 para 16.4.6 para encerrar os avisos moderados do framework
+- **D-745** — Sessão, flush final do SSE e preservação do link de convite nos sete componentes cliente restantes da web
+- **D-750** — Parse de NF-e grava itens e cabeçalho com a versão da tentativa
+- **D-751** — Parser ERP registra erro apenas para a versão ativa do lote
+- **D-755** — Usuários e o nome do perfil recuperam os controles após falha da ação
+- **D-756** — Contas, Sugestões e visões salvas recuperam os controles após falha da ação
+- **D-757** — Compras e o vínculo de item da NF-e recuperam os controles após falha da ação
+- **D-759** — Ações do fornecedor conservam a edição após falha de transporte
 - **D-762** — A previsão de chegada se edita com histórico
 
 ### processo/docs (1)
@@ -569,7 +591,7 @@ Decisões registradas: **634** (D-001 a D-766).
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
 
-### worker/infra (105)
+### worker/infra (117)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -674,6 +696,18 @@ Decisões registradas: **634** (D-001 a D-766).
 - **D-723** — Fornecedor × SKU é um vínculo explícito, com mínimo, múltiplo e prazo
 - **D-724** — Recebimento parcial baixa só o trânsito do que chegou
 - **D-725** — Importação por cima do pedido de compra: etapa logística, câmbio e custos de chegada
+- **D-731** — Usuários confirma a escrita antes de anunciar mudança de papel ou acesso
+- **D-732** — Notificações e preferências confirmam a escrita antes de anunciar sucesso
+- **D-735** — Confirmação de importação ERP e NF-e exige linha afetada e reverte PARSED se a fila falhar
+- **D-736** — Jobs do worker paginam supressões, candidatos e outcomes acima de 1.000 linhas e memoizam snapshot por SKU
+- **D-738** — Detectores diários do worker paginam RPCs e vínculos além de 1.000 linhas com lotes `.in` de 200
+- **D-744** — Uploads ERP/NF-e compensam falha na fila, validam erro de duplicado, convites deduplicam ids e rotas validam entrada
+- **D-746** — Handlers de parse/apply ERP e NF-e no worker barram `APPLYING`, verificam erros de `DELETE`/`UPDATE` e paginam `document_items`
+- **D-747** — Worker valida os itens conferidos antes de aplicar NF-e
+- **D-748** — Início da leitura de NF-e depende do estado e da versão lidos
+- **D-749** — Início da leitura de ERP depende do estado e da versão do lote
+- **D-752** — ERP publica a conferência completa em uma transação
+- **D-754** — Notificações e preferências recuperam os controles após falha da ação
 - **D-760** — O pedido feito fora do sistema é um pedido de compra comum, com origem e referência externa
 - **D-761** — "Já fiz o pedido" passa pelo caminho canônico e devolve os candidatos a duplicidade em vez de criar
 

@@ -23,7 +23,13 @@ export function AlternarAtivo({ id, ativo }: { id: string; ativo: boolean }): Re
     setErro(null);
 
     startTransition(async () => {
-      const resultado = await definirAtivo(id, novo);
+      let resultado: Awaited<ReturnType<typeof definirAtivo>>;
+      try {
+        resultado = await definirAtivo(id, novo);
+      } catch {
+        setErro("Não foi possível confirmar a alteração. Confira o fornecedor antes de tentar novamente.");
+        return;
+      }
 
       if (!resultado.ok) {
         setErro(resultado.mensagem ?? "Não foi possível alterar o estado.");

@@ -1351,7 +1351,14 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "unauthorized" } }, authorized.status);
     }
 
-    const form = await context.req.parseBody();
+    let form: Awaited<ReturnType<typeof context.req.parseBody>>;
+
+    try {
+      form = await context.req.parseBody();
+    } catch {
+      return context.json({ error: { code: "invalid_payload", message: "corpo multipart inválido" } }, 400);
+    }
+
     const file = form.file;
     const kind = form.kind;
 
@@ -1369,6 +1376,10 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       contentType: file.type,
       body: new Uint8Array(await file.arrayBuffer()),
     });
+
+    if (outcome.status === "error") {
+      return erroInterno(context, dependencies.logger, outcome.reason);
+    }
 
     if (outcome.status === "rejected") {
       return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
@@ -1461,7 +1472,14 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "unauthorized" } }, authorized.status);
     }
 
-    const form = await context.req.parseBody();
+    let form: Awaited<ReturnType<typeof context.req.parseBody>>;
+
+    try {
+      form = await context.req.parseBody();
+    } catch {
+      return context.json({ error: { code: "invalid_payload", message: "corpo multipart inválido" } }, 400);
+    }
+
     const file = form.file;
 
     if (!(file instanceof File)) {
@@ -1473,6 +1491,10 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       contentType: file.type,
       body: new Uint8Array(await file.arrayBuffer()),
     });
+
+    if (outcome.status === "error") {
+      return erroInterno(context, dependencies.logger, outcome.reason);
+    }
 
     if (outcome.status === "rejected") {
       return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
@@ -1678,8 +1700,16 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
         ? body.mlAccountId
         : undefined;
 
-    if (mlAccountId === undefined) {
-      return context.json({ error: { code: "invalid_payload", message: "mlAccountId obrigatório" } }, 400);
+    if (mlAccountId === undefined || !z.uuid().safeParse(mlAccountId).success) {
+      return context.json(
+        {
+          error: {
+            code: "invalid_payload",
+            message: mlAccountId === undefined ? "mlAccountId obrigatório" : "mlAccountId inválido",
+          },
+        },
+        400,
+      );
     }
 
     const outcome = await startConnect(mlAccounts, authorized.caller, mlAccountId);

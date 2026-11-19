@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { factValue, login } from "./helpers.js";
+import { derrubarPrimeiraAcao, factValue, login } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 import { clienteDeServico } from "./loja-shopee-live.js";
 
@@ -18,8 +18,11 @@ import { clienteDeServico } from "./loja-shopee-live.js";
  * manter (docs/TESTING.md secao 3); o vínculo por SKU já é o fluxo humano
  * central da tela.
  */
-test("vincula um item da NF-e a um SKU pela tela de conferência", async ({ page }) => {
+test("vincula um item da NF-e após falha de conexão sem perder o SKU escolhido", async ({ page }) => {
   const seed = await readSeedOutput();
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
 
   await login(page, `/notas-fiscais/${seed.documentId}`);
 
@@ -43,7 +46,19 @@ test("vincula um item da NF-e a um SKU pela tela de conferência", async ({ page
   // O campo também busca pelo NOME do SKU desde o lote 3 do pente fino.
   await page.getByPlaceholder(/Buscar SKU/).fill(seed.skuCode);
   await page.getByRole("button", { name: new RegExp(seed.skuCode) }).click();
-  await page.getByRole("button", { name: "Vincular", exact: true }).click();
+  const vincular = page.getByRole("button", { name: "Vincular", exact: true });
+  const caiu = await derrubarPrimeiraAcao(page);
+  await vincular.click();
+  await expect(page.getByRole("alert").filter({ hasText: "Não foi possível confirmar o vínculo" })).toBeVisible();
+  await expect(vincular).toBeEnabled();
+  await expect(page.getByPlaceholder(/Buscar SKU/)).toHaveValue(seed.skuCode);
+  expect(caiu()).toBe(true);
+  const antes = await db.from("document_items").select("sku_id").eq("id", seed.documentItemId).single();
+  expect(antes.error).toBeNull();
+  expect(antes.data?.sku_id).toBeNull();
+  await expect(factValue(page, "Vinculados")).toHaveText("0");
+
+  await vincular.click();
 
   await expect(page.getByText(seed.skuCode, { exact: true }).first()).toBeVisible();
   await expect(factValue(page, "Vinculados")).toHaveText("1");
@@ -51,6 +66,49 @@ test("vincula um item da NF-e a um SKU pela tela de conferência", async ({ page
   // O item ganha o estado derivado de `sku_id` — os DOIS estados que existem
   // (D-253 mediu: `SUGESTAO` e `CONFLITO` do brief §25 não têm dado).
   await expect(page.getByRole("table")).toContainText("Vinculado");
+});
+
+test("NF-e: falha de conexão ao desvincular mantém o vínculo e permite nova tentativa", async ({ page }) => {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const original = await db.from("document_items").select("sku_id").eq("id", seed.documentItemId).single();
+  const documento = await db.from("documents").select("resolved_items").eq("id", seed.documentId).single();
+  if (original.error !== null) throw new Error(original.error.message);
+  if (documento.error !== null) throw new Error(documento.error.message);
+
+  try {
+    const preparacao = await db.from("document_items").update({ sku_id: seed.skuId }).eq("id", seed.documentItemId);
+    const contador = await db.from("documents").update({ resolved_items: 1 }).eq("id", seed.documentId);
+    expect(preparacao.error).toBeNull();
+    expect(contador.error).toBeNull();
+    await login(page, `/notas-fiscais/${seed.documentId}`);
+    await page.getByRole("button", { name: "Trocar", exact: true }).click();
+    const desvincular = page.getByRole("button", { name: `Desvincular ${seed.skuCode}`, exact: true });
+    const caiu = await derrubarPrimeiraAcao(page);
+    await desvincular.click();
+    await expect(page.getByRole("alert").filter({ hasText: "Não foi possível confirmar a remoção" })).toBeVisible();
+    await expect(desvincular).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Cancelar", exact: true })).toBeEnabled();
+    expect(caiu()).toBe(true);
+    const antes = await db.from("document_items").select("sku_id").eq("id", seed.documentItemId).single();
+    expect(antes.error).toBeNull();
+    expect(antes.data?.sku_id).toBe(seed.skuId);
+    await expect(factValue(page, "Vinculados")).toHaveText("1");
+
+    await desvincular.click();
+    await expect(page.getByRole("button", { name: `Desvincular ${seed.skuCode}`, exact: true })).toHaveCount(0);
+    await expect(factValue(page, "Vinculados")).toHaveText("0");
+    const depois = await db.from("document_items").select("sku_id").eq("id", seed.documentItemId).single();
+    expect(depois.error).toBeNull();
+    expect(depois.data?.sku_id).toBeNull();
+  } finally {
+    const volta = await db.from("document_items").update({ sku_id: original.data.sku_id }).eq("id", seed.documentItemId);
+    const contador = await db.from("documents").update({ resolved_items: documento.data.resolved_items }).eq("id", seed.documentId);
+    expect.soft(volta.error).toBeNull();
+    expect.soft(contador.error).toBeNull();
+  }
 });
 
 /**

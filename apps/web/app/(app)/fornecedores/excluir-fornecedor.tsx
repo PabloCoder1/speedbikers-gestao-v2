@@ -37,7 +37,13 @@ export function ExcluirFornecedor({
     setErro(null);
 
     startTransition(async () => {
-      const resultado = await excluirFornecedor(id);
+      let resultado: Awaited<ReturnType<typeof excluirFornecedor>>;
+      try {
+        resultado = await excluirFornecedor(id);
+      } catch {
+        setErro("Não foi possível confirmar a exclusão. Confira a lista de fornecedores antes de tentar novamente.");
+        return;
+      }
 
       if (!resultado.ok) {
         setErro(resultado.mensagem);

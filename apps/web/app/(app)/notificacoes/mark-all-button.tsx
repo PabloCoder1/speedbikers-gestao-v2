@@ -48,9 +48,17 @@ export function MarkAllButton({
     setBusy(true);
     setError(null);
 
-    const result = await markAllNotificationsRead(scope);
+    let result: Awaited<ReturnType<typeof markAllNotificationsRead>>;
 
-    setBusy(false);
+    try {
+      result = await markAllNotificationsRead(scope);
+    } catch {
+      setError("Não foi possível confirmar a leitura. Tente novamente.");
+
+      return;
+    } finally {
+      setBusy(false);
+    }
 
     if (!result.ok) {
       setError(result.message);

@@ -12,10 +12,10 @@ import {
 } from "@sb/domain";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { lerTokenDeSessao } from "../../../lib/chamar-api";
 import { formatCurrency, formatPercent } from "../../../lib/format";
 import { MARGEM_MINIMA, tomDaMargem } from "../../../lib/faturamento";
 import { lerNumero } from "../../../lib/numero-ptbr";
-import { createClient } from "../../../lib/supabase/browser";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -141,12 +141,10 @@ export function CalculadoraPreco({
       setCotacao({ kind: "cotando" });
 
       void (async () => {
-        const supabase = createClient();
-        const { data } = await supabase.auth.getSession();
-        const token = data.session?.access_token;
+        const sessao = await lerTokenDeSessao("Sessão expirada — atualize a página.");
 
-        if (token === undefined) {
-          if (!cancelada) setCotacao({ kind: "erro", mensagem: "Sessão expirada — atualize a página." });
+        if (!sessao.ok) {
+          if (!cancelada) setCotacao({ kind: "erro", mensagem: sessao.mensagem });
 
           return;
         }
@@ -154,7 +152,7 @@ export function CalculadoraPreco({
         try {
           const resposta = await fetch(`${API_URL}/v1/pricing/ml-shipping-quote`, {
             method: "POST",
-            headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+            headers: { "content-type": "application/json", authorization: `Bearer ${sessao.token}` },
             body: JSON.stringify({
               mlAccountId: pedido[0],
               tipoAnuncio: pedido[1],

@@ -7,6 +7,7 @@ import type { Enqueuer } from "../enqueue.js";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { ceilToHour, fetchOrdersWindow, floorToHour } from "./ml-orders-fetch.js";
+import { resolveMlAccountRead } from "./ml-account-read.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
 
@@ -58,22 +59,28 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
     const { mlAccountId } = parsed.data;
     const now = deps.now?.() ?? new Date();
 
-    const account = await deps.db
+    const accountRead = await deps.db
       .from("ml_accounts")
       .select("id, organization_id, slug, seller_id, status, connected_at, backfill_covered_until")
       .eq("id", mlAccountId)
       .maybeSingle();
 
-    if (account.error !== null || account.data === null) {
-      context.logger.warn("backfill_orders_account_missing", { ml_account_id: mlAccountId });
+    const resolvedAccount = resolveMlAccountRead(accountRead, {
+      logger: context.logger,
+      missingEvent: "backfill_orders_account_missing",
+      mlAccountId,
+    });
 
-      return { status: "done", processed: 0 };
+    if ("outcome" in resolvedAccount) {
+      return resolvedAccount.outcome;
     }
 
+    const account = resolvedAccount.account;
+
     if (
-      account.data.status !== "CONNECTED" ||
-      account.data.seller_id === null ||
-      account.data.connected_at === null
+      account.status !== "CONNECTED" ||
+      account.seller_id === null ||
+      account.connected_at === null
     ) {
       // Desconectada entre o enfileiramento e a execução — corrida benigna,
       // não erro. O backfill não se reenfileira sozinho a partir daqui; uma
@@ -89,7 +96,7 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
       seller_id: sellerId,
       connected_at: connectedAt,
       backfill_covered_until: coveredUntil,
-    } = account.data;
+    } = account;
 
     const connectedAtDate = new Date(connectedAt);
 

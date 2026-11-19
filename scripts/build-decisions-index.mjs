@@ -47,12 +47,18 @@ const conteudo = await readFile(FONTE, "utf8");
 const linhas = conteudo.split("\n");
 
 const decisoes = [];
+const ids = new Set();
 
 for (const linha of linhas) {
   const match = CABECALHO.exec(linha);
 
   if (match !== null) {
     const [, id, titulo] = match;
+    if (ids.has(id)) {
+      console.error(`${FONTE}: ID duplicado ${id}. Resolva a numeração das decisões antes de gerar o índice.`);
+      process.exit(1);
+    }
+    ids.add(id);
     decisoes.push({ id, titulo: titulo.trim(), dominio: inferirDominio(titulo) });
   }
 }
