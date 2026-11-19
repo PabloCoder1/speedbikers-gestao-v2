@@ -20152,7 +20152,23 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 
 **Risco que fica:** a saída manual não tem tela própria de histórico — aparece em `/estoque/movimentacoes` como ajuste manual, linha por linha. A edição de item não guarda o valor lido original no banco (fica no log `document_item_edited` da `api`, com antes e depois).
 
-## D-767 - Um índice único atende a timeline do Full
+## D-767 - A invoice do fornecedor entra pela mesma importação, lida como lista, com preço e documento guardados
+
+**Contexto:** D-764 lê planilhas em matriz (uma coluna de quantidade por pedido). As invoices comerciais, listas de embalagem e proformas do fornecedor são outra forma: uma linha por item, sem título de coluna, com NCM, número do pedido (S/C), código, descrição, quantidade, unidade, preço e valor em dólar, e um cabeçalho com número, data, B/L, contêiner e entrega. Uma das proformas chega em .xls antigo (BIFF8). D-764 descartava o preço e não lia .xls.
+
+**Decisão:** a aba que é invoice é reconhecida pelo conteúdo, não pelo nome: há colunas numéricas em que quantidade × preço = valor em pelo menos duas linhas (tolerância de meio por cento). Quantidade e preço se separam pelo título acima (Quantity / Unit Price), depois pelos decimais. Os outros papéis vêm do conteúdo: 8 dígitos é NCM, PCS/SETS/PRS é unidade, código parecido com o S/C do cabeçalho é a referência, token com dígito e quase sem repetição é o código, o texto mais longo é a descrição. O resto vira observação. O cabeçalho do documento (tipo, número, data, S/C, B/L, contêiner, entrega) é guardado por linha; data só vira ISO quando não é ambígua.
+
+- **Referência:** a coluna do pedido; sem ela, o S/C único do cabeçalho; sem S/C, o número da proforma (a proforma é o pedido); vários S/C sem coluna deixam "a informar". Nunca inventada; o usuário pode trocar o padrão da aba.
+- **Moeda:** USD só com "$" ou "USD" no documento; sem marca, desconhecida.
+- **Lista de embalagem** repete a invoice: quando o arquivo tem aba de invoice, a PL começa desmarcada.
+- **Conferência:** a soma lida é comparada ao TOTAL do documento e a diferença vira aviso (há proforma real cujo TOTAL impresso não fecha com os próprios itens; o sistema não corrige o documento).
+- **.xls:** leitor BIFF8 próprio no navegador (CFB, SST com CONTINUE, LABELSST, NUMBER, RK, MULRK, FORMULA com valor em cache). Arquivo protegido por senha ou BIFF5 é recusado com mensagem.
+
+**Banco** (`20261119120000_importacao_invoices.sql`): `purchase_import_rows` ganha `source_unit_price`, `source_amount`, `source_currency`, `source_unit` e `source_document` (só as chaves conhecidas). Ao gravar, o mesmo SKU da mesma referência é somado num item (a invoice parte o item em várias linhas) em vez de bloquear; o custo unitário só é preenchido com uma moeda e um preço iguais em todas as linhas do SKU, e, ao acrescentar a um pedido existente, só na moeda dele. A pré-visualização mostra quanto do SKU já está no pedido de mesma referência ("já no pedido"), e acrescentar um SKU que já está nele continua recusado (D-761): invoice é embarque do pedido, não pedido novo. A etapa sugerida é "embarcado" quando há B/L ou contêiner, a previsão vem da entrega, e a data do pedido da proforma; a situação continua escolha do usuário. A mesma migration corrige o `'s+'` sem barra de `get_purchase_import_batch`.
+
+**Alternativas rejeitadas:** ler as invoices com a API do Claude -- todas as invoices reais recebidas foram lidas de forma determinística, e um modelo pode inventar referência ou quantidade, o que D-764 proíbe; fica como reserva para um layout que a regra não reconheça. Converter a moeda para real na importação -- o câmbio do dia do pedido não está no documento.
+
+## D-790 - Um índice único atende a timeline do Full
 
 A migration `20261117182500` substitui a constraint unique ASC e o índice da timeline por um índice unique `(ml_account_id, inventory_id, captured_at DESC)`. A captura repetida continua a retornar 23505, e o índice atende à ordem mista usada pelo `DISTINCT ON` do Full. O nome `fulfillment_stock_snapshots_unique` foi preservado. O DDL roda em uma transação com `lock_timeout` de 10 segundos.
 

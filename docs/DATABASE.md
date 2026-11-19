@@ -547,7 +547,7 @@ Migrations `20261117100000_margem_por_sku`, `20261117110000_compras_revisao_rece
 
 RPCs de escrita (`security definer`, na lista versionada de D-182): `create_purchase_order` e `update_purchase_order_draft` (assinaturas novas, parâmetros no fim; a edição tem `p_expected_updated_at`), `receive_purchase_order_items`, `set_purchase_order_stage`, `upsert_purchase_order_cost`/`delete_purchase_order_cost`, `upsert_supplier_sku`/`delete_supplier_sku` e `set_purchase_review_settings`. `receive_purchase_order` e `cancel_purchase_order` passaram a mexer só no trânsito pendente. Leituras (`security invoker`): `get_sku_margins`, `get_purchase_analysis`, `get_purchase_order_landed_cost` e `get_supplier_skus`. Leitura das tabelas novas: ADMIN e GESTOR, como o resto de compras; a preferência, qualquer membro. Índices novos: `ml_sales_lines (sku_id, date_created)` e `purchase_order_items (organization_id, sku_id)`.
 
-### Pedidos já feitos e importação de pedidos anteriores (D-760 a D-764)
+### Pedidos já feitos e importação de pedidos anteriores (D-760 a D-764, D-767)
 
 Migrations `20261118210000_pedidos_ja_feitos.sql` e `20261118211000_importacao_pedidos_anteriores.sql`, empilhadas sobre as de D-720 a D-725. Nenhum controle paralelo de trânsito: o pedido externo é um `purchase_orders` comum e o ENTRADA_TRANSITO continua nascendo só em `mark_purchase_order_ordered`.
 
@@ -557,6 +557,8 @@ Migrations `20261118210000_pedidos_ja_feitos.sql` e `20261118211000_importacao_p
 - **`purchase_import_row_events`**: o antes e o depois de cada correção (append-only).
 
 Leitura das três tabelas: ADMIN e GESTOR pela RLS; escrita direta revogada de `authenticated`, só pelas RPCs. RPCs de escrita (`security definer`, na lista de D-182): `register_placed_purchase_order`, `link_purchase_order_external_reference`, `add_purchase_order_items_placed`, `set_purchase_order_expected_at`, `create_purchase_import_batch`, `resolve_purchase_import_rows` e `commit_purchase_import_group`. Leituras (`security invoker`): `get_open_purchases_for_skus`, `get_purchase_import_batch` e `get_purchase_import_batches`. `get_replenishment_overview` ganhou `p_compra` no fim (assinatura nova: o parâmetro só vai com valor) e as colunas `compra_*` por linha, nulas para quem não lê compras. Uma função `invoker` não alcança o esquema `private`: o teste de papel de `has_org_role` é repetido inline sobre `organization_members`.
+
+**Invoices do fornecedor (D-767)**, migration `20261119120000_importacao_invoices.sql`: `purchase_import_rows` guarda também `source_unit_price`, `source_amount`, `source_currency` (3 letras), `source_unit` e `source_document` (jsonb só com tipo, número, datas, pedidos, B/L, contêiner, entrega e moeda, filtrado por `private.purchase_import_document`). `get_purchase_import_batch` devolve preço, valor, moeda e `jaNoPedido` por linha e o valor e o documento por grupo; `commit_purchase_import_group` soma o mesmo SKU da referência num item e só preenche `unit_cost` com moeda e preço únicos.
 
 ### `domain_events` — o event store
 

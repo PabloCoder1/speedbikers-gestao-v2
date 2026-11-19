@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **677** (D-001 a D-775).
+Decisões registradas: **678** (D-001 a D-790).
 
 ## Por domínio
 
@@ -136,8 +136,8 @@ Decisões registradas: **677** (D-001 a D-775).
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 - **D-753** — Índice de decisões exige IDs únicos antes de gravar
 - **D-766** — Saída Manual e itens editáveis na conferência, sem migration
-- **D-767** — Um índice único atende a timeline do Full
 - **D-769** — Ordem de migrations validada por upgrade incremental
+- **D-790** — Um índice único atende a timeline do Full
 
 ### estoque (55)
 
@@ -410,7 +410,7 @@ Decisões registradas: **677** (D-001 a D-775).
 - **D-742** — `relist.prepare` grava preflight reprovado atomicamente e retenta falhas transitórias do multiget
 - **D-772** — Paginação, fatiamento `.in()` e liberação garantida de trava no estoque Shopee, catálogo ML e hidratação Shopee do worker
 
-### outros (110)
+### outros (111)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -517,6 +517,7 @@ Decisões registradas: **677** (D-001 a D-775).
 - **D-757** — Compras e o vínculo de item da NF-e recuperam os controles após falha da ação
 - **D-759** — Ações do fornecedor conservam a edição após falha de transporte
 - **D-762** — A previsão de chegada se edita com histórico
+- **D-767** — A invoice do fornecedor entra pela mesma importação, lida como lista, com preço e documento guardados
 - **D-768** — Retenção preserva a última execução concluída apesar de falhas posteriores
 - **D-771** — Saída manual e edição de item da NF-e protegem sessão, resposta JSON, lotes `.in` e falhas de transporte na web
 - **D-773** — Clientes HTTP de marketplaces tratam HTTP 200 não-JSON como passageiro, protegem parâmetros de assinatura e cancelam stream em retry

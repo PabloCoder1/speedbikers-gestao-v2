@@ -19,6 +19,13 @@ import {
  * (`resolve_purchase_import_rows`), com o antes e o depois no histórico; a
  * gravação de uma referência vai por `commit_purchase_import_group`, que
  * passa pelo mesmo registro do "já fiz o pedido" (D-761).
+ *
+ * Invoice (D-767): cada linha mostra preço e valor como estavam no documento;
+ * o grupo mostra o total e já traz a data e a entrega da proforma e a etapa
+ * "embarcado" quando a invoice tem B/L ou contêiner — tudo editável, e a
+ * situação continua sendo escolha do usuário. O mesmo SKU em várias linhas é
+ * somado; SKU que já está no pedido da referência é sinalizado, porque o
+ * pedido não aceita o mesmo item duas vezes.
  */
 
 export interface Candidato {
@@ -53,6 +60,24 @@ export interface LinhaLote {
   resolution: "PENDENTE" | "VINCULADA" | "IGNORADA" | "REGISTRADA";
   purchaseOrderId: string | null;
   skuRepetido: boolean;
+  /** D-767. Ausentes enquanto a migration da invoice não chegou ao banco. */
+  unitPrice?: number | null;
+  amount?: number | null;
+  currency?: string | null;
+  unit?: string | null;
+  /** Quanto deste SKU já está no pedido que tem a referência. */
+  jaNoPedido?: number | null;
+}
+
+export interface DocumentoLote {
+  tipo?: "COMERCIAL" | "PROFORMA";
+  numero?: string;
+  data?: string;
+  dataIso?: string;
+  bl?: string;
+  container?: string;
+  entrega?: string;
+  entregaIso?: string;
 }
 
 export interface GrupoLote {
@@ -66,7 +91,11 @@ export interface GrupoLote {
   skuRepetido: number;
   unidades: number;
   abas: string[];
-  pedidoExistente: { id: string; orderNumber: number; status: string; origin: string } | null;
+  jaNoPedido?: number;
+  moeda?: string | null;
+  valor?: number | null;
+  documento?: DocumentoLote | null;
+  pedidoExistente: { id: string; orderNumber: number; status: string; origin: string; currency?: string } | null;
   pedidoRegistrado: { id: string; orderNumber: number; status: string } | null;
 }
 
@@ -76,6 +105,12 @@ const VINCULO: Record<LinhaLote["matchStatus"], string> = {
   AMBIGUA: "ambígua",
   NAO_ENCONTRADA: "não encontrada",
 };
+
+export function formatarDinheiro(valor: number, moeda: string | null | undefined): string {
+  const n = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(valor);
+
+  return moeda === "USD" ? `US$ ${n}` : moeda === "BRL" ? `R$ ${n}` : moeda === null || moeda === undefined ? `${n} (moeda não informada)` : `${moeda} ${n}`;
+}
 
 const VIA: Record<string, string> = {
   CODIGO: "código",
@@ -193,7 +228,16 @@ export function LinhaConferencia({ loteId, linha }: { loteId: string; linha: Lin
         )}
       </td>
       <td>
-        <small className="sb-mono">planilha: {linha.quantityRaw}</small>
+        <small className="sb-mono">
+          planilha: {linha.quantityRaw}
+          {linha.unit !== null && linha.unit !== undefined && ` ${linha.unit}`}
+        </small>
+        {linha.unitPrice !== null && linha.unitPrice !== undefined && (
+          <small className="sb-imp-preco">
+            {formatarDinheiro(linha.unitPrice, linha.currency)}/un
+            {linha.amount !== null && linha.amount !== undefined && ` · ${formatarDinheiro(linha.amount, linha.currency)}`}
+          </small>
+        )}
         {!fechada && (
           <>
             <input
@@ -223,7 +267,12 @@ export function LinhaConferencia({ loteId, linha }: { loteId: string; linha: Lin
             onChange={(e) => { setReferencia(e.target.value); }}
           />
         )}
-        {linha.skuRepetido && <small className="sb-pjf-erro">SKU repetido nesta referência</small>}
+        {linha.skuRepetido && <small className="sb-imp-obs">mesmo SKU em outra linha: as quantidades são somadas</small>}
+        {linha.jaNoPedido !== null && linha.jaNoPedido !== undefined && !fechada && (
+          <small className="sb-pjf-erro">
+            já está no pedido desta referência com {formatCount(linha.jaNoPedido)} un — se for o mesmo item, ignore a linha
+          </small>
+        )}
       </td>
       <td>
         {!fechada && (
@@ -264,11 +313,15 @@ export function GrupoRegistro({
   fornecedores: readonly { id: string; name: string }[];
 }): ReactNode {
   const router = useRouter();
+  const doc = grupo.documento ?? null;
+  const embarcada = doc !== null && (doc.bl !== undefined || doc.container !== undefined);
+  const datasDoDocumento = doc !== null && (doc.entregaIso !== undefined || (doc.tipo === "PROFORMA" && doc.dataIso !== undefined));
   const [situacao, setSituacao] = useState<"" | "PLANEJADO" | "PEDIDO_REALIZADO">("");
   const [fornecedorId, setFornecedorId] = useState("");
-  const [previsao, setPrevisao] = useState("");
-  const [dataPedido, setDataPedido] = useState("");
-  const [etapa, setEtapa] = useState("");
+  // Do documento, editável: a entrega que a proforma promete e a data dela (a da invoice comercial é a do embarque).
+  const [previsao, setPrevisao] = useState(doc?.entregaIso ?? "");
+  const [dataPedido, setDataPedido] = useState(doc?.tipo === "PROFORMA" ? (doc.dataIso ?? "") : "");
+  const [etapa, setEtapa] = useState(embarcada ? "EMBARCADO" : "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [candidatos, setCandidatos] = useState<CandidatoDuplicidade[] | null>(null);
@@ -282,9 +335,7 @@ export function GrupoRegistro({
           : "Nenhuma linha vinculada a um SKU ainda."
         : grupo.quantidadeAConfirmar > 0
           ? `Confirme ${formatCount(grupo.quantidadeAConfirmar)} quantidade(s) antes de registrar.`
-          : grupo.skuRepetido > 0
-            ? "O mesmo SKU aparece mais de uma vez nesta referência: ignore uma linha ou some as quantidades."
-            : null;
+          : null;
 
   async function registrar(confirmarNovo: boolean, pedidoAlvoId: string | null): Promise<void> {
     if (grupo.referencia === null) return;
@@ -350,7 +401,21 @@ export function GrupoRegistro({
         <small>
           {formatCount(grupo.vinculadas)} vinculada(s) · {formatCount(grupo.unidades)} un · {formatCount(grupo.pendentes)} a conferir ·{" "}
           {grupo.abas.join(", ")}
+          {grupo.valor !== null && grupo.valor !== undefined && ` · ${formatarDinheiro(grupo.valor, grupo.moeda)} na invoice`}
         </small>
+        {doc !== null && (
+          <small className="sb-imp-obs">
+            {[
+              doc.numero === undefined ? null : `${doc.tipo === "PROFORMA" ? "Proforma" : "Invoice"} ${doc.numero}`,
+              doc.data === undefined ? null : `de ${doc.data}`,
+              doc.bl === undefined ? null : `B/L ${doc.bl}`,
+              doc.container === undefined ? null : `contêiner ${doc.container}`,
+              doc.entrega === undefined ? null : `entrega prevista ${doc.entrega}`,
+            ]
+              .filter((t) => t !== null)
+              .join(" · ")}
+          </small>
+        )}
         {grupo.pedidoRegistrado !== null && (
           <Link href={`/compras/${grupo.pedidoRegistrado.id}`}>Pedido nº {grupo.pedidoRegistrado.orderNumber}</Link>
         )}
@@ -358,6 +423,8 @@ export function GrupoRegistro({
           <span className="sb-pjf-aviso">
             Já existe o <Link href={`/compras/${grupo.pedidoExistente.id}`}>pedido nº {grupo.pedidoExistente.orderNumber}</Link> com esta referência
             {grupo.pedidoExistente.origin === "INTERNO" ? " (interno)" : ""}.
+            {(grupo.jaNoPedido ?? 0) > 0 &&
+              ` ${formatCount(grupo.jaNoPedido ?? 0)} linha(s) desta invoice são de SKUs que já estão nele: se for o mesmo item, ignore essas linhas; o pedido não aceita o mesmo SKU duas vezes.`}
           </span>
         )}
       </header>
@@ -391,6 +458,13 @@ export function GrupoRegistro({
             <span>Previsão</span>
             <input className="sb-input sb-input-sm" type="date" value={previsao} onChange={(e) => { setPrevisao(e.target.value); }} />
           </label>
+          {(datasDoDocumento || embarcada) && (
+            <small className="sb-imp-obs">
+              {embarcada ? "A invoice tem B/L ou contêiner: a etapa sugerida é “Embarcado”. " : ""}
+              {datasDoDocumento ? "As datas vieram do documento. " : ""}
+              Confira antes de registrar.
+            </small>
+          )}
           {situacao === "PEDIDO_REALIZADO" && (
             <select className="sb-input sb-input-sm" value={etapa} aria-label="Situação logística" onChange={(e) => { setEtapa(e.target.value); }}>
               <option value="">pedido realizado</option>

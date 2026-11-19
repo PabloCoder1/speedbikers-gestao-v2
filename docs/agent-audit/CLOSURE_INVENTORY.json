@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19, integração local e0bedddf + continuidade Gemini D-770–D-775 (73f886e3)",
+  "corte": "2026-11-19, candidato #336 reconciliado com #337 (d3a9debb)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -389,7 +389,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Sentinel/Outros",
-      "evidencia": "O candidato local preserva os IDs de compras e atribui D-767/D-768 ao recorte de banco do #331. PRs/worktrees ainda em revisão",
+      "evidencia": "A integração com #337 preserva D-767 de Compras e atribui D-790 ao índice Full. PRs e worktrees seguem em revisão",
       "fase": 4
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "D-769 validou upgrade incremental local, 1.213 testes de banco, 39 embeds e 15 E2E. CI da base bloqueada no Dev pausado. Falta CI do candidato",
+      "evidencia": "D-769 validou upgrade incremental local, 1.213 testes de banco, 39 embeds e 15 E2E. CI do #336 aprovada em d45ce2e6; #337 reconciliado e upgrade isolado de 323 para 327 versões aprovado. Nova CI em validação; Dev inativo",
       "fase": 5
     },
     {

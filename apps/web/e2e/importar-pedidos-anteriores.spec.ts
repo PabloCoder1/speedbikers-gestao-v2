@@ -45,7 +45,7 @@ test("importar pedidos anteriores: ler, conferir, registrar uma referência e n�
   await page.getByRole("link", { name: "Importar pedidos anteriores" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Importar pedidos anteriores" })).toBeVisible();
 
-  await page.getByLabel("Planilha de pedidos (.xlsx)").setInputFiles({
+  await page.getByLabel("Planilha de pedidos (.xlsx ou .xls)").setInputFiles({
     name: "controle-e2e.xlsx",
     mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     buffer: arquivo,
@@ -93,7 +93,7 @@ test("importar pedidos anteriores: ler, conferir, registrar uma referência e n�
   await page.goto("/compras/importar");
   // Anexar antes da hidratação perde o onChange (navegação completa, não suave).
   await page.waitForLoadState("networkidle");
-  await page.getByLabel("Planilha de pedidos (.xlsx)").setInputFiles({
+  await page.getByLabel("Planilha de pedidos (.xlsx ou .xls)").setInputFiles({
     name: "controle-e2e (copia).xlsx",
     mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     buffer: arquivo,

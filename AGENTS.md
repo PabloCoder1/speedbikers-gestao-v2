@@ -76,6 +76,12 @@ grep -n "^## D-171" -A 40 docs/DECISIONS.md
 - Ao concluir a etapa complexa, avise imediatamente que já podemos voltar
   ao **GPT-6.2 Sol / Médio**.
 
+## Relatório de fechamento do Sentinel
+
+Ao concluir cada rodada, recalcule `node scripts/report-closure-progress.mjs`
+e apresente em tabela os pontos e as entregas concluídos e restantes, com o
+percentual ponderado que falta para finalizar a V3. Registre o corte medido.
+
 ## Antes de commitar
 
 ```bash

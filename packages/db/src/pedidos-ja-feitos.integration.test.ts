@@ -17,7 +17,9 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
  *  7. código ambíguo → não vincula sozinho;
  *  8. pedido interno já existente → candidato a vínculo, sem segundo trânsito;
  *  9. chegada prevista e atraso visíveis, sem recomprar o que já foi pedido;
- * 10. outra organização (e perfil sem acesso a compras) não lê nem escreve.
+ * 10. outra organização (e perfil sem acesso a compras) não lê nem escreve;
+ * 11. invoice do fornecedor (D-767): preço e documento guardados, mesmo SKU
+ *     somado, custo só na moeda certa e SKU que já está no pedido recusado.
  *
  * Organização própria, apagada no fim. Exige o Supabase local no ar.
  */
@@ -651,6 +653,149 @@ describe("Cenário 7 — importação, código ambíguo e planilha repetida", ()
         JSON.stringify([{ skuId: sku["D760-EXT"], quantity: 1 }]),
       ]),
     ).rejects.toThrow(/PLANEJADO ou PEDIDO_REALIZADO/);
+  });
+});
+
+describe("Cenário 11 — invoice do fornecedor (D-767)", () => {
+  const SHA = "b".repeat(64);
+  const DOC = { tipo: "COMERCIAL", numero: "INV-9100-2", data: "Sep 28,2026", dataIso: "2026-09-28", bl: "BLTESTE", container: "CONT123", lixo: "x" };
+  let lote = "";
+  let existente = "";
+  const inv: Record<string, string> = {};
+
+  beforeAll(async () => {
+    const r = await client.query<{ id: string; sku: string }>(
+      `insert into public.skus (organization_id, sku, kind, purchase_cost, created_at)
+       select $1, n, 'PRODUTO', 10, now() from unnest($2::text[]) n
+       on conflict on constraint skus_org_key_unique do update set sku = excluded.sku
+       returning id, sku`,
+      [ORG, ["D766-A", "D766-B"]],
+    );
+
+    for (const row of r.rows) inv[row.sku] = row.id;
+
+    // O pedido JS9100 já existe, em dólar, com 100 un do A.
+    const p = await one<{ r: Registro }>(
+      ADMIN,
+      `select public.register_placed_purchase_order(
+         p_organization_id => $1, p_request_id => gen_random_uuid(), p_items => $2::jsonb, p_situacao => 'PEDIDO_REALIZADO',
+         p_external_reference => 'JS9100', p_currency => 'USD', p_confirm_new => true) as r`,
+      [ORG, JSON.stringify([{ skuId: inv["D766-A"], quantity: 100 }])],
+    );
+
+    existente = p.r.pedido?.id ?? "";
+  });
+
+  const linha = (row: number, code: string, qty: number, ref: string, price: number | null, extra: Record<string, unknown> = {}) => ({
+    sheet: "INV", row, column: "G", code, ncm: "87141000", description: `ITEM ${code}`, quantityRaw: String(qty), quantity: qty,
+    quantityNeedsConfirmation: false, reference: ref, unitPrice: price, amount: price === null ? null : Math.round(qty * price * 100) / 100,
+    currency: "USD", unit: "PCS", document: DOC, ...extra,
+  });
+
+  it("guarda preço, valor, moeda, unidade e o documento — só as chaves conhecidas", async () => {
+    const linhas = [
+      // Referência em minúsculas e com espaço: a mesma do pedido JS9100.
+      linha(19, "D766-A", 80, "js 9100", 1.06),
+      // O mesmo item partido em duas linhas (80 + 20), mesmo preço.
+      linha(20, "D766-B", 80, "js 9100", 0.91),
+      linha(21, "D766-B", 20, "js 9100", 0.91),
+      // Outro pedido: o mesmo SKU com dois preços — o custo não é escolhido.
+      linha(22, "D766-B", 50, "JS9200", 1.3),
+      linha(23, "D766-B", 10, "JS9200", 1.5, { currency: "usd", unitPrice: "abc", unit: " " }),
+    ];
+    const r = await one<{ r: { batchId: string } }>(
+      ADMIN,
+      "select public.create_purchase_import_batch($1, 'INV-9100-2.xlsx', $2, array['INV'], $3::jsonb) as r",
+      [ORG, SHA, JSON.stringify(linhas)],
+    );
+
+    lote = r.r.batchId;
+
+    const rows = await client.query<{ row_number: number; source_unit_price: string | null; source_amount: string | null; source_currency: string | null; source_unit: string | null; source_document: Record<string, string> | null }>(
+      "select row_number, source_unit_price::text, source_amount::text, source_currency, source_unit, source_document from public.purchase_import_rows where batch_id = $1 order by row_number",
+      [lote],
+    );
+
+    expect(rows.rows[0]).toMatchObject({ source_unit_price: "1.0600", source_amount: "84.80", source_currency: "USD", source_unit: "PCS" });
+    expect(rows.rows[0]?.source_document).toEqual({
+      tipo: "COMERCIAL", numero: "INV-9100-2", data: "Sep 28,2026", dataIso: "2026-09-28", bl: "BLTESTE", container: "CONT123",
+    });
+    // Preço que não é número não vira preço; moeda em minúsculas é normalizada; unidade vazia some.
+    expect(rows.rows[4]).toMatchObject({ source_unit_price: null, source_currency: "USD", source_unit: null });
+  });
+
+  it("a pré-visualização acha o pedido existente pela referência e mostra o que já está nele", async () => {
+    const v = await one<{ v: { resumo: Record<string, number>; grupos: Record<string, unknown>[]; linhas: Record<string, unknown>[] } }>(
+      ADMIN,
+      "select public.get_purchase_import_batch($1) as v",
+      [lote],
+    );
+    const g = v.v.grupos.find((x) => x.referenciaKey === "JS9100");
+
+    expect(g).toMatchObject({ pedidoExistente: { id: existente, currency: "USD" }, jaNoPedido: 1, moeda: "USD", skuRepetido: 2 });
+    expect(Number(g?.valor)).toBeCloseTo(84.8 + 72.8 + 18.2, 2);
+    expect((g?.documento as Record<string, string>).numero).toBe("INV-9100-2");
+    expect(v.v.resumo.ja_no_pedido).toBe(1);
+    expect(v.v.linhas.find((l) => l.row === 19)).toMatchObject({ jaNoPedido: 100, unitPrice: 1.06, currency: "USD", unit: "PCS" });
+    expect(v.v.linhas.find((l) => l.row === 20)?.jaNoPedido).toBeNull();
+  });
+
+  it("acrescentar ao pedido: SKU que já está nele é recusado; o resto entra somado, com custo em dólar", async () => {
+    const commit = (ref: string, alvo: string | null) =>
+      asUser<{ r: Registro }>(
+        ADMIN,
+        "select public.commit_purchase_import_group($1, $2, 'PEDIDO_REALIZADO', p_confirm_new => true, p_target_order_id => $3) as r",
+        [lote, ref, alvo],
+      );
+
+    await expect(commit("js 9100", existente)).rejects.toThrow(/ja esta neste pedido/);
+
+    const a = await client.query<{ id: string }>("select id from public.purchase_import_rows where batch_id = $1 and row_number = 19", [lote]);
+
+    await asUser(ADMIN, "select public.resolve_purchase_import_rows($1, $2::jsonb)", [lote, JSON.stringify([{ rowId: a.rows[0]?.id, resolution: "IGNORADA" }])]);
+
+    const transitoAntes = await transito(inv["D766-B"] ?? "");
+    const r = (await commit("js 9100", existente))[0]?.r;
+
+    expect(r?.resultado).toBe("ACRESCENTADO");
+
+    const itens = await client.query<{ sku_id: string; quantity_ordered: string; unit_cost: string | null }>(
+      "select sku_id, quantity_ordered::text, unit_cost::text from public.purchase_order_items where purchase_order_id = $1 order by position",
+      [existente],
+    );
+
+    expect(itens.rows).toEqual([
+      { sku_id: inv["D766-A"], quantity_ordered: "100.000", unit_cost: null },
+      { sku_id: inv["D766-B"], quantity_ordered: "100.000", unit_cost: "0.9100" },
+    ]);
+    // 80 + 20 entram uma vez, num item só.
+    expect((await transito(inv["D766-B"] ?? "")) - transitoAntes).toBe(100);
+
+    const registradas = await client.query<{ n: number }>(
+      "select count(*)::int as n from public.purchase_import_rows where batch_id = $1 and resolution = 'REGISTRADA' and purchase_order_item_id is not null",
+      [lote],
+    );
+
+    expect(registradas.rows[0]?.n).toBe(2);
+  });
+
+  it("pedido novo: moeda do documento; SKU com dois preços fica sem custo", async () => {
+    const r = await one<{ r: Registro }>(
+      ADMIN,
+      "select public.commit_purchase_import_group($1, 'JS9200', 'PEDIDO_REALIZADO', p_confirm_new => true) as r",
+      [lote],
+    );
+
+    expect(r.r.resultado).toBe("CRIADO");
+
+    const po = await client.query<{ currency: string; quantity_ordered: string; unit_cost: string | null }>(
+      `select o.currency, i.quantity_ordered::text, i.unit_cost::text
+       from public.purchase_orders o join public.purchase_order_items i on i.purchase_order_id = o.id
+       where o.id = $1`,
+      [r.r.pedido?.id],
+    );
+
+    expect(po.rows).toEqual([{ currency: "USD", quantity_ordered: "60.000", unit_cost: null }]);
   });
 });
 

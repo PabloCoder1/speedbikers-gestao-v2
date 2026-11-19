@@ -213,7 +213,7 @@ Operação estável exige monitoramento externo, backups restauráveis e rotina 
 | M05 | Integrações dos marketplaces: Recuperação do atraso e diagnóstico ML 403 | Backend | 5 | Em andamento | MIGRATION_PLAN §3.9; SQL/externo ainda por validar | 1 |
 | D01 | Banco de dados: Schema, ledger, RLS e agregação SQL do núcleo | Database | 8 | Publicado | supabase/migrations até main; DATABASE | 3 |
 | D02 | Banco de dados: Migrations Sentinel transacionais, segurança e consultas | Sentinel/Database | 5 | Testado localmente | 12 migrations em diff origin/main; integração registrada | 3 |
-| D03 | Banco de dados: R3/R5: retenção de job_runs e índice Full | Database | 3 | Testado localmente | D-767/D-768, migrations 17182500/17182600, 1.212 testes de banco | 3 |
+| D03 | Banco de dados: R3/R5: retenção de job_runs e índice Full | Database | 3 | Testado localmente | D-790/D-768, migrations 17182500/17182600, 1.212 testes de banco | 3 |
 | D04 | Banco de dados: R1/R2/R4: compactação e retenções com política aprovada | Database/Dono | 3 | Não iniciado | OPTIMIZATION_PLAN; não apagar negócio | 3 |
 | D05 | Banco de dados: Inventário e medição física; comparação de provedores | Database/Sentinel | 2 | Testado localmente | SIZE_REPORT: dump 22/10 restaurado 1092 MB; preços oficiais | 2 |
 | I01 | Google Cloud e infraestrutura: Run, Tasks, Scheduler e rede de produção provisionados | Infra | 8 | Publicado | Em 19/11, 18 agendamentos habilitados e dois com último código 14. Revisões Run mantidas | 2 |
@@ -236,9 +236,9 @@ Operação estável exige monitoramento externo, backups restauráveis e rotina 
 | Q04 | Testes e qualidade: Ensaio completo negócio→dados após recuperação | Dono/QA | 5 | Bloqueado | Pedidos/estoque/faturamento/SAC e importação; requer ambiente recuperado | 5 |
 | L01 | Limpeza técnica: Branches obsoletas verificadas e removidas | Sentinel | 3 | Testado localmente | BRANCH_AUDIT:106exclusões;24refs atuais | 4 |
 | L02 | Limpeza técnica: Código sem consumidor e exports desnecessários | Sentinel | 2 | Testado localmente | A24/A25;3helpers e32exports; consumidores indiretos preservados | 4 |
-| L03 | Limpeza técnica: PRs/worktrees remanescentes e colisões documentais | Sentinel/Outros | 3 | Em andamento | IDs de compras preservados. Recorte #331 usa D-767/D-768 no candidato local | 4 |
+| L03 | Limpeza técnica: PRs/worktrees remanescentes e colisões documentais | Sentinel/Outros | 3 | Em andamento | D-767 de Compras preservada. Índice Full no #331 passa a D-790 no candidato | 4 |
 | L04 | Limpeza técnica: Recursos de nuvem candidatos com dependência e rollback | Infra | 2 | Em andamento | Nenhuma exclusão autorizada; revisões não custam runtime sem tráfego/min | 4 |
-| V01 | Publicação e validação: CI de compras, Gemini/Codex Sentinel e banco no conjunto final | Sentinel/QA | 5 | Em andamento | Candidato local com as duas migrations revistas do #331. Falta CI remota | 5 |
+| V01 | Publicação e validação: CI de compras, Gemini/Codex Sentinel e banco no conjunto final | Sentinel/QA | 5 | Em andamento | CI verde em d45ce2e6. Upgrade local 323→327 após #337 aprovado; falta CI do novo corte e timestamps em Dev | 5 |
 | V02 | Publicação e validação: Migrations, worker, API e web no SHA aprovado | Dono/Infra | 8 | Bloqueado | #333 registra as 17 versões da main na VM. Workflow ainda no hosted. Publicação conjunta pendente | 5 |
 | V03 | Publicação e validação: Aceite operacional e observação de estabilidade pós-deploy | Dono/QA | 8 | Não iniciado | janela e limites de erro/atraso acordar; não basta /health | 5 |
 
