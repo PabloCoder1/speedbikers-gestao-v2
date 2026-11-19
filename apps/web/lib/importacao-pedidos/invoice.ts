@@ -14,7 +14,8 @@ import { indiceDaColuna, type Aba, type Celula } from "./xlsx";
  * PRS" é unidade, código repetido que aparece no "S/C NO." do cabeçalho é o
  * pedido, código curto e único é o SKU, o texto mais longo é a descrição.
  *
- * Nada é inventado: sem "$"/USD no documento, a moeda fica desconhecida; data
+ * Nada é inventado: sem "$"/USD no texto nem no formato numérico das células
+ * ("$#,##0.00"), a moeda fica desconhecida; data
  * que não dá para ler sem ambiguidade fica só como texto; linha sem pedido
  * herda o pedido do cabeçalho apenas quando o cabeçalho tem UM pedido.
  */
@@ -173,12 +174,15 @@ export function lerDocumento(aba: Aba, ateLinha: number, nomeArquivo = ""): Docu
   let entrega: string | null = null;
   let tipo: TipoDocumento | null = /proforma|^pi[-_ ]/i.test(nomeArquivo) ? "PROFORMA" : null;
   let moeda: string | null = null;
+  // A moeda que só a formatação mostra: vale quando o texto não diz nenhuma.
+  let moedaDoFormato: string | null = null;
 
   for (const [n, linha] of linhasOrdenadas(aba)) {
     for (const [coluna, celula] of linha) {
       const t = textoLimpo(celula);
 
       if (t === "") continue;
+      if (celula.moeda !== undefined) moedaDoFormato ??= celula.moeda;
       if (/\b(us\s*\$|usd)\b|\$/i.test(t)) moeda = "USD";
       if (/commercial\s+invoice/i.test(t)) tipo = "COMERCIAL";
       else if (tipo === null && /proforma|sales\s+confirmation/i.test(t)) tipo = "PROFORMA";
@@ -236,7 +240,7 @@ export function lerDocumento(aba: Aba, ateLinha: number, nomeArquivo = ""): Docu
     container: corta(container, 40),
     entrega: corta(entrega, 40),
     entregaIso: entrega === null ? null : lerData(entrega),
-    moeda,
+    moeda: moeda ?? moedaDoFormato,
   };
 }
 
