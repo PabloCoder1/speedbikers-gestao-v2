@@ -508,13 +508,13 @@ z robusto = (frete − mediana) ÷ (1,4826 × desvio absoluto mediano); com desv
 
 ## 5N. Ranking de produtos (D-402) — DEFINIDAS E IMPLEMENTADAS
 
-> A tela `/central/produtos` ordena os produtos vendidos no período por receita, resultado, margem, volume, frete, prejuízo, crescimento ou queda de margem, contra o período anterior da central (5I). Tudo sai de `get_ranking_produtos`; as frases do resumo são montadas em `apps/web/lib/ranking-produtos.ts` só com os números da RPC.
+> A tela `/central/produtos` ordena os produtos vendidos no período por receita, resultado, margem, volume, frete, prejuízo, crescimento ou queda de margem, contra o período anterior da central (5I). A ordenação e o resumo saem de `get_ranking_produtos`; as frases do resumo são montadas em `apps/web/lib/ranking-produtos.ts` só com os números da RPC.
 
 **Os números de cada produto são os de `get_faturamento` (5F):** receita bruta, comissão, frete do vendedor, custo na data da venda; resultado e margem só nos pedidos cobertos (frete observado, custo conhecido, uma linha de item). Imposto por SKU só quando todo pedido coberto dele tem alíquota (5K). **Ads por produto não existe** na API (D-363).
 
 **Quem entra em cada ordem:** receita e volume, todo SKU vendido; lucro e menor margem, os com resultado; maior margem, 3 pedidos cobertos ou mais; frete, os com frete; prejuízo, resultado < 0; crescimento, 5 pedidos ou mais nos dois períodos; queda de margem, 5 cobertos nos dois e margem menor que antes.
 
-Na tabela, “na margem” indica a receita e a comissão usadas no cálculo quando só parte dos pedidos está coberta. A variação de receita continua usando a receita bruta total.
+Na tabela, “na margem do ranking” indica a receita e a comissão usadas nessa margem quando só parte dos pedidos está coberta. A variação de receita usa a receita bruta total. A coluna **Margem de venda** consulta os SKUs da página em `get_sku_margins` (5X), com o período e a conta do Ranking no Mercado Livre, em janelas de até 366 dias.
 
 | ID | Nome | Fórmula | Ressalva obrigatória na tela |
 |---|---|---|---|

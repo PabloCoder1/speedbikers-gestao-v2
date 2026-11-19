@@ -412,6 +412,12 @@ test("/central/produtos: abre da central com o mesmo recorte, e a ordem mora na 
   const lista = page.getByRole("region", { name: "Maior faturamento" });
 
   await expect(lista).toBeVisible();
+  const margemVenda = lista.getByRole("columnheader", { name: "Margem de venda", exact: true });
+  await expect(margemVenda).toBeVisible();
+  await expect(lista.getByRole("columnheader", { name: "Margem do ranking", exact: true })).toBeVisible();
+  await expect(lista.getByText("Não foi possível carregar a margem de venda.")).toHaveCount(0);
+  const colunaMargem = await margemVenda.evaluate((th) => (th as HTMLTableCellElement).cellIndex);
+  await expect(lista.locator("tbody tr").first().getByRole("cell").nth(colunaMargem)).toContainText("—");
   await expect(lista.locator("tbody tr").first()).toBeVisible();
   await expect(lista.locator("tbody tr").first().getByRole("link")).toHaveAttribute("href", /^\/skus\//);
 
