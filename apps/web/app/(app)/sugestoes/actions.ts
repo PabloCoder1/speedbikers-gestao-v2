@@ -36,6 +36,10 @@ export async function createSuggestion(originalText: string): Promise<Suggestion
     currentMembership(supabase),
   ]);
 
+  if (membershipResult.error !== null) {
+    return { ok: false, message: "Não foi possível confirmar sua organização — tente de novo." };
+  }
+
   const userId = authResult.data.user?.id;
   const organizationId = membershipResult.organizationId;
 

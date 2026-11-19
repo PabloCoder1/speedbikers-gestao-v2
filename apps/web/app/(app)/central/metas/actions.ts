@@ -57,12 +57,16 @@ function traduzir(error: { message: string; code?: string }): ResultadoDoCadastr
     return { ...SEM_ERRO, mensagem: "O banco recusou o valor: confira os campos." };
   }
 
-  return { ...SEM_ERRO, mensagem: `Não foi possível salvar: ${error.message}` };
+  return { ...SEM_ERRO, mensagem: "Não foi possível salvar. Tente novamente." };
 }
 
 export async function salvarMeta(_anterior: ResultadoDoCadastro, formData: FormData): Promise<ResultadoDoCadastro> {
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
+
+  if (membership.error !== null) {
+    return { ...SEM_ERRO, mensagem: "Não foi possível confirmar sua organização — tente de novo." };
+  }
 
   if (membership.organizationId === null) return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
 
@@ -100,6 +104,10 @@ export async function salvarMetaDoMarketplace(
 ): Promise<ResultadoDoCadastro> {
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
+
+  if (membership.error !== null) {
+    return { ...SEM_ERRO, mensagem: "Não foi possível confirmar sua organização — tente de novo." };
+  }
 
   if (membership.organizationId === null) return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
 
@@ -149,6 +157,10 @@ export async function salvarMetaDoMarketplace(
 export async function salvarAliquota(_anterior: ResultadoDoCadastro, formData: FormData): Promise<ResultadoDoCadastro> {
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
+
+  if (membership.error !== null) {
+    return { ...SEM_ERRO, mensagem: "Não foi possível confirmar sua organização — tente de novo." };
+  }
 
   if (membership.organizationId === null) return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
 

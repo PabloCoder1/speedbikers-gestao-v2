@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { termoSeguroParaOr, valorLiteralParaOr } from "./postgrest-search";
+import { escaparIlike, termoSeguroParaOr, valorLiteralParaOr } from "./postgrest-search";
 
 describe("termoSeguroParaOr", () => {
   it("tira o que quebra o or= do PostgREST ou muda o padrão do ilike", () => {
@@ -16,5 +16,12 @@ describe("termoSeguroParaOr", () => {
 describe("valorLiteralParaOr", () => {
   it("preserva pontuação da marca e escapa aspas e barras invertidas", () => {
     expect(valorLiteralParaOr('MARCA, (NACIONAL)."A"\\B')).toBe('"MARCA, (NACIONAL).\\"A\\"\\\\B"');
+  });
+});
+
+describe("escaparIlike", () => {
+  it("escapa barra invertida, porcentagem e sublinhado sem alterar texto comum", () => {
+    expect(escaparIlike("PNEU_29_100%\\X")).toBe("PNEU\\_29\\_100\\%\\\\X");
+    expect(escaparIlike("SB-001")).toBe("SB-001");
   });
 });

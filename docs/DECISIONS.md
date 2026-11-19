@@ -20253,3 +20253,14 @@ Três inconsistências confirmadas em `apps/api/src`:
 3. **Inteiro inseguro ou zero no callback OAuth Shopee (`app.ts`):** `/oauth/shopee/callback` convertia `shop_id` e `main_account_id` apenas com `/^[0-9]+$/ ? Number(valor)`, aceitando `0` ou números acima de `Number.MAX_SAFE_INTEGER` (perda silenciosa de precisão). Agora exige `Number.isSafeInteger(parsed) && parsed > 0`.
 
 Reprodução pré-correção em `order-financials-backfill.test.ts`, `order-user-products-backfill.test.ts` e `app.test.ts` registrou 7 falhas (`7 failed | 115 passed (122)`); após a correção, `@sb/api` passou integralmente em `typecheck`, `eslint` e `vitest` (`43` arquivos / `566` testes).
+
+## D-778 - Autorização no servidor em `claimAction`, fail-closed em Server Actions/Caixa de Entrada e escape de curingas `ILIKE`
+
+Cinco defeitos confirmados em Server Actions e páginas de `apps/web` (fora do escopo de `/compras`/`/reposicao`/`/importacoes`):
+
+1. **`claimAction` aceitava `userId` arbitrário do cliente (`apps/web/app/(app)/acoes/actions.ts` e `action-card.tsx`):** ao contrário de `assignToMe` no atendimento, `claimAction(id, userId)` repassava o `userId` vindo do navegador direto para `update_action_status(p_assignee_id)`, permitindo atribuir ações a outro membro da organização. Agora `claimAction(id)` deriva o responsável exclusivamente de `supabase.auth.getUser()` no servidor.
+2. **`assignToMe` ignorava erro de banco ao ler `support_cases` (`apps/web/app/(app)/atendimento/actions.ts`):** erro em `current.error` fazia `promote` virar `false` silenciosamente e assumia casos em `NOVO` sem promovê-los para `EM_ATENDIMENTO`. Agora falha fechado retornando erro amigável antes da RPC.
+3. **Separação de falha de organização/SKU e eliminação de vazamento de erro cru do Postgres:** `atendimento/conhecimento/actions.ts`, `atendimento/templates/actions.ts`, `central/limites/actions.ts`, `central/metas/actions.ts`, `sugestoes/actions.ts`, `skus/[skuId]/actions.ts` e `acoes/page.tsx` agora distinguem erro transitório em `currentMembership` ou consulta de `skus` de "sessão expirada"/"sem organização"/"SKU não encontrado", e não expõem `error.message` cru do Postgres à interface.
+4. **Escape literal de `ILIKE` e fail-closed em falha de contas na Caixa de Entrada (`apps/web/lib/postgrest-search.ts` e `apps/web/app/(app)/atendimento/page.tsx`):** `escaparIlike` neutraliza `\`, `%` e `_` na busca de SKU, e quando `?account=` está ativo mas `ml_accounts` falha, a tela não dispara `casosDaBusca` nem `casesQuery` sem o filtro de conta.
+
+Reprodução pré-correção em `lib/server-actions-seguranca.test.ts` registrou 6 falhas (`6 failed (6)`); após a correção, `@sb/web` passou integralmente em `typecheck`, `eslint`, `vitest` (`149` arquivos / `1.562` testes) e nas 7 guardas estáticas.

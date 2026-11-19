@@ -277,7 +277,7 @@ export function ActionCard({ action, userId }: { action: ActionCardData; userId:
                 type="button"
                 disabled={busy}
                 onClick={() => {
-                  void run(() => claimAction(action.id, userId), "em_andamento", userId);
+                  void run(() => claimAction(action.id), "em_andamento", userId);
                 }}
               >
                 {emCurso === "em_andamento" ? "Assumindo…" : "Assumir"}

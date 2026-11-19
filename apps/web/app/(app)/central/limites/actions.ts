@@ -25,6 +25,10 @@ export async function salvarLimites(_anterior: ResultadoDoCadastro, formData: Fo
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
 
+  if (membership.error !== null) {
+    return { ...SEM_ERRO, mensagem: "Não foi possível confirmar sua organização — tente de novo." };
+  }
+
   if (membership.organizationId === null) return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
 
   const lido = lerFormularioDosLimites((nome) => {
@@ -45,7 +49,7 @@ export async function salvarLimites(_anterior: ResultadoDoCadastro, formData: Fo
     if (error.code === "42501") return { ...SEM_ERRO, mensagem: "Sem permissão: só ADMIN e GESTOR mudam os limites." };
     if (error.code === "23514") return { ...SEM_ERRO, mensagem: "O banco recusou os valores: confira os campos." };
 
-    return { ...SEM_ERRO, mensagem: `Não foi possível salvar: ${error.message}` };
+    return { ...SEM_ERRO, mensagem: "Não foi possível salvar os limites. Tente novamente." };
   }
 
   if (data.length === 0) return { ...SEM_ERRO, mensagem: "Os limites não foram gravados: você não tem permissão." };
@@ -60,6 +64,7 @@ export async function voltarAosPadroes(): Promise<string | null> {
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
 
+  if (membership.error !== null) return "Não foi possível confirmar sua organização — tente de novo.";
   if (membership.organizationId === null) return "Sessão sem organização. Atualize a página para conferir seu acesso.";
 
   const { data, error } = await supabase.from("central_thresholds").delete().eq("organization_id", membership.organizationId).select("organization_id");

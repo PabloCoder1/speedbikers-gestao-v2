@@ -34,9 +34,26 @@ async function updateStatus(id: string, status: string, assigneeId?: string): Pr
   return { ok: true, message: null };
 }
 
-/** "Assumir": em_andamento + eu como responsável — uma ação só, não duas chamadas. */
-export async function claimAction(id: string, userId: string): Promise<ActionResult> {
-  return updateStatus(id, "em_andamento", userId);
+/**
+ * "Assumir": em_andamento + eu como responsável — uma ação só, não duas chamadas.
+ * D-778: o responsável é derivado da sessão no servidor (`auth.getUser()`), nunca
+ * de parâmetro vindo do navegador (mesma regra de `assignToMe` no atendimento).
+ */
+export async function claimAction(id: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+
+  if (authError !== null) {
+    return {
+      ok: false,
+      message:
+        authError.status === 401 || authError.status === 403 || authError.name === "AuthSessionMissingError"
+          ? "Sessão expirada — atualize a página e tente de novo."
+          : "Não foi possível confirmar sua sessão — tente de novo.",
+    };
+  }
+
+  return updateStatus(id, "em_andamento", auth.user.id);
 }
 
 export async function resolveAction(id: string): Promise<ActionResult> {
