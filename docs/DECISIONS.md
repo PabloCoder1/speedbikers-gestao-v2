@@ -20264,3 +20264,13 @@ Cinco defeitos confirmados em Server Actions e páginas de `apps/web` (fora do e
 4. **Escape literal de `ILIKE` e fail-closed em falha de contas na Caixa de Entrada (`apps/web/lib/postgrest-search.ts` e `apps/web/app/(app)/atendimento/page.tsx`):** `escaparIlike` neutraliza `\`, `%` e `_` na busca de SKU, e quando `?account=` está ativo mas `ml_accounts` falha, a tela não dispara `casosDaBusca` nem `casesQuery` sem o filtro de conta.
 
 Reprodução pré-correção em `lib/server-actions-seguranca.test.ts` registrou 6 falhas (`6 failed (6)`); após a correção, `@sb/web` passou integralmente em `typecheck`, `eslint`, `vitest` (`149` arquivos / `1.562` testes) e nas 7 guardas estáticas.
+
+## D-779 - Logger estruturado redige `message`, protege referências circulares e serializa `Error` em qualquer profundidade
+
+Três falhas confirmadas em `packages/observability/src/logger.ts`:
+
+1. **`message` sem redação de segredos:** `write()` redigia apenas os campos de `context`, deixando `message` passar cru para `JSON.stringify` (vazando tokens `APP_USR-`, `sk-ant-`, JWT ou DSN com senha se interpolados no texto do evento). Agora `message` passa por `redactSecretText(message, "[REDACTED]")`.
+2. **Referência circular causava `RangeError: Maximum call stack size exceeded`:** `redactValue()` descia em objetos e arrays sem rastrear ancestrais visitados. Agora usa `WeakSet` por caminho (preservando objetos compartilhados em DAG e substituindo ciclos reais por `"[Circular]"`).
+3. **`Error` fora da chave raiz `error` virava `{}` vazio:** `serializeError` só era chamado para `combined.error`. Agora qualquer `Error` encontrado em profundidade (incluindo `cause` e elementos de array) é serializado com `name`, `message`, `stack` e `cause` redigidos, e `Date` vira ISO string.
+
+Reprodução pré-correção em `packages/observability/src/logger.test.ts` registrou 3 falhas (`3 failed | 35 passed (38)`); após a correção, `@sb/observability` passou integralmente em `build`, `typecheck`, `eslint` e `vitest` (`3` arquivos / `38` testes).

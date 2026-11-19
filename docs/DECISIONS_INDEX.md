@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **680** (D-001 a D-778).
+Decisões registradas: **681** (D-001 a D-779).
 
 ## Por domínio
 
@@ -411,7 +411,7 @@ Decisões registradas: **680** (D-001 a D-778).
 - **D-772** — Paginação, fatiamento `.in()` e liberação garantida de trava no estoque Shopee, catálogo ML e hidratação Shopee do worker
 - **D-776** — Captura de estoque Full fatia `.in(inventory_id)` em lotes de 100 e elimina varredura histórica completa de `fulfillment_stock_snapshots`
 
-### outros (112)
+### outros (113)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -525,6 +525,7 @@ Decisões registradas: **680** (D-001 a D-778).
 - **D-775** — Autenticação da API recusa múltiplas organizações e separa 503 de 401/403; OIDC exige `email_verified`; unlock de `shopee.orders.sync` protegido no `finally`
 - **D-777** — Backfills internos respondem 503 em erro de banco, rotas D-766 usam `erroInterno` com `request_id` e callback Shopee exige inteiro seguro positivo
 - **D-778** — Autorização no servidor em `claimAction`, fail-closed em Server Actions/Caixa de Entrada e escape de curingas `ILIKE`
+- **D-779** — Logger estruturado redige `message`, protege referências circulares e serializa `Error` em qualquer profundidade
 
 ### processo/docs (1)
 
