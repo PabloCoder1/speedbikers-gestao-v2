@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **674** (D-001 a D-772).
+Decisões registradas: **675** (D-001 a D-773).
 
 ## Por domínio
 
@@ -410,7 +410,7 @@ Decisões registradas: **674** (D-001 a D-772).
 - **D-742** — `relist.prepare` grava preflight reprovado atomicamente e retenta falhas transitórias do multiget
 - **D-772** — Paginação, fatiamento `.in()` e liberação garantida de trava no estoque Shopee, catálogo ML e hidratação Shopee do worker
 
-### outros (107)
+### outros (108)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -519,6 +519,7 @@ Decisões registradas: **674** (D-001 a D-772).
 - **D-762** — A previsão de chegada se edita com histórico
 - **D-768** — Retenção preserva a última execução concluída apesar de falhas posteriores
 - **D-771** — Saída manual e edição de item da NF-e protegem sessão, resposta JSON, lotes `.in` e falhas de transporte na web
+- **D-773** — Clientes HTTP de marketplaces tratam HTTP 200 não-JSON como passageiro, protegem parâmetros de assinatura e cancelam stream em retry
 
 ### processo/docs (1)
 

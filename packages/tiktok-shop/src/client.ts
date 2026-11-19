@@ -42,7 +42,10 @@ export class TikTokShopApiError extends Error {
   readonly requestId: string | null;
   readonly errorClass: TikTokShopErrorClass;
 
-  constructor(message: string, options: { status: number; code: number | null; requestId: string | null }) {
+  constructor(
+    message: string,
+    options: { status: number; code: number | null; requestId: string | null; errorClass?: TikTokShopErrorClass },
+  ) {
     super(message);
     this.name = "TikTokShopApiError";
     this.status = options.status;
@@ -51,7 +54,7 @@ export class TikTokShopApiError extends Error {
     const passageiro =
       options.status === 429 || options.status >= 500 || (options.code !== null && CODIGOS_PASSAGEIROS.has(options.code));
 
-    this.errorClass = passageiro ? "retryable" : "not_retryable";
+    this.errorClass = options.errorClass ?? (passageiro ? "retryable" : "not_retryable");
   }
 }
 
@@ -98,19 +101,27 @@ const envelopeSchema = z.object({
   data: z.unknown().optional(),
 });
 
-async function lerEnvelope(response: Response): Promise<z.infer<typeof envelopeSchema>> {
-  const corpo: unknown = await response.json().catch(() => null);
+async function lerEnvelope(response: Response): Promise<{ envelope: z.infer<typeof envelopeSchema>; jsonValido: boolean }> {
+  let corpo: unknown;
+
+  try {
+    corpo = await response.json();
+  } catch {
+    return { envelope: {}, jsonValido: false };
+  }
+
   const lido = envelopeSchema.safeParse(corpo);
 
-  return lido.success ? lido.data : {};
+  return { envelope: lido.success ? lido.data : {}, jsonValido: true };
 }
 
 function erroDe(
   response: Response,
-  envelope: z.infer<typeof envelopeSchema>,
+  leitura: { envelope: z.infer<typeof envelopeSchema>; jsonValido: boolean },
   method: string,
   path: string,
 ): TikTokShopApiError | null {
+  const { envelope, jsonValido } = leitura;
   const code = envelope.code ?? null;
 
   if (response.ok && code === 0) return null;
@@ -118,6 +129,13 @@ function erroDe(
   // A mensagem leva o método e o CAMINHO, nunca a URL: a query carrega a
   // assinatura e, no token, o `app_secret`.
   const detalhe = envelope.message === undefined || envelope.message === "" ? "." : `: ${envelope.message}`;
+
+  if (response.ok && !jsonValido) {
+    return new TikTokShopApiError(
+      `TikTok Shop respondeu ${String(response.status)} com corpo não-JSON para ${method} ${path}.`,
+      { status: response.status, code: null, requestId: null, errorClass: "retryable" },
+    );
+  }
 
   return new TikTokShopApiError(
     `TikTok Shop respondeu ${String(response.status)}${code === null ? "" : ` (${String(code)})`} para ${method} ${path}${detalhe}`,
@@ -157,27 +175,28 @@ export function createTikTokShopClient(config: TikTokShopClientConfig): TikTokSh
         signal: timeout(),
       });
 
-      const envelope = await lerEnvelope(response);
-      const erro = erroDe(response, envelope, request.method, request.path);
+      const leitura = await lerEnvelope(response);
+      const erro = erroDe(response, leitura, request.method, request.path);
 
       if (erro !== null) throw erro;
 
-      return request.schema.parse(envelope.data);
+      return request.schema.parse(leitura.envelope.data);
     },
     async requestToken<T>(path: string, params: Readonly<Record<string, string>>, schema: z.ZodType<T>): Promise<T> {
       const url = new URL(`${TIKTOK_SHOP_HOSTS.token}${path}`);
 
+      for (const [chave, valor] of Object.entries(params)) url.searchParams.set(chave, valor);
+      // Credenciais do app prevalecem sobre qualquer chave vinda de `params`.
       url.searchParams.set("app_key", config.appKey);
       url.searchParams.set("app_secret", config.appSecret);
-      for (const [chave, valor] of Object.entries(params)) url.searchParams.set(chave, valor);
 
       const response = await fetchImpl(url, { method: "GET", signal: timeout() });
-      const envelope = await lerEnvelope(response);
-      const erro = erroDe(response, envelope, "GET", path);
+      const leitura = await lerEnvelope(response);
+      const erro = erroDe(response, leitura, "GET", path);
 
       if (erro !== null) throw erro;
 
-      return schema.parse(envelope.data);
+      return schema.parse(leitura.envelope.data);
     },
   };
 }
