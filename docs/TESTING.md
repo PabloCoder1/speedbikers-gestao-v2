@@ -51,7 +51,7 @@ Ao liberar um caminho público, o teste prova que **apenas** aquele caminho foi 
 
 ## 3. Ferramentas
 
-Na CI, `scripts/isolate-supabase.mjs` escolhe um bloco de portas livre e um
+Na CI, `scripts/isolate-supabase.mjs` verifica as portas publicadas pelo Docker e testa os sockets locais antes de escolher um bloco de portas e um
 `project_id` por run/job/tentativa antes de subir a stack. `SUPABASE_DB_URL`
 e `DB_URL` recebem a URL emitida por `supabase status`, sem pressupor 54322.
 Localmente, execute o script só numa worktree própria com config padrão e
