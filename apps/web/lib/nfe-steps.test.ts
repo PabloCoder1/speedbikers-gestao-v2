@@ -39,11 +39,8 @@ describe("etapas do processo de NF-e (D-277)", () => {
     expect(semDirecao.at(-1)?.label).toBe("Movimento no estoque");
   });
 
-  /**
-   * Envio ao Full é transferência: desenhar uma baixa pendente prometeria um
-   * movimento que não vem (D-352).
-   */
-  it("envio ao Full não promete baixa nenhuma", () => {
+  /** D-765: o envio ao Full sai da loja -- a quarta etapa é a baixa, como nas outras saídas. */
+  it("envio ao Full tem a baixa no estoque como última etapa", () => {
     const etapas = nfeEtapas({
       ...base,
       status: "PARSED",
@@ -52,7 +49,7 @@ describe("etapas do processo de NF-e (D-277)", () => {
       tipo: "ENVIO_FULL_ML_PDF",
     });
 
-    expect(etapas.at(-1)).toEqual({ label: "Sem baixa: transferência (D-352)", estado: "pendente" });
+    expect(etapas.at(-1)).toEqual({ label: "Baixa no estoque", estado: "pendente" });
   });
 
   it("UPLOADED: a leitura está na fila, e diz isso", () => {

@@ -276,11 +276,10 @@ describe("saída por documento não fiscal (D-375)", () => {
   });
 
   /**
-   * A regra que a frente do Full pediu: o envio ao Full é TRANSFERÊNCIA. Gravar
-   * como saída faria a unidade desaparecer do sistema — o documento fica
-   * conferido e a baixa espera D-352.
+   * D-765: a venda do Full não baixa a loja (D-352); quem baixa é o envio. A
+   * mercadoria sai da loja como saída por documento — nota nenhuma foi emitida.
    */
-  it("envio ao Full NÃO gera movimento: volta para conferência com o motivo", async () => {
+  it("envio ao Full baixa a loja como SAIDA_DOCUMENTO e fica APPLIED", async () => {
     const { deps, captured, lines } = fakeDeps({
       operationType: "SAIDA",
       documentType: "ENVIO_FULL_ML_PDF",
@@ -288,10 +287,9 @@ describe("saída por documento não fiscal (D-375)", () => {
 
     const outcome = await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
 
-    expect(outcome).toMatchObject({ status: "failed", retryable: false });
-    expect(captured.movements).toHaveLength(0);
-    expect(captured.documentUpdates.at(-1)).toMatchObject({ status: "PARSED" });
-    expect(String(captured.documentUpdates.at(-1)?.last_error)).toContain("transferência");
+    expect(outcome).toMatchObject({ status: "done" });
+    expect(captured.movements[0]).toMatchObject({ movement_type: "SAIDA_DOCUMENTO", qty_delta: -19 });
+    expect(captured.documentUpdates.at(-1)).toMatchObject({ status: "APPLIED" });
   });
 
   it("nota de venda feita pelo marketplace NÃO gera movimento: FAILED com o código (D-497)", async () => {

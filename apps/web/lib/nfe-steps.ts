@@ -50,7 +50,7 @@ export function nfeEtapas(input: {
   resolvedItems: number | null;
   /** `ENTRADA` | `SAIDA` — nulo enquanto a leitura não terminou (D-375). */
   direcao?: string | null;
-  /** O layout lido (D-375): o envio ao Full não tem quarta etapa. */
+  /** O layout lido (D-375). Desde D-765 o envio ao Full baixa como os outros. */
   tipo?: string | null;
   /**
    * D-612: a nota recusada POR REGRA na leitura (a venda ou a devolução do
@@ -128,13 +128,8 @@ export function nfeEtapas(input: {
     { label: "Envio do arquivo", estado: "concluida" },
     leitura,
     conferencia,
-    /*
-      O envio ao Full é transferência, não saída: ele NÃO tem quarta etapa, e
-      desenhar uma pendente prometeria uma baixa que não vem (D-375/D-352).
-    */
-    ...(input.tipo === "ENVIO_FULL_ML_PDF"
-      ? [{ label: "Sem baixa: transferência (D-352)", estado: "pendente" as const }]
-      : [entrada]),
+    // D-765: o envio ao Full baixa a loja como qualquer saída -- quarta etapa normal.
+    entrada,
   ];
 
   if (status !== "CANCELLED") return etapas;

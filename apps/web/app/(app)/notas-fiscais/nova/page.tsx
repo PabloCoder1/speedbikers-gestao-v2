@@ -54,10 +54,10 @@ const FORMATOS: readonly {
   },
   {
     titulo: "Envio ao Full (Mercado Livre)",
-    etiqueta: "Sem baixa por ora",
-    tom: "neutro",
+    etiqueta: "Saída",
+    tom: "saida",
     icone: "caminhao",
-    texto: "Lido e conferido, sem baixa: envio ao Full é transferência, não saída (D-352).",
+    texto: "Sai do estoque da loja rumo ao Full; a venda do Full depois não baixa de novo.",
   },
 ];
 

@@ -280,19 +280,14 @@ export async function confirmNfeApply(
     return { status: "rejected", reason: `documento em ${document.data.status}, não está pronto para aplicação` };
   }
 
-  if (document.data.document_type === "ENVIO_FULL_ML_PDF") {
-    /*
-      Envio ao Full é TRANSFERÊNCIA, não saída: a mercadoria continua nossa, no
-      centro do Mercado Livre. Gravar como saída simples faria a unidade
-      desaparecer do sistema. O documento é lido e conferido; aplicar espera o
-      desenho do Full (D-352).
-    */
-    return {
-      status: "rejected",
-      reason:
-        "envio ao Full é transferência, não saída — o documento fica conferido, mas a baixa espera o desenho do Full (D-352)",
-    };
-  }
+  /*
+    D-765: o envio ao Full SAI do estoque da loja. Desde D-352 a venda entregue
+    pelo Full não baixa a loja (ganha o ESTORNO_FULL); a unidade que vai para o
+    galpão do Mercado Livre precisa sair da loja aqui, no envio, senão a loja
+    fica com saldo de mercadoria que já não está nela. O Full continua espelho
+    (`fulfillment_stock_snapshots`, D-018): a unidade não some, aparece lá.
+    É o "Importar Arquivo FULL" da Saída Manual do UpSeller.
+  */
 
   /*
     D-497: a nota de venda (ou de devolução de venda) feita pelo Mercado Livre

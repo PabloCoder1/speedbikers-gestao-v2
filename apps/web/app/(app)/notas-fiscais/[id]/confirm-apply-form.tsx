@@ -20,10 +20,16 @@ export function ConfirmApplyForm({
   documentId,
   totalItems,
   resolvedItems,
+  unidades,
+  direcao,
 }: {
   documentId: string;
   totalItems: number;
   resolvedItems: number;
+  /** Soma das quantidades dos itens: o que entra ou sai da loja. */
+  unidades: number;
+  /** `ENTRADA` | `SAIDA` (D-375): o botão diz o que vai acontecer, como no UpSeller. */
+  direcao: string | null;
 }): ReactNode {
   const router = useRouter();
 
@@ -31,6 +37,15 @@ export function ConfirmApplyForm({
   const [error, setError] = useState<string | null>(null);
 
   const ready = totalItems > 0 && resolvedItems === totalItems;
+  const rotulo =
+    direcao === "SAIDA" ? "Confirmar e dar saída" : direcao === "ENTRADA" ? "Confirmar e dar entrada" : "Confirmar aplicação";
+  const quantas = `${unidades.toLocaleString("pt-BR")} unidade${unidades === 1 ? "" : "s"}`;
+  const efeito =
+    direcao === "SAIDA"
+      ? `${unidades === 1 ? "Sai" : "Saem"} ${quantas} do estoque da loja.`
+      : direcao === "ENTRADA"
+        ? `${unidades === 1 ? "Entra" : "Entram"} ${quantas} no estoque da loja.`
+        : "Confirmar gera os movimentos de estoque deste documento.";
 
   async function confirm(): Promise<void> {
     setBusy(true);
@@ -88,10 +103,7 @@ export function ConfirmApplyForm({
         {ready ? (
           <>
             <b>Tudo vinculado — {totalItems} de {totalItems} itens.</b>
-            <span>
-              Confirmar gera os movimentos de estoque deste documento. Isto não pode ser desfeito com um novo envio do
-              mesmo arquivo.
-            </span>
+            <span>{efeito} Isto não pode ser desfeito com um novo envio do mesmo arquivo.</span>
           </>
         ) : (
           <>
@@ -116,7 +128,7 @@ export function ConfirmApplyForm({
         }}
         disabled={busy || !ready}
       >
-        {busy ? "Confirmando…" : "Confirmar aplicação"}
+        {busy ? "Confirmando…" : rotulo}
       </button>
     </div>
   );

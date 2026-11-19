@@ -179,14 +179,11 @@ describe("próximo passo", () => {
     });
   });
 
-  /**
-   * A regra combinada com a frente do Full: envio ao Full é TRANSFERÊNCIA, e a
-   * tela não pode oferecer "aplicar" para algo que a `api` vai recusar (D-352).
-   */
-  it("envio ao Full não oferece baixa, mesmo conferido", () => {
+  /** D-765: o envio ao Full conferido sai da loja como qualquer saída. */
+  it("envio ao Full conferido oferece a baixa", () => {
     const linha = { ...base, resolved_items: 4, document_type: "ENVIO_FULL_ML_PDF" };
 
-    expect(proximoPassoDoDocumento(linha)).toEqual({ texto: "Full · sem baixa", tom: "neutro" });
+    expect(proximoPassoDoDocumento(linha)).toEqual({ texto: "Conferido · aplicar", tom: "ok" });
   });
 
   it("documento lido sem nenhum item é problema, não conferência vazia", () => {
