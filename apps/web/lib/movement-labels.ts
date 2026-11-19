@@ -22,6 +22,7 @@ const MOVEMENT_TYPE_LABELS: Readonly<Record<string, string>> = {
   LIBERACAO_RESERVA: "Liberação de reserva",
   ENTRADA_TRANSITO: "Entrada em trânsito (compra)",
   RECEBIMENTO_TRANSITO: "Recebimento do trânsito",
+  ENTRADA_COMPRA: "Entrada de compra (recebimento)",
   // D-351: a venda anterior à planilha do UpSeller é gravada e anulada por este
   // par — o ERP já a tinha descontado.
   ESTORNO_PRE_CAPTURA: "Estorno de venda anterior à planilha (UpSeller)",

@@ -9,6 +9,8 @@ import { LOGISTICS_STAGE } from "../../../../../lib/labels";
 import {
   buscarSkus,
   corrigirLinhasImportacao,
+  criarSkusDaImportacao,
+  type ResultadoCriarSkus,
   registrarReferenciaImportada,
   type CandidatoDuplicidade,
   type ResultadoRegistro,
@@ -163,6 +165,35 @@ export function LinhaConferencia({ loteId, linha }: { loteId: string; linha: Lin
     setAchados(await buscarSkus(busca));
   }
 
+  // D-792: o produto que ainda não existe nasce com o código e o nome da invoice.
+  async function criarSku(): Promise<void> {
+    setBusy(true);
+    setErro(null);
+
+    const r = await criarSkusDaImportacao(loteId, [linha.id]);
+
+    setBusy(false);
+
+    if (!r.ok) {
+      setErro(r.message);
+
+      return;
+    }
+
+    const parecido = r.parecidos?.[0];
+
+    if (parecido !== undefined) {
+      setErro(`Já existe ${parecido.parecido} no catálogo, parecido com ${parecido.code}: se for o mesmo produto, busque e vincule.`);
+      setBusca(parecido.parecido.split(",")[0]?.trim() ?? "");
+
+      return;
+    }
+
+    router.refresh();
+  }
+
+  const podeCriar = !fechada && linha.skuId === null && linha.resolution !== "IGNORADA" && (linha.code ?? "").trim() !== "";
+
   return (
     <tr className={`sb-imp-linha sb-imp-${linha.resolution.toLowerCase()}`}>
       <td className="sb-mono">
@@ -224,6 +255,17 @@ export function LinhaConferencia({ loteId, linha }: { loteId: string; linha: Lin
                 Buscar
               </button>
             </span>
+            {podeCriar && (
+              <button
+                type="button"
+                className="sb-button sb-button-sm"
+                disabled={busy}
+                title="Cria o produto no catálogo com o código, o nome e o NCM desta linha"
+                onClick={() => void criarSku()}
+              >
+                Criar SKU {linha.code}
+              </button>
+            )}
           </>
         )}
       </td>
@@ -298,6 +340,69 @@ export function LinhaConferencia({ loteId, linha }: { loteId: string; linha: Lin
         )}
       </td>
     </tr>
+  );
+}
+
+/**
+ * D-792: cria de uma vez o SKU de todas as linhas NÃO ENCONTRADAS do lote, com
+ * o código e o nome da invoice. Código parecido com um do catálogo (KC30 ×
+ * KC0030) não é criado: volta na lista para o usuário vincular pela busca.
+ */
+export function CriarSkusDoLote({ loteId, naoEncontradas }: { loteId: string; naoEncontradas: number }): ReactNode {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [resultado, setResultado] = useState<ResultadoCriarSkus | null>(null);
+
+  if (naoEncontradas === 0 && resultado === null) return null;
+
+  async function criar(): Promise<void> {
+    setBusy(true);
+
+    const r = await criarSkusDaImportacao(loteId, []);
+
+    setBusy(false);
+    setResultado(r);
+    if (r.ok) router.refresh();
+  }
+
+  const parecidos = resultado?.parecidos ?? [];
+
+  return (
+    <div className="sb-imp-criar-skus">
+      {naoEncontradas > 0 && (
+        <p>
+          <b>{formatCount(naoEncontradas)} linha(s) com produto que não existe no catálogo.</b> Crie o SKU com o código e o nome
+          que a invoice trouxe, ou vincule cada uma a um SKU existente na tabela abaixo.{" "}
+          <button type="button" className="sb-button sb-button-sm sb-button-primary" disabled={busy} onClick={() => void criar()}>
+            {busy ? "Criando…" : `Criar SKU das ${formatCount(naoEncontradas)} não encontradas`}
+          </button>
+        </p>
+      )}
+      {resultado !== null && !resultado.ok && (
+        <p className="sb-pjf-erro" role="alert">
+          {resultado.message}
+        </p>
+      )}
+      {resultado?.ok === true && (
+        <p role="status">
+          {formatCount(resultado.criados ?? 0)} SKU(s) criados e {formatCount(resultado.vinculados ?? 0)} linha(s) vinculadas.
+          {(resultado.semCodigo ?? 0) > 0 && ` ${formatCount(resultado.semCodigo ?? 0)} linha(s) sem código ficaram para vincular à mão.`}
+        </p>
+      )}
+      {parecidos.length > 0 && (
+        <div className="sb-pjf-erro" role="alert">
+          {formatCount(parecidos.length)} código(s) parecidos com um SKU do catálogo não foram criados — se for o mesmo produto,
+          vincule pela busca na linha:
+          <ul>
+            {parecidos.map((p) => (
+              <li key={p.rowId}>
+                <span className="sb-mono">{p.code}</span> → já existe <span className="sb-mono">{p.parecido}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
