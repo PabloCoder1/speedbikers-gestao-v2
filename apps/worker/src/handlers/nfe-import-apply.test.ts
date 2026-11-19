@@ -31,6 +31,7 @@ function fakeDeps(options: {
   documentMissing?: boolean;
   items?: { position: number; sku_id: string | null; quantity: number; cfop?: string | null }[];
   movementInsertFails?: boolean;
+  finalUpdateFails?: boolean;
   intermediaryCnpj?: string | null;
 }): { deps: NfeApplyDeps; captured: Captured; lines: string[] } {
   const captured: Captured = { documentUpdates: [], movements: [] };
@@ -71,7 +72,15 @@ function fakeDeps(options: {
           update: (values: Record<string, unknown>) => {
             captured.documentUpdates.push(values);
 
-            return { eq: () => Promise.resolve({ error: null }) };
+            return {
+              eq: () =>
+                Promise.resolve({
+                  error:
+                    options.finalUpdateFails === true && values.status === "APPLIED"
+                      ? { message: "connection reset" }
+                      : null,
+                }),
+            };
           },
         };
       }
@@ -80,7 +89,16 @@ function fakeDeps(options: {
         return {
           select: () => ({
             eq: () => ({
-              order: () => Promise.resolve({ data: items, error: null }),
+              order: () => {
+                // Simula o teto max_rows = 1000 do PostgREST quando não há `.range()`.
+                const defaultPromise = Promise.resolve({ data: items.slice(0, 1000), error: null });
+
+                return {
+                  range: (from: number, to: number) =>
+                    Promise.resolve({ data: items.slice(from, to + 1), error: null }),
+                  then: defaultPromise.then.bind(defaultPromise),
+                };
+              },
             }),
           }),
         };
@@ -329,5 +347,29 @@ describe("saída por documento não fiscal (D-375)", () => {
     await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
 
     expect(captured.movements[0]).toMatchObject({ occurred_at: "2026-09-17T09:00:00.000Z" });
+  });
+
+  it("D-746: falha ao gravar status APPLIED retorna retryable em vez de done", async () => {
+    const { deps, lines } = fakeDeps({ finalUpdateFails: true });
+
+    const outcome = await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "connection reset" });
+    expect(lines.join()).not.toContain("nfe_apply_finished");
+  });
+
+  it("D-746: pagina document_items além de 1.000 itens sem truncar silenciosamente", async () => {
+    const manyItems = Array.from({ length: 1_005 }, (_, index) => ({
+      position: index,
+      sku_id: `sku-${String(index)}`,
+      quantity: 1,
+      cfop: "1102",
+    }));
+    const { deps, captured, lines } = fakeDeps({ items: manyItems });
+
+    const outcome = await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1_005 });
+    expect(captured.movements).toHaveLength(1_005);
   });
 });

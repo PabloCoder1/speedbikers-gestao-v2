@@ -19991,3 +19991,14 @@ Fecha o inventário de leituras diretas de `supabase.auth.getSession()` fora de 
 4. **Leitura segura de sessão em `usuarios/reemitir-link.tsx`, `faturamento/calculadora-preco.tsx`, `importacoes/nova/upload-form.tsx` e `notas-fiscais/nova/upload-form.tsx`:** todos passam a reutilizar `lerTokenDeSessao` (`apps/web/lib/chamar-api.ts`), eliminando travamento de botões/estado ocupado em falha do cliente Auth.
 
 Validação local: contratos novos em `apps/web/lib/copilot-sse.test.ts` (3) e `apps/web/lib/chamar-api.test.ts` (4) + `@sb/web` completo em `typecheck`, `eslint` e `vitest` (`142` arquivos / `1.501` testes).
+
+## D-746 - Handlers de parse/apply ERP e NF-e no worker barram `APPLYING`, verificam erros de `DELETE`/`UPDATE` e paginam `document_items`
+
+Quatro defeitos de consistência e tratamento silencioso de erro confirmados nos handlers de importação do worker (`apps/worker/src/handlers/`):
+
+1. **Reentrega tardia de parse podia sobrescrever `APPLYING` e apagar staging/itens vinculados (`erp-import-parse.ts` e `nfe-import-parse.ts`):** ambos recusavam apenas `status === "APPLIED"`, permitindo que um job atrasado de `erp.import.parse` ou `nfe.import.parse` executasse durante `APPLYING`, apagasse `erp_import_rows`/`erp_stock_snapshots` ou `document_items` (incluindo vínculos humanos de SKU) e voltasse o registro para `PARSING`. Agora ambos recusam também `APPLYING` (`retryable: false`).
+2. **Erros nos `DELETE` de limpeza e na transição para `PARSING` eram ignorados (`erp-import-parse.ts` e `nfe-import-parse.ts`):** falhas transitórias ao marcar `PARSING` ou limpar staging/itens antes de reinserir prosseguiam em silêncio e podiam colidir na inserção ou corromper a reexecução. Agora retornam `{ status: "failed", retryable: true }`.
+3. **Falha transitória nas gravações finais de status ou `markRows` encerrava como `done` (`erp-import-parse.ts`, `erp-import-apply.ts` e `nfe-import-apply.ts`):** se o `UPDATE` final (`status = 'PARSED'` ou `status = 'APPLIED'`) ou `markRows` (`erp_import_rows.apply_status`) falhasse no banco, o worker registrava sucesso e devolvia `{ status: "done" }`, deixando o lote ou documento preso para sempre em `PARSING`/`APPLYING`. Agora todas essas escritas conferem `.error !== null` e devolvem `{ status: "failed", retryable: true }`.
+4. **Leitura de `document_items` sem paginação em `nfe-import-apply.ts`:** trocada por `readAllPages` ordenado por `position`, eliminando truncamento silencioso acima de 1.000 itens sem custo extra quando há menos de 1.000 linhas.
+
+Reprodução pré-correção em `erp-import-parse.test.ts`, `erp-import-apply.test.ts`, `nfe-import-parse.test.ts` e `nfe-import-apply.test.ts` registrou 9 falhas (`9 failed | 72 passed (81)`); após a correção, `@sb/worker` passou integralmente em `typecheck`, `eslint` e `vitest` (`68` arquivos / `1.061` testes).

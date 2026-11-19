@@ -97,10 +97,14 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       return { status: "failed", retryable: false, reason: `documento ${documentId} não existe` };
     }
 
-    if (document.data.status === "APPLIED") {
-      // Reprocessar um documento já aplicado reescreveria a conferência que
-      // sustentou a decisão humana — mesma regra de erp_import_batches.
-      return { status: "failed", retryable: false, reason: "documento já aplicado" };
+    if (document.data.status === "APPLIED" || document.data.status === "APPLYING") {
+      // Reprocessar um documento em aplicação ou já aplicado apagaria os itens
+      // já vinculados e reescreveria a conferência humana (D-746).
+      return {
+        status: "failed",
+        retryable: false,
+        reason: document.data.status === "APPLIED" ? "documento já aplicado" : "documento já em aplicação",
+      };
     }
 
     // CNPJ da própria organização decide ENTRADA/SAIDA (não `ide/tpNF`
@@ -129,7 +133,11 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
     const storagePath = document.data.storage_path;
     const ehPdf = storagePath.toLowerCase().endsWith(".pdf");
 
-    await deps.db.from("documents").update({ status: "PARSING" }).eq("id", documentId);
+    const parsing = await deps.db.from("documents").update({ status: "PARSING" }).eq("id", documentId);
+
+    if (parsing.error !== null) {
+      return { status: "failed", retryable: true, reason: parsing.error.message };
+    }
 
     let arquivo: unknown;
 
@@ -224,7 +232,11 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
 
     // Idempotência: o job pode ser reentregue. Limpar antes de inserir faz a
     // reexecução começar do zero em vez de colidir com a chave única.
-    await deps.db.from("document_items").delete().eq("document_id", documentId);
+    const cleared = await deps.db.from("document_items").delete().eq("document_id", documentId);
+
+    if (cleared.error !== null) {
+      return { status: "failed", retryable: true, reason: cleared.error.message };
+    }
 
     /*
       `document_items.position` é ZERO-based desde o parser do XML (D-053), e é

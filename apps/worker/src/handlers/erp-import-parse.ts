@@ -163,13 +163,21 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
       return { status: "failed", retryable: false, reason: `lote ${batchId} não existe` };
     }
 
-    if (batch.data.status === "APPLIED") {
-      // Reprocessar um lote já aplicado reescreveria a conferência que
-      // sustentou a decisão humana.
-      return { status: "failed", retryable: false, reason: "lote já aplicado" };
+    if (batch.data.status === "APPLIED" || batch.data.status === "APPLYING") {
+      // Reprocessar um lote em aplicação ou já aplicado apagaria/reescreveria a
+      // conferência que sustentou a decisão humana (D-746).
+      return {
+        status: "failed",
+        retryable: false,
+        reason: batch.data.status === "APPLIED" ? "lote já aplicado" : "lote já em aplicação",
+      };
     }
 
-    await deps.db.from("erp_import_batches").update({ status: "PARSING" }).eq("id", batchId);
+    const parsing = await deps.db.from("erp_import_batches").update({ status: "PARSING" }).eq("id", batchId);
+
+    if (parsing.error !== null) {
+      return { status: "failed", retryable: true, reason: parsing.error.message };
+    }
 
     let sheet: readonly (readonly unknown[])[];
 
@@ -207,8 +215,17 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
 
     // Idempotência: o job pode ser reentregue. Limpar antes de inserir faz a
     // reexecução começar do zero em vez de colidir com a chave única.
-    await deps.db.from("erp_import_rows").delete().eq("batch_id", batchId);
-    await deps.db.from("erp_stock_snapshots").delete().eq("batch_id", batchId);
+    const clearedRows = await deps.db.from("erp_import_rows").delete().eq("batch_id", batchId);
+
+    if (clearedRows.error !== null) {
+      return { status: "failed", retryable: true, reason: clearedRows.error.message };
+    }
+
+    const clearedSnapshots = await deps.db.from("erp_stock_snapshots").delete().eq("batch_id", batchId);
+
+    if (clearedSnapshots.error !== null) {
+      return { status: "failed", retryable: true, reason: clearedSnapshots.error.message };
+    }
 
     for (let start = 0; start < rows.length; start += CHUNK) {
       const chunk = rows.slice(start, start + CHUNK);
@@ -229,7 +246,7 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
       invalid_rows: rows.filter((r) => r.status === "INVALID").length,
     };
 
-    await deps.db
+    const finished = await deps.db
       .from("erp_import_batches")
       .update({
         ...counts,
@@ -238,6 +255,10 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
         last_error: null,
       })
       .eq("id", batchId);
+
+    if (finished.error !== null) {
+      return { status: "failed", retryable: true, reason: finished.error.message };
+    }
 
     context.logger.info("erp_parse_finished", { batch_id: batchId, ...counts });
 

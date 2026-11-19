@@ -65,6 +65,7 @@ function fakeDeps(options: {
   pdf?: Uint8Array;
   /** O erro que o banco devolve a um `update`, decidido pelos valores gravados. */
   updateError?: (values: Record<string, unknown>) => { code: string; message: string } | null;
+  deleteFails?: boolean;
 }): { deps: NfeParseDeps; captured: Captured; lines: string[] } {
   const captured: Captured = { updates: [], inserted: [], deletedTables: [] };
   const lines: string[] = [];
@@ -107,7 +108,9 @@ function fakeDeps(options: {
       delete: () => {
         captured.deletedTables.push(table);
 
-        return { eq: () => Promise.resolve({ error: null }) };
+        return {
+          eq: () => Promise.resolve({ error: options.deleteFails === true ? { message: "delete timeout" } : null }),
+        };
       },
     }),
   } as unknown as NfeParseDeps["db"];
@@ -503,5 +506,25 @@ describe("parse: a venda de marketplace e a gravação recusada (D-497)", () => 
 
     expect(outcome).toMatchObject({ status: "failed", retryable: true });
     expect(captured.updates.some((u) => u.last_error_code === "LEITURA_NAO_GRAVADA")).toBe(false);
+  });
+
+  it("D-746: documento em APPLYING não é reprocessado nem perde os itens vinculados", async () => {
+    const { deps, captured, lines } = fakeDeps({ status: "APPLYING" });
+
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(captured.deletedTables).toEqual([]);
+    expect(captured.updates).toEqual([]);
+    expect(captured.inserted).toHaveLength(0);
+  });
+
+  it("D-746: falha ao limpar document_items antes de inserir retorna retryable sem inserir", async () => {
+    const { deps, captured, lines } = fakeDeps({ deleteFails: true });
+
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "delete timeout" });
+    expect(captured.inserted).toHaveLength(0);
   });
 });

@@ -41,6 +41,8 @@ function fakeDeps(options: {
   status?: string;
   batchMissing?: boolean;
   readFails?: boolean;
+  deleteFailsTable?: string;
+  updateError?: (values: Record<string, unknown>) => { message: string } | null;
 }): { deps: ParseDeps; captured: Captured; lines: string[] } {
   const captured: Captured = { updates: [], inserted: [], deletedTables: [] };
   const lines: string[] = [];
@@ -68,7 +70,7 @@ function fakeDeps(options: {
       update: (values: Record<string, unknown>) => {
         captured.updates.push(values);
 
-        return { eq: () => Promise.resolve({ error: null }) };
+        return { eq: () => Promise.resolve({ error: options.updateError?.(values) ?? null }) };
       },
       insert: (rows: Record<string, unknown>[]) => {
         captured.inserted.push(rows);
@@ -78,7 +80,12 @@ function fakeDeps(options: {
       delete: () => {
         captured.deletedTables.push(table);
 
-        return { eq: () => Promise.resolve({ error: null }) };
+        return {
+          eq: () =>
+            Promise.resolve({
+              error: options.deleteFailsTable === table ? { message: `falha ao limpar ${table}` } : null,
+            }),
+        };
       },
     }),
   } as unknown as ParseDeps["db"];
@@ -209,5 +216,35 @@ describe("parse do arquivo do UpSeller", () => {
     expect(tables).not.toContain("sku_listing_links");
     expect(tables).not.toContain("inventory_balances");
     expect(captured.inserted.flat().length).toBeGreaterThan(0);
+  });
+
+  it("D-746: lote em APPLYING não é reprocessado nem tem staging apagado", async () => {
+    const { deps, captured, lines } = fakeDeps({ status: "APPLYING" });
+
+    const outcome = await createErpImportParseHandler(deps)(ENVELOPE, ctx(lines, { batchId: BATCH }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(captured.deletedTables).toEqual([]);
+    expect(captured.updates).toEqual([]);
+    expect(captured.inserted).toHaveLength(0);
+  });
+
+  it("D-746: falha ao limpar staging antes de inserir retorna retryable sem inserir duplicatas", async () => {
+    const { deps, captured, lines } = fakeDeps({ deleteFailsTable: "erp_import_rows" });
+
+    const outcome = await createErpImportParseHandler(deps)(ENVELOPE, ctx(lines, { batchId: BATCH }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(captured.inserted).toHaveLength(0);
+  });
+
+  it("D-746: falha transitória na gravação final de PARSED retorna retryable em vez de done", async () => {
+    const { deps, lines } = fakeDeps({
+      updateError: (values) => (values.status === "PARSED" ? { message: "statement timeout" } : null),
+    });
+
+    const outcome = await createErpImportParseHandler(deps)(ENVELOPE, ctx(lines, { batchId: BATCH }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "statement timeout" });
   });
 });

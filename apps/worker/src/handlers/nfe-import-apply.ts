@@ -3,6 +3,7 @@ import { computeNfeApplicationMovements, recusaDoDocumentoGravado } from "@sb/do
 import { z } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
+import { readAllPages } from "../read-all-pages.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { recordStockMovements } from "./stock-movements.js";
 
@@ -116,14 +117,23 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
       };
     }
 
-    const items = await deps.db
-      .from("document_items")
-      .select("position, sku_id, quantity, cfop")
-      .eq("document_id", documentId)
-      .order("position");
+    let items: { position: number; sku_id: string | null; quantity: number; cfop: string | null }[];
 
-    if (items.error !== null) {
-      return { status: "failed", retryable: true, reason: items.error.message };
+    try {
+      items = await readAllPages((from, to) =>
+        deps.db
+          .from("document_items")
+          .select("position, sku_id, quantity, cfop")
+          .eq("document_id", documentId)
+          .order("position")
+          .range(from, to),
+      );
+    } catch (error) {
+      return {
+        status: "failed",
+        retryable: true,
+        reason: error instanceof Error ? error.message : "falha ao ler itens do documento",
+      };
     }
 
     /*
@@ -135,7 +145,7 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
       documentType: data.document_type,
       operationType: data.operation_type,
       intermediaryCnpj: data.intermediary_cnpj,
-      cfops: items.data.map((item) => item.cfop),
+      cfops: items.map((item) => item.cfop),
     });
 
     if (recusa !== null) {
@@ -151,7 +161,7 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
       id: documentId,
       operationType: data.operation_type as "ENTRADA" | "SAIDA",
       occurredAt: ocorridoEm,
-      items: items.data.map((item) => ({ position: item.position, skuId: item.sku_id, quantity: item.quantity })),
+      items: items.map((item) => ({ position: item.position, skuId: item.sku_id, quantity: item.quantity })),
     });
 
     await recordStockMovements(
@@ -162,10 +172,14 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
       { type: "DOCUMENT", id: documentId },
     );
 
-    await deps.db
+    const applied = await deps.db
       .from("documents")
       .update({ status: "APPLIED", applied_at: (deps.now?.() ?? new Date()).toISOString() })
       .eq("id", documentId);
+
+    if (applied.error !== null) {
+      return { status: "failed", retryable: true, reason: applied.error.message };
+    }
 
     context.logger.info("nfe_apply_finished", {
       document_id: documentId,

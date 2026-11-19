@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **647** (D-001 a D-745).
+Decisões registradas: **648** (D-001 a D-746).
 
 ## Por domínio
 
@@ -581,7 +581,7 @@ Decisões registradas: **647** (D-001 a D-745).
 - **D-699** — Os rankings de Vendas abrem o detalhe do SKU ao clicar
 - **D-700** — A lista de pedidos de Vendas da Shopee abre o detalhe do SKU ao clicar
 
-### worker/infra (106)
+### worker/infra (107)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -689,4 +689,5 @@ Decisões registradas: **647** (D-001 a D-745).
 - **D-736** — Jobs do worker paginam supressões, candidatos e outcomes acima de 1.000 linhas e memoizam snapshot por SKU
 - **D-738** — Detectores diários do worker paginam RPCs e vínculos além de 1.000 linhas com lotes `.in` de 200
 - **D-744** — Uploads ERP/NF-e compensam falha na fila, validam erro de duplicado, convites deduplicam ids e rotas validam entrada
+- **D-746** — Handlers de parse/apply ERP e NF-e no worker barram `APPLYING`, verificam erros de `DELETE`/`UPDATE` e paginam `document_items`
 

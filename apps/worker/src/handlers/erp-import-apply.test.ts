@@ -26,7 +26,10 @@ const ENVELOPE = {
  */
 type FakeRow = Record<string, unknown>;
 
-function createFakeDb(seed: Record<string, FakeRow[]> = {}): {
+function createFakeDb(
+  seed: Record<string, FakeRow[]> = {},
+  options: { failUpdateTable?: string } = {},
+): {
   db: ApplyDeps["db"];
   tables: Record<string, FakeRow[]>;
 } {
@@ -140,7 +143,13 @@ function createFakeDb(seed: Record<string, FakeRow[]> = {}): {
 
                 return chain;
               },
-              then(resolve: (v: { error: null }) => void) {
+              then(resolve: (v: { error: { message: string } | null }) => void) {
+                if (options.failUpdateTable === table) {
+                  resolve({ error: { message: `erro ao atualizar ${table}` } });
+
+                  return;
+                }
+
                 for (const row of currentSelection()) Object.assign(row, values);
                 resolve({ error: null });
               },
@@ -709,5 +718,79 @@ describe("guardas do lote", () => {
     const outcome = await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
+  });
+
+  it("D-746: falha ao gravar apply_status nas linhas retorna retryable sem marcar lote como APPLIED", async () => {
+    const { db, tables } = createFakeDb(
+      {
+        erp_import_batches: [batch({ kind: "PRODUCTS", status: "APPLYING" })],
+        erp_import_rows: [
+          okRow(1, {
+            sku: "PI150",
+            skuKey: "PI150",
+            title: "Painel",
+            kind: "SIMPLE",
+            brand: null,
+            supplierBrand: null,
+            ean: null,
+            ncm: null,
+            originCode: null,
+            categoryRaw: null,
+            purchaseCost: null,
+            retailPrice: null,
+            wholesalePrice: null,
+            minWholesaleQty: null,
+            weightGrams: null,
+            lengthCm: null,
+            widthCm: null,
+            heightCm: null,
+            isActive: true,
+          }),
+        ],
+      },
+      { failUpdateTable: "erp_import_rows" },
+    );
+
+    const outcome = await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "erro ao atualizar erp_import_rows" });
+    expect(tables.erp_import_batches?.[0]?.status).toBe("APPLYING");
+  });
+
+  it("D-746: falha ao marcar lote como APPLIED retorna retryable em vez de done", async () => {
+    const { db, tables } = createFakeDb(
+      {
+        erp_import_batches: [batch({ kind: "PRODUCTS", status: "APPLYING" })],
+        erp_import_rows: [
+          okRow(1, {
+            sku: "PI150",
+            skuKey: "PI150",
+            title: "Painel",
+            kind: "SIMPLE",
+            brand: null,
+            supplierBrand: null,
+            ean: null,
+            ncm: null,
+            originCode: null,
+            categoryRaw: null,
+            purchaseCost: null,
+            retailPrice: null,
+            wholesalePrice: null,
+            minWholesaleQty: null,
+            weightGrams: null,
+            lengthCm: null,
+            widthCm: null,
+            heightCm: null,
+            isActive: true,
+          }),
+        ],
+      },
+      { failUpdateTable: "erp_import_batches" },
+    );
+
+    const outcome = await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "erro ao atualizar erp_import_batches" });
+    expect(tables.erp_import_batches?.[0]?.status).toBe("APPLYING");
   });
 });
