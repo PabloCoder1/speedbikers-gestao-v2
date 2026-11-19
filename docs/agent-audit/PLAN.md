@@ -2,9 +2,9 @@
 
 ## Diagnóstico e critérios
 
-Há 107 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou medições externas (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. API, worker e integrações concentram as falhas de consistência. Banco e desempenho exigem observação real. A varredura de antecipação de queries de 13/11 não encontrou outra oportunidade nas rotas de alto tráfego fora de D-670–D-684. O [checkpoint](SESSION_LOG.md) reúne as correções, as auditorias de dependências e o estado da publicação.
+Há 109 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou medições externas (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. API, worker e integrações concentram as falhas de consistência. Banco e desempenho exigem observação real. A varredura de antecipação de queries de 13/11 não encontrou outra oportunidade nas rotas de alto tráfego fora de D-670–D-684. O [checkpoint](SESSION_LOG.md) reúne as correções, as auditorias de dependências e o estado da publicação.
 
-**Frente atual em 19/11.** O candidato `codex/sentinel-db-331-20261119` parte de `849e4b78` (integração do #335). As duas migrations do #331 foram isoladas da infraestrutura e testadas com 1.212 casos de banco. Seus IDs são D-767/D-768. D03 passa a Testado localmente. D-750/D-752/D-767/D-768 aguardam Dev, que está inativo. Conferir a matriz de CI e comparar a sequência das migrations com o pipeline da VM antes de propor aplicação ou publicação. [Fechamento](STATE_AND_COMPLETION_2026-11-18.md).
+**Frente atual em 19/11.** D-769 confirmou em banco isolado que a ordem atual do #331 é recusada pelo dry-run. As quatro migrations passaram no upgrade incremental com numeração temporária crescente. A VM tem as 322 versões da base e os grants diretos de mutação que D-768 remove. O próximo passo é registrar as versões definitivas em Dev e executar a CI do candidato quando o projeto estiver ativo. A definição do caminho oficial para a VM permanece na fila. [Fechamento](STATE_AND_COMPLETION_2026-11-18.md).
 
 | Prioridade | Critério aplicado |
 | --- | --- |

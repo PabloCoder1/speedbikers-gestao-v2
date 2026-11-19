@@ -2239,4 +2239,5 @@ A regressão conferiu o conteúdo inteiro, o vínculo manual, o vínculo pelo SK
 
 No Postgres local, a consulta `DISTINCT ON (ml_account_id, inventory_id)` com ordem de conta, inventário e instante descendente mostrou `Unique → Index Scan using fulfillment_stock_snapshots_unique` ao desabilitar a varredura sequencial para isolar a capacidade do índice. O teste de integração contou um único índice para essas três colunas. Uma segunda captura com a mesma chave retornou `23505`.
 
-O ensaio verifica ordenação e unicidade. A latência com dados reais e a janela de bloqueio da construção no banco de destino ainda precisam de medição.
+
+A VM tinha estimativa de 346.394 linhas e `pg_table_size` de 50.454.528 bytes. Um Postgres 17.6 descartável, sem rede, recebeu 346.394 linhas sintéticas (48.971.776 bytes) e as definições prévias dos índices. A DDL versionada levou **549 ms** sem concorrência, medidos de ponta a ponta no cliente local. Com uma segunda sessão mantendo `ACCESS SHARE`, a troca abortou com `55P03` em **10,718 s**. O rollback preservou a constraint e os dois índices anteriores. Sem o bloqueio, a mesma DDL manteve as 346.394 linhas e deixou um índice único válido. A latência e a janela de bloqueio na VM seguem sem medição.

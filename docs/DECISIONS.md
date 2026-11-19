@@ -20160,6 +20160,12 @@ A proposta do #331 usava D-720. A validação do recorte Sentinel foi local. A c
 
 ## D-768 - Retenção preserva a última execução concluída apesar de falhas posteriores
 
-A migration `20261117182600` permite ao expurgo remover execuções `done` com mais de 30 dias, preservando a concluída mais recente por organização e tipo e todas as falhas. Uma falha recente já não libera o último sucesso para remoção. O corte do UpSeller mantém `reconciled_at` quando depende desse histórico. Os gatilhos preservam a regra append-only fora do expurgo. A chave de serviço mantém a inserção e fica sem permissão de exclusão ou execução do expurgo.
+A migration `20261117182600` permite ao expurgo remover execuções `done` com mais de 30 dias, preservando a concluída mais recente por organização e tipo e todas as falhas. Uma falha recente já não libera o último sucesso para remoção. O corte do UpSeller mantém `reconciled_at` quando depende desse histórico. Os gatilhos preservam a regra append-only fora do expurgo. A migration revoga UPDATE, DELETE e TRUNCATE dos papéis de aplicação e preserva SELECT e INSERT do worker. A execução do expurgo permanece restrita.
 
 A proposta do #331 usava D-721. O recorte corrigido mantém o agendamento como ato separado. A migration cria as funções e os gatilhos. O teste local confirmou zero agendamentos de expurgo. A janela e a política de retenção em produção continuam pendentes.
+
+## D-769 - Ordem de migrations validada por upgrade incremental
+
+O histórico local reproduziu as 322 migrations da `main` em `1ff173ca`, com última versão `20261118211000`, igual ao corte registrado da VM. O `db push --dry-run` no padrão da CI recusou as duas versões do #331 anteriores a esse corte. Após dar versões posteriores a elas em uma cópia descartável, o CLI listou e aplicou as quatro migrations da Sentinel. O novo dry-run ficou vazio e o histórico local passou a 326 versões.
+
+A consulta em transação `READ ONLY` na VM encontrou as mesmas 322 versões e confirmou que `service_role` recebe UPDATE, DELETE e TRUNCATE diretamente em `job_runs`. Os gatilhos de UPDATE e DELETE estavam ativos. O catálogo mostrou zero gatilhos de TRUNCATE, zero grants de mutação herdados fora dos destinatários do REVOKE e zero grants de UPDATE por coluna para esse papel. No ensaio sintético, revogar os três grants preservou SELECT e INSERT do worker e as linhas antigas. A retenção permaneceu sem agendamento. O registro das versões definitivas e a CI aguardam o Dev, inativo. O workflow oficial ainda aponta ao Supabase hospedado.

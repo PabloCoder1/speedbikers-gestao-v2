@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19, integração local 849e4b78 e validação de D-767/D-768",
+  "corte": "2026-11-19, integração local 849e4b78 e ensaio incremental D-769",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -159,7 +159,7 @@
       "peso": 3,
       "status": "Testado localmente",
       "responsavel": "Database",
-      "evidencia": "D-767/D-768, migrations 17182500/17182600 e 1.212 testes em banco local. Expurgo aguarda aprovação de agendamento",
+      "evidencia": "D-769 confirmou os grants diretos na VM e validou sua revogação no upgrade local. Passaram 1.213 testes de banco, com preservação da telemetria e sem agendamento",
       "fase": 3
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "Integração 849e4b78 passou 8 E2E. O candidato com as duas migrations revistas do #331 passou 1.212 testes locais de banco. Falta CI remota",
+      "evidencia": "D-769 validou upgrade incremental local, 1.213 testes de banco, 39 embeds e 15 E2E. CI da base bloqueada no Dev pausado. Falta CI do candidato",
       "fase": 5
     },
     {

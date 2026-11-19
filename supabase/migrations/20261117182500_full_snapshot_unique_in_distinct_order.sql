@@ -25,10 +25,10 @@
 -- (`grep` em apps, packages e migrations, 17/11). O worker grava com
 -- `insert` simples, e a colisão continua sendo erro 23505.
 --
--- Lock: `create unique index` sem CONCURRENTLY (a migration roda em
--- transação) bloqueia as escritas da tabela enquanto constrói. Medido no
--- backup restaurado: ver docs/PERFORMANCE.md (D-767). A captura do Full é
--- um job da fila; se encostar no lock, espera, e o Cloud Tasks repete.
+-- CREATE UNIQUE INDEX bloqueia as escritas enquanto constrói o índice.
+-- A remoção da constraint precisa de acesso exclusivo. O lock_timeout
+-- limita a espera, e a transação reverte a troca se o lock não vier.
+-- O ensaio sintético de contenção está em docs/PERFORMANCE.md (D-767).
 -- ============================================================
 
 begin;

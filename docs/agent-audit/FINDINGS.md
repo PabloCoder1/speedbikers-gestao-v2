@@ -145,6 +145,9 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A106 | P2 · CORRIGIDO localmente (D-753) | A validação documental reduzia os IDs a um conjunto. Com o índice antigo, uma duplicidade na fonte passava e o gerador gravava o ID duas vezes | A checagem acusa duplicidades na fonte e no índice. O gerador valida a unicidade antes de sobrescrever o índice. A reconciliação dos IDs da `main` continua na fila. [Checkpoint](SESSION_LOG.md) |
 | A107 | P1 · CORRIGIDO localmente (D-768) | A retenção proposta no #331 apagava a última conciliação concluída quando havia uma falha recente. O corte de estoque do UpSeller passava a devolver `reconciled_at` nulo | O expurgo protege a última conclusão por organização e tipo. A regressão compara o resultado da RPC antes e depois do expurgo. [Checkpoint](SESSION_LOG.md) |
 
+| A108 | P1 · BLOQUEIO CONFIRMADO (D-769) | O CLI da CI recusa os dois timestamps do #331 porque são anteriores à última versão da VM. A consulta em leitura confirmou `20261118211000` | As quatro migrations passaram no upgrade local com timestamps temporários crescentes. Falta registrar as versões no Dev e validar a CI do candidato. [Checkpoint](SESSION_LOG.md) |
+| A109 | P1 · CORRIGIDO localmente (D-768/D-769) | A VM concede UPDATE, DELETE e TRUNCATE de `job_runs` diretamente a `service_role`. Os gatilhos de alteração e exclusão de linhas estavam ativos. O catálogo mostrou zero gatilhos de TRUNCATE | A migration remove os três grants e conserva SELECT e INSERT. A verificação da VM foi em leitura. O upgrade local simulou os grants diretos e comprovou a revogação. [Checkpoint](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

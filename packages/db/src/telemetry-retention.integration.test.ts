@@ -213,6 +213,23 @@ describe("retenção de job_runs (D-768)", () => {
       });
     }
   });
+
+  it("os papéis da aplicação não podem alterar ou remover a telemetria", async () => {
+    const { rows } = await client.query<{ role: string; insert: boolean; update: boolean; delete: boolean; truncate: boolean }>(
+      `select role,
+              has_table_privilege(role, 'public.job_runs', 'INSERT') as insert,
+              has_table_privilege(role, 'public.job_runs', 'UPDATE') as update,
+              has_table_privilege(role, 'public.job_runs', 'DELETE') as delete,
+              has_table_privilege(role, 'public.job_runs', 'TRUNCATE') as truncate
+         from unnest(array['anon', 'authenticated', 'service_role']) as roles(role)
+        order by role`,
+    );
+    expect(rows).toEqual([
+      { role: "anon", insert: false, update: false, delete: false, truncate: false },
+      { role: "authenticated", insert: false, update: false, delete: false, truncate: false },
+      { role: "service_role", insert: true, update: false, delete: false, truncate: false },
+    ]);
+  });
 });
 
 describe("unicidade do Full na ordem do distinct on (D-767)", () => {

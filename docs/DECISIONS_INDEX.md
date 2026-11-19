@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **670** (D-001 a D-768).
+Decisões registradas: **671** (D-001 a D-769).
 
 ## Por domínio
 
@@ -85,7 +85,7 @@ Decisões registradas: **670** (D-001 a D-768).
 - **D-740** — Ações, painel de diagnóstico, vínculo, republicação e quatro gavetas recuperam controles em falha de transporte
 - **D-743** — Copiloto filtra `replenishment_settings`, lê últimas mensagens do SAC e corrige limite/papel
 
-### banco/rls (49)
+### banco/rls (50)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -136,6 +136,7 @@ Decisões registradas: **670** (D-001 a D-768).
 - **D-753** — Índice de decisões exige IDs únicos antes de gravar
 - **D-766** — Saída Manual e itens editáveis na conferência, sem migration
 - **D-767** — Um índice único atende a timeline do Full
+- **D-769** — Ordem de migrations validada por upgrade incremental
 
 ### estoque (55)
 

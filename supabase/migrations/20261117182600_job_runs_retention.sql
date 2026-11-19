@@ -41,6 +41,11 @@
 
 begin;
 
+-- Restabelece a fronteira append-only também após restores que preservaram
+-- grants mais amplos para papéis da aplicação. SELECT e INSERT permanecem.
+revoke update, delete, truncate on table public.job_runs
+  from public, anon, authenticated, service_role;
+
 create or replace function private.job_runs_reject_delete()
 returns trigger
 language plpgsql
