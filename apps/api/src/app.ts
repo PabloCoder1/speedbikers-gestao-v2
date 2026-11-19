@@ -270,7 +270,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await receiveWebhook(webhook, rawBody);
 
-    if (outcome.status === "lookup_unavailable") {
+    if (outcome.status === "lookup_unavailable" || outcome.status === "enqueue_unavailable") {
       return context.json({ error: { code: "temporarily_unavailable" } }, 503);
     }
 
