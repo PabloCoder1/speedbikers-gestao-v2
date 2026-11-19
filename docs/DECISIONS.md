@@ -20212,3 +20212,13 @@ Três defeitos confirmados nos clientes HTTP de `@sb/shopee`, `@sb/tiktok-shop` 
 3. **Stream de resposta não cancelado em retries `429`/`5xx` (`packages/mercado-livre/src/http-client.ts`):** antes do `sleep()` nas novas tentativas, o cliente agora executa `await response.body?.cancel().catch(() => undefined)` para liberar o socket ao pool keep-alive do Undici/Node.
 
 Reprodução pré-correção registrou 5 falhas (`5 failed | 43 passed (48)`) nas quatro suítes; após a correção, `@sb/shopee` (`38`), `@sb/tiktok-shop` (`11`), `@sb/mercado-livre` (`162`) e `@sb/worker` (`1.092`) passaram integralmente em `build`, `typecheck`, `eslint` e `vitest`.
+
+## D-774 - Rotas de exportação falham fechado em erro de contas/organização e `csvCell` neutraliza fórmulas com espaço/tab/CR
+
+Três defeitos confirmados nas sete rotas de exportação web (fora `/compras`) e no gerador CSV (`apps/web/lib/csv.ts`):
+
+1. **Falha na leitura de contas derrubava silenciosamente o filtro de conta e exportava TODAS as contas (`/anuncios/exportar`, `/curva-abc/export/xlsx`, `/precos/export/xlsx`):** erro em `ml_accounts` ou `marketplace_accounts` era absorvido por `?? []` / `?.data`, descartando `?conta=` / `?contas=` e, na Curva ABC, gerando a aba `"Por conta"` sem colunas. Agora todas falham fechado com HTTP `502` antes de chamar a RPC de dados; em `/curva-abc/export/xlsx`, o recorte multicanal também deixa de consultar `ml_accounts` (que não era usada nesse modo).
+2. **Erro transitório em `get_current_membership` virava HTTP `403` ("sem organização") nas rotas CSV (`/anuncios/exportar`, `/anuncios/shopee/exportar`, `/full/exportar`, `/vendas/exportar` nos dois recortes e `/vendas/shopee/exportar`):** todas passaram a verificar `membership.error !== null` primeiro e responder HTTP `503` (alinhado ao contrato de `apps/web/lib/membership.ts` e às rotas XLSX).
+3. **Injeção de fórmula CSV precedida por espaço, tab ou CR (`apps/web/lib/csv.ts`):** `csvCell` protegia apenas `/^[=+\-@]/`, deixando passar títulos iniciados por `" =..."`, `"\t=..."` ou `"\r+..."`. Agora neutraliza `/^[\t\r ]*[=+\-@]|^[\t\r]/` com apóstrofo antes da quotação RFC 4180.
+
+Reprodução pré-correção em `lib/export-routes.test.ts` e `lib/listings-export.test.ts` registrou 5 falhas (`5 failed | 5 passed (10)`); após a correção, `@sb/web` passou integralmente em `typecheck`, `eslint`, `vitest` (`148` arquivos / `1.555` testes) e nas 7 guardas estáticas.
