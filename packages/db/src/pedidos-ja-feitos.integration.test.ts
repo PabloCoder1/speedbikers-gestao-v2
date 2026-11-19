@@ -147,6 +147,15 @@ async function transito(skuId: string): Promise<number> {
   return Number(r.rows[0]?.t ?? 0);
 }
 
+async function local(skuId: string): Promise<number> {
+  const r = await client.query<{ t: string | null }>(
+    "select sum(qty_delta)::text as t from public.stock_movements where sku_id = $1 and location_kind = 'LOCAL'",
+    [skuId],
+  );
+
+  return Number(r.rows[0]?.t ?? 0);
+}
+
 async function limpar(): Promise<void> {
   // Os gatilhos pertencem à tabela inteira, não à organização do teste.
   // A transação mantém o ALTER TABLE bloqueado até todos estarem ativos.
@@ -427,7 +436,11 @@ describe("Cenário 5 — recebimento parcial", () => {
     }
 
     expect(await transito(sku["D760-PARC"] ?? "")).toBe(700);
-    expect(await linha("D760-PARC")).toMatchObject({ compra_pendente: 700, suggested_quantity: 500 });
+    // D-792: o que chegou entra no estoque da loja — uma vez só, na mesma requisição.
+    expect(await local(sku["D760-PARC"] ?? "")).toBe(300);
+    // 1.200 de necessidade − 300 na loja − 700 a caminho. Antes de D-792 o recebido
+    // sumia do estoque e a sugestão voltava a pedir por ele (500).
+    expect(await linha("D760-PARC")).toMatchObject({ compra_pendente: 700, suggested_quantity: 200 });
 
     await expect(
       asUser(ADMIN, "select public.receive_purchase_order_items($1, $2::jsonb, $3)", [
@@ -796,6 +809,107 @@ describe("Cenário 11 — invoice do fornecedor (D-767)", () => {
     );
 
     expect(po.rows).toEqual([{ currency: "USD", quantity_ordered: "60.000", unit_cost: null }]);
+  });
+});
+
+describe("Cenário 12 — SKU que não existe, criado da invoice (D-792)", () => {
+  const SHA = "c".repeat(64);
+  let lote = "";
+
+  const linha = (row: number, code: string, description: string, ncm: string | null) => ({
+    sheet: "INV", row, column: "G", code, ncm, description, quantityRaw: "10", quantity: 10,
+    quantityNeedsConfirmation: false, reference: "JS9300", unitPrice: 1, amount: 10, currency: "USD", unit: "PCS",
+  });
+
+  // O beforeAll geral grava venda para todo SKU da organização: o SKU criado aqui sai junto.
+  const apagarSkus = async (): Promise<void> => {
+    await client.query("delete from public.purchase_import_batches where organization_id = $1 and file_sha256 = $2", [ORG, SHA]);
+    await client.query(
+      "delete from public.daily_sku_metrics where sku_id in (select id from public.skus where organization_id = $1 and sku_key like 'D768-%')",
+      [ORG],
+    );
+    await client.query("delete from public.skus where organization_id = $1 and sku_key like 'D768-%'", [ORG]);
+  };
+
+  afterAll(apagarSkus);
+
+  beforeAll(async () => {
+    await apagarSkus();
+    await client.query("insert into public.skus (organization_id, sku, kind, created_at) values ($1, 'D768-KC0030', 'PRODUTO', now())", [ORG]);
+
+    const r = await one<{ r: { batchId: string } }>(
+      ADMIN,
+      "select public.create_purchase_import_batch($1, 'INV-9300.xlsx', $2, array['INV'], $3::jsonb) as r",
+      [
+        ORG,
+        SHA,
+        JSON.stringify([
+          // O mesmo código em duas linhas: um SKU só.
+          linha(10, "D768-NOVO", "BAU TRASEIRO 45L PRETO", "87141000"),
+          linha(11, "d768-novo ", "BAU TRASEIRO 45L PRETO", "87141000"),
+          // Parecido com D768-KC0030 (zero à esquerda): não nasce duplicado.
+          linha(12, "D768-KC30", "KIT CAPA", "8714"),
+        ]),
+      ],
+    );
+
+    lote = r.r.batchId;
+  });
+
+  const linhasDoLote = () =>
+    client.query<{ row_number: number; sku_id: string | null; resolution: string }>(
+      "select row_number, sku_id, resolution from public.purchase_import_rows where batch_id = $1 order by row_number",
+      [lote],
+    );
+
+  it("o analista não cria SKU", async () => {
+    await expect(asUser(ANALISTA, "select public.create_skus_from_import_rows($1)", [lote])).rejects.toThrow(/sem permissao/);
+  });
+
+  it("cria com o código, o nome e o NCM da linha, vincula as duas linhas e recusa o parecido", async () => {
+    const kc = (await linhasDoLote()).rows.find((l) => l.row_number === 12);
+    const r = await one<{ r: { criados: number; vinculados: number; semCodigo: number; parecidos: { code: string; parecido: string }[] } }>(
+      ADMIN,
+      "select public.create_skus_from_import_rows($1, $2::uuid[]) as r",
+      // Todas as linhas pela lista: a do parecido pode ter vindo como provável.
+      [lote, (await client.query<{ id: string }>("select id from public.purchase_import_rows where batch_id = $1", [lote])).rows.map((x) => x.id)],
+    );
+
+    expect(r.r).toMatchObject({ criados: 1, vinculados: 2, semCodigo: 0 });
+    expect(r.r.parecidos).toEqual([expect.objectContaining({ code: "D768-KC30", parecido: "D768-KC0030" })]);
+
+    const novo = await client.query<{ id: string; sku: string; title: string | null; ncm: string | null; kind: string }>(
+      "select id, sku, title, ncm, kind from public.skus where organization_id = $1 and sku_key = 'D768-NOVO'",
+      [ORG],
+    );
+
+    expect(novo.rows.map((n) => ({ sku: n.sku, title: n.title, ncm: n.ncm, kind: n.kind }))).toEqual([{ sku: "D768-NOVO", title: "BAU TRASEIRO 45L PRETO", ncm: "87141000", kind: "PRODUTO" }]);
+
+    const linhas = (await linhasDoLote()).rows;
+
+    expect(linhas.filter((l) => l.sku_id === novo.rows[0]?.id).map((l) => l.resolution)).toEqual(["VINCULADA", "VINCULADA"]);
+    expect(linhas.find((l) => l.row_number === 12)).toMatchObject({ sku_id: kc?.sku_id ?? null });
+
+    const kcs = await client.query<{ n: number }>("select count(*)::int as n from public.skus where organization_id = $1 and sku_key like 'D768-KC%'", [ORG]);
+
+    expect(kcs.rows[0]?.n).toBe(1);
+
+    const eventos = await client.query<{ n: number }>(
+      "select count(*)::int as n from public.purchase_import_row_events e join public.purchase_import_rows r on r.id = e.row_id where r.batch_id = $1 and e.event_type = 'RESOLVED'",
+      [lote],
+    );
+
+    expect(eventos.rows[0]?.n).toBe(2);
+  });
+
+  it("de novo, nada muda: a linha vinculada não cria outro SKU", async () => {
+    const r = await one<{ r: { criados: number; vinculados: number } }>(ADMIN, "select public.create_skus_from_import_rows($1) as r", [lote]);
+
+    expect(r.r).toMatchObject({ criados: 0, vinculados: 0 });
+
+    const n = await client.query<{ n: number }>("select count(*)::int as n from public.skus where organization_id = $1 and sku_key like 'D768-%'", [ORG]);
+
+    expect(n.rows[0]?.n).toBe(2);
   });
 });
 

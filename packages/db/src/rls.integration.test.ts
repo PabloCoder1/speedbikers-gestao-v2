@@ -9685,7 +9685,7 @@ describe("estoque em trânsito a partir do ciclo do pedido de compra (D-055)", (
     expect(Number(movement.rows[0]?.qty_delta)).toBe(10);
   });
 
-  it("RECEIVED fecha o TRANSITO com RECEBIMENTO_TRANSITO, sem gerar LOCAL — isso é responsabilidade da NF-e", async () => {
+  it("RECEIVED fecha o TRANSITO e soma o mesmo no LOCAL (D-792; antes era a NF-e, D-055)", async () => {
     const items = `'[{"skuId":"${skuId}","skuSnapshot":"${SKU_NOME}","titleSnapshot":"Parafuso","quantityOrdered":4,"unitCost":2.5}]'::jsonb`;
 
     const order = await asUserPersist<{ id: string }>(
@@ -9703,15 +9703,19 @@ describe("estoque em trânsito a partir do ciclo do pedido de compra (D-055)", (
     await asUserPersist(ADMIN_TRANSITO, `select * from public.receive_purchase_order('${orderId}')`);
 
     expect(await balanceOf("TRANSITO")).toBe(transitoAfterOrdered - 4);
-    expect(await balanceOf("LOCAL")).toBe(localBefore);
-    expect(await movementCount(orderId)).toBe(2);
+    expect(await balanceOf("LOCAL")).toBe(localBefore + 4);
+    expect(await movementCount(orderId)).toBe(3);
 
     const received = await client.query<{ movement_type: string; qty_delta: string }>(
       `select movement_type, qty_delta from public.stock_movements
-       where source_type='PURCHASE_ORDER' and source_id=$1 and movement_type='RECEBIMENTO_TRANSITO'`,
+       where source_type='PURCHASE_ORDER' and source_id=$1 and movement_type in ('RECEBIMENTO_TRANSITO', 'ENTRADA_COMPRA')
+       order by movement_type desc`,
       [orderId],
     );
-    expect(Number(received.rows[0]?.qty_delta)).toBe(-4);
+    expect(received.rows.map((m) => [m.movement_type, Number(m.qty_delta)])).toEqual([
+      ["RECEBIMENTO_TRANSITO", -4],
+      ["ENTRADA_COMPRA", 4],
+    ]);
   });
 
   it("cancelar um pedido ORDERED fecha o TRANSITO aberto", async () => {
@@ -18572,6 +18576,9 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     "create_purchase_order",
     "create_saved_filter",
     "create_sku_listing_link",
+    // D-792: organizacao do LOTE, papel refeito nela; so linhas DESTE lote, sem
+    // SKU e nao registradas; o SKU nasce na organizacao do lote; ate 500 linhas.
+    "create_skus_from_import_rows",
     "create_supplier",
     // D-725: a organizacao sai do PEDIDO do custo; papel refeito nela.
     "delete_purchase_order_cost",

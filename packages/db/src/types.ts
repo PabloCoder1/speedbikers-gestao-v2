@@ -7979,6 +7979,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      create_skus_from_import_rows: {
+        Args: { p_batch_id: string; p_row_ids?: string[] }
+        Returns: Json
+      }
       create_supplier: {
         Args: {
           p_contact_name?: string

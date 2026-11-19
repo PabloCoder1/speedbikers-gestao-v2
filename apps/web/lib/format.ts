@@ -111,6 +111,14 @@ export function formatCurrency(value: number | null): string {
   return CURRENCY.format(value);
 }
 
+/** Valor na moeda dele ("US$ 5.383,30"); BRL cai no formato de sempre. */
+export function formatMoney(value: number | null, currency: string): string {
+  if (value === null) return "—";
+  if (currency === "BRL") return CURRENCY.format(value);
+
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(value);
+}
+
 const PERCENT = new Intl.NumberFormat("pt-BR", {
   style: "percent",
   minimumFractionDigits: 1,
