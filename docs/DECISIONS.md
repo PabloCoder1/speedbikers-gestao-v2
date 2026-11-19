@@ -20243,3 +20243,13 @@ Em `apps/worker/src/handlers/ml-fulfillment-fetch.ts`, a leitura dos snapshots a
 3. Para eventuais inventários sem snapshot nas últimas 48 h (novos ou sem captura recente), executar lookup pontual em concorrência limitada (`10`) via `.eq("ml_account_id", ...).eq("inventory_id", id).order("captured_at", { ascending: false }).limit(1).maybeSingle()` apoiado diretamente pelo índice único `fulfillment_stock_snapshots_unique (ml_account_id, inventory_id, captured_at DESC)`, propagando qualquer erro de banco (fail-closed, sem falso `listing.fulfillment.entered`).
 
 Reprodução pré-correção em `ml-fulfillment-fetch.test.ts` registrou 4 falhas (`4 failed | 43 passed (47)`); após a correção, `@sb/worker` passou integralmente em `typecheck`, `eslint` e `vitest` (`68` arquivos / `1.097` testes).
+
+## D-777 - Backfills internos respondem 503 em erro de banco, rotas D-766 usam `erroInterno` com `request_id` e callback Shopee exige inteiro seguro positivo
+
+Três inconsistências confirmadas em `apps/api/src`:
+
+1. **Falso HTTP 200 em falha de banco nos backfills internos (`order-financials-backfill.ts`, `order-user-products-backfill.ts` e `app.ts`):** quando a consulta a `ml_accounts` falhava, `triggerOrderFinancialsBackfill` e `triggerOrderUserProductsBackfill` devolviam `{ accountsScanned: 0, enqueued: 0, ... }` sem `failed: true` e `/internal/backfill/order-financials` e `/internal/backfill/order-user-products` respondiam HTTP `200`, escondendo indisponibilidade como "0 contas conectadas". Agora ambos retornam `failed: true` e as rotas passam por `respostaDoAgendador` (HTTP `503`), alinhadas aos demais 15 agendadores.
+2. **Erro 500 das rotas D-766 fora do contrato de `erroInterno` (`app.ts`):** `/v1/nfe-imports/:id/items/:itemId` e `/v1/stock/manual-exits` devolviam `{ error: { code: "failed", message: outcome.reason } }` em HTTP `500` sem `request_id` e sem log `request_internal_error`. Agora passam por `erroInterno(context, dependencies.logger, outcome.reason)` (mesmo contrato de todas as demais rotas `/v1/*`, `docs/API.md` seção 6).
+3. **Inteiro inseguro ou zero no callback OAuth Shopee (`app.ts`):** `/oauth/shopee/callback` convertia `shop_id` e `main_account_id` apenas com `/^[0-9]+$/ ? Number(valor)`, aceitando `0` ou números acima de `Number.MAX_SAFE_INTEGER` (perda silenciosa de precisão). Agora exige `Number.isSafeInteger(parsed) && parsed > 0`.
+
+Reprodução pré-correção em `order-financials-backfill.test.ts`, `order-user-products-backfill.test.ts` e `app.test.ts` registrou 7 falhas (`7 failed | 115 passed (122)`); após a correção, `@sb/api` passou integralmente em `typecheck`, `eslint` e `vitest` (`43` arquivos / `566` testes).

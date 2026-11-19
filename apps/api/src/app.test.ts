@@ -1920,6 +1920,32 @@ describe("POST /internal/backfill/order-financials (D-396)", () => {
     expect(response.status).toBe(400);
     expect(enqueued).toHaveLength(0);
   });
+
+  it("D-777: falha ao listar contas responde 503 com failed: true em vez de 200 enganoso", async () => {
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: aceitaTudo,
+      orderFinancialsSchedule: {
+        db: {
+          from: () => ({
+            select: () => ({
+              eq: () => Promise.resolve({ data: null, error: { message: "connection timeout" } }),
+            }),
+          }),
+        } as unknown as ListingVisitsScheduleDeps["db"],
+        logger: createLogger({}, { sink: () => undefined }),
+        now: () => new Date("2026-09-23T15:00:00.000Z"),
+        enqueuer: {
+          enqueue: () => Promise.reject(new Error("não deveria enfileirar")),
+        },
+      },
+    });
+
+    const response = await app.request("/internal/backfill/order-financials", { method: "POST" });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ accountsScanned: 0, enqueued: 0, failed: true });
+  });
 });
 
 describe("POST /internal/backfill/order-user-products (D-362, 3ª parte)", () => {
@@ -1988,6 +2014,32 @@ describe("POST /internal/backfill/order-user-products (D-362, 3ª parte)", () =>
 
     expect(response.status).toBe(400);
     expect(enqueued).toHaveLength(0);
+  });
+
+  it("D-777: falha ao listar contas responde 503 com failed: true em vez de 200 enganoso", async () => {
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: aceitaTudo,
+      orderFinancialsSchedule: {
+        db: {
+          from: () => ({
+            select: () => ({
+              eq: () => Promise.resolve({ data: null, error: { message: "connection timeout" } }),
+            }),
+          }),
+        } as unknown as ListingVisitsScheduleDeps["db"],
+        logger: createLogger({}, { sink: () => undefined }),
+        now: () => new Date("2026-09-23T15:00:00.000Z"),
+        enqueuer: {
+          enqueue: () => Promise.reject(new Error("não deveria enfileirar")),
+        },
+      },
+    });
+
+    const response = await app.request("/internal/backfill/order-user-products", { method: "POST" });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ accountsScanned: 0, enqueued: 0, failed: true });
   });
 });
 
@@ -2106,6 +2158,63 @@ describe("rotas /v1: id de caminho e erro interno (auditoria de 28/09)", () => {
     // O motivo real não se perde: vai para o log, com o mesmo request_id.
     expect(linhas.some((l) => l.includes("permission denied") && l.includes("req-auditoria"))).toBe(true);
   });
+
+  it("D-777: POST /v1/nfe-imports/:id/items/:itemId e /v1/stock/manual-exits não vazam erro cru de banco em 500", async () => {
+    const linhas: string[] = [];
+    const falha = {
+      eq: () => falha,
+      in: () => Promise.resolve({ data: null, error: { message: "permission denied for relation skus" } }),
+      maybeSingle: () => Promise.resolve({ data: null, error: { message: "permission denied for relation documents" } }),
+    };
+    const dbQueFalha = {
+      from: () => ({ select: () => falha }),
+    } as never;
+    const app = createApp({
+      logger: createLogger({}, { sink: (linha) => linhas.push(linha) }),
+      auth: admin,
+      nfeImportDeps: {
+        db: dbQueFalha,
+        store: {} as never,
+        enqueuer: {} as never,
+        logger: createLogger({}, { sink: () => undefined }),
+      },
+      manualExit: {
+        db: dbQueFalha,
+        logger: createLogger({}, { sink: () => undefined }),
+      },
+    });
+
+    const respItem = await app.request("/v1/nfe-imports/9c8b7a6d-5e4f-4a3b-9c1d-0e9f8a7b6c5d/items/1", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-request-id": "req-d777-item" },
+      body: JSON.stringify({ acao: "quantidade", quantidade: 2 }),
+    });
+    const corpoItem = await respItem.text();
+    expect(respItem.status).toBe(500);
+    expect(corpoItem).not.toContain("permission denied");
+    expect(JSON.parse(corpoItem)).toEqual({
+      error: { code: "internal", message: "Erro interno.", request_id: "req-d777-item" },
+    });
+    expect(linhas.some((l) => l.includes("request_internal_error") && l.includes("req-d777-item"))).toBe(true);
+
+    const respSaida = await app.request("/v1/stock/manual-exits", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-request-id": "req-d777-saida" },
+      body: JSON.stringify({
+        requestId: "9c8b7a6d-5e4f-4a3b-9c1d-0e9f8a7b6c5d",
+        tipo: "OUTROS",
+        observacao: "conferência",
+        itens: [{ skuId: "22222222-0000-4000-8000-000000000001", quantidade: 1 }],
+      }),
+    });
+    const corpoSaida = await respSaida.text();
+    expect(respSaida.status).toBe(500);
+    expect(corpoSaida).not.toContain("permission denied");
+    expect(JSON.parse(corpoSaida)).toEqual({
+      error: { code: "internal", message: "Erro interno.", request_id: "req-d777-saida" },
+    });
+    expect(linhas.some((l) => l.includes("request_internal_error") && l.includes("req-d777-saida"))).toBe(true);
+  });
 });
 
 describe("conexão de loja Shopee (D-425)", () => {
@@ -2222,6 +2331,18 @@ describe("conexão de loja Shopee (D-425)", () => {
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual({ connected: true, shops: [{ shopId: 54804, shopName: "Loja Teste BR" }] });
     });
+
+    it.each(["0", "99999999999999999999"])(
+      "D-777: recusa shop_id=%s (zero ou fora de inteiro seguro) como ausente antes de trocar token",
+      async (badShopId) => {
+        const response = await withShopee({ withAuth: false }).request(
+          `/oauth/shopee/callback?state=${"s".repeat(43)}&code=abc&shop_id=${badShopId}`,
+        );
+
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ error: { code: "rejected" } });
+      },
+    );
   });
 });
 
