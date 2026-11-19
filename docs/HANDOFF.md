@@ -27,7 +27,7 @@
 
 ### O que está pronto
 
-Entregas até setembro em `docs/archive/handoffs/2026-10-15_o-que-esta-pronto-de-setembro.md`. Margem na Curva ABC e base do cálculo visível no Ranking (METRICS 5N e 5X).
+Entregas até setembro em `docs/archive/handoffs/2026-10-15_o-que-esta-pronto-de-setembro.md`. Margem de venda por SKU na Curva ABC e no Ranking (METRICS 5N e 5X).
 
 Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 `docs/DECISIONS_INDEX.md` → `D-xxx` em `docs/DECISIONS.md`.
