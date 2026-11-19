@@ -59,6 +59,23 @@ grep -n "^## D-171" -A 40 docs/DECISIONS.md
   vai para `docs/PERFORMANCE.md`.
 - Secrets nunca no frontend nem no Git.
 
+## Modelo e esforço do Codex Sentinel
+
+- **GPT-6.2 Sol / Médio** é o padrão para correções comuns, testes,
+  auditorias de rotina e desenvolvimento geral.
+- Recomende **GPT-6.2 Sol / Alto** quando um bug complexo, concorrência,
+  autenticação, reprodução difícil ou investigação profunda justificar
+  um esforço maior.
+- Recomende **GPT-6.2 Astra / Médio ou Alto** somente para uma etapa
+  crítica que exija raciocínio mais avançado ou quando o Sol não conseguir
+  avançar adequadamente.
+- Se a troca trouxer um ganho concreto, informe brevemente o motivo, o
+  modelo e esforço sugeridos e o benefício esperado. O usuário faz a
+  alteração manualmente. Continue o trabalho quando puder avançar,
+  dispense recomendações para problemas simples e evite repetições.
+- Ao concluir a etapa complexa, avise imediatamente que já podemos voltar
+  ao **GPT-6.2 Sol / Médio**.
+
 ## Antes de commitar
 
 ```bash
