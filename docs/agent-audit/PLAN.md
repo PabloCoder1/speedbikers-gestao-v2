@@ -2,9 +2,9 @@
 
 ## Diagnóstico e critérios
 
-Há 105 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou medições externas (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. API, worker e integrações concentram as falhas de consistência. Banco e desempenho exigem observação real. A varredura de antecipação de queries de 13/11 não encontrou outra oportunidade nas rotas de alto tráfego fora de D-670–D-684. O [checkpoint](SESSION_LOG.md) reúne as correções, as auditorias de dependências e o estado da publicação.
+Há 106 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou medições externas (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. API, worker e integrações concentram as falhas de consistência. Banco e desempenho exigem observação real. A varredura de antecipação de queries de 13/11 não encontrou outra oportunidade nas rotas de alto tráfego fora de D-670–D-684. O [checkpoint](SESSION_LOG.md) reúne as correções, as auditorias de dependências e o estado da publicação.
 
-**Frente atual em 19/11.** Sentinel incorporou os 18 commits do [Gemini](GEMINI_HANDOFF.md). A gravação de NF-e e ERP agora troca a conferência em uma transação (A104/D-750 e A105/D-752). O ERP foi ensaiado com 23.924 linhas normalizadas em 24 blocos. O Supabase Dev está inativo. As migrations aguardam aplicação em Dev e regeneração dos tipos em coordenação com a frente do Claude. O próximo passo local é preparar a integração com `f243b7c1` (#334), resolver a numeração D-720–D-725, regenerar o índice e testar D-747 com D-765. #331 segue aberto. [Fechamento](STATE_AND_COMPLETION_2026-11-18.md).
+**Frente atual em 19/11.** Sentinel incorporou os 18 commits do [Gemini](GEMINI_HANDOFF.md). A gravação de NF-e e ERP agora troca a conferência em uma transação (A104/D-750 e A105/D-752). O ERP foi ensaiado com 23.924 linhas normalizadas em 24 blocos. O Supabase Dev está inativo. As migrations aguardam aplicação em Dev e regeneração dos tipos em coordenação com a frente do Claude. D-753 rejeita IDs duplicados. Na integração com `f243b7c1` (#334), preservar a numeração publicada de compras, reconciliar os seis IDs Sentinel D-720–D-725, gerar o índice e testar D-747 com D-765. #331 segue aberto. [Fechamento](STATE_AND_COMPLETION_2026-11-18.md).
 
 | Prioridade | Critério aplicado |
 | --- | --- |

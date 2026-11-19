@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **654** (D-001 a D-752).
+Decisões registradas: **655** (D-001 a D-753).
 
 ## Por domínio
 
@@ -85,7 +85,7 @@ Decisões registradas: **654** (D-001 a D-752).
 - **D-740** — Ações, painel de diagnóstico, vínculo, republicação e quatro gavetas recuperam controles em falha de transporte
 - **D-743** — Copiloto filtra `replenishment_settings`, lê últimas mensagens do SAC e corrige limite/papel
 
-### banco/rls (46)
+### banco/rls (47)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -133,6 +133,7 @@ Decisões registradas: **654** (D-001 a D-752).
 - **D-469** — get_sales_expanded_summary: os pedidos do periodo pelo indice da organizacao e os itens so na faixa de ids deles
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
+- **D-753** — Índice de decisões exige IDs únicos antes de gravar
 
 ### estoque (53)
 

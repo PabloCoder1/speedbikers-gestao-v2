@@ -20040,3 +20040,7 @@ O worker envia as linhas normalizadas à `stage_erp_parse_chunk` em blocos de at
 A `publish_erp_parse` bloqueia a linha do lote, substitui as linhas e os snapshots anteriores, calcula os totais em SQL e muda o estado para `PARSED` na mesma transação. Quantidade, posições extremas e unicidade garantem uma conferência completa. Falha em qualquer etapa reverte a substituição. A leitura do bucket e a escrita de blocos não mantêm aberto o bloqueio da publicação.
 
 A migration de trabalho `20261119101000` mantém as duas RPCs em modo invocador com execução restrita a `service_role`. O worker usa um contrato local até a regeneração coordenada dos tipos a partir do Dev. A migration precisa ser aplicada antes da revisão do worker que usa as RPCs.
+
+## D-753 - Índice de decisões exige IDs únicos antes de gravar
+
+A integração documental pode juntar decisões diferentes com o mesmo ID. A checagem anterior reduzia os IDs a um conjunto, o que aceitava uma duplicidade nova se o índice antigo continuasse presente. `docs:check` agora acusa IDs duplicados na fonte ou no índice. `docs:index` valida a fonte antes de regravar o arquivo gerado e preserva o arquivo existente se encontrar uma colisão.

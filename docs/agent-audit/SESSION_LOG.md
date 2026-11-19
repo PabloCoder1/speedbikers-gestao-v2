@@ -780,3 +780,9 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - A migration `20261119101000` foi aplicada e reaplicada em reset local. Via PostgREST, uma fixture de 23.924 linhas normalizadas passou em 24 blocos. Duas publicações concorrentes produziram um único resultado. O teste de posição ausente confirmou rollback de linhas e snapshots. Também passaram o caso vazio e a verificação de permissões. O ensaio começou nas linhas normalizadas.
 - Passaram 105 testes focados, 1.085 testes do worker no check de 37 tarefas, 10 tarefas no build, `docs:check` e 1.167 testes SQL em 13 arquivos na stack limpa. O Supabase Dev `nmgccyqquwxecqffsidr` está `INACTIVE`. D-750 e D-752 aguardam aplicação em Dev e regeneração dos tipos em coordenação com compras. O código e as migrations do Claude ficaram fora da alteração.
 - A simulação com `f243b7c1` manteve os conflitos em DECISIONS, DECISIONS_INDEX e HANDOFF. O próximo passo local é preparar a integração D-720–D-725 e depois testar D-747 com D-765. O fechamento técnico permanece em 134/226 (59,3%), com 23/43 entregas.
+
+### 19/11/2026 · Proteção contra IDs duplicados na integração documental
+
+- D-753/A106 parte de `b1c305f2`. Em cópia temporária, inserir outro `D-720` na fonte com o índice original fez `docs:check` passar. O gerador também passou e sobrescreveu o índice. Após a correção, os dois comandos rejeitam a duplicidade. O gerador preserva o índice existente e a checagem também rejeita repetição apenas no índice.
+- Na fonte válida, foram indexadas 655 decisões. Passaram a checagem dos dois scripts, `docs:check`, o check de 37 tarefas e o build de 10 tarefas.
+- A próxima ação é reconciliar os seis IDs D-720–D-725 da Sentinel com as decisões já publicadas de compras, revisar as referências e testar a integração com D-765 em checkout isolado. As migrations de D-750 e D-752 seguem pendentes em Dev. Fechamento técnico de 59,3%.

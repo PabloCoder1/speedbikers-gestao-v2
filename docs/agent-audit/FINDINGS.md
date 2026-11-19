@@ -142,6 +142,7 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A104 | P1 · CORRIGIDO localmente (D-750) | Uma execução substituída da NF-e ainda podia regravar itens ou marcar `FAILED` depois de outra completar a leitura | A RPC valida a versão de `PARSING` e troca cabeçalho e itens em uma transação. As falhas simples também exigem a versão. A migration aguarda Dev. [Checkpoint](SESSION_LOG.md) |
 
 | A105 | P1 · CORRIGIDO localmente (D-751/D-752) | Uma execução substituída do ERP podia marcar `FAILED`, apagar a conferência ou publicar menos linhas após a conclusão de outra tentativa | A versão condiciona o registro de falhas e o envio dos blocos privados. A publicação troca as linhas, limpa os snapshots anteriores e atualiza o estado em uma transação. Validação local com 23.924 linhas normalizadas. [Checkpoint](SESSION_LOG.md) |
+| A106 | P2 · CORRIGIDO localmente (D-753) | A validação documental reduzia os IDs a um conjunto. Com o índice antigo, uma duplicidade na fonte passava e o gerador gravava o ID duas vezes | A checagem acusa duplicidades na fonte e no índice. O gerador valida a unicidade antes de sobrescrever o índice. A reconciliação dos IDs da `main` continua na fila. [Checkpoint](SESSION_LOG.md) |
 
 ## Referências externas
 

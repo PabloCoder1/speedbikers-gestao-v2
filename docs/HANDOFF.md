@@ -14,9 +14,9 @@
 |---|---|
 | **Atualizado em** | 2026-11-19 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | Referência local `origin/main` em `f243b7c1` (#334, saída para Full). Sentinel em branch própria, com Gemini e D-747 a D-752. A [simulação de integração](agent-audit/SESSION_LOG.md) segue com três conflitos documentais. |
+| **HEAD conhecido** | Referência local `origin/main` em `f243b7c1` (#334, saída para Full). Sentinel em branch própria, com Gemini e D-747 a D-753. A [simulação de integração](agent-audit/SESSION_LOG.md) segue com três conflitos documentais. |
 | **Fechamento da V3** | 134/226 pontos (59,3%), 23/43 entregas. Compras (F05) publicada. [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md) e `node scripts/report-closure-progress.mjs`. |
-| **Sentinel: próximo passo** | D-750 e D-752 protegem a gravação de NF-e e ERP e aguardam aplicação no Dev. ERP validado localmente com 23.924 linhas em 24 blocos. Próximo passo local é preparar a integração documental e ensaiar D-747 com D-765 no #334. [Checkpoint](agent-audit/SESSION_LOG.md). |
+| **Sentinel: próximo passo** | D-750 e D-752 protegem a gravação de NF-e e ERP e aguardam aplicação no Dev. D-753 rejeita decisões com ID duplicado. Reconciliar D-720–D-725 e ensaiar D-747 com D-765 no #334. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` confirmado inativo em 19/11. Consultas GCP de `speedbikers-gestao-v3` negadas. Pausa das rotinas registrada em D-350. |
 | **Supabase** | Projetos hospedados Dev e produção `imvjfgnaprqsfjlnsyev` estavam `INACTIVE` em 18/11. Produção usa `sb-db`. #333 registra navegação autenticada e catálogo lido na VM. Convite, SMTP/reset e recuperação completa seguem pendentes. |
 | **Produção** | A conferência Sentinel anterior ao #334 encontrou web `f2eb787c` READY (`dpl_DxjdksaBE1QZRqzK7o9B52mgcKbN`), Run em `api-00039-22b`/`worker-00058-mbc` e dois de 18 agendamentos com código 14. O #334 registra revisões Run `api-00040-fr5`/`worker-00059-mjc` em `7a93bf70`. O runtime desse corte aguarda conferência independente. |

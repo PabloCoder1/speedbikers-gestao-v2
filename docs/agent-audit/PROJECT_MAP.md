@@ -2,7 +2,7 @@
 
 Base da inspeção em 11/11/2026 · `origin/main` em `d6169205ca0ea51d615d2e70cd0b944b5c491adb`. A `main` remota contém a V3 e publica a web na Vercel. A V2 histórica está em `v2-legacy` e na tag `v2-final`.
 
-Em 19/11, a referência local `origin/main` chegou a `f243b7c1` após o #334. A Sentinel reúne as entregas D-732 a D-746 do [Gemini](GEMINI_HANDOFF.md), a conferência da NF-e (D-747), as guardas de leitura (D-748/D-749/D-751) e a gravação atômica da conferência de NF-e (D-750) e ERP (D-752). A [fila atual](PLAN.md) registra a aplicação em Dev e a integração com a `main`.
+Em 19/11, a referência local `origin/main` chegou a `f243b7c1` após o #334. A Sentinel reúne as entregas D-732 a D-746 do [Gemini](GEMINI_HANDOFF.md), a conferência da NF-e (D-747), as guardas de leitura (D-748/D-749/D-751), a gravação atômica dos imports de NF-e (D-750) e ERP (D-752) e a verificação de IDs únicos das decisões (D-753). A [fila atual](PLAN.md) registra a aplicação em Dev e a integração com a `main`.
 
 ## Navegação
 
