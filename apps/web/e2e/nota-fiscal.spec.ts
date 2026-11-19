@@ -228,3 +228,49 @@ test("/notas-fiscais: a nota de venda do marketplace não é falha, e o DANFE de
     await db.from("documents").delete().in("id", [venda, danfe]);
   }
 });
+
+test("D-771: saída manual e edição de item não anunciam sucesso diante de resposta 200 HTML sem JSON", async ({
+  page,
+}) => {
+  const seed = await readSeedOutput();
+
+  await page.route("**/v1/stock/manual-exits", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<html><body>proxy ok</body></html>",
+    });
+  });
+
+  await login(page, "/notas-fiscais/saida-manual");
+  await page.getByLabel("Buscar SKU para adicionar à saída").fill(seed.skuCode);
+  await page.getByRole("button", { name: new RegExp(seed.skuCode) }).click();
+  await expect(page.getByLabel(`Quantidade de ${seed.skuCode}`)).toBeVisible();
+
+  const darSaida = page.getByRole("button", { name: "Dar saída", exact: true });
+  await darSaida.click();
+
+  await expect(page.getByRole("alert").filter({ hasText: /formato inesperado/i })).toBeVisible();
+  await expect(page.getByText("SAÍDA REGISTRADA")).toHaveCount(0);
+  await expect(page.getByLabel(`Quantidade de ${seed.skuCode}`)).toBeVisible();
+  await expect(darSaida).toBeEnabled();
+
+  await page.route(`**/v1/nfe-imports/${seed.documentId}/items/${String(seed.documentItemId)}`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<html><body>proxy ok</body></html>",
+    });
+  });
+
+  await page.goto(`/notas-fiscais/${seed.documentId}`);
+  await page.getByRole("button", { name: "Alterar", exact: true }).click();
+  const campoQtd = page.getByLabel("Nova quantidade do item");
+  await campoQtd.fill("7");
+  const salvar = page.getByRole("button", { name: "Salvar", exact: true });
+  await salvar.click();
+
+  await expect(page.getByRole("alert").filter({ hasText: /formato inesperado/i })).toBeVisible();
+  await expect(salvar).toBeEnabled();
+  await expect(campoQtd).toHaveValue("7");
+});

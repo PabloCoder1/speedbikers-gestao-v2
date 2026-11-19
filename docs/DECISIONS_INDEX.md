@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **672** (D-001 a D-770).
+Decisões registradas: **673** (D-001 a D-771).
 
 ## Por domínio
 
@@ -409,7 +409,7 @@ Decisões registradas: **672** (D-001 a D-770).
 - **D-741** — Conectores OAuth, SAC e confirmação de aplicação protegem leitura de sessão e JSON de resposta
 - **D-742** — `relist.prepare` grava preflight reprovado atomicamente e retenta falhas transitórias do multiget
 
-### outros (106)
+### outros (107)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -517,6 +517,7 @@ Decisões registradas: **672** (D-001 a D-770).
 - **D-759** — Ações do fornecedor conservam a edição após falha de transporte
 - **D-762** — A previsão de chegada se edita com histórico
 - **D-768** — Retenção preserva a última execução concluída apesar de falhas posteriores
+- **D-771** — Saída manual e edição de item da NF-e protegem sessão, resposta JSON, lotes `.in` e falhas de transporte na web
 
 ### processo/docs (1)
 

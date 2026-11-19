@@ -3,16 +3,22 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { lerTokenDeSessao } from "../../../../lib/chamar-api";
 import { formatCount } from "../../../../lib/format";
 import { termoSeguroParaOr } from "../../../../lib/postgrest-search";
 import {
+  LOTE_CONSULTA_SAIDA,
+  MAX_CHAVES_IMPORTACAO,
   MAX_ITENS,
   OBSERVACAO_MAX,
   TIPOS_DE_SAIDA,
   chaveDoSku,
   lerListaDeSkus,
   mensagemDaApi,
+  particionarEmLotes,
   quantidadeValida,
+  respostaDeSaidaValida,
+  somarQuantidadeNoLimite,
   type TipoDeSaida,
 } from "../../../../lib/saida-manual";
 import { createClient } from "../../../../lib/supabase/browser";
@@ -61,20 +67,27 @@ function novoId(): string {
 async function lerSaldos(ids: string[]): Promise<Map<string, number> | null> {
   if (ids.length === 0) return new Map();
 
-  const { data, error } = await createClient()
-    .from("inventory_balances")
-    .select("sku_id, quantity")
-    .eq("location_kind", "LOCAL")
-    .in("sku_id", ids);
+  try {
+    const supabase = createClient();
+    const respostas = await Promise.all(
+      particionarEmLotes(ids, LOTE_CONSULTA_SAIDA).map((lote) =>
+        supabase.from("inventory_balances").select("sku_id, quantity").eq("location_kind", "LOCAL").in("sku_id", lote),
+      ),
+    );
 
-  if (error !== null) return null;
+    // SKU sem linha no saldo tem zero na loja (o grão é SKU × local).
+    const saldos = new Map<string, number>(ids.map((id) => [id, 0]));
 
-  // SKU sem linha no saldo tem zero na loja (o grão é SKU × local).
-  const saldos = new Map<string, number>(ids.map((id) => [id, 0]));
+    for (const { data, error } of respostas) {
+      if (error !== null) return null;
 
-  for (const linha of data) saldos.set(linha.sku_id, linha.quantity);
+      for (const linha of data) saldos.set(linha.sku_id, linha.quantity);
+    }
 
-  return saldos;
+    return saldos;
+  } catch {
+    return null;
+  }
 }
 
 export function SaidaManualForm({ desabilitado }: { desabilitado: boolean }): ReactNode {
@@ -124,26 +137,33 @@ export function SaidaManualForm({ desabilitado }: { desabilitado: boolean }): Re
 
     const espera = setTimeout(() => {
       void (async () => {
-        const seguro = termoSeguroParaOr(termo);
-        const { data, error } = await createClient()
-          .from("skus")
-          .select("id, sku, title")
-          .or(`sku_key.ilike.%${seguro.toUpperCase()}%,title.ilike.%${seguro}%,barcode.ilike.%${seguro}%`)
-          .order("sku")
-          .limit(8);
+        try {
+          const seguro = termoSeguroParaOr(termo);
+          const { data, error } = await createClient()
+            .from("skus")
+            .select("id, sku, title")
+            .or(`sku_key.ilike.%${seguro.toUpperCase()}%,title.ilike.%${seguro}%,barcode.ilike.%${seguro}%`)
+            .order("sku")
+            .limit(8);
 
-        if (numero !== ultimaBusca.current) return;
+          if (numero !== ultimaBusca.current) return;
 
-        setBuscando(false);
+          setBuscando(false);
 
-        if (error !== null) {
+          if (error !== null) {
+            setErroBusca("Não foi possível buscar SKUs — tente de novo.");
+
+            return;
+          }
+
+          setErroBusca(null);
+          setResultados(data);
+        } catch {
+          if (numero !== ultimaBusca.current) return;
+
+          setBuscando(false);
           setErroBusca("Não foi possível buscar SKUs — tente de novo.");
-
-          return;
         }
-
-        setErroBusca(null);
-        setResultados(data);
       })();
     }, ESPERA_MS);
 
@@ -169,7 +189,7 @@ export function SaidaManualForm({ desabilitado }: { desabilitado: boolean }): Re
 
         const atual = quantidadeValida(linha.quantidade) ?? 0;
 
-        return { ...linha, quantidade: String(atual + extra) };
+        return { ...linha, quantidade: String(somarQuantidadeNoLimite(atual, extra)) };
       });
 
       return [
@@ -219,49 +239,71 @@ export function SaidaManualForm({ desabilitado }: { desabilitado: boolean }): Re
     setLendoLista(true);
     setAvisoImportacao(null);
 
-    // Até 300 chaves por vez cabem com folga na URL do PostgREST.
-    const chaves = [...new Set(lidas.map((linha) => chaveDoSku(linha.codigo)))].slice(0, MAX_ITENS);
-    const { data, error } = await createClient().from("skus").select("id, sku, title, sku_key").in("sku_key", chaves);
+    try {
+      const linhasConsultadas = lidas.slice(0, MAX_CHAVES_IMPORTACAO);
+      const excedentesDaLista = lidas.length - linhasConsultadas.length;
+      const chaves = [...new Set(linhasConsultadas.map((linha) => chaveDoSku(linha.codigo)))];
+      const supabase = createClient();
+      const respostas = await Promise.all(
+        particionarEmLotes(chaves, LOTE_CONSULTA_SAIDA).map((lote) =>
+          supabase.from("skus").select("id, sku, title, sku_key").in("sku_key", lote),
+        ),
+      );
 
-    setLendoLista(false);
+      const encontrados: { id: string; sku: string; title: string | null; sku_key: string }[] = [];
 
-    if (error !== null) {
+      for (const resposta of respostas) {
+        if (resposta.error !== null) {
+          setAvisoImportacao("Não foi possível conferir os SKUs da lista — tente de novo.");
+
+          return;
+        }
+
+        encontrados.push(...resposta.data);
+      }
+
+      const porChave = new Map(encontrados.map((sku) => [sku.sku_key, sku]));
+      const achados: { sku: SkuResult; quantidade: number }[] = [];
+      const naoAchados: string[] = [];
+
+      for (const linha of linhasConsultadas) {
+        const sku = porChave.get(chaveDoSku(linha.codigo));
+
+        if (sku === undefined) naoAchados.push(linha.codigo);
+        else achados.push({ sku: { id: sku.id, sku: sku.sku, title: sku.title }, quantidade: linha.quantidade });
+      }
+
+      const recusados = (await adicionar(achados)) + excedentesDaLista;
+
+      const avisos = [
+        naoAchados.length > 0 &&
+          `${String(naoAchados.length)} código${naoAchados.length === 1 ? "" : "s"} sem SKU no sistema: ${naoAchados.slice(0, 8).join(", ")}${naoAchados.length > 8 ? "…" : ""}.`,
+        invalidas.length > 0 && `Linhas não lidas: ${invalidas.join(", ")}.`,
+        recusados > 0 && `${String(recusados)} SKUs ficaram de fora: uma saída leva até ${String(MAX_ITENS)}.`,
+      ].filter((aviso): aviso is string => typeof aviso === "string");
+
+      setAvisoImportacao(
+        avisos.length > 0 ? `${String(Math.max(0, achados.length - (recusados - excedentesDaLista)))} SKUs entraram. ${avisos.join(" ")}` : null,
+      );
+
+      if (avisos.length === 0) {
+        setListaColada("");
+        setImportando(false);
+      }
+    } catch {
       setAvisoImportacao("Não foi possível conferir os SKUs da lista — tente de novo.");
-
-      return;
-    }
-
-    const porChave = new Map(data.map((sku) => [sku.sku_key, sku]));
-    const achados: { sku: SkuResult; quantidade: number }[] = [];
-    const naoAchados: string[] = [];
-
-    for (const linha of lidas) {
-      const sku = porChave.get(chaveDoSku(linha.codigo));
-
-      if (sku === undefined) naoAchados.push(linha.codigo);
-      else achados.push({ sku: { id: sku.id, sku: sku.sku, title: sku.title }, quantidade: linha.quantidade });
-    }
-
-    const recusados = await adicionar(achados);
-
-    const avisos = [
-      naoAchados.length > 0 &&
-        `${String(naoAchados.length)} código${naoAchados.length === 1 ? "" : "s"} sem SKU no sistema: ${naoAchados.slice(0, 8).join(", ")}${naoAchados.length > 8 ? "…" : ""}.`,
-      invalidas.length > 0 && `Linhas não lidas: ${invalidas.join(", ")}.`,
-      recusados > 0 && `${String(recusados)} SKUs ficaram de fora: uma saída leva até ${String(MAX_ITENS)}.`,
-    ].filter((aviso): aviso is string => typeof aviso === "string");
-
-    setAvisoImportacao(avisos.length > 0 ? `${String(achados.length - recusados)} SKUs entraram. ${avisos.join(" ")}` : null);
-
-    if (avisos.length === 0) {
-      setListaColada("");
-      setImportando(false);
+    } finally {
+      setLendoLista(false);
     }
   }
 
   async function lerArquivo(arquivo: File): Promise<void> {
-    setListaColada(await arquivo.text());
-    setAvisoImportacao(null);
+    try {
+      setListaColada(await arquivo.text());
+      setAvisoImportacao(null);
+    } catch {
+      setAvisoImportacao("Não foi possível ler o arquivo escolhido.");
+    }
   }
 
   function mudarQuantidade(id: string, quantidade: string): void {
@@ -298,11 +340,10 @@ export function SaidaManualForm({ desabilitado }: { desabilitado: boolean }): Re
     setEnviando(true);
     setErro(null);
 
-    const { data } = await createClient().auth.getSession();
-    const token = data.session?.access_token;
+    const sessao = await lerTokenDeSessao("Sua sessão expirou. Entre de novo.");
 
-    if (token === undefined) {
-      setErro("Sua sessão expirou. Entre de novo.");
+    if (!sessao.ok) {
+      setErro(sessao.mensagem);
       setEnviando(false);
 
       return;
@@ -313,7 +354,7 @@ export function SaidaManualForm({ desabilitado }: { desabilitado: boolean }): Re
     try {
       resposta = await fetch(`${API_URL}/v1/stock/manual-exits`, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${sessao.token}`, "content-type": "application/json" },
         body: JSON.stringify({
           requestId,
           tipo,
@@ -329,10 +370,15 @@ export function SaidaManualForm({ desabilitado }: { desabilitado: boolean }): Re
       return;
     }
 
-    if (!resposta.ok) {
-      const payload: unknown = await resposta.json().catch(() => null);
+    const payload: unknown = await resposta.json().catch(() => null);
 
-      setErro(mensagemDaApi(payload) ?? "Não foi possível dar a saída.");
+    if (!resposta.ok || !respostaDeSaidaValida(payload, requestId)) {
+      setErro(
+        mensagemDaApi(payload) ??
+          (resposta.ok
+            ? "O servidor respondeu em formato inesperado. Confira em Movimentações ou tente de novo — a mesma saída não é gravada duas vezes."
+            : "Não foi possível dar a saída."),
+      );
       setEnviando(false);
 
       return;

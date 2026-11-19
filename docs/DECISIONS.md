@@ -20180,3 +20180,15 @@ Quatro defeitos confirmados nos novos endpoints da D-766 (`apps/api/src/document
 4. **Aceitação de `itemId` fora de inteiro decimal em `app.ts`:** `POST /v1/nfe-imports/:id/items/:itemId` usava `Number(param)`, aceitando `"1e2"`, `"0x10"` e `"1.0"`. Agora valida `/^\d+$/` antes da conversão, devolvendo HTTP 400 `invalid_payload`.
 
 Reprodução pré-correção em `document-items.test.ts`, `manual-exit.test.ts` e `app.test.ts` registrou 7 falhas (`7 failed | 126 passed (133)`); após a correção, `@sb/api` passou integralmente em `typecheck`, `eslint` e `vitest` (`42` arquivos / `555` testes).
+
+## D-771 - Saída manual e edição de item da NF-e protegem sessão, resposta JSON, lotes `.in` e falhas de transporte na web
+
+Seis fragilidades confirmadas nos componentes web introduzidos pela D-766 (`apps/web/app/(app)/notas-fiscais/saida-manual/saida-manual-form.tsx`, `apps/web/app/(app)/notas-fiscais/[id]/item-quantity.tsx`, `apps/web/app/(app)/notas-fiscais/[id]/page.tsx` e `apps/web/lib/saida-manual.ts`):
+
+1. **Últimas duas chamadas `getSession()` sem proteção em cliente (`saida-manual-form.tsx`, `item-quantity.tsx`):** ambas passaram a usar `lerTokenDeSessao` (`apps/web/lib/chamar-api.ts`), impedindo trava permanente de `enviando`/`acao` se o Auth do navegador falhar.
+2. **Falso sucesso em resposta `200 OK` HTML/não-JSON (`saida-manual-form.tsx`, `item-quantity.tsx`):** introduzidos `respostaDeSaidaValida(payload, requestId)` e `respostaDeEdicaoDeItemValida(payload)` em `lib/saida-manual.ts`; resposta 200 fora do contrato da API agora exibe alerta de formato inesperado e preserva a lista/campo sem anunciar `"SAÍDA REGISTRADA"` nem fechar a edição.
+3. **Consultas `.in` sem fatiamento (`saida-manual-form.tsx` e `notas-fiscais/[id]/page.tsx`):** `lerSaldos`, `importarLista` e a leitura de `inventory_balances` na página do documento agora fatiam listas em lotes paralelos de `LOTE_CONSULTA_SAIDA = 100` (`particionarEmLotes`), evitando HTTP 414 em saídas ou documentos grandes.
+4. **Truncamento silencioso e travas em `importarLista`, `lerSaldos`, `lerArquivo` e busca (`saida-manual-form.tsx`):** todas as operações assíncronas agora têm `try/catch/finally` (nunca travam `lendoLista`, `"…"` ou `"Buscando…"`). `importarLista` aceita até `MAX_CHAVES_IMPORTACAO = 1.000` chaves distintas fatiadas em lotes de 100 e classifica o excedente em `recusados` em vez de reportar SKUs válidos além de 300 como inexistentes. `adicionar` limita a soma acumulada com `somarQuantidadeNoLimite`.
+5. **Teclado durante gravação (`item-quantity.tsx`):** `Enter` e `Escape` agora respeitam `!ocupado` (e `Enter` só dispara quando `nova !== quantity`), e `Escape` limpa erro anterior e restaura o valor original.
+
+Validado em `@sb/web` (`typecheck`, `eslint`, `147` arquivos / `1.550` testes unitários incluindo `saida-manual.test.ts` com 9 casos, todas as 7 guardas estáticas e regressão E2E `D-771` em `e2e/nota-fiscal.spec.ts`).
