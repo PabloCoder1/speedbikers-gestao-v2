@@ -105,7 +105,7 @@ export function createLogger(base: LogContext = {}, options: LoggerOptions = {})
     sink(
       JSON.stringify({
         severity,
-        message,
+        message: redactSecretText(message, REDACTED),
         timestamp: now().toISOString(),
         ...merged,
       }),

@@ -36,9 +36,9 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## P0 ativos
 
-- **Aceite após recuperação.** Em 19/11 a API respondeu 200 e o Scheduler mostrou 18 jobs habilitados sem erro na última tentativa. Falta validar `job_runs`, backlog e fluxos autenticados. Cloud Monitoring retornou zero políticas de alerta e zero uptime checks.
+- **Aceite após recuperação.** Em 19/11, sete filas sem tarefas vencidas na consulta. O worker registrou 403 em anúncios do ML e 429 no pós-venda. Faltam verificar a causa dos 403, `job_runs` e fluxos autenticados. Monitoring sem alertas ou uptime checks.
 - **Workflow de banco ainda aponta ao hosted pausado.** Dev e antigo hosted de produção continuam INACTIVE; a VM de produção e a web estão operacionais, conferidas em 18/11. O job Dev da main falhava antes desta entrega e exige reconciliação de infraestrutura; não foi desativado. Ver `infra/vm/README.md`.
-- **Avisos críticos do Next.js.** A branch local atualiza Next.js e Zod e passa a auditoria no corte alto. A publicação segue o fluxo da `main` e os deploys da API e do worker. [Achados](agent-audit/FINDINGS.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
+- **Avisos críticos do Next.js.** O #336 reúne os patches de dependências. A correção D-330 na mensagem do logger tem teste local e aguarda revisão. [Achados](agent-audit/FINDINGS.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
 
 ---
 

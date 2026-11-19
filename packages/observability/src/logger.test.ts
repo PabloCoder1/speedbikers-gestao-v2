@@ -37,6 +37,17 @@ describe("createLogger", () => {
     });
   });
 
+  it("redige segredos na mensagem principal", () => {
+    const { lines, logger } = captureLogger();
+    const fixture = "APP_USR-1234567890-fixture";
+
+    logger.warn(`falha na consulta: ${fixture}`);
+
+    const line = lines[0] ?? "";
+    expect(line).not.toContain(fixture);
+    expect(parse(line).message).toBe("falha na consulta: [REDACTED]");
+  });
+
   it("mapeia warn para WARNING, que é o nível do Cloud Logging", () => {
     const { lines, logger } = captureLogger();
 
