@@ -49,6 +49,15 @@ function fakeDeps(options: {
 }): { deps: ParseDeps; captured: Captured; lines: string[] } {
   const captured: Captured = { updates: [], inserted: [], deletedTables: [] };
   const lines: string[] = [];
+  let batch = {
+    id: BATCH,
+    kind: options.kind ?? "STOCK",
+    storage_path: "org/2026-08/hash.xlsx",
+    status: options.status ?? "UPLOADED",
+    parsed_at: options.parsedAt ?? null,
+    updated_at: BATCH_VERSION,
+    organization_id: ENVELOPE.organizationId,
+  };
 
   const db = {
     from: (table: string) => ({
@@ -56,32 +65,29 @@ function fakeDeps(options: {
         eq: () => ({
           maybeSingle: () =>
             Promise.resolve({
-              data:
-                options.batchMissing === true
-                  ? null
-                  : {
-                      id: BATCH,
-                      kind: options.kind ?? "STOCK",
-                      storage_path: "org/2026-08/hash.xlsx",
-                      status: options.status ?? "UPLOADED",
-                      parsed_at: options.parsedAt ?? null,
-                      updated_at: BATCH_VERSION,
-                      organization_id: ENVELOPE.organizationId,
-                    },
+              data: options.batchMissing === true ? null : batch,
               error: null,
             }),
         }),
       }),
       update: (values: Record<string, unknown>) => {
         const filters = new Map<string, unknown>();
-        const updated = values.status === "PARSING" ? options.batchStateAfterRead : undefined;
         function execute() {
-          const matches = updated === undefined ||
-            ((!filters.has("status") || filters.get("status") === updated.status) &&
-              (!filters.has("updated_at") || filters.get("updated_at") === updated.updatedAt));
+          const current = (values.status === "PARSING" ? options.batchStateAfterRead : undefined) ??
+            { status: batch.status, updatedAt: batch.updated_at };
+          const matches =
+            (!filters.has("status") || filters.get("status") === current.status) &&
+            (!filters.has("updated_at") || filters.get("updated_at") === current.updatedAt);
           const error = options.updateError?.(values) ?? null;
-          if (matches && error === null) captured.updates.push(values);
-          return Promise.resolve({ data: matches && error === null ? { id: BATCH } : null, error });
+          if (!matches || error !== null) return Promise.resolve({ data: null, error });
+
+          captured.updates.push(values);
+          batch = {
+            ...batch,
+            ...values,
+            updated_at: new Date(Date.parse(BATCH_VERSION) + captured.updates.length).toISOString(),
+          };
+          return Promise.resolve({ data: { id: BATCH, updated_at: batch.updated_at }, error: null });
         }
         const update = {
           eq: (column: string, value: unknown) => {
@@ -132,6 +138,34 @@ function ctx(lines: string[], payload: unknown): { logger: ReturnType<typeof cre
 }
 
 describe("parse do arquivo do UpSeller", () => {
+  it.each(["erro de bucket", "planilha sem cabeçalho"])("preserva o lote conferido depois de %s de uma tentativa antiga", async (failure) => {
+    const { deps, captured, lines } = fakeDeps({});
+    const firstReading = Promise.withResolvers<undefined>();
+    const finishFirst = Promise.withResolvers<readonly (readonly unknown[])[]>();
+    vi.spyOn(deps.reader, "read").mockImplementationOnce(() => {
+      firstReading.resolve(undefined);
+      return finishFirst.promise;
+    });
+    const handler = createErpImportParseHandler(deps);
+    const first = handler(ENVELOPE, ctx(lines, { batchId: BATCH }));
+    await firstReading.promise;
+
+    let newer;
+    try {
+      newer = await handler({ ...ENVELOPE, attempt: 2 }, ctx(lines, { batchId: BATCH }));
+    } finally {
+      if (failure === "erro de bucket") finishFirst.reject(new Error("bucket fora do ar"));
+      else finishFirst.resolve([]);
+    }
+    const older = await first;
+
+    expect(newer).toEqual({ status: "done", processed: 2 });
+    expect(older).toMatchObject({ status: "failed", retryable: true });
+    expect(captured.updates.at(-1)).toMatchObject({ status: "PARSED", total_rows: 2 });
+    expect(captured.updates.some((update) => update.status === "FAILED")).toBe(false);
+    expect(captured.inserted).toHaveLength(1);
+  });
+
   it.each([
     ["UPLOADED", "APPLYING"],
     ["PARSING", "PARSING"],

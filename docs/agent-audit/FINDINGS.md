@@ -141,7 +141,7 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A104 | P1 · CORRIGIDO localmente (D-750) | Uma execução substituída da NF-e ainda podia regravar itens ou marcar `FAILED` depois de outra completar a leitura | A RPC valida a versão de `PARSING` e troca cabeçalho e itens em uma transação. As falhas simples também exigem a versão. A migration aguarda Dev. [Checkpoint](SESSION_LOG.md) |
 
-| A105 | P1 · CONFIRMADO localmente | ERP permite duas execuções em `PARSING` e deixa exclusões de staging e atualizações de erro filtrarem apenas pelo lote | O ensaio SQL intercalou as operações e reproduziu remoção de staging e regressão de `APPLYING` para `FAILED`. Primeiro proteger o registro dos erros e depois ensaiar a gravação atômica com planilhas grandes. [Checkpoint](SESSION_LOG.md) |
+| A105 | P1 · PARCIAL localmente (D-751) | ERP permite duas execuções em `PARSING` e deixa exclusões de staging e atualizações de erro filtrarem apenas pelo lote | D-751 condiciona `FAILED` à versão da tentativa. A troca das linhas de conferência continua em operações separadas. Ensaiar gravação atômica com planilhas grandes. [Checkpoint](SESSION_LOG.md) |
 
 ## Referências externas
 

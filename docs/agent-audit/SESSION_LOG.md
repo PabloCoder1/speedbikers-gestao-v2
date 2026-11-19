@@ -767,3 +767,9 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - A105 reproduziu no Postgres isolado a remoção de staging e a regressão de `APPLYING` para `FAILED` após duas entradas em `PARSING` no UpSeller/ERP. O próximo passo é testar e proteger as saídas de erro do handler e medir a gravação atômica para planilhas com o limite existente de 25 MiB. A integração documental com a `main` segue no [plano](PLAN.md).
 - O check passou em 37 tarefas, com 1.082 testes do worker. O build passou em 10 tarefas e `docs:check` concluiu. A comparação com a frente Claude encontrou interseção somente nos arquivos de decisões e handoff. Código, tipos e migrations de compras ficaram fora da mudança.
 - Progresso de 134/226 pontos (59,3%) e 23/43 entregas por contagem (53,5%). D-750 acrescenta evidência local a B02.
+
+### 19/11/2026 · Erros do parser ERP vinculados à versão
+
+- A partir de `40771b17`, D-751 reproduziu dois casos em que uma execução anterior do UpSeller podia sobrescrever o lote `PARSED`. Um falhava no bucket e o outro recebia uma planilha sem cabeçalho compatível. Ambos agora exigem a versão obtida quando a execução entrou em `PARSING` para marcar `FAILED`. A tentativa original continua elegível para retentativa se o erro for transitório ou se o registro do erro falhar.
+- Reproduzido com 2 falhas e 20 testes verdes no parser ERP. Após a correção passaram 104 testes focados, 1.084 testes do worker no check de 37 tarefas, 10 tarefas no build e `docs:check`. Trabalho local na Sentinel, sem migration para D-751.
+- A105 permanece aberto para a troca das linhas e snapshots. O próximo ensaio deve preservar o processamento em lotes que atende planilhas de até 25 MiB e usar a versão para publicar a conferência inteira. D-750 continua aguardando Dev. A integração documental segue na fila. O fechamento técnico se mantém em 59,3%.

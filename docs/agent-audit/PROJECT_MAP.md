@@ -2,7 +2,7 @@
 
 Base da inspeção em 11/11/2026 · `origin/main` em `d6169205ca0ea51d615d2e70cd0b944b5c491adb`. A `main` remota contém a V3 e publica a web na Vercel. A V2 histórica está em `v2-legacy` e na tag `v2-final`.
 
-Em 19/11, a referência local `origin/main` chegou a `f243b7c1` após o #334. A Sentinel reúne as entregas D-732 a D-746 do [Gemini](GEMINI_HANDOFF.md), a conferência da NF-e (D-747), a transição condicional que inicia a leitura de NF-e e ERP (D-748/D-749) e a gravação atômica da NF-e (D-750). A [fila atual](PLAN.md) registra o caso restante no ERP e a simulação de integração.
+Em 19/11, a referência local `origin/main` chegou a `f243b7c1` após o #334. A Sentinel reúne as entregas D-732 a D-746 do [Gemini](GEMINI_HANDOFF.md), a conferência da NF-e (D-747), a transição condicional que inicia a leitura de NF-e e ERP (D-748/D-749), a gravação atômica da NF-e (D-750) e a proteção dos erros de leitura do ERP (D-751). A [fila atual](PLAN.md) registra o caso restante no ERP e a simulação de integração.
 
 ## Navegação
 

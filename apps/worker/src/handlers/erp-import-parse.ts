@@ -184,7 +184,7 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
       .eq("id", batchId)
       .eq("status", batch.data.status)
       .eq("updated_at", batch.data.updated_at)
-      .select("id")
+      .select("updated_at")
       .maybeSingle();
 
     if (parsing.error !== null) {
@@ -195,6 +195,7 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
       return { status: "failed", retryable: true, reason: "lote mudou antes de iniciar a leitura" };
     }
 
+    const version = parsing.data.updated_at;
     let sheet: readonly (readonly unknown[])[];
 
     try {
@@ -202,13 +203,8 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
     } catch (error) {
       const reason = error instanceof Error ? error.message : "falha ao ler o arquivo";
 
-      await deps.db
-        .from("erp_import_batches")
-        .update({ status: "FAILED", last_error: reason })
-        .eq("id", batchId);
-
       // Bucket indisponível é transitório; o lote volta a PARSING na próxima.
-      return { status: "failed", retryable: true, reason };
+      return marcarFalhaNoLote(deps.db, batchId, version, { last_error: reason }, true);
     }
 
     const header = sheet[0] ?? [];
@@ -219,14 +215,9 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
     if (missing.length > 0) {
       const reason = `colunas ausentes: ${missing.join(", ")}`;
 
-      await deps.db
-        .from("erp_import_batches")
-        .update({ status: "FAILED", last_error: reason, total_rows: body.length })
-        .eq("id", batchId);
-
       context.logger.error("erp_parse_wrong_file", { batch_id: batchId, missing });
 
-      return { status: "failed", retryable: false, reason };
+      return marcarFalhaNoLote(deps.db, batchId, version, { last_error: reason, total_rows: body.length }, false);
     }
 
     // Idempotência: o job pode ser reentregue. Limpar antes de inserir faz a
@@ -280,4 +271,30 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
 
     return { status: "done", processed: counts.ok_rows };
   };
+}
+
+async function marcarFalhaNoLote(
+  db: AdminClient,
+  batchId: string,
+  version: string,
+  update: { last_error: string; total_rows?: number },
+  retryable: boolean,
+): Promise<JobOutcome> {
+  const failed = await db
+    .from("erp_import_batches")
+    .update({ ...update, status: "FAILED" })
+    .eq("id", batchId)
+    .eq("status", "PARSING")
+    .eq("updated_at", version)
+    .select("id")
+    .maybeSingle();
+
+  if (failed.error !== null) {
+    return { status: "failed", retryable: true, reason: failed.error.message };
+  }
+  if (failed.data === null) {
+    return { status: "failed", retryable: true, reason: "a versão da leitura do lote foi substituída" };
+  }
+
+  return { status: "failed", retryable, reason: update.last_error };
 }

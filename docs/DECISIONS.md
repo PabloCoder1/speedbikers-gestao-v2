@@ -20026,3 +20026,9 @@ O ensaio de A104 em NF-e confirmou que a comparação de entrada deixa uma segun
 Ao iniciar `PARSING`, o worker recebe o `updated_at` da atualização. A RPC `persist_nfe_parse` verifica a versão e bloqueia a linha do documento durante a substituição dos itens e a atualização de estado. Uma versão superada retorna `false` sem gravar. Falha de validação reverte a exclusão e a inserção. As falhas de leitura que só alteram o cabeçalho usam o mesmo filtro de versão e estado.
 
 A migração de trabalho `20261119094000` foi aplicada à stack isolada. A RPC é `SECURITY INVOKER` e tem execução restrita a `service_role`. O worker usa um contrato local para evitar alteração no arquivo de tipos gerados que também integra a frente de compras. A versão da migration e a regeneração conjunta dos tipos dependem da aplicação no Supabase Dev, que está inativo.
+
+## D-751 - Parser ERP registra erro apenas para a versão ativa do lote
+
+A falha de leitura do bucket e a falta de colunas no UpSeller agora exigem o estado `PARSING` e o `updated_at` que a execução recebeu ao iniciar a leitura. Se a tentativa foi substituída ou a gravação do erro falhar, o job retorna falha retentável. Quando a versão ainda é atual, uma falha de bucket continua retentável e colunas ausentes continuam uma rejeição definitiva, com a contagem de linhas preservada.
+
+A105 continua aberto para a substituição da conferência. O importador opera em lotes de mil linhas, com upload de 25 MiB e histórico de planilhas com 23.924 linhas. O próximo ensaio deve preservar essa capacidade e validar a troca das linhas de uma tentativa como unidade.

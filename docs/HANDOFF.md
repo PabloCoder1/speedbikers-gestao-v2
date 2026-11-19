@@ -14,9 +14,9 @@
 |---|---|
 | **Atualizado em** | 2026-11-19 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | Referência local `origin/main` em `f243b7c1` (#334, saída para Full). Sentinel em branch própria, com Gemini e D-747 a D-750. A [simulação de integração](agent-audit/SESSION_LOG.md) segue com três conflitos documentais. |
+| **HEAD conhecido** | Referência local `origin/main` em `f243b7c1` (#334, saída para Full). Sentinel em branch própria, com Gemini e D-747 a D-751. A [simulação de integração](agent-audit/SESSION_LOG.md) segue com três conflitos documentais. |
 | **Fechamento da V3** | 134/226 pontos (59,3%), 23/43 entregas. Compras (F05) publicada. [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md) e `node scripts/report-closure-progress.mjs`. |
-| **Sentinel: próximo passo** | D-750 protege a NF-e também na gravação e nas saídas de erro. A migration está na stack Sentinel local e aguarda Dev. A105 confirmou a lacuna restante no ERP após `PARSING`. Proteger as saídas de erro e ensaiar gravação atômica no volume suportado pelo importador. [Checkpoint](agent-audit/SESSION_LOG.md). |
+| **Sentinel: próximo passo** | D-750 protege a gravação e os erros da NF-e. A migration foi validada na stack local e aguarda Dev. D-751 protege as saídas de erro do ERP. Resta ensaiar a gravação atômica da conferência ERP no volume suportado pelo importador. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` confirmado inativo em 19/11. Consultas GCP de `speedbikers-gestao-v3` negadas. Pausa das rotinas registrada em D-350. |
 | **Supabase** | Projetos hospedados Dev e produção `imvjfgnaprqsfjlnsyev` estavam `INACTIVE` em 18/11. Produção usa `sb-db`. #333 registra navegação autenticada e catálogo lido na VM. Convite, SMTP/reset e recuperação completa seguem pendentes. |
 | **Produção** | A conferência Sentinel anterior ao #334 encontrou web `f2eb787c` READY (`dpl_DxjdksaBE1QZRqzK7o9B52mgcKbN`), Run em `api-00039-22b`/`worker-00058-mbc` e dois de 18 agendamentos com código 14. O #334 registra revisões Run `api-00040-fr5`/`worker-00059-mjc` em `7a93bf70`. O runtime desse corte aguarda conferência independente. |
