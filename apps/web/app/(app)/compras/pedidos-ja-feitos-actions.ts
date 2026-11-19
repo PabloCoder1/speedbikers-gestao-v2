@@ -3,6 +3,7 @@
 import type { Json } from "@sb/db";
 import { revalidatePath } from "next/cache";
 
+import type { DocumentoFornecedor } from "../../../lib/importacao-pedidos/invoice";
 import { currentMembership } from "../../../lib/membership";
 import { createClient } from "../../../lib/supabase/server";
 
@@ -211,6 +212,12 @@ export interface LinhaImportacao {
   quantityNeedsConfirmation: boolean;
   reference: string | null;
   notes: string | null;
+  /** Invoice (D-767): preço, valor, moeda, unidade e o cabeçalho do documento, como estavam no arquivo. */
+  unitPrice: number | null;
+  amount: number | null;
+  currency: string | null;
+  unit: string | null;
+  document: DocumentoFornecedor | null;
   raw: Record<string, string>;
 }
 

@@ -6,17 +6,25 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Panel } from "../../../../components/panel";
 import { formatCount } from "../../../../lib/format";
 import {
-  classificarAba,
+  classificar,
+  ehListaDeEmbalagem,
   montarLinhas,
   sha256Hex,
   type ClassificacaoAba,
   type PapelColuna,
 } from "../../../../lib/importacao-pedidos/colunas";
+import type { DocumentoFornecedor } from "../../../../lib/importacao-pedidos/invoice";
+import { XlsInvalido, lerXls } from "../../../../lib/importacao-pedidos/xls";
 import { TAMANHO_MAXIMO_BYTES, lerPlanilha, type Aba } from "../../../../lib/importacao-pedidos/xlsx";
 import { criarLoteImportacao } from "../pedidos-ja-feitos-actions";
 
 /**
  * Etapa A da importação (D-764): ler e classificar, sem enviar o arquivo.
+ *
+ * Invoice, proforma e "sales confirmation" (D-767) são reconhecidas pela
+ * assinatura quantidade × preço = valor: uma linha por item, com o pedido do
+ * fornecedor na própria linha (ou no cabeçalho) e preço em dólar. O .xls
+ * antigo (Excel 97–2003) também é lido aqui.
  *
  * O .xlsx é aberto aqui, no navegador, e só as partes de dados saem do zip —
  * as imagens embutidas dos modelos nunca são descompactadas. Ao servidor vão
@@ -32,8 +40,44 @@ const PAPEIS: Record<PapelColuna, string> = {
   DESCRICAO: "Descrição",
   OBSERVACAO: "Observação",
   QUANTIDADE: "Quantidade de um pedido",
+  REFERENCIA: "Nº do pedido (por linha)",
+  PRECO: "Preço unitário",
+  VALOR: "Valor da linha",
+  UNIDADE: "Unidade",
   IGNORAR: "Ignorar",
 };
+
+const TIPO_DOCUMENTO: Record<string, string> = { COMERCIAL: "Invoice comercial", PROFORMA: "Proforma / confirmação de venda" };
+
+function formatarValor(valor: number, moeda: string | null): string {
+  const n = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(valor);
+
+  return moeda === "USD" ? `US$ ${n}` : moeda === null ? `${n} (moeda não informada)` : `${moeda} ${n}`;
+}
+
+function ResumoDocumento({ doc }: { doc: DocumentoFornecedor }): ReactNode {
+  const itens: [string, string][] = [];
+
+  if (doc.tipo !== null) itens.push(["Documento", TIPO_DOCUMENTO[doc.tipo] ?? doc.tipo]);
+  if (doc.numero !== null) itens.push(["Número", doc.numero]);
+  if (doc.data !== null) itens.push(["Data", doc.data]);
+  if (doc.pedidos.length > 0) itens.push(["Pedidos (S/C)", doc.pedidos.join(", ")]);
+  if (doc.bl !== null) itens.push(["B/L", doc.bl]);
+  if (doc.container !== null) itens.push(["Contêiner", doc.container]);
+  if (doc.entrega !== null) itens.push(["Entrega prevista", doc.entrega]);
+  itens.push(["Moeda", doc.moeda ?? "não informada no documento"]);
+
+  return (
+    <dl className="sb-imp-documento">
+      {itens.map(([k, v]) => (
+        <div key={k}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 const LIMITE_LINHAS = 5000;
 
@@ -52,8 +96,11 @@ export function ImportarPlanilha(): ReactNode {
     setAbas([]);
     setArquivo(null);
 
-    if (!file.name.toLowerCase().endsWith(".xlsx")) {
-      setErro("Envie um arquivo .xlsx (Excel). Arquivos .xls antigos precisam ser salvos como .xlsx antes.");
+    const nome = file.name.toLowerCase();
+    const antigo = nome.endsWith(".xls");
+
+    if (!nome.endsWith(".xlsx") && !antigo) {
+      setErro("Envie uma planilha do Excel (.xlsx ou .xls).");
 
       return;
     }
@@ -68,26 +115,45 @@ export function ImportarPlanilha(): ReactNode {
 
     try {
       const dados = await file.arrayBuffer();
-      const JSZip = (await import("jszip")).default;
-      const zip = await JSZip.loadAsync(dados);
-      const lida = await lerPlanilha({
-        texto: async (caminho) => {
-          const entrada = zip.file(caminho);
+      let lida: { abas: Aba[] };
 
-          return entrada === null ? null : entrada.async("string");
-        },
-      });
+      if (antigo) {
+        lida = lerXls(new Uint8Array(dados));
+      } else {
+        const JSZip = (await import("jszip")).default;
+        const zip = await JSZip.loadAsync(dados);
+
+        lida = await lerPlanilha({
+          texto: async (caminho) => {
+            const entrada = zip.file(caminho);
+
+            return entrada === null ? null : entrada.async("string");
+          },
+        });
+      }
+
       const novas: Record<string, ClassificacaoAba> = {};
 
-      for (const aba of lida.abas) novas[aba.nome] = classificarAba(aba);
+      for (const aba of lida.abas) novas[aba.nome] = classificar(aba, file.name);
+
+      const invoices = lida.abas.filter((a) => novas[a.nome]?.lista !== undefined);
+      // Invoice: só as abas de invoice — a lista de embalagem repete os mesmos itens com peso e caixas.
+      // Sem invoice, aba sem nenhuma coluna de quantidade começa desmarcada: é catálogo, não pedido.
+      const marcadas =
+        invoices.length > 0
+          ? invoices
+          : lida.abas.filter((a) => !ehListaDeEmbalagem(a) && novas[a.nome]?.colunas.some((c) => c.papel === "QUANTIDADE"));
 
       setArquivo({ nome: file.name, sha: await sha256Hex(dados) });
       setAbas(lida.abas);
       setCls(novas);
-      // Aba sem nenhuma coluna de quantidade começa desmarcada: é catálogo, não pedido.
-      setIncluidas(new Set(lida.abas.filter((a) => novas[a.nome]?.colunas.some((c) => c.papel === "QUANTIDADE")).map((a) => a.nome)));
-    } catch {
-      setErro("Não foi possível ler o arquivo. Confira se é um .xlsx válido e não está protegido por senha.");
+      setIncluidas(new Set(marcadas.map((a) => a.nome)));
+    } catch (e) {
+      setErro(
+        e instanceof XlsInvalido
+          ? e.message
+          : "Não foi possível ler o arquivo. Confira se é uma planilha do Excel válida e não está protegida por senha.",
+      );
     } finally {
       setLendo(false);
     }
@@ -106,6 +172,19 @@ export function ImportarPlanilha(): ReactNode {
   );
   const semReferencia = linhas.filter((l) => l.reference === null).length;
   const aConfirmar = linhas.filter((l) => l.quantityNeedsConfirmation).length;
+  const valores = new Map<string | null, number>();
+
+  for (const l of linhas) if (l.amount !== null) valores.set(l.currency, (valores.get(l.currency) ?? 0) + l.amount);
+
+  function trocarPadrao(aba: string, referencia: string): void {
+    setCls((atual) => {
+      const c = atual[aba];
+
+      if (c?.lista === undefined) return atual;
+
+      return { ...atual, [aba]: { ...c, lista: { ...c.lista, referenciaPadrao: referencia.trim() === "" ? null : referencia } } };
+    });
+  }
 
   function trocar(aba: string, coluna: string, mudanca: Partial<{ papel: PapelColuna; referencia: string | null }>): void {
     setCls((atual) => {
@@ -153,8 +232,8 @@ export function ImportarPlanilha(): ReactNode {
         <input
           className="sb-input"
           type="file"
-          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          aria-label="Planilha de pedidos (.xlsx)"
+          accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+          aria-label="Planilha de pedidos (.xlsx ou .xls)"
           disabled={lendo || enviando}
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -175,8 +254,9 @@ export function ImportarPlanilha(): ReactNode {
         <>
           <h3 className="sb-imp-subtitulo">2. Conferir as colunas de cada aba</h3>
           <p className="sb-imp-nota">
-            Código, EAN e descrição identificam o produto. Cada coluna de quantidade é um pedido: informe a referência
-            quando o cabeçalho estiver vazio. Colunas de valor, preço ou peso ficam em “Ignorar”.
+            Código, EAN e descrição identificam o produto. Na planilha de controle, cada coluna de quantidade é um
+            pedido: informe a referência quando o cabeçalho estiver vazio. Na invoice, cada linha é um item e o nº do
+            pedido vem da própria linha ou do cabeçalho do documento.
           </p>
 
           {abas.map((aba) => {
@@ -186,6 +266,12 @@ export function ImportarPlanilha(): ReactNode {
 
             const amostra = [...aba.grade.entries()].filter(([n]) => n > c.linhaCabecalho).slice(0, 3);
             const temQuantidade = c.colunas.some((x) => x.papel === "QUANTIDADE");
+            const lista = c.lista;
+            const semPedidoNaLinha = lista !== undefined && !c.colunas.some((x) => x.papel === "REFERENCIA");
+            // A soma do que foi lido contra o TOTAL que o próprio documento imprime.
+            const somaLida = linhas.filter((l) => l.sheet === aba.nome).reduce((s, l) => s + (l.amount ?? 0), 0);
+            const totalDiverge =
+              lista?.totalDocumento !== null && lista?.totalDocumento !== undefined && incluidas.has(aba.nome) && Math.abs(somaLida - lista.totalDocumento) > 0.02;
 
             return (
               <details key={aba.nome} className="sb-imp-aba" open={incluidas.has(aba.nome)}>
@@ -208,11 +294,41 @@ export function ImportarPlanilha(): ReactNode {
                     <b>{aba.nome}</b>
                   </label>
                   <small>
-                    {formatCount(aba.grade.size)} linhas · cabeçalho na linha {c.linhaCabecalho}
-                    {!temQuantidade && " · nenhuma quantidade reconhecida (parece catálogo)"}
+                    {lista !== undefined
+                      ? `invoice · ${formatCount(lista.itens.length)} itens`
+                      : `${formatCount(aba.grade.size)} linhas · cabeçalho na linha ${String(c.linhaCabecalho)}`}
+                    {lista === undefined && !temQuantidade && " · nenhuma quantidade reconhecida (parece catálogo)"}
+                    {lista === undefined && ehListaDeEmbalagem(aba) && " · lista de embalagem (repete a invoice)"}
                     {aba.cortada && " · aba cortada em 20.000 linhas"}
                   </small>
                 </summary>
+                {lista !== undefined && (
+                  <div className="sb-imp-invoice">
+                    <ResumoDocumento doc={lista.documento} />
+                    {totalDiverge && (
+                      <p className="sb-pjf-erro" role="alert">
+                        A soma dos itens lidos ({formatarValor(somaLida, lista.documento.moeda)}) não bate com o TOTAL do documento (
+                        {formatarValor(lista.totalDocumento, lista.documento.moeda)}). Confira se falta alguma linha ou se o total da
+                        planilha está desatualizado.
+                      </p>
+                    )}
+                    <label className="sb-imp-padrao">
+                      <span>
+                        {semPedidoNaLinha
+                          ? "Nº do pedido deste documento"
+                          : "Nº do pedido das linhas que não trazem o seu"}
+                      </span>
+                      <input
+                        className="sb-input sb-input-sm"
+                        value={lista.referenciaPadrao ?? ""}
+                        maxLength={80}
+                        placeholder="informar"
+                        aria-label={`Nº do pedido padrão da aba ${aba.nome}`}
+                        onChange={(e) => { trocarPadrao(aba.nome, e.target.value); }}
+                      />
+                    </label>
+                  </div>
+                )}
                 <div style={{ overflowX: "auto" }}>
                   <table className="sb-table sb-imp-colunas">
                     <thead>
@@ -250,7 +366,7 @@ export function ImportarPlanilha(): ReactNode {
                             </select>
                           </td>
                           <td>
-                            {col.papel === "QUANTIDADE" && (
+                            {col.papel === "QUANTIDADE" && lista === undefined && (
                               <input
                                 className="sb-input sb-input-sm"
                                 value={col.referencia ?? ""}
@@ -275,6 +391,7 @@ export function ImportarPlanilha(): ReactNode {
               <b>{formatCount(linhas.length)}</b> quantidades em {formatCount(incluidas.size)} aba(s)
               {semReferencia > 0 && ` · ${formatCount(semReferencia)} sem referência (informe no próximo passo ou aqui)`}
               {aConfirmar > 0 && ` · ${formatCount(aConfirmar)} a confirmar (como “200 + 200”)`}
+              {[...valores].map(([moeda, total]) => ` · ${formatarValor(total, moeda)} na invoice`).join("")}
             </p>
             {linhas.length > LIMITE_LINHAS && (
               <p className="sb-pjf-erro" role="alert">
