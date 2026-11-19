@@ -5,6 +5,7 @@ import type { ParseDeps } from "./erp-import-parse.js";
 import { createErpImportParseHandler } from "./erp-import-parse.js";
 
 const BATCH = "b1000000-0000-4000-8000-00000000000b";
+const BATCH_VERSION = "2026-08-20T11:59:00.000Z";
 
 const ENVELOPE = {
   jobType: "erp.import.parse",
@@ -39,6 +40,8 @@ function fakeDeps(options: {
   sheet?: readonly (readonly unknown[])[];
   kind?: string;
   status?: string;
+  parsedAt?: string;
+  batchStateAfterRead?: { status: string; updatedAt: string };
   batchMissing?: boolean;
   readFails?: boolean;
   deleteFailsTable?: string;
@@ -61,6 +64,8 @@ function fakeDeps(options: {
                       kind: options.kind ?? "STOCK",
                       storage_path: "org/2026-08/hash.xlsx",
                       status: options.status ?? "UPLOADED",
+                      parsed_at: options.parsedAt ?? null,
+                      updated_at: BATCH_VERSION,
                       organization_id: ENVELOPE.organizationId,
                     },
               error: null,
@@ -68,9 +73,25 @@ function fakeDeps(options: {
         }),
       }),
       update: (values: Record<string, unknown>) => {
-        captured.updates.push(values);
-
-        return { eq: () => Promise.resolve({ error: options.updateError?.(values) ?? null }) };
+        const filters = new Map<string, unknown>();
+        const updated = values.status === "PARSING" ? options.batchStateAfterRead : undefined;
+        function execute() {
+          const matches = updated === undefined ||
+            ((!filters.has("status") || filters.get("status") === updated.status) &&
+              (!filters.has("updated_at") || filters.get("updated_at") === updated.updatedAt));
+          const error = options.updateError?.(values) ?? null;
+          if (matches && error === null) captured.updates.push(values);
+          return Promise.resolve({ data: matches && error === null ? { id: BATCH } : null, error });
+        }
+        const update = {
+          eq: (column: string, value: unknown) => {
+            filters.set(column, value);
+            return update;
+          },
+          select: () => ({ maybeSingle: execute }),
+          then: (resolve: (result: Awaited<ReturnType<typeof execute>>) => void) => execute().then(resolve),
+        };
+        return update;
       },
       insert: (rows: Record<string, unknown>[]) => {
         captured.inserted.push(rows);
@@ -111,6 +132,50 @@ function ctx(lines: string[], payload: unknown): { logger: ReturnType<typeof cre
 }
 
 describe("parse do arquivo do UpSeller", () => {
+  it.each([
+    ["UPLOADED", "APPLYING"],
+    ["PARSING", "PARSING"],
+  ])("preserva staging quando %s ficou desatualizado e o banco já mostra %s", async (status, newStatus) => {
+    const { deps, captured, lines } = fakeDeps({
+      status,
+      batchStateAfterRead: { status: newStatus, updatedAt: "2026-08-20T11:59:01.000Z" },
+    });
+    const read = vi.spyOn(deps.reader, "read");
+
+    const outcome = await createErpImportParseHandler(deps)(ENVELOPE, ctx(lines, { batchId: BATCH }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(read).not.toHaveBeenCalled();
+    expect(captured.updates).toEqual([]);
+    expect(captured.deletedTables).toEqual([]);
+    expect(captured.inserted).toEqual([]);
+  });
+
+  it.each([
+    { status: "PARSED" },
+    { status: "CANCELLED" },
+    { status: "FAILED", parsedAt: BATCH_VERSION },
+  ])("preserva lote $status numa entrega tardia", async (fixture) => {
+    const { deps, captured, lines } = fakeDeps(fixture);
+    const read = vi.spyOn(deps.reader, "read");
+
+    const outcome = await createErpImportParseHandler(deps)(ENVELOPE, ctx(lines, { batchId: BATCH }));
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(read).not.toHaveBeenCalled();
+    expect(captured.updates).toEqual([]);
+    expect(captured.deletedTables).toEqual([]);
+    expect(captured.inserted).toEqual([]);
+  });
+
+  it.each(["PARSING", "FAILED"])("recupera lote %s cuja leitura ficou incompleta", async (status) => {
+    const { deps, captured, lines } = fakeDeps({ status });
+    const outcome = await createErpImportParseHandler(deps)(ENVELOPE, ctx(lines, { batchId: BATCH }));
+
+    expect(outcome).toEqual({ status: "done", processed: 2 });
+    expect(captured.updates.at(-1)).toMatchObject({ status: "PARSED" });
+  });
+
   it("mapeia as linhas e marca o lote como PARSED", async () => {
     const { deps, captured, lines } = fakeDeps({});
 

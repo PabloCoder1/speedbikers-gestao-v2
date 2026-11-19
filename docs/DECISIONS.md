@@ -20014,3 +20014,9 @@ Se a leitura divergir, o job retorna falha retentável antes de gravar movimento
 Entre ler o documento e buscar o CNPJ da organização, outra entrega pode mudar o status ou avançar a versão de `PARSING`. O worker só atualiza para `PARSING` quando o identificador, o status e o `updated_at` ainda correspondem à leitura. O trigger de `documents` altera a versão mesmo em `PARSING` para `PARSING`. Se a atualização condicional não encontrar a linha, o worker retorna falha retentável antes de ler o bucket, apagar ou inserir itens. A próxima entrega decide a partir do estado atual.
 
 Uma entrega tardia para documento `PARSED`, `CANCELLED` ou com `parsed_at` preenchido é encerrada preservando os itens e os vínculos da conferência. Uma retentativa que lê a versão atual de `PARSING` pode recuperar uma execução interrompida. Resta ensaiar a persistência quando essa retentativa coincide com a primeira execução ainda ativa.
+
+## D-749 - Início da leitura de ERP depende do estado e da versão do lote
+
+O parse do UpSeller passa a comparar o status e o `updated_at` de `erp_import_batches` antes de entrar em `PARSING`. Se a versão foi superada, devolve falha retentável antes do bucket e das tabelas de conferência. A API cadastra um lote por arquivo e trata o mesmo hash como duplicado. Entregas atrasadas preservam lotes `PARSED`, cancelados ou com `parsed_at` preenchido, inclusive se a aplicação posterior falhou. Lotes `PARSING` e `FAILED` sem leitura concluída continuam recuperáveis.
+
+O ensaio de A104 em NF-e confirmou que a comparação de entrada deixa uma segunda entrega prosseguir se ela leu a versão mais recente de `PARSING`. Uma vez iniciada, a gravação em etapas ainda permite que a entrega tardia remova itens depois de a nota mudar para `PARSED`. A proteção de persistência deve validar a versão no mesmo limite transacional da substituição das linhas. D-748/D-749 tratam a transição de entrada e preservam a recuperação depois de falha.

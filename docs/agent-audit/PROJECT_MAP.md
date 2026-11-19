@@ -2,7 +2,7 @@
 
 Base da inspeção em 11/11/2026 · `origin/main` em `d6169205ca0ea51d615d2e70cd0b944b5c491adb`. A `main` remota contém a V3 e publica a web na Vercel. A V2 histórica está em `v2-legacy` e na tag `v2-final`.
 
-Em 19/11, `origin/main` e o alias da Vercel estavam em `f2eb787c`. A Sentinel reúne as entregas D-732 a D-746 do [Gemini](GEMINI_HANDOFF.md), a conferência dos itens da NF-e (D-747) e a transição condicional que inicia a leitura (D-748). A [fila atual](PLAN.md) registra os próximos testes e a simulação de integração.
+Em 19/11, `origin/main` e o alias da Vercel estavam em `f2eb787c`. A Sentinel reúne as entregas D-732 a D-746 do [Gemini](GEMINI_HANDOFF.md), a conferência dos itens da NF-e (D-747) e a transição condicional que inicia a leitura de NF-e e ERP (D-748/D-749). A [fila atual](PLAN.md) registra a investigação de gravação concorrente e a simulação de integração.
 
 ## Navegação
 

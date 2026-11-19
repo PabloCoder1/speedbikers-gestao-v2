@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **650** (D-001 a D-748).
+Decisões registradas: **651** (D-001 a D-749).
 
 ## Por domínio
 
@@ -581,7 +581,7 @@ Decisões registradas: **650** (D-001 a D-748).
 - **D-699** — Os rankings de Vendas abrem o detalhe do SKU ao clicar
 - **D-700** — A lista de pedidos de Vendas da Shopee abre o detalhe do SKU ao clicar
 
-### worker/infra (109)
+### worker/infra (110)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -692,4 +692,5 @@ Decisões registradas: **650** (D-001 a D-748).
 - **D-746** — Handlers de parse/apply ERP e NF-e no worker barram `APPLYING`, verificam erros de `DELETE`/`UPDATE` e paginam `document_items`
 - **D-747** — Worker valida os itens conferidos antes de aplicar NF-e
 - **D-748** — Início da leitura de NF-e depende do estado e da versão lidos
+- **D-749** — Início da leitura de ERP depende do estado e da versão do lote
 

@@ -137,6 +137,10 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A102 | P1 · CORRIGIDO localmente (D-748) | `nfe-import-parse.ts` podia usar estado desatualizado para entrar em `PARSING` e apagar itens já conferidos. Entregas tardias também reabriam notas lidas ou canceladas | Compara estado e `updated_at` na transição e encerra entregas tardias antes do bucket. Permite recuperar `PARSING` com uma versão atual. O próximo ensaio cobre duas entregas que já iniciaram. [Checkpoint](SESSION_LOG.md) |
 
+| A103 | P1 · CORRIGIDO localmente (D-749) | O parser UpSeller/ERP também reabria lotes com estado vencido ou com conferência pronta | Exige a versão e o status lidos para gravar `PARSING`. Preserva a conferência em entregas tardias e permite recuperar falha antes de concluir o parse. Cinco regressões reproduzidas. [Checkpoint](SESSION_LOG.md) |
+
+| A104 | P1 · CONFIRMADO localmente | NF-e permite uma segunda entrada em `PARSING` se a entrega ler a versão atual enquanto o primeiro job ainda processa. O `DELETE` de itens filtra pelo documento, então ainda encontra itens depois de `PARSED` | Ensaio em Postgres isolado intercalou as operações e confirmou uma linha removida depois de `PARSED`. Preparar persistência em transação condicionada à versão. Verificar o mesmo caminho no ERP. [Checkpoint](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

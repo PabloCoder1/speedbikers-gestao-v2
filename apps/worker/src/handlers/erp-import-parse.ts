@@ -151,7 +151,7 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
 
     const batch = await deps.db
       .from("erp_import_batches")
-      .select("id, kind, storage_path, status, organization_id")
+      .select("id, kind, storage_path, status, organization_id, updated_at, parsed_at")
       .eq("id", batchId)
       .maybeSingle();
 
@@ -173,10 +173,26 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
       };
     }
 
-    const parsing = await deps.db.from("erp_import_batches").update({ status: "PARSING" }).eq("id", batchId);
+    if (batch.data.status === "PARSED" || batch.data.status === "CANCELLED" || batch.data.parsed_at !== null) {
+      return { status: "done", processed: 0 };
+    }
+
+    // Preserva a conferência se o lote avançou desde a leitura, inclusive em outra tentativa de parse.
+    const parsing = await deps.db
+      .from("erp_import_batches")
+      .update({ status: "PARSING" })
+      .eq("id", batchId)
+      .eq("status", batch.data.status)
+      .eq("updated_at", batch.data.updated_at)
+      .select("id")
+      .maybeSingle();
 
     if (parsing.error !== null) {
       return { status: "failed", retryable: true, reason: parsing.error.message };
+    }
+
+    if (parsing.data === null) {
+      return { status: "failed", retryable: true, reason: "lote mudou antes de iniciar a leitura" };
     }
 
     let sheet: readonly (readonly unknown[])[];

@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19, Gemini D-732 a D-746, Codex D-747/D-748 e publicação de compras confirmada em f2eb787c",
+  "corte": "2026-11-19, Gemini D-732 a D-746, Codex D-747 a D-749 e publicação de compras confirmada em f2eb787c",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -69,7 +69,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "Worker publicado. D-746 a D-748 testados localmente com paginação, conferência completa de itens de NF-e e proteção do início da leitura por versão",
+      "evidencia": "Worker publicado. D-746 a D-749 testados localmente com paginação, conferência de itens de NF-e e proteção do início da leitura de NF-e e ERP",
       "fase": 3
     },
     {
