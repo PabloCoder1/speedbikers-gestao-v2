@@ -108,6 +108,7 @@ const app = createApp({
   // `exactOptionalPropertyTypes`, atribuir `undefined` a uma propriedade
   // opcional é diferente de omitir a chave — só omitir satisfaz o tipo.
   ...(nfeImportDeps !== undefined ? { nfeImportDeps } : {}),
+  manualExit: { db, logger },
   ...(shopeeShops !== undefined ? { shopeeShops } : {}),
   ...(shopeePush !== undefined ? { shopeePush } : {}),
   ...(tiktokShops !== undefined ? { tiktokShops } : {}),

@@ -253,6 +253,10 @@ export default async function NotasFiscaisPage({
                 Buscar
               </button>
             </FormularioFiltro>
+            {/* A saída sem documento (D-766): perdas, transferências. */}
+            <Link className="sb-button" href="/notas-fiscais/saida-manual">
+              Saída manual
+            </Link>
             <Link className="sb-button sb-button-primary" href="/notas-fiscais/nova">
               Enviar documento
             </Link>

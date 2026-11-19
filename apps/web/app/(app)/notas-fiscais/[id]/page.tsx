@@ -17,6 +17,7 @@ import { nfeEtapas } from "../../../../lib/nfe-steps";
 import { createClient } from "../../../../lib/supabase/server";
 import { ConfirmApplyForm } from "./confirm-apply-form";
 import { DocumentItemRow } from "./document-item-row";
+import { ItemQuantity } from "./item-quantity";
 
 export const dynamic = "force-dynamic";
 
@@ -435,7 +436,7 @@ export default async function NotaFiscalPage({
               <h2 id="nf-itens-titulo">Itens lidos do documento</h2>
               <p>
                 {editable
-                  ? "Cada item precisa apontar para um SKU antes da confirmação — um documento é aplicado por completo, nunca parcialmente."
+                  ? "Cada item precisa apontar para um SKU antes da confirmação. Se o que sai não bate com o documento, altere a quantidade ou remova o item — o que for confirmado é o que está aqui."
                   : "Vínculos travados: só documentos em conferência aceitam alteração."}
               </p>
             </div>
@@ -492,8 +493,14 @@ export default async function NotaFiscalPage({
                           automático futuro usaria (docs/NFE.md secao 3). */}
                       <td className="sb-mono sb-nf-item-ean">{item.ean ?? "—"}</td>
                       <td className="sb-num">
-                        <b>{formatCount(item.quantity)}</b>
-                        {item.unit === null ? "" : <small> {item.unit}</small>}
+                        {/* Alterar e remover enquanto em conferência (D-766). */}
+                        <ItemQuantity
+                          documentId={info.id}
+                          itemId={item.id}
+                          quantity={item.quantity}
+                          unit={item.unit}
+                          editable={editable}
+                        />
                       </td>
                       {mostraDisponivel && (
                         <td className="sb-num">
