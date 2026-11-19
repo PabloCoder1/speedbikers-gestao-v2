@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-18; auditoria base 010c252d, evidências locais atualizadas até D-741 (397/397 E2E)",
+  "corte": "2026-11-19; auditoria base 010c252d, evidências locais atualizadas até D-746 em 048b9774 (397/397 E2E)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-720–728, D-731/A89, D-732–733, D-740–741; confirmação real, gavetas, OAuth/SAC/aplicação protegidos em E2E (397/397)",
+      "evidencia": "D-720–728, D-731/A89, D-732–733, D-740–741, D-745/A99; confirmação real, gavetas, OAuth/SAC/aplicação/SSE/convite protegidos (1.501 unit + 397/397 E2E)",
       "fase": 3
     },
     {
@@ -299,7 +299,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Sentinel/Backend",
-      "evidencia": "PERFORMANCE: baseline, SQL health/coverage, parallelreads A26–36, D-736/D-738/D-739 paginam >1.000 no worker e /diagnostico + lotes .in 200",
+      "evidencia": "PERFORMANCE: baseline, SQL health/coverage, parallelreads A26–36, D-736/D-738/D-739/D-743/D-746 paginam >1.000 no worker, Copiloto e /diagnostico + lotes .in 200",
       "fase": 3
     },
     {
@@ -329,7 +329,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Todos/Sentinel",
-      "evidencia": "check 37/37 tarefas, 1.160 integração e 39 embeds em fb4a8e1f",
+      "evidencia": "check 37/37 tarefas, 1.160 integração e 39 embeds em 048b9774",
       "fase": 5
     },
     {
@@ -339,7 +339,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "Playwright E2E completo: 397/397 (chromium + loja-live) em fb4a8e1f",
+      "evidencia": "Playwright E2E completo: 397/397 (chromium + loja-live) em 048b9774",
       "fase": 5
     },
     {
