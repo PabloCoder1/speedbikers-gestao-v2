@@ -20192,3 +20192,13 @@ Seis fragilidades confirmadas nos componentes web introduzidos pela D-766 (`apps
 5. **Teclado durante gravação (`item-quantity.tsx`):** `Enter` e `Escape` agora respeitam `!ocupado` (e `Enter` só dispara quando `nova !== quantity`), e `Escape` limpa erro anterior e restaura o valor original.
 
 Validado em `@sb/web` (`typecheck`, `eslint`, `147` arquivos / `1.550` testes unitários incluindo `saida-manual.test.ts` com 9 casos, todas as 7 guardas estáticas e regressão E2E `D-771` em `e2e/nota-fiscal.spec.ts`).
+
+## D-772 - Paginação, fatiamento `.in()` e liberação garantida de trava no estoque Shopee, catálogo ML e hidratação Shopee do worker
+
+Três defeitos confirmados nos handlers de sincronização do worker (`apps/worker/src/handlers/shopee-stock.ts`, `apps/worker/src/handlers/ml-listings-fetch.ts` e `apps/worker/src/handlers/shopee-items-hydrate.ts`):
+
+1. **Truncamento silencioso > 1.000 e `.in()` sem lote em `baixarVendasDaShopee` (`shopee-stock.ts`):** leituras de `shopee_order_items` e `stock_movements` (`VENDA_SHOPEE` já gravadas) não usavam `readAllPages`, podendo truncar silenciosamente lotes com > 1.000 itens ou componentes de kit (fazendo cancelamentos/estornos reverterem SKU ou quantidade errados); além disso `skus.id` e `order_sn`/`source_id` iam em um único `.in()`, arriscando HTTP 414 com muitos SKUs/pedidos. Agora `order_sn`/`source_id` são fatiados em lotes de `LOOKUP_CHUNK = 200`, `skus.id` em `SKU_LOOKUP_CHUNK = 100` (UUIDs) e `shopee_order_items`/`stock_movements` são paginados via `readAllPages` com ordenação determinística.
+2. **`.in("item_id", ...)` sem fatiamento em `fetchListings` (`ml-listings-fetch.ts`):** marcar `inexistentes` (`deleted_at`) ou consultar `soEstes` (`itemIds`) acima de 200 anúncios disparava um único GET/PATCH ao PostgREST (arriscando HTTP 414 quando centenas de anúncios saem da varredura). Agora tanto `inexistentes` quanto leituras seletivas por `itemIds` fatiaram em blocos de `LOOKUP_CHUNK = 200`.
+3. **Vazamento de trava de 15 min e erro silenciado ao destravar em `shopee-items-hydrate.ts`:** `hidratar` rodava fora de `try/finally`, mantendo `items_hydrate_locked_until` preso por 900 s se uma exceção escapasse; além disso `soltar()` descartava `{ error }` do banco. Agora `soltar()` roda em `finally`, registra aviso `shopee_items_hydrate_unlock_failed` em falha de banco ou transporte e nunca mascara a exceção original nem interrompe o enfileiramento de continuação (`temMais`).
+
+Reprodução pré-correção em `shopee-stock.test.ts`, `ml-listings-fetch.test.ts` e `shopee-catalogo.test.ts` registrou 5 falhas (`5 failed | 51 passed (56)`); após a correção, `@sb/worker` passou integralmente em `typecheck`, `eslint` e `vitest` (`68` arquivos / `1.091` testes).

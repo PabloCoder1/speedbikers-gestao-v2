@@ -25,6 +25,7 @@ import {
 } from "./listing-schema.js";
 import { lerMedidas } from "./shipment-package.js";
 import type { ParsedListingItem } from "./listing-schema.js";
+import { chunk, LOOKUP_CHUNK } from "../chunk.js";
 import { readAllPages } from "../read-all-pages.js";
 
 /**
@@ -217,21 +218,28 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   // (D-131). Ainda não estava truncando; estava a um lote de anúncios de
   // começar, e o sintoma seria mudo: vínculo ausente do Map vira `sku_id`
   // nulo no anúncio, e o painel perde o SKU sem nada quebrar.
-  const links = await readAllPages<{ item_id: string | null; sku_id: string }>(
-    (from, to) => {
-      let consulta = params.db
-        .from("sku_listing_links")
-        .select("item_id, sku_id")
-        .eq("ml_account_id", params.mlAccountId)
-        .eq("ref_kind", "ITEM")
-        .is("variation_id", null);
+  const lotesSeletivos = soEstes === null ? [null] : chunk(soEstes, LOOKUP_CHUNK);
+  const links: { item_id: string | null; sku_id: string }[] = [];
 
-      if (soEstes !== null) consulta = consulta.in("item_id", soEstes);
+  for (const lote of lotesSeletivos) {
+    const pagina = await readAllPages<{ item_id: string | null; sku_id: string }>(
+      (from, to) => {
+        let consulta = params.db
+          .from("sku_listing_links")
+          .select("item_id, sku_id")
+          .eq("ml_account_id", params.mlAccountId)
+          .eq("ref_kind", "ITEM")
+          .is("variation_id", null);
 
-      return consulta.order("id").range(from, to);
-    },
-    { label: "falha ao ler sku_listing_links" },
-  );
+        if (lote !== null) consulta = consulta.in("item_id", lote);
+
+        return consulta.order("id").range(from, to);
+      },
+      { label: "falha ao ler sku_listing_links" },
+    );
+
+    links.push(...pagina);
+  }
 
   const skuByItem = new Map<string, string>();
 
@@ -252,7 +260,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   // execução: mudança de preço, de status e de quantidade neles **nunca**
   // virava evento. E, sem `.order()`, quais 1.000 entravam variava entre
   // execuções.
-  const previousRows = await readAllPages<{
+  interface PreviousListingRow {
     item_id: string;
     title: string;
     status: string;
@@ -266,23 +274,30 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     promotion_checked_at: string | null;
     promotions: Json | null;
     deleted_at: string | null;
-  }>(
-    (from, to) => {
-      let consulta = params.db
-        .from("listings")
-        .select(
-          "item_id, title, status, price, available_quantity, picture_fingerprint, description_fingerprint, description_source_updated_at, promotional_price, in_promotion, promotion_checked_at, promotions, deleted_at",
-        )
-        .eq("ml_account_id", params.mlAccountId);
+  }
+  const previousRows: PreviousListingRow[] = [];
 
-      if (soEstes !== null) consulta = consulta.in("item_id", soEstes);
+  for (const lote of lotesSeletivos) {
+    const pagina = await readAllPages<PreviousListingRow>(
+      (from, to) => {
+        let consulta = params.db
+          .from("listings")
+          .select(
+            "item_id, title, status, price, available_quantity, picture_fingerprint, description_fingerprint, description_source_updated_at, promotional_price, in_promotion, promotion_checked_at, promotions, deleted_at",
+          )
+          .eq("ml_account_id", params.mlAccountId);
 
-      // `listings_account_item_unique (ml_account_id, item_id)` — com a
-      // conta já fixada no filtro, `item_id` é ordenação estável.
-      return consulta.order("item_id").range(from, to);
-    },
-    { label: "falha ao ler listings anteriores" },
-  );
+        if (lote !== null) consulta = consulta.in("item_id", lote);
+
+        // `listings_account_item_unique (ml_account_id, item_id)` — com a
+        // conta já fixada no filtro, `item_id` é ordenação estável.
+        return consulta.order("item_id").range(from, to);
+      },
+      { label: "falha ao ler listings anteriores" },
+    );
+
+    previousRows.push(...pagina);
+  }
 
   const previousByItem = new Map<string, ListingSnapshot>();
   const previousListingRowsByItem = new Map<string, (typeof previousRows)[number]>();
@@ -607,21 +622,21 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
 
   // D-631: o item que o Mercado Livre não devolve mais sai das telas. Só a
   // linha que existe e ainda não está marcada; um id que a V3 nunca gravou
-  // não cria nada.
-  if (inexistentes.length > 0) {
+  // não cria nada. Fatiado em lotes de `LOOKUP_CHUNK` para não estourar URL.
+  for (const lote of chunk(inexistentes, LOOKUP_CHUNK)) {
     const marcados = await params.db
       .from("listings")
       .update({ deleted_at: syncedAt.toISOString(), synced_at: syncedAt.toISOString() })
       .eq("ml_account_id", params.mlAccountId)
-      .in("item_id", inexistentes)
+      .in("item_id", lote)
       .is("deleted_at", null)
       .select("item_id");
 
     if (marcados.error !== null) {
-      itemsFailed += inexistentes.length;
+      itemsFailed += lote.length;
       params.logger.error("listing_not_marked_deleted", {
         ml_account_id: params.mlAccountId,
-        items: inexistentes.length,
+        items: lote.length,
         reason: marcados.error.message,
       });
     } else {

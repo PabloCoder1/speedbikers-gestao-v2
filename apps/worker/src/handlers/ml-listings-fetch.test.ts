@@ -46,19 +46,6 @@ interface PreviousRow {
  * para quando a página vem incompleta, então uma única página menor que o
  * tamanho do lote encerra o laço.
  */
-function chain<T>(result: T): T {
-  const self = {
-    eq: () => self,
-    is: () => self,
-    in: () => self,
-    order: () => self,
-    range: () => self,
-    then: (resolve: (value: T) => unknown) => Promise.resolve(result).then(resolve),
-  };
-
-  return self as unknown as T;
-}
-
 /**
  * Cadeia que HONRA o `.range(from, to)` — é ela que torna a paginação
  * observável no teste.
@@ -104,16 +91,37 @@ function fakeDb(options: {
   domainEvents: Record<string, unknown>[];
   /** D-631: as marcas de exclusão gravadas por `update`, com os itens. */
   marcados: { values: Record<string, unknown>; itens: string[] }[];
+  /** D-772: tamanhos enviados em `.in("item_id", ...)` nos selects. */
+  selectInTamanhos: { table: string; tamanho: number }[];
 } {
   const upserted: Record<string, unknown>[] = [];
   const domainEvents: Record<string, unknown>[] = [];
   const marcados: { values: Record<string, unknown>; itens: string[] }[] = [];
+  const selectInTamanhos: { table: string; tamanho: number }[] = [];
+
+  const chainComIn = <T,>(table: string, result: T): T => {
+    const self = {
+      eq: () => self,
+      is: () => self,
+      in: (coluna: string, valores: unknown[]) => {
+        if (coluna === "item_id") selectInTamanhos.push({ table, tamanho: valores.length });
+
+        return self;
+      },
+      order: () => self,
+      range: () => self,
+      then: (resolve: (value: T) => unknown) => Promise.resolve(result).then(resolve),
+    };
+
+    return self as unknown as T;
+  };
 
   const db = {
     from: (table: string) => ({
       select: () => {
         if (table === "sku_listing_links") {
-          return chain(
+          return chainComIn(
+            table,
             options.linksError === true
               ? { data: null, error: { message: "boom links" } }
               : { data: options.links ?? [], error: null },
@@ -125,7 +133,8 @@ function fakeDb(options: {
             return chainPaginada(options.previousPaginado) as never;
           }
 
-          return chain(
+          return chainComIn(
+            table,
             options.previousError === true
               ? { data: null, error: { message: "boom previous" } }
               : { data: options.previous ?? [], error: null },
@@ -187,7 +196,7 @@ function fakeDb(options: {
     }),
   } as unknown as FetchListingsParams["db"];
 
-  return { db, upserted, domainEvents, marcados };
+  return { db, upserted, domainEvents, marcados, selectInTamanhos };
 }
 
 function item(id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -851,5 +860,39 @@ describe("fetchListings — o anúncio excluído e a leitura por notificação (
 
     expect(fake.upserted.map((r) => [r.item_id, r.deleted_at])).toEqual([["MLB3", null]]);
     expect(result.itemsFailed).toBe(1);
+  });
+
+  it("D-772: fatia .in('item_id') ao marcar inexistentes > 200 e ao ler itemIds > 200", async () => {
+    const TOTAL = 250;
+    const ids = Array.from({ length: TOTAL }, (_, i) => `MLB${String(100000 + i)}`);
+    const previous = ids.map((id) => ({
+      item_id: id,
+      title: `Anúncio ${id}`,
+      status: "active",
+      price: 100,
+      available_quantity: 5,
+    }));
+    const codes = Object.fromEntries(ids.map((id) => [id, 404]));
+
+    const fake = fakeDb({ previous });
+    const { client } = fakeClient({ scanPages: [{ results: [], scroll_id: null }], codes });
+    const result = await fetchListings(params(fake.db, client));
+
+    expect(result.itemsMarkedDeleted).toBe(TOTAL);
+    expect(fake.marcados.length).toBeGreaterThanOrEqual(2);
+    expect(Math.max(...fake.marcados.map((m) => m.itens.length))).toBeLessThanOrEqual(200);
+
+    const fakeSeletivo = fakeDb({ previous });
+    const { client: clientSeletivo } = fakeClient({ scanPages: [] });
+
+    await fetchListings({ ...params(fakeSeletivo.db, clientSeletivo), itemIds: ids });
+
+    const linksIn = fakeSeletivo.selectInTamanhos.filter((c) => c.table === "sku_listing_links");
+    const listingsIn = fakeSeletivo.selectInTamanhos.filter((c) => c.table === "listings");
+
+    expect(linksIn.length).toBeGreaterThanOrEqual(2);
+    expect(Math.max(...linksIn.map((c) => c.tamanho))).toBeLessThanOrEqual(200);
+    expect(listingsIn.length).toBeGreaterThanOrEqual(2);
+    expect(Math.max(...listingsIn.map((c) => c.tamanho))).toBeLessThanOrEqual(200);
   });
 });

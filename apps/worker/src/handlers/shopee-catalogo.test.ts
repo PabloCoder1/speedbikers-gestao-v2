@@ -51,6 +51,8 @@ function fakeDb(
       variacoes?: { item_id: number; model_id: number; original_price: number | null; current_price: number | null }[];
     };
     falhaPrecos?: boolean;
+    falhaPendentesLanca?: boolean;
+    erroAoSoltarTrava?: { message: string };
     shopName?: string | null;
   } = {},
 ) {
@@ -60,7 +62,7 @@ function fakeDb(
     access_token_expires_at: new Date(NOW.getTime() + 3 * 3_600_000).toISOString(),
   };
 
-  function filtravel(registrar: (filtros: Record<string, unknown>) => void) {
+  function filtravel(registrar: (filtros: Record<string, unknown>) => void, erro: { message: string } | null = null) {
     const filtros: Record<string, unknown> = {};
     const self = {
       eq: (coluna: string, valor: unknown) => {
@@ -76,7 +78,7 @@ function fakeDb(
       then: (resolve: (value: unknown) => unknown) => {
         registrar({ ...filtros });
 
-        return Promise.resolve({ error: null }).then(resolve);
+        return Promise.resolve({ error: erro }).then(resolve);
       },
     };
 
@@ -88,6 +90,9 @@ function fakeDb(
       ops.push({ op: "rpc", nome, args });
 
       if (nome === "shopee_items_hydrate_lock") return Promise.resolve({ data: opcoes.travaLivre ?? true, error: null });
+      if (nome === "shopee_items_details_pending" && opcoes.falhaPendentesLanca === true) {
+        return Promise.reject(new Error("socket hang up"));
+      }
 
       return Promise.resolve({ data: opcoes.pendentes ?? [], error: null });
     },
@@ -138,7 +143,11 @@ function fakeDb(
 
         return Promise.resolve({ error: null });
       },
-      update: (row: Record<string, unknown>) => filtravel((filtros) => ops.push({ op: "update", table, row, filtros })),
+      update: (row: Record<string, unknown>) =>
+        filtravel(
+          (filtros) => ops.push({ op: "update", table, row, filtros }),
+          table === "shopee_shops" && row.items_hydrate_locked_until === null ? (opcoes.erroAoSoltarTrava ?? null) : null,
+        ),
       delete: () => filtravel((filtros) => ops.push({ op: "delete", table, filtros })),
       insert: (rows: Record<string, unknown>[]) => {
         ops.push({ op: "insert", table, rows });
@@ -727,5 +736,37 @@ describe("shopee.items.hydrate (D-428)", () => {
     expect(b.outcome.status === "failed" ? b.outcome.reason : "").toMatch(/preços anteriores/);
     expect(escritas(semBanco.ops).filter((o) => o.table === "shopee_items" || o.table === "shopee_item_models")).toEqual([]);
     expect(soltouATrava(semBanco.ops)).toBe(true);
+  });
+
+  it("D-772: solta a trava no finally quando hidratar lança erro inesperado", async () => {
+    const banco = fakeDb({ falhaPendentesLanca: true });
+
+    await expect(rodar(createShopeeItemsHydrateHandler, banco, fakeShopee({}))).rejects.toThrow(/socket hang up/);
+    expect(soltouATrava(banco.ops)).toBe(true);
+  });
+
+  it("D-772: registra aviso e mantém enfileiramento de continuação quando soltar a trava falha no banco", async () => {
+    const loteCheio = Array.from({ length: 50 }, (_, i) => pendente(i + 1));
+    const banco = fakeDb({
+      pendentes: loteCheio,
+      erroAoSoltarTrava: { message: "lock timeout" },
+    });
+    const shopee = fakeShopee({
+      "/api/v2/product/get_item_base_info": () => ({
+        error: "",
+        response: {
+          item_list: loteCheio.map((p) => ({ ...SEM_VARIACAO, item_id: p.item_id })),
+        },
+      }),
+    });
+
+    const { outcome, enfileirados, logs } = await rodar(createShopeeItemsHydrateHandler, banco, shopee);
+
+    expect(outcome).toEqual({ status: "done", processed: 50 });
+    expect(enfileirados).toHaveLength(1);
+    expect(logs.find((l) => l.message === "shopee_items_hydrate_unlock_failed")?.campos).toMatchObject({
+      shopee_shop_id: LOJA_ID,
+      reason: "lock timeout",
+    });
   });
 });
