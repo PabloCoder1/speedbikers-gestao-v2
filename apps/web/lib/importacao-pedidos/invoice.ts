@@ -81,6 +81,11 @@ export function numeroDeInvoice(texto: string): number | null {
 }
 
 const MOEDA_SOLTA = /^(US\s*\$|USD|\$)$/i;
+
+/** Célula que é só o símbolo da moeda ("$" ao lado do preço), não um dado. */
+export function ehMoedaSolta(texto: string): boolean {
+  return MOEDA_SOLTA.test(texto.trim());
+}
 const NCM = /^\d{4}\.?\d{2}\.?\d{2}$/;
 const UNIDADE = /^(pcs?|pc|sets?|prs?|pairs?|pares?|par|un|und|unid|kgs?|ctns?|cartons?|boxes|box|rolls?|m)\.?$/i;
 /** Código de pedido: letras e ao menos três dígitos ("JS31205", "JSD01080", "A2026C701A", "PO-1001"). */

@@ -132,9 +132,18 @@ describe("invoice comercial", () => {
     expect([papel("A"), papel("C"), papel("D"), papel("F"), papel("G"), papel("H"), papel("J"), papel("M")]).toEqual([
       "NCM", "REFERENCIA", "CODIGO", "DESCRICAO", "QUANTIDADE", "UNIDADE", "PRECO", "VALOR",
     ]);
-    // O "$" solto e o NCM nunca viram quantidade nem EAN.
-    expect(papel("I")).toBe("IGNORAR");
-    expect(papel("L")).toBe("IGNORAR");
+    // O "$" solto nem aparece: não é coluna de dado.
+    expect(papel("I")).toBeUndefined();
+    expect(papel("L")).toBeUndefined();
+  });
+
+  it("o título mesclado vai para a coluna que tem o número", () => {
+    const cabecalho = (col: string) => cls.colunas.find((c) => c.coluna === col)?.cabecalho;
+
+    // "Unit Price" está impresso em I e "Amount" em L, mas o número está em J e M.
+    expect(cabecalho("J")).toBe("Unit Price");
+    expect(cabecalho("M")).toBe("Amount");
+    expect(cabecalho("D")).toBe("");
   });
 
   it("lê o cabeçalho do documento", () => {
