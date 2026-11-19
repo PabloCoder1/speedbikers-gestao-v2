@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **643** (D-001 a D-741).
+Decisões registradas: **644** (D-001 a D-742).
 
 ## Por domínio
 
@@ -268,7 +268,7 @@ Decisões registradas: **643** (D-001 a D-741).
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
 
-### mercado-livre (129)
+### mercado-livre (130)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -399,6 +399,7 @@ Decisões registradas: **643** (D-001 a D-741).
 - **D-719** — O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
 - **D-734** — Worker separa falha transitória de banco da ausência de conta ou credencial no Mercado Livre
 - **D-741** — Conectores OAuth, SAC e confirmação de aplicação protegem leitura de sessão e JSON de resposta
+- **D-742** — `relist.prepare` grava preflight reprovado atomicamente e retenta falhas transitórias do multiget
 
 ### outros (101)
 
