@@ -272,10 +272,6 @@ export function proximoPassoDoDocumento(linha: LinhaDocumento): { texto: string;
   if (linha.status === "APPLYING") return { texto: "Aplicando…", tom: "info" };
 
   // PARSED: é aqui que a pessoa trabalha.
-  if (linha.document_type === "ENVIO_FULL_ML_PDF") {
-    return { texto: "Full · sem baixa", tom: "neutro" };
-  }
-
   if (faltam > 0) {
     return { texto: `Vincular ${String(faltam)} de ${String(total)}`, tom: "atencao" };
   }

@@ -142,9 +142,9 @@ Um PDF que seja imagem digitalizada não tem texto para ler: a leitura falha com
 
 `document_items.unit`, `unit_value` e `total_value` são ANULÁVEIS desde D-375: documento de separação não tem preço. Gravar zero afirmaria "de graça" (a distinção de D-254), e a tela mostra "sem valor".
 
-### 4.3 Envio ao Full não gera movimento
+### 4.3 Envio ao Full sai do estoque da loja (D-765)
 
-Envio ao Full é **transferência**, não saída — a mercadoria continua sendo nossa, guardada no centro do Mercado Livre. O documento é lido e conferido, mas a aplicação é recusada em duas camadas (`confirmNfeApply` e o worker) até o Full ter representação própria (D-352). Saída por documento NÃO fiscal (o Pedido de Saída) é gravada como `SAIDA_DOCUMENTO`, nunca como `SAIDA_NFE`: nota nenhuma foi emitida.
+Até D-765 o envio ao Full era lido e conferido, mas a aplicação era recusada: "transferência não é saída". Desde D-352 a venda entregue pelo Full não baixa a loja (ganha o `ESTORNO_FULL`), então a unidade que vai para o galpão do Mercado Livre precisa sair da loja **no envio** — sem isso a loja guardava saldo de mercadoria que já não estava nela. O envio ao Full conferido agora é aplicado como os outros documentos de saída, e o Full continua espelho (`fulfillment_stock_snapshots`, D-018). Saída por documento NÃO fiscal (o Pedido de Saída e o envio ao Full) é gravada como `SAIDA_DOCUMENTO`, nunca como `SAIDA_NFE`: nota nenhuma foi emitida.
 
 ### 4.4 O que continua pendente
 

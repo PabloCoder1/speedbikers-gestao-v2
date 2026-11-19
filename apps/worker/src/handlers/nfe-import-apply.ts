@@ -74,22 +74,11 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
 
     const data = document.data;
 
-    if (data.document_type === "ENVIO_FULL_ML_PDF") {
-      /*
-        Envio ao Full é TRANSFERÊNCIA, não saída: a mercadoria continua nossa,
-        no centro do Mercado Livre. `confirmNfeApply` já recusa antes de
-        enfileirar; aqui a recusa se repete pelo mesmo motivo das dupla
-        checagens das RPCs `security definer` — cada camada se defende sozinha.
-        Quando D-352 definir como o Full é representado, a baixa passa a ser uma
-        transferência de verdade, não uma saída.
-      */
-      const reason =
-        "envio ao Full é transferência, não saída — a baixa espera o desenho do Full (D-352)";
-
-      await deps.db.from("documents").update({ status: "PARSED", last_error: reason }).eq("id", documentId);
-
-      return { status: "failed", retryable: false, reason };
-    }
+    /*
+      D-765: o envio ao Full baixa a LOJA como saída por documento. A venda do
+      Full não baixa a loja (D-352, ESTORNO_FULL); a saída acontece aqui, quando
+      a mercadoria deixa a loja rumo ao galpão do Mercado Livre.
+    */
 
     if (data.operation_type === null) {
       // Não deveria acontecer: o parse sempre preenche a direção antes de
@@ -180,8 +169,8 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
 /**
  * O tipo do movimento no ledger (D-375).
  *
- * Saída conferida por documento NÃO fiscal (o "Pedido de Saída" do UpSeller)
- * não pode ser gravada como `SAIDA_NFE`: isso afirmaria no histórico uma nota
+ * Saída conferida por documento NÃO fiscal (o "Pedido de Saída" do UpSeller e,
+ * desde D-765, o envio ao Full do Mercado Livre) não pode ser gravada como `SAIDA_NFE`: isso afirmaria no histórico uma nota
  * que ninguém emitiu. A entrada não tem esse problema — só entra por nota.
  */
 function tipoDoMovimento(direcao: string, tipoDoDocumento: string | null): string {

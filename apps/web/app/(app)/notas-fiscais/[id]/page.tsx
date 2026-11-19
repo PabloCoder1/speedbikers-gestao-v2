@@ -114,6 +114,40 @@ export default async function NotaFiscalPage({
   const info = document.data;
   const linhas = items.error === null ? items.data : [];
 
+  /*
+    D-765: o "Disponível" da Saída Manual do UpSeller. Na saída, cada item
+    vinculado mostra o saldo da LOJA (`inventory_balances`, LOCAL) ao lado da
+    quantidade que vai sair -- a pessoa vê antes de confirmar que a baixa deixa
+    o saldo negativo. Lido só na conferência de saída, para os SKUs vinculados
+    (no máximo os itens do documento, bem abaixo das 1.000 linhas).
+  */
+  const saida = info.operation_type === "SAIDA";
+  const skusVinculados = [...new Set(linhas.flatMap((item) => (item.sku_id === null ? [] : [item.sku_id])))];
+  const saldos =
+    saida && info.status === "PARSED" && skusVinculados.length > 0
+      ? await supabase
+          .from("inventory_balances")
+          .select("sku_id, quantity")
+          .eq("location_kind", "LOCAL")
+          .in("sku_id", skusVinculados)
+      : null;
+  // SKU sem linha de saldo é saldo zero: a linha só nasce com o primeiro movimento.
+  const saldoNaLoja = new Map<string, number>();
+
+  if (saldos !== null && saldos.error === null) {
+    for (const linha of saldos.data) saldoNaLoja.set(linha.sku_id, linha.quantity);
+  }
+
+  const mostraDisponivel = saida && info.status === "PARSED" && saldos?.error == null;
+  // Unidades pedidas por SKU: dois itens do mesmo SKU somam contra o MESMO saldo.
+  const pedidoPorSku = new Map<string, number>();
+
+  for (const item of linhas) {
+    if (item.sku_id !== null) pedidoPorSku.set(item.sku_id, (pedidoPorSku.get(item.sku_id) ?? 0) + item.quantity);
+  }
+
+  const skusSemSaldo = [...pedidoPorSku].filter(([sku, pedido]) => pedido > (saldoNaLoja.get(sku) ?? 0)).length;
+
   // Estados de trabalho em curso — mesmo raciocínio de AutoRefresh em
   // apps/web/app/(app)/importacoes/[id]/page.tsx.
   const working = info.status === "UPLOADED" || info.status === "PARSING" || info.status === "APPLYING";
@@ -125,12 +159,21 @@ export default async function NotaFiscalPage({
   const recusa = falhou ? recusaLegivel(info.last_error_code, marketplace) : null;
 
   /*
-    Envio ao Full é TRANSFERÊNCIA, não saída: a mercadoria continua nossa, no
-    centro do Mercado Livre (D-375, combinado com a frente do Full). A `api`
-    recusa a confirmação; a tela não oferece o botão, e diz por quê — oferecer
-    para depois recusar seria pior que não oferecer.
+    D-765: o envio ao Full SAI da loja (antes, D-375, ficava conferido e sem
+    baixa). A venda do Full não baixa a loja (D-352), então a saída acontece no
+    envio -- o "Importar Arquivo FULL" da Saída Manual do UpSeller.
   */
   const envioAoFull = info.document_type === "ENVIO_FULL_ML_PDF";
+  const tipoDoMovimento =
+    info.operation_type === "ENTRADA"
+      ? "Entrada por nota"
+      : info.operation_type !== "SAIDA"
+        ? "—"
+        : envioAoFull
+          ? "Transferência para o Full"
+          : info.document_type === "SAIDA_UPSELLER_PDF"
+            ? "Pedido de saída"
+            : "Saída por nota";
 
   const total = info.total_items ?? 0;
   const vinculados = info.resolved_items ?? 0;
@@ -160,6 +203,9 @@ export default async function NotaFiscalPage({
   // seria a tela dizendo que o campo não existe quando ele só veio vazio
   // (D-067).
   const fatos: readonly (readonly [string, ReactNode])[] = [
+    // O par "Armazém / Tipo" que abre a Saída e a Entrada Manual do UpSeller.
+    ["Armazém", "Estoque da loja"],
+    [info.operation_type === "ENTRADA" ? "Tipo de entrada" : "Tipo de saída", tipoDoMovimento],
     ["Número", info.document_number ?? "—"],
     // O tipo é o que explica por que faltam chave, série e valor num documento
     // que não é nota fiscal (D-375).
@@ -362,10 +408,17 @@ export default async function NotaFiscalPage({
 
       {info.status === "PARSED" && envioAoFull && (
         <p role="note" className="sb-nf-nota">
-          Envio ao Full é <b>transferência</b>, não saída: a mercadoria continua sendo nossa, guardada no centro do
-          Mercado Livre. Por isso este documento é lido e conferido, mas não dá baixa no estoque — gravar como saída
-          faria as unidades desaparecerem do sistema. A baixa passa a existir quando o Full tiver representação própria
-          (D-352).
+          Envio ao Full <b>sai do estoque da loja</b>: a mercadoria vai para o galpão do Mercado Livre e passa a aparecer
+          no estoque do Full. A venda entregue pelo Full não baixa a loja de novo — a baixa é esta, no envio.
+        </p>
+      )}
+
+      {mostraDisponivel && skusSemSaldo > 0 && (
+        <p role="note" className="sb-nf-aviso sb-nf-aviso-atencao">
+          {skusSemSaldo === 1
+            ? "1 SKU sai em quantidade maior que o disponível na loja"
+            : `${formatCount(skusSemSaldo)} SKUs saem em quantidade maior que o disponível na loja`}{" "}
+          — a baixa deixa o saldo negativo. Confira o vínculo antes de confirmar.
         </p>
       )}
 
@@ -411,6 +464,7 @@ export default async function NotaFiscalPage({
                     <th>Produto no documento</th>
                     <th>EAN</th>
                     <th className="sb-num">Quantidade</th>
+                    {mostraDisponivel && <th className="sb-num">Disponível na loja</th>}
                     <th className="sb-num">Custo unit.</th>
                     <th className="sb-num">Custo total</th>
                     <th>SKU no sistema</th>
@@ -441,6 +495,23 @@ export default async function NotaFiscalPage({
                         <b>{formatCount(item.quantity)}</b>
                         {item.unit === null ? "" : <small> {item.unit}</small>}
                       </td>
+                      {mostraDisponivel && (
+                        <td className="sb-num">
+                          {item.sku_id === null ? (
+                            <span className="sb-rep-mudo">—</span>
+                          ) : (
+                            <span
+                              className={
+                                (pedidoPorSku.get(item.sku_id) ?? 0) > (saldoNaLoja.get(item.sku_id) ?? 0)
+                                  ? "sb-nf-disponivel-falta"
+                                  : undefined
+                              }
+                            >
+                              {formatCount(saldoNaLoja.get(item.sku_id) ?? 0)}
+                            </span>
+                          )}
+                        </td>
+                      )}
                       {/*
                         Pedido de separação não traz preço, e zero se leria como
                         "de graça" (D-254): a célula fica muda em vez de afirmar
@@ -484,8 +555,14 @@ export default async function NotaFiscalPage({
         </section>
       )}
 
-      {info.status === "PARSED" && !envioAoFull && (
-        <ConfirmApplyForm documentId={info.id} totalItems={total} resolvedItems={vinculados} />
+      {info.status === "PARSED" && (
+        <ConfirmApplyForm
+          documentId={info.id}
+          totalItems={total}
+          resolvedItems={vinculados}
+          unidades={unidades}
+          direcao={info.operation_type}
+        />
       )}
     </>
   );

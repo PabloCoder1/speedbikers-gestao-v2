@@ -14954,6 +14954,18 @@ td.sb-pco-num-linha {
   color: var(--sb-danger-ink);
 }
 
+/* D-765: saída maior que o disponível na loja -- avisa, não bloqueia. */
+.sb-nf-aviso-atencao {
+  margin-bottom: var(--sb-space-3);
+  background: var(--sb-accent-soft);
+  color: var(--sb-accent-ink);
+}
+
+.sb-nf-disponivel-falta {
+  font-weight: 700;
+  color: var(--sb-danger-ink);
+}
+
 .sb-nf-envio-rodape {
   display: flex;
   flex-wrap: wrap;

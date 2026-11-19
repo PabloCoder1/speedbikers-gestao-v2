@@ -551,13 +551,12 @@ describe("XML e PDF (D-375)", () => {
     expect(ctx.uploads).toHaveLength(0);
   });
 
-  it("envio ao Full não é confirmado: transferência não é saída (D-352)", async () => {
+  it("envio ao Full conferido é confirmado: sai da loja rumo ao Full (D-765)", async () => {
     const ctx = applyDeps({ documentType: "ENVIO_FULL_ML_PDF" });
 
     const result = await confirmNfeApply(ctx.deps, CALLER, "doc-1");
 
-    expect(result).toMatchObject({ status: "rejected" });
-    expect(ctx.enqueued).toHaveLength(0);
-    expect(ctx.updates).toHaveLength(0);
+    expect(result).toMatchObject({ status: "queued" });
+    expect(ctx.enqueued).toHaveLength(1);
   });
 });
