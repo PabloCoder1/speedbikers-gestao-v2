@@ -128,6 +128,11 @@ typecheck -> lint -> unit -> integração -> build
 
 Obrigatórios antes de qualquer merge na `main`. Nenhum deploy sem CI verde.
 
+Em checkout recém-instalado, `pnpm run lint` e `pnpm run check` compilam
+primeiro os pacotes internos de que o lint precisa. O ESLint com informação
+de tipos lê as declarações em `dist` por meio dos exports desses pacotes.
+Para verificar esse caminho sem cache, use `pnpm exec turbo run lint --filter=@sb/worker --cache=local:w`.
+
 **O tempo do job de e2e (2026-10-20).**
 - **O limite subiu de 15 para 25 minutos.** Nos 40 runs anteriores, o job com sucesso levou de 11,8 a 14,7 minutos: uns 3 de preparo (Supabase local, build, seed) e de 9,4 a 11,6 de testes. Quatro runs foram cortados entre 15,0 e 15,6 minutos sem nenhum caso vermelho. Três deles foram cortados com os testes já verdes e todos os passos concluídos. O limite existe para pegar a suíte travada, não a lenta.
 - **Como reconhecer o corte:** ele aparece como `cancelled`, não `failure`, sem relatório do Playwright e sem `✘` no log. O outro `cancelled` comum é a concorrência do workflow (`cancel-in-progress`), quando um push novo na mesma branch substitui o run. Esse pode vir a qualquer momento; o corte do limite vem sempre no limite.
