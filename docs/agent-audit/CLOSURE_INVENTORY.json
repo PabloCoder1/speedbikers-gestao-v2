@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19, integração local e0bedddf + continuidade Gemini D-770–D-779 (f3ae0df6)",
+  "corte": "2026-11-19, integração local e0bedddf + continuidade Gemini D-770–D-781 (b7d459ea, PR #343)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV e Server Actions/ILIKE protegidos (1.562 unit + 401/401 E2E)",
+      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/ILIKE e zero getSession direto em clientes web (1.565 unit + 401/401 E2E em f3ae0df6)",
       "fase": 3
     },
     {
@@ -69,7 +69,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776 e D-779 testados localmente com paginação, guardas por versão, lotes .in() Full/Shopee, clientes HTTP resilientes, unlock no finally e logger blindado (1.097 worker + 38 observability)",
+      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776, D-779 e D-780 testados localmente com paginação, guardas por versão, lotes .in() Full/Shopee, visitas fail-closed, clientes HTTP resilientes, unlock protegido e logger blindado (1.102 worker + 38 observability)",
       "fase": 3
     },
     {
@@ -329,7 +329,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Todos/Sentinel",
-      "evidencia": "check 37/37 tarefas (4.250 unitários), build 10/10, 7 guardas web, 1.213 integração (326 migrations) e 39 embeds em f3ae0df6",
+      "evidencia": "check 37/37 tarefas (4.258 unitários), build 10/10, 7 guardas web em b7d459ea; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 (sem nova migration)",
       "fase": 5
     },
     {
