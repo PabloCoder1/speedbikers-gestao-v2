@@ -20,3 +20,31 @@ export function valorLiteralParaOr(valor: string): string {
 export function escaparIlike(valor: string): string {
   return valor.replace(/[\\%_]/g, "\\$&");
 }
+
+/**
+ * Resolve o filtro de conta pedido na URL contra o resultado de `ml_accounts`,
+ * falhando fechado quando o usuário pediu uma conta específica e a leitura de
+ * contas falhou (evita descartar `?conta=` / `?account=` e expor dados de
+ * todas as contas da organização).
+ */
+export function resolverContaSolicitada<
+  T extends { id: string },
+  E extends { message: string; code?: string } = { message: string; code?: string },
+>(
+  solicitada: string | null,
+  leitura: { data: readonly T[] | null; error: E | null } | null,
+  comparar: (conta: T, valor: string) => boolean = (conta, valor) => conta.id === valor,
+): { conta: T | null; erro: E | { message: string; code?: string } | null } {
+  if (solicitada === null) {
+    return { conta: null, erro: null };
+  }
+
+  if (leitura?.error !== null) {
+    return { conta: null, erro: leitura?.error ?? { message: "falha ao ler contas" } };
+  }
+
+  return {
+    conta: leitura.data?.find((item) => comparar(item, solicitada)) ?? null,
+    erro: null,
+  };
+}

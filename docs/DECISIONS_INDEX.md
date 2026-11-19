@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **684** (D-001 a D-782).
+Decisões registradas: **685** (D-001 a D-783).
 
 ## Por domínio
 
@@ -141,7 +141,7 @@ Decisões registradas: **684** (D-001 a D-782).
 - **D-767** — Um índice único atende a timeline do Full
 - **D-769** — Ordem de migrations validada por upgrade incremental
 
-### estoque (56)
+### estoque (57)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -199,6 +199,7 @@ Decisões registradas: **684** (D-001 a D-782).
 - **D-763** — A reposição mostra o que já está encomendado, sem recalcular a sugestão
 - **D-765** — O envio ao Full conferido dá saída no estoque da loja
 - **D-776** — Captura de estoque Full fatia `.in(inventory_id)` em lotes de 100 e elimina varredura histórica completa de `fulfillment_stock_snapshots`
+- **D-783** — Server Components falham fechado em erro de contas/organização (`/precos`, `/full`, `/atendimento/perguntas`), escapam `ILIKE` e limitam `.in()` em `/atendimento`
 
 ### interface (76)
 

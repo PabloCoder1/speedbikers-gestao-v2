@@ -102,8 +102,8 @@ interface SupportMetricsRow {
   prazos_vencidos: number;
 }
 
-/** Teto da busca: é recorte para achar um caso, não para listar a base. */
-const SEARCH_LIMIT = 500;
+/** Teto da busca: mantém `.in("id", ...)` abaixo de ~4 KB na URL do PostgREST (D-783). */
+const SEARCH_LIMIT = 100;
 
 /**
  * O prazo VIGENTE de um caso — o `ACTIVE` que vence primeiro. Escolher em
@@ -153,7 +153,7 @@ async function casosDaBusca(supabase: Supabase, search: string): Promise<{ ids: 
     for (const linha of casos.data) ids.add(linha.id);
     for (const linha of pedidos.data) ids.add(linha.support_case_id);
 
-    return { ids: [...ids], error: null };
+    return { ids: [...ids].slice(0, SEARCH_LIMIT), error: null };
   }
 
   const cadastro =
@@ -178,7 +178,7 @@ async function casosDaBusca(supabase: Supabase, search: string): Promise<{ ids: 
 
   for (const linha of vinculos.data) ids.add(linha.support_case_id);
 
-  return { ids: [...ids], error: null };
+  return { ids: [...ids].slice(0, SEARCH_LIMIT), error: null };
 }
 
 export default async function AtendimentoPage({

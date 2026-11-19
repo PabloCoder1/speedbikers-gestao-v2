@@ -20304,3 +20304,14 @@ Quatro falhas confirmadas em módulos críticos de `apps/api/src`:
 4. **Identificador remoto inválido no SAC (`support-reply.ts`):** `Number(external_case_id)` aceitava `""`, `"0"`, `"-10"` e `"1e5"` como inteiros seguros, gravando tentativa e enfileirando job inválido. Agora exige `/^[1-9]\d*$/` e `Number.isSafeInteger`.
 
 Reprodução pré-correção em `invites.test.ts`, `webhook.test.ts`, `pricing-quote.test.ts` e `support-reply.test.ts` registrou 8 falhas (`8 failed | 98 passed (106)`); após a correção, `@sb/api` passou integralmente em `typecheck`, `eslint` e `vitest` (`43` arquivos / `574` testes).
+
+## D-783 - Server Components falham fechado em erro de contas/organização (`/precos`, `/full`, `/atendimento/perguntas`), escapam `ILIKE` e limitam `.in()` em `/atendimento`
+
+Quatro falhas confirmadas em Server Components de `apps/web/app/(app)` (fora do escopo de `/compras`/`/reposicao`/`/importacoes`):
+
+1. **Queda silenciosa do filtro `?conta=` / `?account=` em erro de `ml_accounts` (`/precos`, `/full` e `/atendimento/perguntas`):** quando o usuário filtrava uma conta específica e a consulta a `ml_accounts` falhava, o filtro de conta virava `null` e as páginas executavam `get_price_changes`, `get_fulfillment_overview` ou `support_cases` + contagens de abas para TODAS as contas. Extraído `resolverContaSolicitada()` em `apps/web/lib/postgrest-search.ts`, preservando a antecipação paralela quando não há conta na URL e pulando as consultas principais quando `erroConta !== null`.
+2. **Erro de organização mascarado como falta de permissão (`/precos`, `/full` e `/atendimento/conhecimento`):** `/precos` e `/full` exibiam `EstadoDaTela tipo="permissao"` ("não pertence a uma organização") quando `currentMembership()` falhava com erro transitório (agora mostram `tipo="erro"` com detalhe e botão de tentar novamente); `/atendimento/conhecimento` ignorava `membership.error` ocultando ações de gestão sem aviso (agora incluído em `listError`).
+3. **Curingas `ILIKE` sem escape em `/atendimento/conhecimento`:** `entriesQuery.ilike("content", ...)` passou a usar `escaparIlike(filters.search)`.
+4. **Risco de HTTP 414 na busca da Caixa de Entrada (`/atendimento`):** `SEARCH_LIMIT = 500` podia enviar até 500–550 UUIDs (~18,5–20 KB) na URL de `.in("id", busca.ids)`. Reduzido para `SEARCH_LIMIT = 100` (≤ 3,7 KB) com `.slice(0, SEARCH_LIMIT)` em todos os ramos de `casosDaBusca`.
+
+Reprodução pré-correção em `apps/web/lib/server-pages-seguranca.test.ts` registrou 5 falhas (`5 failed (5)`); após a correção, `@sb/web` passou integralmente em `typecheck`, `eslint`, `vitest` (`150` arquivos / `1.570` testes) e nas 7 guardas estáticas (inclusive `check:waterfalls`).
