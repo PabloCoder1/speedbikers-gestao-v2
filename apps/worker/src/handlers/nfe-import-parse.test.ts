@@ -19,6 +19,7 @@ const ENVELOPE = {
 };
 
 const ACCESS_KEY = "35260812345678000190550010000012345123456789";
+const DOCUMENT_VERSION = "2026-08-22T11:59:00.000Z";
 
 function fixtureXmlObject(overrides: { det?: unknown[]; dest?: unknown } = {}): unknown {
   return {
@@ -66,6 +67,9 @@ function fakeDeps(options: {
   /** O erro que o banco devolve a um `update`, decidido pelos valores gravados. */
   updateError?: (values: Record<string, unknown>) => { code: string; message: string } | null;
   deleteFails?: boolean;
+  /** Estado no banco depois de ler o documento, antes de tentar gravar PARSING. */
+  beforeParsing?: () => { status: string; updatedAt: string };
+  parsedAt?: string;
 }): { deps: NfeParseDeps; captured: Captured; lines: string[] } {
   const captured: Captured = { updates: [], inserted: [], deletedTables: [] };
   const lines: string[] = [];
@@ -88,6 +92,8 @@ function fakeDeps(options: {
                       id: DOCUMENT_ID,
                       storage_path: options.pdf === undefined ? "org/2026-08/hash.xml" : "org/2026-09/hash.pdf",
                       status: options.status ?? "UPLOADED",
+                      updated_at: DOCUMENT_VERSION,
+                      parsed_at: options.parsedAt ?? null,
                       organization_id: ENVELOPE.organizationId,
                     },
               error: null,
@@ -96,9 +102,27 @@ function fakeDeps(options: {
         }),
       }),
       update: (values: Record<string, unknown>) => {
-        captured.updates.push(values);
-
-        return { eq: () => Promise.resolve({ error: options.updateError?.(values) ?? null }) };
+        const filters = new Map<string, unknown>();
+        function execute() {
+          const current = values.status === "PARSING"
+            ? options.beforeParsing?.() ?? { status: options.status ?? "UPLOADED", updatedAt: DOCUMENT_VERSION }
+            : null;
+          const matches = current === null ||
+            ((!filters.has("status") || filters.get("status") === current.status) &&
+              (!filters.has("updated_at") || filters.get("updated_at") === current.updatedAt));
+          const error = options.updateError?.(values) ?? null;
+          if (matches && error === null) captured.updates.push(values);
+          return Promise.resolve({ data: matches && error === null ? { id: DOCUMENT_ID } : null, error });
+        }
+        const update = {
+          eq: (column: string, value: unknown) => {
+            filters.set(column, value);
+            return update;
+          },
+          select: () => ({ maybeSingle: execute }),
+          then: (resolve: (result: Awaited<ReturnType<typeof execute>>) => void) => execute().then(resolve),
+        };
+        return update;
       },
       insert: (rows: Record<string, unknown>[]) => {
         captured.inserted.push(rows);
@@ -140,6 +164,45 @@ function ctx(lines: string[], payload: unknown): { logger: ReturnType<typeof cre
 }
 
 describe("parse do XML da NF-e", () => {
+  it.each(["PARSED", "APPLYING", "PARSING", "CANCELLED"])("não apaga itens se outra entrega avança para %s antes de PARSING", async (status) => {
+    const { deps, captured, lines } = fakeDeps({
+      status: status === "PARSING" ? "PARSING" : "UPLOADED",
+      beforeParsing: () => ({ status, updatedAt: "2026-08-22T11:59:01.000Z" }),
+    });
+    const read = vi.spyOn(deps.reader, "lerXml");
+
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(read).not.toHaveBeenCalled();
+    expect(captured.updates).toEqual([]);
+    expect(captured.deletedTables).toEqual([]);
+    expect(captured.inserted).toEqual([]);
+  });
+
+  it.each([
+    { status: "PARSED" },
+    { status: "FAILED", parsedAt: DOCUMENT_VERSION },
+    { status: "CANCELLED" },
+  ])("não reabre documento $status numa entrega tardia", async (fixture) => {
+    const { deps, captured, lines } = fakeDeps(fixture);
+    const read = vi.spyOn(deps.reader, "lerXml");
+
+    await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(read).not.toHaveBeenCalled();
+    expect(captured.updates).toEqual([]);
+    expect(captured.deletedTables).toEqual([]);
+  });
+
+  it("reprocessa PARSING quando a versão lida continua atual", async () => {
+    const { deps, captured, lines } = fakeDeps({ status: "PARSING" });
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(captured.updates.at(-1)).toMatchObject({ status: "PARSED" });
+  });
+
   it("extrai os campos do documento e marca como PARSED", async () => {
     const { deps, captured, lines } = fakeDeps({});
 

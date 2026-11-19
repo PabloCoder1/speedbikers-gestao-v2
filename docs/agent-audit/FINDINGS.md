@@ -135,6 +135,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A101 | P1 · CORRIGIDO localmente (D-747) | `nfe-import-apply.ts` aceitava o cabeçalho como prova de completude. Com quantidade de linhas diferente ou SKU ausente, gravava movimentos incompletos e concluía `APPLIED` | Exige concordância entre cabeçalho e itens já paginados. Divergência interrompe antes do ledger e permite releitura em nova entrega. Três regressões e uma recuperação verificada. [Checkpoint](SESSION_LOG.md) |
 
+| A102 | P1 · CORRIGIDO localmente (D-748) | `nfe-import-parse.ts` podia usar estado desatualizado para entrar em `PARSING` e apagar itens já conferidos. Entregas tardias também reabriam notas lidas ou canceladas | Compara estado e `updated_at` na transição e encerra entregas tardias antes do bucket. Permite recuperar `PARSING` com uma versão atual. O próximo ensaio cobre duas entregas que já iniciaram. [Checkpoint](SESSION_LOG.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

@@ -2,9 +2,9 @@
 
 ## Diagnóstico e critérios
 
-Há 101 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou medições externas (A01, A02, A07, A08, A10 e A11); A08 segue como hipótese de limpeza. A publicação das correções locais é uma etapa à parte. API, worker e integrações concentram as falhas de consistência; banco e desempenho exigem observação real. A varredura de antecipação de queries de 13/11 não encontrou outra oportunidade nas rotas de alto tráfego fora de D-670–D-684. O histórico das correções e das auditorias de dependências está no [checkpoint](SESSION_LOG.md).
+Há 102 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou medições externas (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. API, worker e integrações concentram as falhas de consistência. Banco e desempenho exigem observação real. A varredura de antecipação de queries de 13/11 não encontrou outra oportunidade nas rotas de alto tráfego fora de D-670–D-684. O [checkpoint](SESSION_LOG.md) reúne as correções, as auditorias de dependências e o estado da publicação.
 
-**Frente atual em 19/11:** Sentinel incorporou por avanço linear os 18 commits do [Gemini](GEMINI_HANDOFF.md) e corrigiu a aplicação parcial de NF-e (A101/D-747). Próxima investigação local: reproduzir duas entregas de parse concorrentes antes da transição para `PARSING`. Compras entrou na `main` pelo #332 e segue reservada ao Claude. A simulação de integração de `f2eb787c` com `58fc91fb` encontrou conflitos em DECISIONS, índice e HANDOFF. Resolver a numeração D-720–D-725 e regenerar o índice em etapa própria. #331 segue aberto. [Fechamento](STATE_AND_COMPLETION_2026-11-18.md).
+**Frente atual em 19/11.** Sentinel incorporou os 18 commits do [Gemini](GEMINI_HANDOFF.md), corrigiu a aplicação parcial de NF-e (A101/D-747) e protegeu o início da leitura contra uma versão desatualizada (A102/D-748). O próximo ensaio local deve intercalar a gravação dos itens depois de uma segunda entrega ler a versão atual de `PARSING` e verificar a proteção de entrada no parser ERP. Compras entrou na `main` pelo #332 e segue reservada ao Claude. A integração documental de `f2eb787c` com Sentinel exige resolver a numeração D-720–D-725 e regenerar o índice em etapa própria. #331 segue aberto. [Fechamento](STATE_AND_COMPLETION_2026-11-18.md).
 
 | Prioridade | Critério aplicado |
 | --- | --- |

@@ -20008,3 +20008,9 @@ Reprodução pré-correção em `erp-import-parse.test.ts`, `erp-import-apply.te
 A paginação de D-746 permite ler todas as linhas. Antes de gravar o estoque, a aplicação agora exige que os contadores do documento concordem e que a leitura tenha exatamente o total conferido com SKU em cada item. Em três reproduções, o cabeçalho indicava conferência completa e o worker encerrava com sucesso mesmo com uma linha ausente, uma linha excedente ou um item sem SKU.
 
 Se a leitura divergir, o job retorna falha retentável antes de gravar movimentos ou marcar `APPLIED`. A reentrega relê as linhas e, quando a conferência coincide, usa as chaves de idempotência existentes por documento e posição. Divergência persistente fica para investigação do lote após as tentativas da fila. A mudança usa os itens que já foram paginados e preserva a autorização, as tabelas e as regras fiscais.
+
+## D-748 - Início da leitura de NF-e depende do estado e da versão lidos
+
+Entre ler o documento e buscar o CNPJ da organização, outra entrega pode mudar o status ou avançar a versão de `PARSING`. O worker só atualiza para `PARSING` quando o identificador, o status e o `updated_at` ainda correspondem à leitura. O trigger de `documents` altera a versão mesmo em `PARSING` para `PARSING`. Se a atualização condicional não encontrar a linha, o worker retorna falha retentável antes de ler o bucket, apagar ou inserir itens. A próxima entrega decide a partir do estado atual.
+
+Uma entrega tardia para documento `PARSED`, `CANCELLED` ou com `parsed_at` preenchido é encerrada preservando os itens e os vínculos da conferência. Uma retentativa que lê a versão atual de `PARSING` pode recuperar uma execução interrompida. Resta ensaiar a persistência quando essa retentativa coincide com a primeira execução ainda ativa.

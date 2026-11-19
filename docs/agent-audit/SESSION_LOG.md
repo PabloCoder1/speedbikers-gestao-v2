@@ -720,6 +720,13 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
   - Playwright E2E completo (após `db reset --no-seed` + `e2e:seed`, com `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` e `NEXT_PUBLIC_API_URL=http://127.0.0.1:18080`): **397 passed (18.2m)** nos projetos `chromium` e `loja-live` (zero falhas, zero skips).
 - **Progresso e pendências.** Progresso segue em `129/226 = 57,08%` (`22/43 = 51,16%`), restando `42,92%` (`97/226` pontos) condicionados às portas externas/atos do dono (branch protection, pipeline de migrations na VM `sb-db`, backup/restore, alertas Monitoring, SMTP/Auth, `P02` na VM e deploy coordenado) além da revisão integrada de PR #330/#331. Ver [`GEMINI_HANDOFF.md`](GEMINI_HANDOFF.md).
 
+### 19/11/2026 · Guarda de versão no início da leitura de NF-e
+
+- D-748/A102 parte de `70d661e3` na branch `codex/sentinel-audit`. Sete cenários reproduziram a leitura do bucket ou a substituição de itens a partir de estado vencido, de nota lida ou de nota cancelada. Agora a transição para `PARSING` exige o status e o timestamp lidos. A próxima entrega relê o documento após perder a transição, e uma retentativa com versão atual de `PARSING` ainda recupera trabalho interrompido.
+- Validação local. Os sete cenários passaram e o parser totalizou 30 testes. Em Postgres isolado, o papel `service_role` comprovou que o filtro preserva `APPLYING` e que o trigger atualiza a versão em `PARSING` para `PARSING`. As fixtures foram revertidas. `pnpm run check` passou em 37 tarefas com 1.073 testes no worker. `pnpm run build` passou em 10 tarefas.
+- Progresso técnico de 134/226 pontos (59,3%) e 23/43 entregas por contagem (53,5%). D-748 amplia a evidência de B02. O recorte desta etapa inclui somente NF-e no worker e documentação Sentinel.
+- Próxima investigação. Reproduzir a sobreposição se duas leituras já tiverem entrado em `PARSING`. O parser do UpSeller/ERP tem uma atualização inicial incondicional da mesma família, a verificar com os contratos próprios de reenvio. Integração documental e portas operacionais seguem no [plano](PLAN.md).
+
 ### 19/11/2026 · Retomada do Gemini e aplicação completa de NF-e
 
 - Localizei `agent/gemini-sentinel` limpa em `58fc91fb`, com 18 commits sobre `76a27296`. Avancei `codex/sentinel-audit` por fast-forward na worktree Sentinel. Preferências, Sugestões, Atendimento, OAuth, Copiloto, paginação, Next e importações de D-732 a D-746 já tinham cobertura registrada. O Gemini relatou 397 E2E e 1.160 testes de integração nesse conjunto. Preservei as worktrees e branches do Gemini e do Claude.

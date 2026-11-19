@@ -85,7 +85,7 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
 
     const document = await deps.db
       .from("documents")
-      .select("id, status, organization_id, storage_path")
+      .select("id, status, organization_id, storage_path, updated_at, parsed_at")
       .eq("id", documentId)
       .maybeSingle();
 
@@ -107,6 +107,11 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       };
     }
 
+    if (document.data.status === "PARSED" || document.data.status === "CANCELLED" || document.data.parsed_at !== null) {
+      // A API só reenvia documentos que falharam antes de concluir a leitura.
+      return { status: "done", processed: 0 };
+    }
+
     // CNPJ da própria organização decide ENTRADA/SAIDA (não `ide/tpNF`
     // sozinho — ver `packages/domain/src/nfe/parse.ts`; no DANFE é ele que
     // diz se somos o emitente). Sem ele, não há como interpretar o documento
@@ -122,6 +127,25 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       return { status: "failed", retryable: true, reason: organization.error.message };
     }
 
+    // A leitura acima pode ter ficado antiga enquanto buscávamos o CNPJ.
+    // A comparação de versão também detecta PARSING -> PARSING numa reentrega.
+    const parsing = await deps.db
+      .from("documents")
+      .update({ status: "PARSING" })
+      .eq("id", documentId)
+      .eq("status", document.data.status)
+      .eq("updated_at", document.data.updated_at)
+      .select("id")
+      .maybeSingle();
+
+    if (parsing.error !== null) {
+      return { status: "failed", retryable: true, reason: parsing.error.message };
+    }
+
+    if (parsing.data === null) {
+      return { status: "failed", retryable: true, reason: "documento mudou antes de iniciar a leitura" };
+    }
+
     if (organization.data?.cnpj === null || organization.data?.cnpj === undefined) {
       const reason = "organização sem CNPJ cadastrado — não é possível decidir entrada/saída do documento";
 
@@ -132,12 +156,6 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
 
     const storagePath = document.data.storage_path;
     const ehPdf = storagePath.toLowerCase().endsWith(".pdf");
-
-    const parsing = await deps.db.from("documents").update({ status: "PARSING" }).eq("id", documentId);
-
-    if (parsing.error !== null) {
-      return { status: "failed", retryable: true, reason: parsing.error.message };
-    }
 
     let arquivo: unknown;
 
