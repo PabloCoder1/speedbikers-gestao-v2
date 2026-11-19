@@ -83,6 +83,20 @@ describe("lerRankingProdutos", () => {
     expect(r?.itens[0]?.taxas_ml).toBeNull();
   });
 
+  it("lê a receita e a comissão do subconjunto usado na margem, inclusive comissão zero", () => {
+    const r = lerRankingProdutos({
+      ...RESPOSTA,
+      itens: [{ ...ITEM, pedidos_cobertos: 4, receita_coberta: 400, taxas_ml_cobertas: 0 }],
+    });
+
+    expect(r?.itens[0]).toMatchObject({
+      receita_bruta: 800,
+      receita_coberta: 400,
+      taxas_ml: 80,
+      taxas_ml_cobertas: 0,
+    });
+  });
+
   it("recusa campo que falta, ordem desconhecida e número que não é número — nunca vira zero", () => {
     const semMargem: Record<string, unknown> = { ...ITEM };
 

@@ -39,6 +39,13 @@ function tabela(page: Page) {
   return page.locator(".sb-abc-table-wrap table");
 }
 
+async function primeiraCelulaDaColuna(page: Page, nome: string) {
+  const coluna = await tabela(page).getByRole("columnheader", { name: nome, exact: true })
+    .evaluate((th) => (th as HTMLTableCellElement).cellIndex);
+
+  return tabela(page).getByRole("row").nth(1).getByRole("cell").nth(coluna);
+}
+
 test("/curva-abc: o detalhe do SKU carrega ao clicar e o retorno preserva o ranking", async ({ page }) => {
   const { skuId } = await readSeedOutput();
   const destino = `/skus/${skuId}`;
@@ -100,11 +107,13 @@ test("/curva-abc?marketplace=todos: com a única loja Shopee de teste, a curva �
 
   await expect(page.getByRole("heading", { level: 1, name: "Curva ABC" })).toBeVisible();
 
+  const produtoMl = await primeiraCelulaDaColuna(page, "Produto / SKU");
+  const receitaMl = await primeiraCelulaDaColuna(page, "Faturamento");
   const ml = {
     faturamento: await valorDaFaixa(page, "Faturamento do recorte"),
     skus: await valorDaFaixa(page, "SKUs listados"),
-    produto: (await tabela(page).getByRole("row").nth(1).getByRole("cell").nth(1).getByRole("link").innerText()).trim(),
-    receita: (await tabela(page).getByRole("row").nth(1).getByRole("cell").nth(2).innerText()).trim(),
+    produto: (await produtoMl.getByRole("link").innerText()).trim(),
+    receita: (await receitaMl.innerText()).trim(),
   };
 
   // O seed tem venda do ML nos 90 dias: a comparação não é "—" com "—".
@@ -116,14 +125,11 @@ test("/curva-abc?marketplace=todos: com a única loja Shopee de teste, a curva �
   expect(await valorDaFaixa(page, "Faturamento do recorte")).toBe(ml.faturamento);
   expect(await valorDaFaixa(page, "SKUs listados")).toBe(ml.skus);
 
-  const primeira = tabela(page).getByRole("row").nth(1);
-
-  await expect(primeira.getByRole("cell").nth(1).getByRole("link")).toHaveText(ml.produto);
-  await expect(primeira.getByRole("cell").nth(2)).toHaveText(ml.receita);
-  // No "Todos", a parte de cada canal (classe, produto, faturamento, unidades,
-  // compras, ML, Shopee): toda do ML; a Shopee (só a loja de teste) sem venda.
-  await expect(primeira.getByRole("cell").nth(5)).toContainText(ml.receita);
-  await expect(primeira.getByRole("cell").nth(6)).toContainText("—");
+  await expect((await primeiraCelulaDaColuna(page, "Produto / SKU")).getByRole("link")).toHaveText(ml.produto);
+  await expect(await primeiraCelulaDaColuna(page, "Faturamento")).toHaveText(ml.receita);
+  // No "Todos", a receita é toda do ML. A Shopee, só com loja de teste, não tem venda.
+  await expect(await primeiraCelulaDaColuna(page, "Mercado Livre")).toContainText(ml.receita);
+  await expect(await primeiraCelulaDaColuna(page, "Shopee")).toContainText("—");
 
   // Pedidos, ticket e cobertura são do ML e saem; a nota diz.
   await expect(tabela(page).getByRole("columnheader", { name: "Pedidos" })).toHaveCount(0);

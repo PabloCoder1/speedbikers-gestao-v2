@@ -514,6 +514,8 @@ z robusto = (frete − mediana) ÷ (1,4826 × desvio absoluto mediano); com desv
 
 **Quem entra em cada ordem:** receita e volume, todo SKU vendido; lucro e menor margem, os com resultado; maior margem, 3 pedidos cobertos ou mais; frete, os com frete; prejuízo, resultado < 0; crescimento, 5 pedidos ou mais nos dois períodos; queda de margem, 5 cobertos nos dois e margem menor que antes.
 
+Na tabela, “na margem” indica a receita e a comissão usadas no cálculo quando só parte dos pedidos está coberta. A variação de receita continua usando a receita bruta total.
+
 | ID | Nome | Fórmula | Ressalva obrigatória na tela |
 |---|---|---|---|
 | `variacao_receita_produto` | Crescimento da receita do produto | receita do SKU no período ÷ receita no anterior − 1 | Só com 5 pedidos nos dois períodos; senão NULL, nunca 0. A contagem de "cresceram 30% ou mais" sai ao lado da variação da receita de todos os produtos — medido no Dev: crescer 30% em 30 dias é comum (um terço dos comparáveis) |
@@ -632,6 +634,8 @@ Lidas por `get_shopee_repasse_overview`, `get_shopee_repasse_daily`, `get_shopee
 ## 5X. Margem por SKU entre marketplaces (D-720) — DEFINIDAS E IMPLEMENTADAS
 
 Lidas por `get_sku_margins` para uma lista de SKUs (até 500) e um período (até 366 dias): uma linha por conta do ML, por loja da Shopee, por marketplace e o consolidado. Os somatórios vêm do SQL; a razão, de `evaluateSkuMargin` (`@sb/domain`).
+
+A Curva ABC usa essa leitura para os SKUs da página, no período e no canal selecionados, com cobertura em pedidos e indicação de custo atual. A margem aparece para uma conta ou para o recorte consolidado e em janelas de até 366 dias.
 
 | Id | Definição |
 |---|---|
