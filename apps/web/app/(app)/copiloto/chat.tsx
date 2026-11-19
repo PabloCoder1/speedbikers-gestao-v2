@@ -3,7 +3,8 @@
 import { useRef, useState, type ReactNode } from "react";
 
 import type { CopilotScreenContext } from "../../../components/copilot-context";
-import { createClient } from "../../../lib/supabase/browser";
+import { lerTokenDeSessao } from "../../../lib/chamar-api";
+import { extrairEventosSse, type CopilotChatEvent } from "../../../lib/copilot-sse";
 import { rotuloDaFerramenta } from "../../../lib/copiloto-ferramentas";
 
 /**
@@ -55,12 +56,6 @@ interface Exchange {
   status: "streaming" | "done" | "error";
 }
 
-type ChatEvent =
-  | { type: "text"; delta: string }
-  | { type: "tool"; name: string }
-  | { type: "done"; toolsUsed: string[] }
-  | { type: "error"; message: string };
-
 export function CopilotChat({
   contexto = null,
   sugestoes = SUGESTOES,
@@ -111,21 +106,40 @@ export function CopilotChat({
     setDraft("");
     setExchanges((current) => [...current, { question, answer: "", tools: [], status: "streaming" }]);
 
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    function aplicarEvento(event: CopilotChatEvent): void {
+      if (event.type === "text") {
+        const delta = event.delta;
 
-    if (token === undefined) {
-      patchLast((exchange) => ({ ...exchange, answer: "Sessão expirada — atualize a página.", status: "error" }));
-      setBusy(false);
+        patchLast((exchange) => ({ ...exchange, answer: exchange.answer + delta }));
+      } else if (event.type === "tool") {
+        const name = event.name;
 
-      return;
+        patchLast((exchange) => ({ ...exchange, tools: [...exchange.tools, name] }));
+      } else if (event.type === "done") {
+        patchLast((exchange) => ({ ...exchange, status: "done" }));
+      } else {
+        const message = event.message;
+
+        patchLast((exchange) => ({
+          ...exchange,
+          answer: exchange.answer.length > 0 ? exchange.answer : message,
+          status: "error",
+        }));
+      }
     }
 
     try {
+      const sessao = await lerTokenDeSessao("Sessão expirada — atualize a página.");
+
+      if (!sessao.ok) {
+        patchLast((exchange) => ({ ...exchange, answer: sessao.mensagem, status: "error" }));
+
+        return;
+      }
+
       const response = await fetch(`${API_URL}/v1/copilot/chat`, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        headers: { "content-type": "application/json", authorization: `Bearer ${sessao.token}` },
         /*
           O CONTEXTO VIAJA COM A PERGUNTA (D-294). Só o par que a ferramenta
           usa — `kind`, `id` e a conta quando é anúncio; o rótulo é da tela e
@@ -152,7 +166,8 @@ export function CopilotChat({
       }
 
       // Parse de SSE sobre fetch: eventos separados por linha em branco,
-      // payload em linhas `data:`.
+      // payload em linhas `data:`. No EOF (D-745), descarrega o decoder e
+      // consome eventual último evento sem `\n\n` final.
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -161,53 +176,23 @@ export function CopilotChat({
         const { done, value } = await reader.read();
 
         if (done) {
+          buffer += decoder.decode();
+
+          for (const event of extrairEventosSse(buffer, true).events) {
+            aplicarEvento(event);
+          }
+
           break;
         }
 
         buffer += decoder.decode(value, { stream: true });
 
-        const chunks = buffer.split("\n\n");
+        const parsed = extrairEventosSse(buffer, false);
 
-        buffer = chunks.pop() ?? "";
+        buffer = parsed.rest;
 
-        for (const chunk of chunks) {
-          const dataLine = chunk
-            .split("\n")
-            .filter((line) => line.startsWith("data:"))
-            .map((line) => line.slice(5).trim())
-            .join("");
-
-          if (dataLine.length === 0) {
-            continue;
-          }
-
-          let event: ChatEvent;
-
-          try {
-            event = JSON.parse(dataLine) as ChatEvent;
-          } catch {
-            continue;
-          }
-
-          if (event.type === "text") {
-            const delta = event.delta;
-
-            patchLast((exchange) => ({ ...exchange, answer: exchange.answer + delta }));
-          } else if (event.type === "tool") {
-            const name = event.name;
-
-            patchLast((exchange) => ({ ...exchange, tools: [...exchange.tools, name] }));
-          } else if (event.type === "done") {
-            patchLast((exchange) => ({ ...exchange, status: "done" }));
-          } else {
-            const message = event.message;
-
-            patchLast((exchange) => ({
-              ...exchange,
-              answer: exchange.answer.length > 0 ? exchange.answer : message,
-              status: "error",
-            }));
-          }
+        for (const event of parsed.events) {
+          aplicarEvento(event);
         }
       }
 

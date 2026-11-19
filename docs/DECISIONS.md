@@ -19980,3 +19980,14 @@ Quatro classes de defeitos operacionais confirmadas na camada HTTP/serviço de `
 4. **Validação de entrada faltante em `app.ts`:** `POST /v1/ml-accounts/connect` não validava `mlAccountId` com `z.uuid().safeParse(...)` (ao contrário das demais rotas auditadas em 28/09), enviando strings inválidas ao Postgres; e `POST /v1/erp-imports` e `POST /v1/nfe-imports` chamavam `context.req.parseBody()` fora de `try/catch`, respondendo 500 em vez de 400 para corpo multipart malformado.
 
 Reprodução pré-correção em `erp-import.test.ts`, `nfe-import.test.ts`, `invites.test.ts` e `app.test.ts` registrou 9 falhas (`9 failed | 171 passed (180)`); após a correção, `@sb/api` passou integralmente em `typecheck`, `eslint` e `vitest` (`39` arquivos / `526` testes).
+
+## D-745 - Sessão, flush final do SSE e preservação do link de convite nos sete componentes cliente restantes da web
+
+Fecha o inventário de leituras diretas de `supabase.auth.getSession()` fora de `try/catch` nos componentes cliente de `apps/web` e corrige três falhas associadas de transporte/streaming:
+
+1. **Preservação do link de convite de uso único e validação de payload em `usuarios/convidar.tsx`:** `getSession()` migrado para `lerTokenDeSessao`; a checagem pós-convite `conferirLojas` (leitura em `user_shopee_shop_permissions` executada depois que `POST /v1/organization/invites` já criou o usuário e emitiu `inviteLink`) agora captura exceções de rede/cliente dentro de `try/catch` para nunca descartar o link de uso único em erro transitório; e respostas `200 OK` sem JSON válido ou com `status` inesperado não caem mais no ramo `"vinculado"`.
+2. **Flush final do stream SSE e proteção de `busy` em `copiloto/chat.tsx`:** `lerTokenDeSessao` entra no bloco `try/finally` (impedindo `busy = true` eterno); o parsing SSE foi extraído para `apps/web/lib/copilot-sse.ts` (`extrairEventosSse`), normalizando CRLF (`\r\n`) e descarregando `decoder.decode()` + eventual evento final no `buffer` ao atingir EOF (`done: true`) antes do fallback de erro.
+3. **JSON seguro e `try/finally` em `sugestoes/suggestion-detail.tsx`:** `structure()` passa a usar `lerTokenDeSessao` dentro do `try/finally` e faz `await response.json().catch(() => null)` para que páginas HTML de erro HTTP (`502`/`504`) ou respostas `200` sem JSON não quebrem nem pareçam sucesso.
+4. **Leitura segura de sessão em `usuarios/reemitir-link.tsx`, `faturamento/calculadora-preco.tsx`, `importacoes/nova/upload-form.tsx` e `notas-fiscais/nova/upload-form.tsx`:** todos passam a reutilizar `lerTokenDeSessao` (`apps/web/lib/chamar-api.ts`), eliminando travamento de botões/estado ocupado em falha do cliente Auth.
+
+Validação local: contratos novos em `apps/web/lib/copilot-sse.test.ts` (3) e `apps/web/lib/chamar-api.test.ts` (4) + `@sb/web` completo em `typecheck`, `eslint` e `vitest` (`142` arquivos / `1.501` testes).
