@@ -236,11 +236,14 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
-**Curva ABC em 17/09:** filtro A/B/C no SQL, 50 linhas e rolagem interna.
-
-**Estoque:** D-351 e D-352 em produção. D-362 e D-423 em produção; o histórico (365 dias, sem estoque) disparado em 07/10 por job temporário do Scheduler com o OIDC da `v3-scheduler-invoker`, apagado depois. A receita com SKU em 90 dias passou de ~83% para ~99% da receita.
-
-**Anúncios:** filtro de promoção (D-419) em produção; conferir no log a queda de `listing_promotion_fetch_failed` (~13 por rodada antes). D-420 (campanhas) em código: migration `20260929180000` antes do worker.
+**Rollout Sentinel:** o [#366](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/366)
+valida o catálogo da VM e permite conferir o mesmo plano entre aprovações.
+O backup de 20/11 contém 324 versões compatíveis com a base do candidato.
+Antes de aplicar o [#364](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/364),
+obter o catálogo atual da VM, registrar as quatro migrations no Dev e
+reconciliar o workflow com o destino VM. A correção dos anúncios ML segue
+separadamente no [#368](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/368),
+sem migration. [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351).
 
 ---
 
