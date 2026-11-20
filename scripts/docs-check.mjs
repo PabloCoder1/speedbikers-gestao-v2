@@ -87,8 +87,26 @@ const [decisoes, indice] = await Promise.all([
   readFile("docs/DECISIONS_INDEX.md", "utf8").catch(() => null),
 ]);
 
+if (decisoes === null) {
+  problemas.push("docs/DECISIONS.md: não pôde ser lido.");
+}
+if (indice === null) {
+  problemas.push("docs/DECISIONS_INDEX.md: não pôde ser lido. Rode `pnpm docs:index`.");
+}
+
 if (decisoes !== null && indice !== null) {
-  const idsFonte = new Set((decisoes.match(/^## (D-\d+)/gmu) ?? []).map((l) => l.slice(3)));
+  const idsFonte = new Set();
+  const duplicados = new Set();
+  for (const [, id] of decisoes.matchAll(/^## (D-\d+)/gmu)) {
+    if (idsFonte.has(id)) {
+      duplicados.add(id);
+    }
+    idsFonte.add(id);
+  }
+  if (duplicados.size > 0) {
+    problemas.push(`docs/DECISIONS.md: IDs repetidos: ${[...duplicados].join(", ")}.`);
+  }
+
   const idsIndice = new Set((indice.match(/\*\*(D-\d+)\*\*/gu) ?? []).map((l) => l.replaceAll("*", "")));
   const faltando = [...idsFonte].filter((id) => !idsIndice.has(id));
 
