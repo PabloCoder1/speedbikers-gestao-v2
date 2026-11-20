@@ -31,9 +31,9 @@ API="https://monitoring.googleapis.com/v3/projects/${PROJECT_ID}"
 
 rest() { # método caminho [arquivo-json]
   if [ -n "${3:-}" ]; then
-    curl -sS -X "$1" "${API}$2" -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' -d @"$3"
+    curl -fsS -X "$1" "${API}$2" -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' -d @"$3"
   else
-    curl -sS -X "$1" "${API}$2" -H "Authorization: Bearer ${TOKEN}"
+    curl -fsS -X "$1" "${API}$2" -H "Authorization: Bearer ${TOKEN}"
   fi
 }
 
@@ -79,7 +79,8 @@ else
 fi
 CHECK_ID="${UPTIME##*/}"
 
-if [ -z "$(achar alertPolicies 'api fora do ar')" ]; then
+POLITICA_UPTIME="$(achar alertPolicies 'api fora do ar')"
+if [ -z "${POLITICA_UPTIME}" ]; then
   cat > "${tmp}/p-uptime.json" <<JSON
 {"displayName":"api fora do ar","combiner":"OR","notificationChannels":["${CANAL}"],
  "documentation":{"content":"A api de produção não respondeu ao /health em mais de uma região por 10 minutos. Conferir revisão e logs do Cloud Run (docs/DEPLOYMENT.md).","mimeType":"text/markdown"},
@@ -96,7 +97,8 @@ else
 fi
 
 # 3. Política por log: 403 do Mercado Livre no worker
-if [ -z "$(achar alertPolicies 'Mercado Livre 403 no worker')" ]; then
+POLITICA_ML="$(achar alertPolicies 'Mercado Livre 403 no worker')"
+if [ -z "${POLITICA_ML}" ]; then
   cat > "${tmp}/p-403.json" <<'JSON'
 {"displayName":"Mercado Livre 403 no worker","combiner":"OR","notificationChannels":["__CANAL__"],
  "documentation":{"content":"O Mercado Livre recusou uma chamada do worker com 403 (D-414: bloqueio por instância/IP de saída). Ver instanceId no Cloud Logging; se for uma instância só, revisão nova do worker com a mesma imagem.","mimeType":"text/markdown"},
