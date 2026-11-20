@@ -44,3 +44,27 @@ Antes de nova migration: identificar o destino real, comparar histórico e
 objetos, produzir plano de diferenças e obter as aprovações do fluxo oficial.
 Não usar `db push`, `--include-all` nem repair para repetir ou encobrir a
 aplicação manual. Migração do workflow e mudanças na VM ficam em outra fatia.
+
+### Comparar o histórico com o candidato
+
+Em uma sessão já autorizada na VM, extraia só as versões aplicadas:
+
+```sh
+sudo docker exec -e 'PGOPTIONS=-c default_transaction_read_only=on' supabase-db \
+  psql -XAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+  -c 'select version from supabase_migrations.schema_migrations order by version' \
+  > catalogo-migrations.txt
+```
+
+Transfira o arquivo de versões ao checkout do commit candidato e execute:
+
+```sh
+node infra/vm/check-migration-catalog.mjs < catalogo-migrations.txt
+```
+
+A saída JSON mostra as pendências posteriores à última versão aplicada. O
+código de saída é 0 para `match` ou `pending`, 1 para `blocked` e 2 para entrada
+inválida. `blocked` indica lacuna anterior à última versão ou versão do
+catálogo ausente no Git. A comparação cobre os identificadores das migrations.
+A conferência dos objetos e o teste de upgrade completam a validação antes da
+aplicação.
