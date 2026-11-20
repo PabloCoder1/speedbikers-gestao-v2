@@ -83,8 +83,14 @@ if (handoff === null) {
 // O índice de decisões é derivado: se ficou para trás, o agente procura um
 // D-xxx que o índice não conhece.
 const [decisoes, indice] = await Promise.all([
-  readFile("docs/DECISIONS.md", "utf8").catch(() => null),
-  readFile("docs/DECISIONS_INDEX.md", "utf8").catch(() => null),
+  readFile("docs/DECISIONS.md", "utf8").catch(() => {
+    problemas.push("docs/DECISIONS.md: não pôde ser lido.");
+    return null;
+  }),
+  readFile("docs/DECISIONS_INDEX.md", "utf8").catch(() => {
+    problemas.push("docs/DECISIONS_INDEX.md: não pôde ser lido. Rode `pnpm docs:index`.");
+    return null;
+  }),
 ]);
 
 if (decisoes !== null && indice !== null) {
