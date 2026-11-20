@@ -87,9 +87,14 @@ build_and_deploy() {
 
   step "Build da imagem: ${app}"
   info "${image}"
+  local build_identity=()
+  if [ -n "${CLOUD_BUILD_SERVICE_ACCOUNT:-}" ]; then
+    build_identity=("--service-account=${CLOUD_BUILD_SERVICE_ACCOUNT}")
+  fi
   gc builds submit \
     --config infra/cloudbuild.yaml \
     --substitutions "_APP=${app},_IMAGE=${image}" \
+    "${build_identity[@]}" \
     .
 
   step "Deploy: ${app}"
