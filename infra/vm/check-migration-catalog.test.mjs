@@ -40,19 +40,42 @@ test("recusa datas impossíveis, versão duplicada e catálogo vazio", () => {
   assert.throws(() => compareMigrationCatalog(["README.md"], first), /Nenhuma migration/);
 });
 
+test("gera um plano estável e distingue alterações no catálogo e nos bytes do SQL", () => {
+  const names = [filename(third), filename(first), filename(second)];
+  const report = compareMigrationCatalog(names, `${first}\n${second}`, () => "select 1;");
+  assert.match(report.plan.id, /^[0-9a-f]{64}$/u);
+  assert.deepEqual(report.plan.files.map(({ name }) => name), [filename(third)]);
+  assert.equal(
+    compareMigrationCatalog([...names].reverse(), `${second}\r\n${first}\r\n`, () => "select 1;").plan.id,
+    report.plan.id,
+  );
+  assert.notEqual(compareMigrationCatalog(names, `${first}\n${second}`, () => "select 2;").plan.id, report.plan.id);
+  assert.notEqual(compareMigrationCatalog(names, `${first}\n${second}\n${third}`, () => "").plan.id, report.plan.id);
+});
+
 test("CLI diferencia bloqueio, entrada inválida e catálogo compatível", (t) => {
   const fixture = mkdtempDisposableSync(join(tmpdir(), "sb-migration-catalog-"));
   t.after(() => fixture.remove());
   for (const name of [filename(first), filename(second)]) writeFileSync(join(fixture.path, name), "");
   const script = fileURLToPath(new URL("./check-migration-catalog.mjs", import.meta.url));
-  const run = (input) => spawnSync(process.execPath, [script, fixture.path], { input, encoding: "utf8" });
+  const run = (input, ...args) => spawnSync(process.execPath, [script, fixture.path, ...args], { input, encoding: "utf8" });
   const compatible = run(first);
   assert.equal(compatible.status, 0, compatible.stderr);
   assert.equal(JSON.parse(compatible.stdout).status, "pending");
-  const blocked = run(second);
+  const blocked = run(second, "--plan");
   assert.equal(blocked.status, 1, blocked.stderr);
   assert.equal(JSON.parse(blocked.stdout).status, "blocked");
+  assert.equal(JSON.parse(blocked.stdout).plan, undefined);
   const invalid = run("not a catalog");
   assert.equal(invalid.status, 2);
   assert.equal(JSON.parse(invalid.stderr).status, "invalid_input");
+
+  const planned = run(first, "--plan");
+  assert.equal(planned.status, 0, planned.stderr);
+  const { id } = JSON.parse(planned.stdout).plan;
+  assert.equal(run(first, "--expect-plan", id).status, 0);
+  writeFileSync(join(fixture.path, filename(second)), "select 42;");
+  const changed = run(first, "--expect-plan", id);
+  assert.equal(changed.status, 1, changed.stderr);
+  assert.equal(JSON.parse(changed.stdout).status, "plan_changed");
 });

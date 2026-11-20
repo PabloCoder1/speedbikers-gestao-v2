@@ -68,3 +68,17 @@ inválida. `blocked` indica lacuna anterior à última versão ou versão do
 catálogo ausente no Git. A comparação cobre os identificadores das migrations.
 A conferência dos objetos e o teste de upgrade completam a validação antes da
 aplicação.
+
+Para registrar o plano revisado, gere o JSON com os hashes SHA-256 do catálogo
+e de cada migration pendente. Na segunda aprovação, extraia o catálogo
+novamente e verifique o mesmo plano no checkout do commit aprovado:
+
+```sh
+node infra/vm/check-migration-catalog.mjs --plan < catalogo-migrations.txt
+node infra/vm/check-migration-catalog.mjs --expect-plan "$PLAN_ID" < catalogo-atual.txt
+```
+
+`PLAN_ID` é o `plan.id` do JSON da primeira etapa. Uma mudança nas versões
+aplicadas ou no conteúdo ou nome de um SQL pendente reprova a verificação.
+O ID cobre o catálogo e os SQLs pendentes. Registre também o SHA do commit e
+o ambiente de origem do catálogo na revisão.

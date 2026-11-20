@@ -1,6 +1,11 @@
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 
-const MIGRATIONS = new URL("../../supabase/migrations/", import.meta.url);
+const MIGRATIONS = fileURLToPath(new URL("../../supabase/migrations/", import.meta.url));
+const sha256 = (content) => createHash("sha256").update(content).digest("hex");
 
 function validVersion(version) {
   if (!/^\d{14}$/u.test(version) || version.startsWith("0000")) return false;
@@ -12,7 +17,7 @@ function validVersion(version) {
   return !Number.isNaN(date.getTime()) && date.toISOString() === iso;
 }
 
-export function compareMigrationCatalog(fileNames, catalogText) {
+export function compareMigrationCatalog(fileNames, catalogText, readSql) {
   const local = new Map();
   for (const name of fileNames.filter((name) => name.endsWith(".sql")).sort()) {
     const match = /^(\d{14})_.+\.sql$/u.exec(name);
@@ -48,7 +53,7 @@ export function compareMigrationCatalog(fileNames, catalogText) {
     ? "blocked"
     : pendingAfterLatest.length ? "pending" : "match";
 
-  return {
+  const report = {
     status,
     localCount: local.size,
     appliedCount: applied.size,
@@ -57,16 +62,35 @@ export function compareMigrationCatalog(fileNames, catalogText) {
     pendingBeforeLatest,
     appliedNotInGit,
   };
+  if (readSql && status !== "blocked") {
+    const catalogSha256 = sha256([...applied].sort().join("\n"));
+    const files = pendingAfterLatest.map((name) => ({ name, sha256: sha256(readSql(name)) }));
+    const manifest = { catalogSha256, files };
+    report.plan = { ...manifest, id: sha256(JSON.stringify(manifest)) };
+  }
+  return report;
 }
 
 if (import.meta.main) {
   try {
     if (process.stdin.isTTY) throw new Error("Envie o catálogo de versões pela entrada padrão.");
-    const entries = readdirSync(process.argv[2] ?? MIGRATIONS, { withFileTypes: true });
+    const { values, positionals } = parseArgs({
+      options: { plan: { type: "boolean" }, "expect-plan": { type: "string" } },
+      allowPositionals: true,
+    });
+    if (positionals.length > 1) throw new Error("Informe no máximo um diretório de migrations.");
+    const expected = values["expect-plan"];
+    if (expected !== undefined && !/^[0-9a-f]{64}$/u.test(expected)) {
+      throw new Error("ID do plano esperado inválido.");
+    }
+    const directory = positionals[0] ?? MIGRATIONS;
+    const entries = readdirSync(directory, { withFileTypes: true });
     const files = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
-    const report = compareMigrationCatalog(files, readFileSync(0, "utf8"));
+    const readSql = (values.plan || expected !== undefined) ? (name) => readFileSync(join(directory, name)) : undefined;
+    const report = compareMigrationCatalog(files, readFileSync(0, "utf8"), readSql);
+    if (report.plan && expected !== undefined && report.plan.id !== expected) report.status = "plan_changed";
     console.log(JSON.stringify(report, null, 2));
-    if (report.status === "blocked") process.exitCode = 1;
+    if (report.status === "blocked" || report.status === "plan_changed") process.exitCode = 1;
   } catch (error) {
     console.error(JSON.stringify({ status: "invalid_input", error: error.message }));
     process.exitCode = 2;
