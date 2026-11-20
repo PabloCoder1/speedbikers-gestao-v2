@@ -175,8 +175,6 @@ export async function fetchListingVisits(
       throw error;
     }
 
-    let recorded = true;
-
     if (timeWindow.results.length > 0) {
       const result = await params.db.from("daily_listing_visits").upsert(
         timeWindow.results.map((entry) => ({
@@ -201,13 +199,15 @@ export async function fetchListingVisits(
           reason: result.error.message,
         });
 
-        recorded = false;
+        // D-780: falha de gravação no banco não pode virar `done` silencioso
+        // sem retentativa. O que já foi gravado fica no checkpoint de 12h
+        // (D-156), este item falhou atomicamente sem checkpoint parcial e a
+        // exceção faz `sync.listing-visits.snapshot` registrar falha retentável.
+        throw new Error(`falha ao gravar daily_listing_visits (${listing.item_id}): ${result.error.message}`);
       }
     }
 
-    if (recorded) {
-      itemsProcessed += 1;
-    }
+    itemsProcessed += 1;
   }
 
   return { itemsProcessed, itemsFailed, itemsSkipped };

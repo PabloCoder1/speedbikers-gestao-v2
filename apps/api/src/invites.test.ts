@@ -57,10 +57,14 @@ function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { ta
           then: <R>(resolve: (value: { data: unknown; error: null }) => R) =>
             Promise.resolve({ data: vinculos, error: null }).then(resolve),
           // ml_accounts e shopee_shops: .select().eq(org).in(ids)
+          // Postgres devolve cada linha correspondente uma única vez, mesmo com ids repetidos no IN.
           in: (_coluna: string, ids: string[]) => {
             const daOrganizacao = tabela === "shopee_shops" ? lojas : contas;
 
-            return Promise.resolve({ data: ids.filter((id) => daOrganizacao.includes(id)).map((id) => ({ id })), error: null });
+            return Promise.resolve({
+              data: daOrganizacao.filter((id) => ids.includes(id)).map((id) => ({ id })),
+              error: null,
+            });
           },
           // organization_members: .select().eq(org).eq(user).maybeSingle()
           eq: () => ({
@@ -269,6 +273,25 @@ describe("inviteOrganizationMember (D-296)", () => {
 
     expect(JSON.stringify(registros)).not.toContain("sigilo@empresa.com");
     expect(JSON.stringify(registros)).toContain("invite_created");
+  });
+
+  it("D-744: mlAccountIds e shopeeShopIds repetidos são deduplicados antes da validação e da gravação", async () => {
+    const { deps, escritas } = fakeDeps();
+
+    const outcome = await inviteOrganizationMember(deps, ADMIN, {
+      email: "dup@empresa.com",
+      role: "OPERADOR",
+      mlAccountIds: [CONTA, CONTA],
+      shopeeShopIds: [LOJA, LOJA],
+    });
+
+    expect(outcome.status).toBe("invited");
+    expect(escritas.find((e) => e.tabela === "user_account_permissions")?.linha).toEqual([
+      { user_id: "novo-dup@empresa.com", ml_account_id: CONTA },
+    ]);
+    expect(escritas.find((e) => e.tabela === "user_shopee_shop_permissions")?.linha).toEqual([
+      { user_id: "novo-dup@empresa.com", shopee_shop_id: LOJA },
+    ]);
   });
 });
 

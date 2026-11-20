@@ -39,20 +39,30 @@ export function NewKnowledgeForm(): ReactNode {
     if (!busy) setOpen(false);
   }
 
-  function submit(): void {
+  async function submit(): Promise<void> {
     setBusy(true);
     setFeedback(null);
-    void createKnowledgeEntry({ kind, source, content, note, skuCode }).then((result) => {
-      setBusy(false);
+
+    try {
+      const result = await createKnowledgeEntry({ kind, source, content, note, skuCode });
+
       if (!result.ok) {
         setFeedback({ ok: false, text: result.message ?? "Não foi possível registrar." });
         return;
       }
+
       setContent("");
       setNote("");
       setSkuCode("");
       setFeedback({ ok: true, text: "Registrado como SUGERIDO. Aguarda validação humana." });
-    });
+    } catch {
+      setFeedback({
+        ok: false,
+        text: "Não foi possível confirmar o envio. Confira a lista antes de tentar novamente.",
+      });
+    } finally {
+      setBusy(false);
+    }
   }
 
   return <>
@@ -77,7 +87,7 @@ export function NewKnowledgeForm(): ReactNode {
           {feedback !== null && <p className={feedback.ok ? "sb-knowledge-feedback" : "sb-knowledge-feedback sb-knowledge-feedback-error"} role={feedback.ok ? "status" : "alert"}>{feedback.text}</p>}
           <div className="sb-knowledge-form-actions">
             <button className="sb-button" type="button" disabled={busy} onClick={close}>{feedback?.ok ? "Concluído" : "Cancelar"}</button>
-            {!feedback?.ok && <button className="sb-button sb-button-primary" type="button" disabled={busy} onClick={submit}>{busy ? "Registrando…" : "Enviar para validação"}</button>}
+            {!feedback?.ok && <button className="sb-button sb-button-primary" type="button" disabled={busy} onClick={() => { void submit(); }}>{busy ? "Registrando…" : "Enviar para validação"}</button>}
           </div>
         </div>
       </section>

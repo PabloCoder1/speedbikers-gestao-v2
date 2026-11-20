@@ -25,6 +25,7 @@ function chain<T>(result: T): {
   eq: () => ReturnType<typeof chain<T>>;
   in: () => ReturnType<typeof chain<T>>;
   is: () => ReturnType<typeof chain<T>>;
+  gte: () => ReturnType<typeof chain<T>>;
   order: () => ReturnType<typeof chain<T>>;
   limit: () => ReturnType<typeof chain<T>>;
   range: (from: number, to: number) => Promise<T>;
@@ -35,6 +36,7 @@ function chain<T>(result: T): {
     eq: () => self,
     in: () => self,
     is: () => self,
+    gte: () => self,
     order: () => self,
     limit: () => self,
     // `range` FATIA de verdade (D-131). Um fake que devolvesse a lista
@@ -50,7 +52,18 @@ function chain<T>(result: T): {
 
       return Promise.resolve(result);
     },
-    maybeSingle: () => Promise.resolve(result),
+    maybeSingle: () => {
+      const envelope = result as { data?: unknown };
+
+      if (Array.isArray(envelope.data)) {
+        const items = envelope.data as readonly unknown[];
+        const first: unknown = items[0] ?? null;
+
+        return Promise.resolve({ ...(result as object), data: first } as T);
+      }
+
+      return Promise.resolve(result);
+    },
     then: <R>(resolve: (value: T) => R) => Promise.resolve(result).then(resolve),
   };
 
@@ -82,7 +95,7 @@ function fakeDb(options: {
         // olhando o encadeamento inteiro não é possível aqui sem duplicar a
         // lib real; em vez disso, o teste usa UM inventory_id por vez quando
         // precisa afirmar sobre "previous" específico (ver descrição abaixo).
-        return chain({ data: null, error: null });
+        return chain({ data: [], error: null });
       },
       insert: (row: Record<string, unknown>) => {
         inserted.push({ table, row });
@@ -120,6 +133,7 @@ function fakeDbWithPrevious(
   function snapshotFilterChain(filters: Record<string, unknown>): {
     eq: (col: string, val: unknown) => ReturnType<typeof snapshotFilterChain>;
     in: (col: string, vals: readonly unknown[]) => ReturnType<typeof snapshotFilterChain>;
+    gte: (col: string, val: unknown) => ReturnType<typeof snapshotFilterChain>;
     order: () => ReturnType<typeof snapshotFilterChain>;
     limit: () => ReturnType<typeof snapshotFilterChain>;
     range: (from: number, to: number) => Promise<{ data: PreviousSnapshot[]; error: null }>;
@@ -128,13 +142,17 @@ function fakeDbWithPrevious(
     const self = {
       eq: (col: string, val: unknown) => snapshotFilterChain({ ...filters, [col]: val }),
       in: (col: string, vals: readonly unknown[]) => snapshotFilterChain({ ...filters, [col]: vals }),
+      gte: (col: string, val: unknown) => snapshotFilterChain({ ...filters, [`gte:${col}`]: val }),
       order: () => self,
       limit: () => self,
       range: (from: number, to: number) => {
         const ids = (filters.inventory_id as readonly string[] | undefined) ?? [];
+        const minCapturedAt = filters["gte:captured_at"] as string | undefined;
         const rows = ids.flatMap((id) => {
           const row = previousByInventoryId[id];
-          return row === undefined ? [] : [{ ...row, inventory_id: id }];
+          if (row === undefined) return [];
+          if (minCapturedAt !== undefined && row.captured_at < minCapturedAt) return [];
+          return [{ ...row, inventory_id: id }];
         });
         return Promise.resolve({ data: rows.slice(from, to + 1), error: null });
       },
@@ -142,7 +160,10 @@ function fakeDbWithPrevious(
         const inventoryId = filters.inventory_id as string | undefined;
         const previous = inventoryId !== undefined ? (previousByInventoryId[inventoryId] ?? null) : null;
 
-        return Promise.resolve({ data: previous, error: null });
+        return Promise.resolve({
+          data: previous === null ? null : { ...previous, inventory_id: inventoryId },
+          error: null,
+        });
       },
     };
 
@@ -1321,5 +1342,240 @@ describe("marca de ausência: item 404/403 sai da varredura até o recheque", ()
 
     expect(state.deletes.map((entry) => entry.ids.length)).toEqual([100, 100, 50]);
     expect(state.table.size).toBe(0);
+  });
+});
+
+describe("fetchFulfillmentSnapshots — leitura eficiente de snapshots anteriores (D-776)", () => {
+  interface HistoryRow {
+    inventory_id: string;
+    quantity: number;
+    captured_at: string;
+  }
+
+  function fakeDbWithSnapshotHistory(options: {
+    links: Link[];
+    history: HistoryRow[];
+    recentError?: boolean;
+    pointErrorFor?: string;
+  }): {
+    db: FetchFulfillmentSnapshotsParams["db"];
+    inChunkSizes: number[];
+    rangeCalls: number;
+    pointLookups: string[];
+    inserted: { table: string; row: Record<string, unknown> }[];
+  } {
+    const inChunkSizes: number[] = [];
+    let rangeCalls = 0;
+    const pointLookups: string[] = [];
+    const inserted: { table: string; row: Record<string, unknown> }[] = [];
+
+    const sortedHistory = [...options.history].sort((a, b) => {
+      const cmp = b.captured_at.localeCompare(a.captured_at);
+      return cmp !== 0 ? cmp : a.inventory_id.localeCompare(b.inventory_id);
+    });
+
+    function makeSnapshotQuery(state: {
+      inIds?: readonly string[];
+      eqInventoryId?: string;
+      gteCapturedAt?: string;
+    }): {
+      eq: (col: string, val: unknown) => ReturnType<typeof makeSnapshotQuery>;
+      in: (col: string, vals: readonly unknown[]) => ReturnType<typeof makeSnapshotQuery>;
+      gte: (col: string, val: unknown) => ReturnType<typeof makeSnapshotQuery>;
+      order: () => ReturnType<typeof makeSnapshotQuery>;
+      limit: () => ReturnType<typeof makeSnapshotQuery>;
+      range: (from: number, to: number) => Promise<{ data: HistoryRow[] | null; error: { message: string } | null }>;
+      maybeSingle: () => Promise<{ data: HistoryRow | null; error: { message: string } | null }>;
+    } {
+      const self = {
+        eq: (col: string, val: unknown) =>
+          makeSnapshotQuery({
+            ...state,
+            ...(col === "inventory_id" ? { eqInventoryId: String(val) } : {}),
+          }),
+        in: (col: string, vals: readonly unknown[]) => {
+          if (col === "inventory_id") inChunkSizes.push(vals.length);
+          return makeSnapshotQuery({
+            ...state,
+            ...(col === "inventory_id" ? { inIds: vals.map(String) } : {}),
+          });
+        },
+        gte: (col: string, val: unknown) =>
+          makeSnapshotQuery({
+            ...state,
+            ...(col === "captured_at" ? { gteCapturedAt: String(val) } : {}),
+          }),
+        order: () => self,
+        limit: () => self,
+        range: (from: number, to: number) => {
+          rangeCalls += 1;
+          if (options.recentError === true) {
+            return Promise.resolve({ data: null, error: { message: "recent_boom" } });
+          }
+          const allowed = state.inIds !== undefined ? new Set(state.inIds) : null;
+          const filtered = sortedHistory.filter((row) => {
+            if (allowed !== null && !allowed.has(row.inventory_id)) return false;
+            if (state.gteCapturedAt !== undefined && row.captured_at < state.gteCapturedAt) return false;
+            return true;
+          });
+          return Promise.resolve({ data: filtered.slice(from, to + 1), error: null });
+        },
+        maybeSingle: () => {
+          const id = state.eqInventoryId ?? "";
+          pointLookups.push(id);
+          if (options.pointErrorFor === id) {
+            return Promise.resolve({ data: null, error: { message: "point_boom" } });
+          }
+          const found = sortedHistory.find((row) => row.inventory_id === id) ?? null;
+          return Promise.resolve({ data: found, error: null });
+        },
+      };
+      return self;
+    }
+
+    const db = {
+      from: (table: string) => ({
+        select: () => {
+          if (table === "sku_listing_links") {
+            return chain({ data: options.links, error: null });
+          }
+          if (table === "fulfillment_item_absences") {
+            return chain({ data: [], error: null });
+          }
+          if (table === "fulfillment_stock_snapshots") {
+            return makeSnapshotQuery({});
+          }
+          return chain({ data: [], error: null });
+        },
+        insert: (row: Record<string, unknown>) => {
+          inserted.push({ table, row });
+          return Promise.resolve({ data: null, error: null });
+        },
+        upsert: (row: Record<string, unknown>) => {
+          inserted.push({ table, row });
+          return Promise.resolve({ data: null, error: null });
+        },
+      }),
+    } as unknown as FetchFulfillmentSnapshotsParams["db"];
+
+    return {
+      db,
+      inChunkSizes,
+      get rangeCalls() {
+        return rangeCalls;
+      },
+      pointLookups,
+      inserted,
+    };
+  }
+
+  it("fatia .in(inventory_id) em lotes de até 100 para não estourar URL (HTTP 414)", async () => {
+    const links = Array.from({ length: 205 }, (_, i) => ({
+      item_id: `MLB${String(1000 + i)}`,
+      sku_id: `sku-${String(i)}`,
+    }));
+    const itemsById = Object.fromEntries(
+      links.map((l, i) => [l.item_id, { id: l.item_id, inventory_id: `INV-${String(i)}` }]),
+    );
+    const stockById = Object.fromEntries(
+      links.map((_, i) => [`INV-${String(i)}`, { inventory_id: `INV-${String(i)}`, available_quantity: 5 }]),
+    );
+    const history = links.map((_, i) => ({
+      inventory_id: `INV-${String(i)}`,
+      quantity: 5,
+      captured_at: "2026-08-22T08:00:00.000Z",
+    }));
+
+    const state = fakeDbWithSnapshotHistory({ links, history });
+    const { client } = fakeMercadoLivreClient(itemsById, stockById);
+
+    const result = await fetchFulfillmentSnapshots(baseParams(state.db, client));
+
+    expect(result.itemsProcessed).toBe(205);
+    expect(state.inChunkSizes).toEqual([100, 100, 5]);
+    expect(state.pointLookups).toEqual([]);
+  });
+
+  it("não varre todo o histórico de snapshots: para assim que resolve os inventários recentes", async () => {
+    const links = [
+      { item_id: "MLB1", sku_id: "sku-1" },
+      { item_id: "MLB2", sku_id: "sku-2" },
+    ];
+    // 2 snapshots recentes (6h atrás) + 2.500 snapshots históricos antigos (semanas atrás)
+    const history: HistoryRow[] = [
+      { inventory_id: "INV-1", quantity: 8, captured_at: "2026-08-22T08:00:00.000Z" },
+      { inventory_id: "INV-2", quantity: 4, captured_at: "2026-08-22T08:00:00.000Z" },
+      ...Array.from({ length: 2500 }, (_, i) => ({
+        inventory_id: i % 2 === 0 ? "INV-1" : "INV-2",
+        quantity: 99,
+        captured_at: new Date(Date.parse("2026-08-01T00:00:00.000Z") - i * 60_000).toISOString(),
+      })),
+    ];
+
+    const state = fakeDbWithSnapshotHistory({ links, history });
+    const { client } = fakeMercadoLivreClient(
+      {
+        MLB1: { id: "MLB1", inventory_id: "INV-1" },
+        MLB2: { id: "MLB2", inventory_id: "INV-2" },
+      },
+      {
+        "INV-1": { inventory_id: "INV-1", available_quantity: 8 },
+        "INV-2": { inventory_id: "INV-2", available_quantity: 4 },
+      },
+    );
+
+    const result = await fetchFulfillmentSnapshots(baseParams(state.db, client));
+
+    expect(result.itemsProcessed).toBe(2);
+    // Com filtro de 48h + parada antecipada, resolve em 1 única leitura (em vez de 3+ páginas do histórico todo).
+    expect(state.rangeCalls).toBe(1);
+    expect(state.pointLookups).toEqual([]);
+    expect(state.inserted.filter((e) => e.table === "domain_events")).toEqual([]);
+  });
+
+  it("fallback pontual recupera snapshot mais antigo que 48h sem emitir falso listing.fulfillment.entered", async () => {
+    const links = [
+      { item_id: "MLB1", sku_id: "sku-1" },
+      { item_id: "MLB2", sku_id: "sku-2" },
+    ];
+    // INV-1 tem último snapshot há 10 dias (fora da janela de 48h) com saldo 5; INV-2 é realmente novo
+    const history: HistoryRow[] = [
+      { inventory_id: "INV-1", quantity: 5, captured_at: "2026-08-12T08:00:00.000Z" },
+      { inventory_id: "INV-1", quantity: 10, captured_at: "2026-08-01T08:00:00.000Z" },
+    ];
+
+    const state = fakeDbWithSnapshotHistory({ links, history });
+    const { client } = fakeMercadoLivreClient(
+      {
+        MLB1: { id: "MLB1", inventory_id: "INV-1" },
+        MLB2: { id: "MLB2", inventory_id: "INV-2" },
+      },
+      {
+        "INV-1": { inventory_id: "INV-1", available_quantity: 0 },
+        "INV-2": { inventory_id: "INV-2", available_quantity: 3 },
+      },
+    );
+
+    const result = await fetchFulfillmentSnapshots(baseParams(state.db, client));
+
+    expect(result.itemsProcessed).toBe(2);
+    expect(state.pointLookups.sort()).toEqual(["INV-1", "INV-2"]);
+    const events = state.inserted.filter((e) => e.table === "domain_events").map((e) => e.row);
+    // INV-1 zerou (5 -> 0): stock.depleted, NÃO listing.fulfillment.entered
+    expect(events.find((e) => e.entity_id === "sku-1")?.event_type).toBe("stock.depleted");
+    expect(events.find((e) => e.entity_id === "INV-1")).toBeUndefined();
+    // INV-2 é realmente novo: listing.fulfillment.entered
+    expect(events.find((e) => e.entity_id === "INV-2")?.event_type).toBe("listing.fulfillment.entered");
+  });
+
+  it("erro no lookup pontual propaga em vez de fingir inventário novo", async () => {
+    const links = [{ item_id: "MLB1", sku_id: "sku-1" }];
+    const state = fakeDbWithSnapshotHistory({ links, history: [], pointErrorFor: "INV-1" });
+    const { client } = fakeMercadoLivreClient(
+      { MLB1: { id: "MLB1", inventory_id: "INV-1" } },
+      { "INV-1": { inventory_id: "INV-1", available_quantity: 3 } },
+    );
+
+    await expect(fetchFulfillmentSnapshots(baseParams(state.db, client))).rejects.toThrow(/point_boom/);
   });
 });

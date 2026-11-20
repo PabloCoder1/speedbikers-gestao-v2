@@ -69,16 +69,30 @@ export async function ensureShopeeAccessToken(
     .select("access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at")
     .maybeSingle();
 
-  if (travada.error !== null || travada.data === null) {
+  if (travada.error !== null) {
+    return {
+      ok: false,
+      retryable: true,
+      reason: `falha ao reservar a trava de renovação da loja: ${travada.error.message}`,
+    };
+  }
+
+  if (travada.data === null) {
     return { ok: false, retryable: true, reason: "renovação do token da loja em andamento em outra execução" };
   }
 
   const soltar = async (): Promise<void> => {
-    await deps.db
-      .from("shopee_credentials")
-      .update({ refresh_locked_until: null, refresh_lock_id: null })
-      .eq("shopee_shop_id", loja.id)
-      .eq("refresh_lock_id", lockId);
+    try {
+      await deps.db
+        .from("shopee_credentials")
+        .update({ refresh_locked_until: null, refresh_lock_id: null })
+        .eq("shopee_shop_id", loja.id)
+        .eq("refresh_lock_id", lockId);
+    } catch {
+      // D-780: a trava expira em REFRESH_LOCK_MS (60s); falha de transporte ao
+      // soltá-la não deve descartar um token já renovado por outra execução
+      // nem mascarar o erro transitório original da Shopee.
+    }
   };
 
   // Outra execução renovou entre a leitura e a trava: usa o que ela gravou.

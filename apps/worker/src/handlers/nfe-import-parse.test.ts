@@ -19,6 +19,7 @@ const ENVELOPE = {
 };
 
 const ACCESS_KEY = "35260812345678000190550010000012345123456789";
+const DOCUMENT_VERSION = "2026-08-22T11:59:00.000Z";
 
 function fixtureXmlObject(overrides: { det?: unknown[]; dest?: unknown } = {}): unknown {
   return {
@@ -52,7 +53,7 @@ function fixtureXmlObject(overrides: { det?: unknown[]; dest?: unknown } = {}): 
 interface Captured {
   updates: Record<string, unknown>[];
   inserted: Record<string, unknown>[][];
-  deletedTables: string[];
+  persistedVersions: string[];
 }
 
 function fakeDeps(options: {
@@ -65,10 +66,31 @@ function fakeDeps(options: {
   pdf?: Uint8Array;
   /** O erro que o banco devolve a um `update`, decidido pelos valores gravados. */
   updateError?: (values: Record<string, unknown>) => { code: string; message: string } | null;
+  persistenceError?: { code: string; message: string };
+  /** Estado no banco depois de ler o documento, antes de tentar gravar PARSING. */
+  beforeParsing?: () => { status: string; updatedAt: string };
+  parsedAt?: string;
 }): { deps: NfeParseDeps; captured: Captured; lines: string[] } {
-  const captured: Captured = { updates: [], inserted: [], deletedTables: [] };
+  const captured: Captured = { updates: [], inserted: [], persistedVersions: [] };
   const lines: string[] = [];
   const orgCnpj = "orgCnpj" in options ? options.orgCnpj : OWN_CNPJ;
+  let document = {
+    id: DOCUMENT_ID,
+    storage_path: options.pdf === undefined ? "org/2026-08/hash.xml" : "org/2026-09/hash.pdf",
+    status: options.status ?? "UPLOADED",
+    updated_at: DOCUMENT_VERSION,
+    parsed_at: options.parsedAt ?? null,
+    organization_id: ENVELOPE.organizationId,
+  };
+
+  function saveDocument(values: Record<string, unknown>) {
+    captured.updates.push(values);
+    document = {
+      ...document,
+      ...values,
+      updated_at: new Date(Date.parse(DOCUMENT_VERSION) + captured.updates.length).toISOString(),
+    };
+  }
 
   const db = {
     from: (table: string) => ({
@@ -80,36 +102,66 @@ function fakeDeps(options: {
             }
 
             return Promise.resolve({
-              data:
-                options.documentMissing === true
-                  ? null
-                  : {
-                      id: DOCUMENT_ID,
-                      storage_path: options.pdf === undefined ? "org/2026-08/hash.xml" : "org/2026-09/hash.pdf",
-                      status: options.status ?? "UPLOADED",
-                      organization_id: ENVELOPE.organizationId,
-                    },
+              data: options.documentMissing === true ? null : document,
               error: null,
             });
           },
         }),
       }),
       update: (values: Record<string, unknown>) => {
-        captured.updates.push(values);
+        const filters = new Map<string, unknown>();
+        function execute() {
+          const current = (values.status === "PARSING" ? options.beforeParsing?.() : undefined) ??
+            { status: document.status, updatedAt: document.updated_at };
+          const matches =
+            (!filters.has("status") || filters.get("status") === current.status) &&
+            (!filters.has("updated_at") || filters.get("updated_at") === current.updatedAt);
+          const error = options.updateError?.(values) ?? null;
+          if (!matches || error !== null) return Promise.resolve({ data: null, error });
 
-        return { eq: () => Promise.resolve({ error: options.updateError?.(values) ?? null }) };
-      },
-      insert: (rows: Record<string, unknown>[]) => {
-        captured.inserted.push(rows);
-
-        return Promise.resolve({ error: null });
-      },
-      delete: () => {
-        captured.deletedTables.push(table);
-
-        return { eq: () => Promise.resolve({ error: null }) };
+          saveDocument(values);
+          return Promise.resolve({ data: { id: DOCUMENT_ID, updated_at: document.updated_at }, error: null });
+        }
+        const update = {
+          eq: (column: string, value: unknown) => {
+            filters.set(column, value);
+            return update;
+          },
+          select: () => ({ maybeSingle: execute }),
+          then: (resolve: (result: Awaited<ReturnType<typeof execute>>) => void) => execute().then(resolve),
+        };
+        return update;
       },
     }),
+    rpc: (_name: string, args: {
+      p_parse_version: string;
+      p_header: Record<string, unknown> | null;
+      p_items: Record<string, unknown>[];
+      p_parsed_at: string | null;
+      p_error: string | null;
+      p_error_code: string | null;
+    }) => {
+      if (document.status !== "PARSING" || document.updated_at !== args.p_parse_version) {
+        return Promise.resolve({ data: false, error: null });
+      }
+
+      const values = {
+        ...args.p_header,
+        status: args.p_parsed_at === null ? "FAILED" : "PARSED",
+        parsed_at: args.p_parsed_at,
+        total_items: args.p_parsed_at === null ? null : args.p_items.length,
+        resolved_items: args.p_parsed_at === null ? null : 0,
+        last_error: args.p_error,
+        last_error_code: args.p_error_code,
+      };
+      const error = options.persistenceError ?? options.updateError?.(values) ?? null;
+      if (error !== null) return Promise.resolve({ data: null, error });
+
+      saveDocument(values);
+      if (args.p_items.length > 0) captured.inserted.push(args.p_items);
+      captured.persistedVersions.push(args.p_parse_version);
+      return Promise.resolve({ data: true, error: null });
+    },
   } as unknown as NfeParseDeps["db"];
 
   return {
@@ -137,6 +189,73 @@ function ctx(lines: string[], payload: unknown): { logger: ReturnType<typeof cre
 }
 
 describe("parse do XML da NF-e", () => {
+  it.each(["leitura válida", "erro de bucket"])("descarta %s de uma execução substituída em PARSING", async (result) => {
+    const { deps, captured, lines } = fakeDeps({});
+    const firstReading = Promise.withResolvers<undefined>();
+    const finishFirst = Promise.withResolvers<unknown>();
+    vi.spyOn(deps.reader, "lerXml").mockImplementationOnce(() => {
+      firstReading.resolve(undefined);
+      return finishFirst.promise;
+    });
+    const handle = createNfeImportParseHandler(deps);
+    const first = handle(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+    await firstReading.promise;
+
+    let newer;
+    try {
+      newer = await handle({ ...ENVELOPE, attempt: 2 }, ctx(lines, { documentId: DOCUMENT_ID }));
+    } finally {
+      if (result === "erro de bucket") finishFirst.reject(new Error("bucket fora do ar"));
+      else finishFirst.resolve(fixtureXmlObject());
+    }
+    const older = await first;
+
+    expect(newer).toEqual({ status: "done", processed: 1 });
+    expect(older).toMatchObject({ status: "failed", retryable: true });
+    expect(captured.updates.at(-1)).toMatchObject({ status: "PARSED" });
+    expect(captured.inserted).toHaveLength(1);
+    expect(captured.persistedVersions).toHaveLength(1);
+  });
+
+  it.each(["PARSED", "APPLYING", "PARSING", "CANCELLED"])("não apaga itens se outra entrega avança para %s antes de PARSING", async (status) => {
+    const { deps, captured, lines } = fakeDeps({
+      status: status === "PARSING" ? "PARSING" : "UPLOADED",
+      beforeParsing: () => ({ status, updatedAt: "2026-08-22T11:59:01.000Z" }),
+    });
+    const read = vi.spyOn(deps.reader, "lerXml");
+
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(read).not.toHaveBeenCalled();
+    expect(captured.updates).toEqual([]);
+    expect(captured.persistedVersions).toEqual([]);
+    expect(captured.inserted).toEqual([]);
+  });
+
+  it.each([
+    { status: "PARSED" },
+    { status: "FAILED", parsedAt: DOCUMENT_VERSION },
+    { status: "CANCELLED" },
+  ])("não reabre documento $status numa entrega tardia", async (fixture) => {
+    const { deps, captured, lines } = fakeDeps(fixture);
+    const read = vi.spyOn(deps.reader, "lerXml");
+
+    await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(read).not.toHaveBeenCalled();
+    expect(captured.updates).toEqual([]);
+    expect(captured.persistedVersions).toEqual([]);
+  });
+
+  it("reprocessa PARSING quando a versão lida continua atual", async () => {
+    const { deps, captured, lines } = fakeDeps({ status: "PARSING" });
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(captured.updates.at(-1)).toMatchObject({ status: "PARSED" });
+  });
+
   it("extrai os campos do documento e marca como PARSED", async () => {
     const { deps, captured, lines } = fakeDeps({});
 
@@ -158,14 +277,13 @@ describe("parse do XML da NF-e", () => {
     });
   });
 
-  it("grava document_items com sku_id nulo — vínculo é humano, não automático", async () => {
+  it("envia itens para persistência sem vínculo com SKU", async () => {
     const { deps, captured, lines } = fakeDeps({});
 
     await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
 
     expect(captured.inserted[0]).toEqual([
       {
-        document_id: DOCUMENT_ID,
         position: 0,
         supplier_code: "PARAFUSO-001",
         ean: "7891234567890",
@@ -176,7 +294,6 @@ describe("parse do XML da NF-e", () => {
         quantity: 100,
         unit_value: 0.5,
         total_value: 50,
-        sku_id: null,
       },
     ]);
   });
@@ -250,12 +367,12 @@ describe("parse do XML da NF-e", () => {
     expect(captured.updates.at(-1)).toMatchObject({ total_items: 2 });
   });
 
-  it("limpa document_items antes de inserir — reexecução não colide com a chave única", async () => {
+  it("envia para a RPC a versão obtida na entrada em PARSING", async () => {
     const { deps, captured, lines } = fakeDeps({});
 
     await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
 
-    expect(captured.deletedTables).toContain("document_items");
+    expect(captured.persistedVersions).toEqual(["2026-08-22T11:59:00.001Z"]);
   });
 
   it("XML fora do layout NF-e: falha definitiva, sem inserir nada", async () => {
@@ -373,7 +490,6 @@ describe("parse de PDF (D-375)", () => {
     });
     expect(captured.inserted[0]).toEqual([
       {
-        document_id: DOCUMENT_ID,
         // Zero-based como no XML: é a numeração que a tela e a chave de
         // idempotência já usam, e o leitor conta a partir de 1 (D-375).
         position: 0,
@@ -387,7 +503,6 @@ describe("parse de PDF (D-375)", () => {
         // Nulo, não zero: zero se leria como "de graça" (D-254).
         unit_value: null,
         total_value: null,
-        sku_id: null,
       },
     ]);
   });
@@ -471,7 +586,7 @@ describe("parse: a venda de marketplace e a gravação recusada (D-497)", () => 
     const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
 
     expect(outcome).toEqual({ status: "done", processed: 0 });
-    expect(captured.updates.at(-1)).toEqual({
+    expect(captured.updates.at(-1)).toMatchObject({
       status: "FAILED",
       last_error: expect.stringContaining("Shopee") as string,
       last_error_code: "SAIDA_VENDA_MARKETPLACE",
@@ -491,8 +606,8 @@ describe("parse: a venda de marketplace e a gravação recusada (D-497)", () => 
       last_error: expect.stringContaining("documents_access_key_check") as string,
       last_error_code: "LEITURA_NAO_GRAVADA",
     });
-    // Os itens gravados antes saem: o documento recusado não fica com itens soltos.
-    expect(captured.deletedTables.filter((t) => t === "document_items")).toHaveLength(2);
+    expect(captured.persistedVersions).toEqual([]);
+    expect(captured.inserted).toEqual([]);
   });
 
   it("erro passageiro na gravação final repete, sem marcar o documento", async () => {
@@ -503,5 +618,27 @@ describe("parse: a venda de marketplace e a gravação recusada (D-497)", () => 
 
     expect(outcome).toMatchObject({ status: "failed", retryable: true });
     expect(captured.updates.some((u) => u.last_error_code === "LEITURA_NAO_GRAVADA")).toBe(false);
+  });
+
+  it("D-746: documento em APPLYING não é reprocessado nem perde os itens vinculados", async () => {
+    const { deps, captured, lines } = fakeDeps({ status: "APPLYING" });
+
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(captured.persistedVersions).toEqual([]);
+    expect(captured.updates).toEqual([]);
+    expect(captured.inserted).toHaveLength(0);
+  });
+
+  it("falha transitória ao substituir itens retorna retryable sem confirmar a leitura", async () => {
+    const { deps, captured, lines } = fakeDeps({
+      persistenceError: { code: "57014", message: "delete timeout" },
+    });
+
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "delete timeout" });
+    expect(captured.inserted).toHaveLength(0);
   });
 });

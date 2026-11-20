@@ -36,6 +36,8 @@ export interface OrderFinancialsBackfillOutcome {
   deduplicated: number;
   ate: string;
   limite: string;
+  /** Verdadeiro quando nem foi possível listar as contas (HTTP 503 em app.ts, D-777). */
+  failed?: true;
 }
 
 /** Os mesmos 7 dias de `SWEEP_WINDOW_DAYS` da varredura diária: a recuperação começa onde ela termina. */
@@ -63,7 +65,7 @@ export async function triggerOrderFinancialsBackfill(
   if (accounts.error !== null) {
     deps.logger.error("order_financials_backfill_accounts_not_listed", { reason: accounts.error.message });
 
-    return { accountsScanned: 0, enqueued: 0, deduplicated: 0, ...base };
+    return { accountsScanned: 0, enqueued: 0, deduplicated: 0, ...base, failed: true };
   }
 
   let enqueued = 0;

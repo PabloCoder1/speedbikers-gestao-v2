@@ -37,6 +37,8 @@ export type TipoDeSaidaManual = keyof typeof TIPOS_DE_SAIDA_MANUAL;
 export const OBSERVACAO_MAX = 450;
 export const MAX_ITENS = 300;
 export const MAX_QUANTIDADE = 1_000_000;
+/** Lote de UUIDs no `.in()` do PostgREST (~3,7 KB/GET) para evitar HTTP 414 com até 300 SKUs (D-770). */
+const SKU_LOOKUP_CHUNK = 100;
 
 export const manualExitSchema = z.object({
   requestId: z.uuid(),
@@ -109,14 +111,33 @@ export async function registerManualExit(
   }
 
   // A escrita é com a chave de serviço, que ignora a RLS: a organização do SKU
-  // é conferida aqui, contra a do usuário autenticado.
-  const skus = await deps.db.from("skus").select("id").eq("organization_id", caller.organizationId).in("id", ids);
+  // é conferida aqui, contra a do usuário autenticado. Fatiado em lotes de 100
+  // UUIDs para não estourar o limite de URL do proxy com até 300 SKUs (D-770).
+  const lotes: string[][] = [];
 
-  if (skus.error !== null) {
-    return { status: "failed", reason: "não foi possível conferir os SKUs" };
+  for (let inicio = 0; inicio < ids.length; inicio += SKU_LOOKUP_CHUNK) {
+    lotes.push(ids.slice(inicio, inicio + SKU_LOOKUP_CHUNK));
   }
 
-  if (skus.data.length !== ids.length) {
+  const resultados = await Promise.all(
+    lotes.map((lote) =>
+      deps.db.from("skus").select("id").eq("organization_id", caller.organizationId).in("id", lote),
+    ),
+  );
+
+  const encontrados = new Set<string>();
+
+  for (const resposta of resultados) {
+    if (resposta.error !== null) {
+      return { status: "failed", reason: "não foi possível conferir os SKUs" };
+    }
+
+    for (const linha of resposta.data) {
+      encontrados.add(linha.id);
+    }
+  }
+
+  if (encontrados.size !== ids.length) {
     return { status: "rejected", reason: "um ou mais SKUs não existem nesta organização" };
   }
 

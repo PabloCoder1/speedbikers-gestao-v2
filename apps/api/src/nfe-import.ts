@@ -5,6 +5,7 @@ import { recusaDoDocumentoGravado } from "@sb/domain";
 import type { Logger } from "@sb/observability";
 
 import type { Caller } from "./auth.js";
+import { confirmAndEnqueueApply } from "./confirm-import-apply.js";
 import type { Enqueuer } from "./enqueue.js";
 import type { FileStore } from "./erp-import.js";
 
@@ -72,7 +73,8 @@ export type NfeUploadOutcome =
   | { status: "duplicate"; documentId: string; contentHash: string }
   /** O mesmo arquivo, que tinha falhado na leitura, voltou para a fila. */
   | { status: "retried"; documentId: string; contentHash: string }
-  | { status: "rejected"; reason: string };
+  | { status: "rejected"; reason: string }
+  | { status: "error"; reason: string };
 
 export interface NfeImportDeps {
   db: AdminClient;
@@ -117,10 +119,19 @@ export async function receiveNfeUpload(
   // falhe no INSERT, depois do arquivo já estar no bucket.
   const existing = await deps.db
     .from("documents")
-    .select("id, status, parsed_at")
+    .select("id, status, parsed_at, last_error")
     .eq("organization_id", caller.organizationId)
     .eq("content_hash", contentHash)
     .maybeSingle();
+
+  if (existing.error !== null) {
+    deps.logger.error("nfe_import_lookup_failed", {
+      content_hash: contentHash,
+      reason: existing.error.message,
+    });
+
+    return { status: "error", reason: existing.error.message };
+  }
 
   const now = deps.now?.() ?? new Date();
   const month = now.toISOString().slice(0, 7);
@@ -165,15 +176,45 @@ export async function receiveNfeUpload(
     }
 
     if (revived.data !== null) {
-      await deps.enqueuer.enqueue({
-        jobType: "nfe.import.parse",
-        organizationId: caller.organizationId,
-        // Chave nova por tentativa: a do primeiro parse já foi usada, e a fila
-        // descartaria em silêncio uma tarefa com o mesmo nome.
-        dedupeKey: `nfe-parse:${existing.data.id}:${now.toISOString()}`,
-        queue: "maintenance",
-        payload: { documentId: existing.data.id },
-      });
+      try {
+        await deps.enqueuer.enqueue({
+          jobType: "nfe.import.parse",
+          organizationId: caller.organizationId,
+          // Chave nova por tentativa: a do primeiro parse já foi usada, e a fila
+          // descartaria em silêncio uma tarefa com o mesmo nome.
+          dedupeKey: `nfe-parse:${existing.data.id}:${now.toISOString()}`,
+          queue: "maintenance",
+          payload: { documentId: existing.data.id },
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+
+        deps.logger.error("nfe_import_retry_enqueue_failed", {
+          document_id: existing.data.id,
+          content_hash: contentHash,
+          reason,
+        });
+
+        // D-744: devolve de UPLOADED para FAILED se o enfileiramento falhar,
+        // preservando a possibilidade de reenvio sem travar em `duplicate`.
+        const reverted = await deps.db
+          .from("documents")
+          .update({
+            status: "FAILED",
+            last_error: existing.data.last_error ?? "Falha ao reenfileirar leitura do documento.",
+          })
+          .eq("id", existing.data.id)
+          .eq("status", "UPLOADED");
+
+        if (reverted.error !== null) {
+          deps.logger.error("nfe_import_retry_rollback_failed", {
+            document_id: existing.data.id,
+            reason: reverted.error.message,
+          });
+        }
+
+        throw error;
+      }
 
       deps.logger.info("nfe_import_retried", {
         document_id: existing.data.id,
@@ -222,14 +263,41 @@ export async function receiveNfeUpload(
 
   const documentId = inserted.data.id;
 
-  await deps.enqueuer.enqueue({
-    jobType: "nfe.import.parse",
-    organizationId: caller.organizationId,
-    // Um parse por documento. Reenviar a notificação não duplica trabalho.
-    dedupeKey: `nfe-parse:${documentId}`,
-    queue: "maintenance",
-    payload: { documentId },
-  });
+  try {
+    await deps.enqueuer.enqueue({
+      jobType: "nfe.import.parse",
+      organizationId: caller.organizationId,
+      // Um parse por documento. Reenviar a notificação não duplica trabalho.
+      dedupeKey: `nfe-parse:${documentId}`,
+      queue: "maintenance",
+      payload: { documentId },
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+
+    deps.logger.error("nfe_import_enqueue_failed", {
+      document_id: documentId,
+      content_hash: contentHash,
+      reason,
+    });
+
+    // D-744: remove o documento recém-criado se ainda estiver em UPLOADED para
+    // que o reenvio não caia em `duplicate` permanente sem parse.
+    const rolledBack = await deps.db
+      .from("documents")
+      .delete()
+      .eq("id", documentId)
+      .eq("status", "UPLOADED");
+
+    if (rolledBack.error !== null) {
+      deps.logger.error("nfe_import_rollback_failed", {
+        document_id: documentId,
+        reason: rolledBack.error.message,
+      });
+    }
+
+    throw error;
+  }
 
   deps.logger.info("nfe_import_received", {
     document_id: documentId,
@@ -321,28 +389,41 @@ export async function confirmNfeApply(
     };
   }
 
-  const updated = await deps.db
-    .from("documents")
-    .update({ status: "APPLYING", applied_by: caller.userId })
-    .eq("id", documentId)
-    .eq("status", "PARSED");
-
-  if (updated.error !== null) {
-    deps.logger.error("nfe_apply_not_confirmed", { document_id: documentId, reason: updated.error.message });
-
-    return { status: "rejected", reason: "não foi possível confirmar a aplicação" };
-  }
-
-  await deps.enqueuer.enqueue({
-    jobType: "nfe.import.apply",
-    organizationId: caller.organizationId,
-    // Uma aplicação por documento. Reconfirmar não duplica trabalho.
-    dedupeKey: `nfe-apply:${documentId}`,
-    queue: "maintenance",
-    payload: { documentId },
+  const rejected = await confirmAndEnqueueApply({
+    caller,
+    logger: deps.logger,
+    enqueuer: deps.enqueuer,
+    logPrefix: "nfe_apply",
+    targetKey: "document_id",
+    targetId: documentId,
+    job: {
+      jobType: "nfe.import.apply",
+      organizationId: caller.organizationId,
+      // Uma aplicação por documento. Reconfirmar não duplica trabalho.
+      dedupeKey: `nfe-apply:${documentId}`,
+      queue: "maintenance",
+      payload: { documentId },
+    },
+    markApplying: async () =>
+      await deps.db
+        .from("documents")
+        .update({ status: "APPLYING", applied_by: caller.userId })
+        .eq("id", documentId)
+        .eq("status", "PARSED")
+        .select("id")
+        .maybeSingle(),
+    rollbackApplying: async () =>
+      await deps.db
+        .from("documents")
+        .update({ status: "PARSED", applied_by: null })
+        .eq("id", documentId)
+        .eq("status", "APPLYING")
+        .eq("applied_by", caller.userId),
   });
 
-  deps.logger.info("nfe_apply_confirmed", { document_id: documentId, confirmed_by: caller.userId });
+  if (rejected !== null) {
+    return rejected;
+  }
 
   return { status: "queued", documentId };
 }

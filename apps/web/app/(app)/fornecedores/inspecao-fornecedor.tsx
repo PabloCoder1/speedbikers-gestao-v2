@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import { DetailRow, Drawer } from "../../../components/drawer";
+import { DetailRow, Drawer, useLeituraDeGaveta } from "../../../components/drawer";
 import { TOM } from "../../../components/tone";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { formatarDocumento } from "../../../lib/suppliers-overview";
@@ -39,20 +39,9 @@ export function InspecaoFornecedor({
   supplierId: string;
   nome: string;
 }): ReactNode {
-  const [aberta, setAberta] = useState(false);
-  const [retrato, setRetrato] = useState<SupplierInspection | null>(null);
-  const [lendo, startTransition] = useTransition();
-
-  function abrir(): void {
-    setAberta(true);
-    setRetrato(null);
-
-    startTransition(() => {
-      void (async () => {
-        setRetrato(await inspecionarFornecedor(organizationId, supplierId));
-      })();
-    });
-  }
+  const { aberta, retrato, erro, lendo, abrir, fechar } = useLeituraDeGaveta(() =>
+    inspecionarFornecedor(organizationId, supplierId),
+  );
 
   return (
     <>
@@ -64,21 +53,19 @@ export function InspecaoFornecedor({
         <Drawer
           eyebrow="Detalhe do fornecedor"
           label={`Detalhe do fornecedor ${nome}`}
-          onClose={() => {
-            setAberta(false);
-          }}
+          onClose={fechar}
           footer={
             <Link className="sb-button sb-button-primary" href={`/fornecedores/${supplierId}`}>
               Abrir página completa →
             </Link>
           }
         >
-          {retrato === null || lendo ? (
-            <p style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>Lendo o cadastro…</p>
-          ) : retrato.error !== null ? (
+          {erro !== null ? (
             <p role="alert" className="sb-note sb-note-perigo" style={{ fontSize: "0.6875rem" }}>
-              {retrato.error}
+              {erro}
             </p>
+          ) : retrato === null || lendo ? (
+            <p style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>Lendo o cadastro…</p>
           ) : (
             <Retrato retrato={retrato} />
           )}

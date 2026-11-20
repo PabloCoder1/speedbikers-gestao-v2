@@ -102,15 +102,21 @@ export function AdjustmentForm({
     }
 
     startTransition(async () => {
-      const result = await createManualStockAdjustment({
-        skuId,
-        locationKind: location,
-        mode,
-        quantity,
-        category,
-        reference,
-        note,
-      });
+      let result: Awaited<ReturnType<typeof createManualStockAdjustment>>;
+      try {
+        result = await createManualStockAdjustment({
+          skuId,
+          locationKind: location,
+          mode,
+          quantity,
+          category,
+          reference,
+          note,
+        });
+      } catch {
+        setError("Não foi possível confirmar o ajuste. Confira as movimentações antes de tentar novamente.");
+        return;
+      }
 
       if (!result.ok) {
         setError(result.message);

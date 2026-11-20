@@ -86,10 +86,17 @@ export function createShopeeOrdersSyncHandler(deps: ShopeeOrdersSyncDeps): JobHa
       outcome = await lerJanela(deps, context, loja, seguintes);
     } finally {
       // Solta ANTES de enfileirar: a janela seguinte acharia a loja travada.
-      const solta = await deps.db.from("shopee_shops").update({ orders_sync_locked_until: null }).eq("id", loja.id);
+      try {
+        const solta = await deps.db.from("shopee_shops").update({ orders_sync_locked_until: null }).eq("id", loja.id);
 
-      if (solta.error !== null) {
-        context.logger.warn("shopee_orders_sync_unlock_failed", { shopee_shop_id: loja.id, reason: solta.error.message });
+        if (solta.error !== null) {
+          context.logger.warn("shopee_orders_sync_unlock_failed", { shopee_shop_id: loja.id, reason: solta.error.message });
+        }
+      } catch (error) {
+        context.logger.warn("shopee_orders_sync_unlock_failed", {
+          shopee_shop_id: loja.id,
+          reason: error instanceof Error ? error.message : "erro desconhecido",
+        });
       }
     }
 

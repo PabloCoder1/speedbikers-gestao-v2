@@ -4,6 +4,7 @@ import type { AdminClient } from "@sb/db";
 import type { Logger } from "@sb/observability";
 
 import type { Caller } from "./auth.js";
+import { confirmAndEnqueueApply } from "./confirm-import-apply.js";
 import type { Enqueuer } from "./enqueue.js";
 
 /**
@@ -50,7 +51,8 @@ export interface UploadRequest {
 export type UploadOutcome =
   | { status: "created"; batchId: string; contentHash: string }
   | { status: "duplicate"; batchId: string; contentHash: string }
-  | { status: "rejected"; reason: string };
+  | { status: "rejected"; reason: string }
+  | { status: "error"; reason: string };
 
 export interface ImportDeps {
   db: AdminClient;
@@ -84,6 +86,15 @@ export async function receiveUpload(
     .eq("organization_id", caller.organizationId)
     .eq("content_hash", contentHash)
     .maybeSingle();
+
+  if (existing.error !== null) {
+    deps.logger.error("erp_import_lookup_failed", {
+      content_hash: contentHash,
+      reason: existing.error.message,
+    });
+
+    return { status: "error", reason: existing.error.message };
+  }
 
   if (existing.data !== null) {
     deps.logger.info("erp_import_duplicate", {
@@ -129,14 +140,41 @@ export async function receiveUpload(
 
   const batchId = inserted.data.id;
 
-  await deps.enqueuer.enqueue({
-    jobType: "erp.import.parse",
-    organizationId: caller.organizationId,
-    // Um parse por lote. Reenviar a notificação não duplica trabalho.
-    dedupeKey: `erp-parse:${batchId}`,
-    queue: "maintenance",
-    payload: { batchId },
-  });
+  try {
+    await deps.enqueuer.enqueue({
+      jobType: "erp.import.parse",
+      organizationId: caller.organizationId,
+      // Um parse por lote. Reenviar a notificação não duplica trabalho.
+      dedupeKey: `erp-parse:${batchId}`,
+      queue: "maintenance",
+      payload: { batchId },
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+
+    deps.logger.error("erp_import_enqueue_failed", {
+      batch_id: batchId,
+      content_hash: contentHash,
+      reason,
+    });
+
+    // D-744: remove o lote recém-criado se ainda estiver em UPLOADED para que
+    // o reenvio do mesmo arquivo não caia em `duplicate` permanente sem parse.
+    const rolledBack = await deps.db
+      .from("erp_import_batches")
+      .delete()
+      .eq("id", batchId)
+      .eq("status", "UPLOADED");
+
+    if (rolledBack.error !== null) {
+      deps.logger.error("erp_import_rollback_failed", {
+        batch_id: batchId,
+        reason: rolledBack.error.message,
+      });
+    }
+
+    throw error;
+  }
 
   deps.logger.info("erp_import_received", {
     batch_id: batchId,
@@ -187,28 +225,41 @@ export async function confirmApply(
     return { status: "rejected", reason: `lote em ${batch.data.status}, não está pronto para aplicação` };
   }
 
-  const updated = await deps.db
-    .from("erp_import_batches")
-    .update({ status: "APPLYING", applied_by: caller.userId })
-    .eq("id", batchId)
-    .eq("status", "PARSED");
-
-  if (updated.error !== null) {
-    deps.logger.error("erp_apply_not_confirmed", { batch_id: batchId, reason: updated.error.message });
-
-    return { status: "rejected", reason: "não foi possível confirmar a aplicação" };
-  }
-
-  await deps.enqueuer.enqueue({
-    jobType: "erp.import.apply",
-    organizationId: caller.organizationId,
-    // Uma aplicação por lote. Reconfirmar não duplica trabalho.
-    dedupeKey: `erp-apply:${batchId}`,
-    queue: "maintenance",
-    payload: { batchId },
+  const rejected = await confirmAndEnqueueApply({
+    caller,
+    logger: deps.logger,
+    enqueuer: deps.enqueuer,
+    logPrefix: "erp_apply",
+    targetKey: "batch_id",
+    targetId: batchId,
+    job: {
+      jobType: "erp.import.apply",
+      organizationId: caller.organizationId,
+      // Uma aplicação por lote. Reconfirmar não duplica trabalho.
+      dedupeKey: `erp-apply:${batchId}`,
+      queue: "maintenance",
+      payload: { batchId },
+    },
+    markApplying: async () =>
+      await deps.db
+        .from("erp_import_batches")
+        .update({ status: "APPLYING", applied_by: caller.userId })
+        .eq("id", batchId)
+        .eq("status", "PARSED")
+        .select("id")
+        .maybeSingle(),
+    rollbackApplying: async () =>
+      await deps.db
+        .from("erp_import_batches")
+        .update({ status: "PARSED", applied_by: null })
+        .eq("id", batchId)
+        .eq("status", "APPLYING")
+        .eq("applied_by", caller.userId),
   });
 
-  deps.logger.info("erp_apply_confirmed", { batch_id: batchId, confirmed_by: caller.userId });
+  if (rejected !== null) {
+    return rejected;
+  }
 
   return { status: "queued", batchId };
 }

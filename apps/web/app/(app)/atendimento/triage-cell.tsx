@@ -47,13 +47,17 @@ export function TriageCell({ triage }: { triage: TriageCellData }): ReactNode {
     setBusy(true);
     setError(null);
 
-    const result = await action();
+    try {
+      const result = await action();
 
-    if (!result.ok) {
-      setError(result.message ?? "Não foi possível salvar a triagem.");
+      if (!result.ok) {
+        setError(result.message ?? "Não foi possível salvar a triagem.");
+      }
+    } catch {
+      setError("Não foi possível confirmar a triagem. Atualize a página antes de tentar novamente.");
+    } finally {
+      setBusy(false);
     }
-
-    setBusy(false);
   }
 
   const mine = triage.assigneeId !== null && triage.assigneeId === triage.viewerId;

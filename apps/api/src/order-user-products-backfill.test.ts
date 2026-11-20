@@ -119,6 +119,7 @@ describe("triggerOrderUserProductsBackfill (D-362, 3ª parte)", () => {
     expect(await triggerOrderUserProductsBackfill({ ...deps, db: fakeDb(null).db }, { dias: 90 })).toMatchObject({
       accountsScanned: 0,
       enqueued: 0,
+      failed: true,
     });
   });
 });

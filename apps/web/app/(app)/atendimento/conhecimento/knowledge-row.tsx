@@ -36,17 +36,21 @@ export function KnowledgeRow({
   const busy = gravando !== null;
   const [error, setError] = useState<string | null>(null);
 
-  function change(status: "VALIDADO" | "REJEITADO" | "OBSOLETO"): void {
+  async function change(status: "VALIDADO" | "REJEITADO" | "OBSOLETO"): Promise<void> {
     setGravando(status);
     setError(null);
 
-    void setKnowledgeStatus(entry.id, status).then((result) => {
-      setGravando(null);
+    try {
+      const result = await setKnowledgeStatus(entry.id, status);
 
       if (!result.ok) {
-        setError(result.message);
+        setError(result.message ?? "Não foi possível atualizar o conhecimento.");
       }
-    });
+    } catch {
+      setError("Não foi possível confirmar a alteração. Recarregue a página antes de tentar novamente.");
+    } finally {
+      setGravando(null);
+    }
   }
 
   const GRAVANDO = { VALIDADO: "Validando…", REJEITADO: "Rejeitando…", OBSOLETO: "Marcando como obsoleto…" } as const;
@@ -57,7 +61,7 @@ export function KnowledgeRow({
       type="button"
       disabled={busy}
       onClick={() => {
-        change(status);
+        void change(status);
       }}
     >
       {gravando === status ? GRAVANDO[status] : label}

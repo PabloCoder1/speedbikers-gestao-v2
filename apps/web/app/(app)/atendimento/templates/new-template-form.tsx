@@ -11,6 +11,28 @@ export function NewTemplateForm(): ReactNode {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  async function submit(): Promise<void> {
+    setBusy(true);
+    setError(null);
+
+    try {
+      const result = await createTemplate(name, body);
+
+      if (!result.ok) {
+        setError(result.message ?? "Não foi possível criar o template.");
+
+        return;
+      }
+
+      setName("");
+      setBody("");
+    } catch {
+      setError("Não foi possível confirmar a criação. Confira a lista antes de tentar novamente.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div style={{ display: "grid", gap: "var(--sb-space-2)", maxWidth: "40rem" }}>
       <label htmlFor="novo-nome" style={{ fontSize: "0.8125rem", color: "var(--sb-text-soft)" }}>
@@ -36,20 +58,7 @@ export function NewTemplateForm(): ReactNode {
           type="button"
           disabled={busy}
           onClick={() => {
-            setBusy(true);
-            setError(null);
-            void createTemplate(name, body).then((result) => {
-              setBusy(false);
-
-              if (!result.ok) {
-                setError(result.message);
-
-                return;
-              }
-
-              setName("");
-              setBody("");
-            });
+            void submit();
           }}
         >
           {busy ? "Criando…" : "Criar template"}

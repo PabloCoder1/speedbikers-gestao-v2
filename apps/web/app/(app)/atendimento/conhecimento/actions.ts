@@ -21,6 +21,14 @@ export interface KnowledgeActionResult {
   message: string | null;
 }
 
+function describeKnowledgeWriteError(error: { message: string }, fallback: string): string {
+  if (/permission denied|row-level security/i.test(error.message)) {
+    return "Você não tem permissão para realizar esta ação.";
+  }
+
+  return fallback;
+}
+
 export async function createKnowledgeEntry(input: {
   kind: KnowledgeKind;
   source: KnowledgeSource;
@@ -45,6 +53,10 @@ export async function createKnowledgeEntry(input: {
     currentMembership(supabase),
   ]);
 
+  if (membershipResult.error !== null) {
+    return { ok: false, message: "Não foi possível confirmar sua organização — tente de novo." };
+  }
+
   const userId = authResult.data.user?.id;
   const organizationId = membershipResult.organizationId;
 
@@ -61,7 +73,11 @@ export async function createKnowledgeEntry(input: {
   if (skuCode.length > 0) {
     const sku = await supabase.from("skus").select("id").eq("sku", skuCode).maybeSingle();
 
-    if (sku.error !== null || sku.data === null) {
+    if (sku.error !== null) {
+      return { ok: false, message: "Não foi possível consultar o SKU — tente de novo." };
+    }
+
+    if (sku.data === null) {
       return { ok: false, message: `SKU "${skuCode}" não encontrado.` };
     }
 
@@ -79,7 +95,7 @@ export async function createKnowledgeEntry(input: {
   });
 
   if (result.error !== null) {
-    return { ok: false, message: result.error.message };
+    return { ok: false, message: describeKnowledgeWriteError(result.error, "Não foi possível registrar o fato.") };
   }
 
   revalidatePath("/atendimento/conhecimento");
@@ -118,7 +134,7 @@ export async function setKnowledgeStatus(
     .maybeSingle();
 
   if (result.error !== null) {
-    return { ok: false, message: result.error.message };
+    return { ok: false, message: describeKnowledgeWriteError(result.error, "Não foi possível atualizar o status.") };
   }
 
   if (result.data === null) {

@@ -61,7 +61,10 @@ export class ShopeeApiError extends Error {
   readonly requestId: string | null;
   readonly errorClass: ShopeeErrorClass;
 
-  constructor(message: string, options: { status: number; code: string | null; requestId: string | null }) {
+  constructor(
+    message: string,
+    options: { status: number; code: string | null; requestId: string | null; errorClass?: ShopeeErrorClass },
+  ) {
     super(message);
     this.name = "ShopeeApiError";
     this.status = options.status;
@@ -76,7 +79,7 @@ export class ShopeeApiError extends Error {
       options.status >= 500 ||
       (this.baseCode !== null && CODIGOS_PASSAGEIROS.has(this.baseCode));
 
-    this.errorClass = passageiro ? "retryable" : "not_retryable";
+    this.errorClass = options.errorClass ?? (passageiro ? "retryable" : "not_retryable");
   }
 }
 
@@ -163,6 +166,15 @@ export function createShopeeClient(config: ShopeeClientConfig): ShopeeClient {
       const timestamp = Math.floor((config.now?.() ?? new Date()).getTime() / 1000);
       const url = new URL(`${host}${request.path}`);
 
+      for (const [chave, valor] of Object.entries(request.query ?? {})) {
+        if (typeof valor === "string") {
+          url.searchParams.set(chave, valor);
+        } else {
+          for (const item of valor) url.searchParams.append(chave, item);
+        }
+      }
+
+      // Parâmetros de autenticação e assinatura sempre prevalecem sobre `request.query`.
       url.searchParams.set("partner_id", String(config.partnerId));
       url.searchParams.set("timestamp", String(timestamp));
 
@@ -176,14 +188,6 @@ export function createShopeeClient(config: ShopeeClientConfig): ShopeeClient {
         sign(config.partnerKey, signBaseString(config.partnerId, request.path, timestamp, request.shop)),
       );
 
-      for (const [chave, valor] of Object.entries(request.query ?? {})) {
-        if (typeof valor === "string") {
-          url.searchParams.set(chave, valor);
-        } else {
-          for (const item of valor) url.searchParams.append(chave, item);
-        }
-      }
-
       const response = await fetchImpl(url, {
         method: request.method,
         headers: { "content-type": "application/json" },
@@ -191,7 +195,15 @@ export function createShopeeClient(config: ShopeeClientConfig): ShopeeClient {
         signal: AbortSignal.timeout(config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
       });
 
-      const corpo: unknown = await response.json().catch(() => null);
+      let jsonValido = true;
+      let corpo: unknown = null;
+
+      try {
+        corpo = await response.json();
+      } catch {
+        jsonValido = false;
+      }
+
       const envelope = corpo !== null && typeof corpo === "object" ? (corpo as Record<string, unknown>) : {};
       const code = texto(envelope.error);
 
@@ -203,6 +215,15 @@ export function createShopeeClient(config: ShopeeClientConfig): ShopeeClient {
         throw new ShopeeApiError(
           `Shopee respondeu ${String(response.status)}${code === null ? "" : ` (${code})`} para ${request.method} ${request.path}${detalhe === null ? "." : `: ${detalhe}`}`,
           { status: response.status, code, requestId: texto(envelope.request_id) },
+        );
+      }
+
+      // HTTP 200 com HTML ou corpo truncado (proxy/CDN) não é violação de contrato do item:
+      // precisa ser tratado como falha passageira para não suprimir pedidos/itens por 24h.
+      if (!jsonValido) {
+        throw new ShopeeApiError(
+          `Shopee respondeu ${String(response.status)} com corpo não-JSON para ${request.method} ${request.path}.`,
+          { status: response.status, code: null, requestId: null, errorClass: "retryable" },
         );
       }
 

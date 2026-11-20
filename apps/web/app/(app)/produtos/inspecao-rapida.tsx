@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { EstadoDaTela } from "../../../components/estado-da-tela";
-import { Drawer } from "../../../components/drawer";
+import { Drawer, useLeituraDeGaveta } from "../../../components/drawer";
 import { TOM } from "../../../components/tone";
 import { formatCount, formatDateTime } from "../../../lib/format";
 import { formatQtyDelta, locationKindLabel, movementTypeLabel } from "../../../lib/movement-labels";
@@ -60,20 +60,9 @@ export function InspecaoRapida({
   /** D-454: `null` sem loja Shopee live — o chip continua um só, como antes. */
   shopeeListingCount: number | null;
 }): ReactNode {
-  const [aberta, setAberta] = useState(false);
-  const [retrato, setRetrato] = useState<SkuInspection | null>(null);
-  const [lendo, startTransition] = useTransition();
-
-  function abrir(): void {
-    setAberta(true);
-    setRetrato(null);
-
-    startTransition(() => {
-      void (async () => {
-        setRetrato(await inspecionarSku(organizationId, skuId, supplierBrand));
-      })();
-    });
-  }
+  const { aberta, retrato, erro, lendo, abrir, fechar } = useLeituraDeGaveta(() =>
+    inspecionarSku(organizationId, skuId, supplierBrand),
+  );
 
   return (
     <>
@@ -85,9 +74,7 @@ export function InspecaoRapida({
         <Drawer
           eyebrow="Inspeção rápida"
           label={`Inspeção rápida do SKU ${sku}`}
-          onClose={() => {
-            setAberta(false);
-          }}
+          onClose={fechar}
           footer={
             <>
               {/*
@@ -134,10 +121,10 @@ export function InspecaoRapida({
           </div>
 
           <div style={{ marginTop: "var(--sb-space-3)" }}>
-            {retrato === null || lendo ? (
+            {erro !== null ? (
+              <EstadoDaTela tipo="erro" titulo={erro} descricao="Feche e abra a inspeção de novo." />
+            ) : retrato === null || lendo ? (
               <p style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>Lendo o retrato deste SKU…</p>
-            ) : retrato.error !== null ? (
-              <EstadoDaTela tipo="erro" titulo={retrato.error} descricao="Feche e abra a inspeção de novo." />
             ) : (
               <Retrato retrato={retrato} />
             )}

@@ -179,6 +179,8 @@ export function createMercadoLivreClient(
       }
 
       const retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
+      // Libera o stream da resposta descartada para o pool HTTP/Undici reutilizar o socket.
+      await response.body?.cancel().catch(() => undefined);
       await sleep(computeBackoffDelayMs({ attempt, retryAfterMs }));
       attempt += 1;
     }

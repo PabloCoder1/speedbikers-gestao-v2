@@ -71,7 +71,15 @@ export async function ensureAccessToken(
     .eq("ml_account_id", mlAccountId)
     .maybeSingle();
 
-  if (credentials.error !== null || credentials.data === null) {
+  if (credentials.error !== null) {
+    return {
+      ok: false,
+      retryable: true,
+      reason: `falha ao ler credenciais Mercado Livre: ${credentials.error.message}`,
+    };
+  }
+
+  if (credentials.data === null) {
     return { ok: false, retryable: false, reason: "conta CONNECTED sem credenciais gravadas" };
   }
 
@@ -98,16 +106,30 @@ export async function ensureAccessToken(
     .select("access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at")
     .maybeSingle();
 
-  if (claimed.error !== null || claimed.data === null) {
+  if (claimed.error !== null) {
+    return {
+      ok: false,
+      retryable: true,
+      reason: `falha ao reservar refresh do token: ${claimed.error.message}`,
+    };
+  }
+
+  if (claimed.data === null) {
     return { ok: false, retryable: true, reason: "refresh do token em andamento por outra execução" };
   }
 
   const release = async (): Promise<void> => {
-    await deps.db
-      .from("ml_credentials")
-      .update({ refresh_locked_until: null, refresh_lock_id: null })
-      .eq("ml_account_id", mlAccountId)
-      .eq("refresh_lock_id", lockId);
+    try {
+      await deps.db
+        .from("ml_credentials")
+        .update({ refresh_locked_until: null, refresh_lock_id: null })
+        .eq("ml_account_id", mlAccountId)
+        .eq("refresh_lock_id", lockId);
+    } catch {
+      // D-780: a trava expira em REFRESH_LOCK_MS (60s); falha de transporte ao
+      // soltá-la não deve descartar um token já renovado por outra execução
+      // nem mascarar o erro transitório original do Mercado Livre.
+    }
   };
 
   if (new Date(claimed.data.access_token_expires_at).getTime() - now.getTime() > REFRESH_BUFFER_MS) {

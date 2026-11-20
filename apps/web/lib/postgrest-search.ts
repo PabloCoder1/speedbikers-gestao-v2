@@ -12,3 +12,11 @@ export function termoSeguroParaOr(valor: string): string {
 export function valorLiteralParaOr(valor: string): string {
   return `"${valor.replace(/["\\]/g, "\\$&")}"`;
 }
+
+/**
+ * Escapa curingas literais do `LIKE`/`ILIKE` (`\`, `%`, `_`) para buscas por
+ * trecho de código (ex.: SKUs com `_` ou `%`), sem alterar caracteres comuns.
+ */
+export function escaparIlike(valor: string): string {
+  return valor.replace(/[\\%_]/g, "\\$&");
+}

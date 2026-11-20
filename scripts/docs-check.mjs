@@ -33,6 +33,21 @@ const HANDOFF_OBRIGATORIOS = [
 
 const problemas = [];
 
+function conferirIdsUnicos(arquivo, matches) {
+  const ids = new Set();
+  const duplicados = new Set();
+
+  for (const [, id] of matches) {
+    if (ids.has(id)) duplicados.add(id);
+    ids.add(id);
+  }
+
+  if (duplicados.size > 0) {
+    problemas.push(`${arquivo}: IDs duplicados ${[...duplicados].join(", ")}.`);
+  }
+  return ids;
+}
+
 for (const limite of LIMITES) {
   const info = await stat(limite.arquivo).catch(() => null);
 
@@ -94,8 +109,8 @@ const [decisoes, indice] = await Promise.all([
 ]);
 
 if (decisoes !== null && indice !== null) {
-  const idsFonte = new Set((decisoes.match(/^## (D-\d+)/gmu) ?? []).map((l) => l.slice(3)));
-  const idsIndice = new Set((indice.match(/\*\*(D-\d+)\*\*/gu) ?? []).map((l) => l.replaceAll("*", "")));
+  const idsFonte = conferirIdsUnicos("docs/DECISIONS.md", decisoes.matchAll(/^## (D-\d+)\b/gmu));
+  const idsIndice = conferirIdsUnicos("docs/DECISIONS_INDEX.md", indice.matchAll(/^- \*\*(D-\d+)\*\* — /gmu));
   const faltando = [...idsFonte].filter((id) => !idsIndice.has(id));
 
   if (faltando.length > 0) {

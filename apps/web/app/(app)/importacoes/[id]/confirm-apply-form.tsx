@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { confirmarAplicacaoNaApi } from "../../../../lib/chamar-api";
 import { formatCount } from "../../../../lib/format";
-import { createClient } from "../../../../lib/supabase/browser";
 
 /**
  * Confirmação humana da aplicação.
@@ -22,8 +22,6 @@ import { createClient } from "../../../../lib/supabase/browser";
  * "as linhas OK acima", e a tabela fica ABAIXO desta caixa.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
-
 export function ConfirmApplyForm({ batchId, okRows }: { batchId: string; okRows: number | null }): ReactNode {
   const router = useRouter();
 
@@ -35,39 +33,10 @@ export function ConfirmApplyForm({ batchId, okRows }: { batchId: string; okRows:
     setBusy(true);
     setError(null);
 
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    const resultado = await confirmarAplicacaoNaApi(`/v1/erp-imports/${batchId}/apply`);
 
-    if (token === undefined) {
-      setError("Sua sessão expirou. Entre de novo.");
-      setBusy(false);
-
-      return;
-    }
-
-    let response: Response;
-
-    try {
-      response = await fetch(`${API_URL}/v1/erp-imports/${batchId}/apply`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${token}` },
-      });
-    } catch {
-      setError("Não foi possível falar com o servidor. Tente de novo.");
-      setBusy(false);
-
-      return;
-    }
-
-    if (!response.ok) {
-      const payload: unknown = await response.json().catch(() => null);
-      const message =
-        typeof payload === "object" && payload !== null && "error" in payload
-          ? (payload as { error?: { message?: string } }).error?.message
-          : undefined;
-
-      setError(message ?? "Não foi possível confirmar a aplicação.");
+    if (!resultado.ok) {
+      setError(resultado.mensagem);
       setBusy(false);
 
       return;

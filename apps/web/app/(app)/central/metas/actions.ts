@@ -57,12 +57,16 @@ function traduzir(error: { message: string; code?: string }): ResultadoDoCadastr
     return { ...SEM_ERRO, mensagem: "O banco recusou o valor: confira os campos." };
   }
 
-  return { ...SEM_ERRO, mensagem: `Não foi possível salvar: ${error.message}` };
+  return { ...SEM_ERRO, mensagem: "Não foi possível salvar. Tente novamente." };
 }
 
 export async function salvarMeta(_anterior: ResultadoDoCadastro, formData: FormData): Promise<ResultadoDoCadastro> {
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
+
+  if (membership.error !== null) {
+    return { ...SEM_ERRO, mensagem: "Não foi possível confirmar sua organização — tente de novo." };
+  }
 
   if (membership.organizationId === null) return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
 
@@ -100,6 +104,10 @@ export async function salvarMetaDoMarketplace(
 ): Promise<ResultadoDoCadastro> {
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
+
+  if (membership.error !== null) {
+    return { ...SEM_ERRO, mensagem: "Não foi possível confirmar sua organização — tente de novo." };
+  }
 
   if (membership.organizationId === null) return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
 
@@ -150,6 +158,10 @@ export async function salvarAliquota(_anterior: ResultadoDoCadastro, formData: F
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
 
+  if (membership.error !== null) {
+    return { ...SEM_ERRO, mensagem: "Não foi possível confirmar sua organização — tente de novo." };
+  }
+
   if (membership.organizationId === null) return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
 
   const desde = lerData(texto(formData, "valid_from"));
@@ -180,15 +192,21 @@ export async function salvarAliquota(_anterior: ResultadoDoCadastro, formData: F
 }
 
 /** Remove uma meta ou uma vigência. O `id` vem do formulário; a RLS decide se a pessoa pode. */
-export async function remover(formData: FormData): Promise<void> {
+export async function remover(formData: FormData): Promise<string | null> {
   const tabela = texto(formData, "tabela");
   const id = texto(formData, "id");
 
-  if ((tabela !== "monthly_goals" && tabela !== "monthly_goals_marketplace" && tabela !== "tax_rates") || id === "") return;
+  if ((tabela !== "monthly_goals" && tabela !== "monthly_goals_marketplace" && tabela !== "tax_rates") || id === "") {
+    return "Não foi possível identificar o registro. Atualize a página para conferir.";
+  }
 
   const supabase = await createClient();
 
-  await supabase.from(tabela).delete().eq("id", id);
+  const { data, error } = await supabase.from(tabela).delete().eq("id", id).select("id");
+
+  if (error !== null) return "Não foi possível confirmar a remoção. Confira os dados antes de tentar novamente.";
+  if (data.length === 0) return "Nada foi removido. O registro pode ter mudado ou seu acesso foi alterado. Atualize a página para conferir.";
 
   revalidar();
+  return null;
 }

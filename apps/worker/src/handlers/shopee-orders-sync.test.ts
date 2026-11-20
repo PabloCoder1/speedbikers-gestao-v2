@@ -105,6 +105,10 @@ function fakeDb(loja: Loja | null, opcoes: Opcoes = {}) {
         eq: () => {
           if (table === "shopee_shops" && "orders_sync_locked_until" in valores && valores.orders_sync_locked_until === null) {
             gravado.eventos.push("solta");
+
+            if (opcoes.lancaAoSoltar === true) {
+              return Promise.reject(new Error("socket hang up ao soltar trava"));
+            }
           }
 
           return Promise.resolve({ error: null });
@@ -192,6 +196,8 @@ interface Opcoes {
   travada?: boolean;
   /** D-481: o avanço do marco LANÇA (rede), em vez de devolver erro. */
   lancaNoMarco?: boolean;
+  /** D-775: soltar a trava no finally LANÇA (rede). */
+  lancaAoSoltar?: boolean;
 }
 
 function rodar(loja: Loja | null, shopee: ReturnType<typeof fakeShopee>, opcoes: Opcoes = {}, eventos?: string[]) {
@@ -395,6 +401,20 @@ describe("shopee.orders.sync (D-426)", () => {
 
     await expect(rodar(LOJA, fakeShopee({ paginas: [["A1"]] }), { lancaNoMarco: true }, eventos)).rejects.toThrow("rede caiu");
     expect(eventos).toEqual(["trava", "solta"]);
+  });
+
+  it("D-775: falha de transporte ao soltar a trava no finally não mascara erro original nem impede enfileiramento", async () => {
+    const eventosErro: string[] = [];
+
+    await expect(
+      rodar(LOJA, fakeShopee({ paginas: [["A1"]] }), { lancaNoMarco: true, lancaAoSoltar: true }, eventosErro),
+    ).rejects.toThrow("rede caiu");
+    expect(eventosErro).toEqual(["trava", "solta"]);
+
+    const { outcome, enfileirados } = await rodar(LOJA, fakeShopee({ paginas: [["A1"]] }), { lancaAoSoltar: true });
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(enfileirados).toHaveLength(1);
   });
 
   it("loja em erro, de outro ambiente ou inexistente: pula, sem chamar a Shopee", async () => {

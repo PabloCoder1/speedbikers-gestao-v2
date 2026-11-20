@@ -81,9 +81,15 @@ export function SavedFilters({
     setError(null);
 
     const params = Object.fromEntries(atuais);
-    const result = await saveFilter(organizationId, screen, limpo, params);
-
-    setBusy(false);
+    let result: Awaited<ReturnType<typeof saveFilter>>;
+    try {
+      result = await saveFilter(organizationId, screen, limpo, params);
+    } catch {
+      setError("Não foi possível confirmar o salvamento da visão. Confira as visões salvas antes de tentar novamente.");
+      return;
+    } finally {
+      setBusy(false);
+    }
 
     if (!result.ok) {
       setError(result.message);
@@ -100,9 +106,15 @@ export function SavedFilters({
     setBusy(true);
     setError(null);
 
-    const result = await deleteFilter(id, screen);
-
-    setBusy(false);
+    let result: Awaited<ReturnType<typeof deleteFilter>>;
+    try {
+      result = await deleteFilter(id, screen);
+    } catch {
+      setError("Não foi possível confirmar a exclusão da visão. Confira as visões salvas antes de tentar novamente.");
+      return;
+    } finally {
+      setBusy(false);
+    }
 
     if (!result.ok) {
       setError(result.message);
@@ -156,7 +168,7 @@ export function SavedFilters({
         Salvar visão
       </button>
 
-      {error !== null && (
+      {error !== null && !nomeando && (
         <span role="alert" style={{ color: "var(--sb-danger)", fontSize: "0.6875rem" }}>
           {error}
         </span>
@@ -206,6 +218,12 @@ export function SavedFilters({
                 placeholder="Ex.: Loja E2E, últimos 7 dias"
                 aria-label="Nome da visão"
               />
+
+              {error !== null && (
+                <p role="alert" style={{ margin: 0, color: "var(--sb-danger)", fontSize: "0.8125rem" }}>
+                  {error}
+                </p>
+              )}
 
               <div style={{ display: "flex", gap: "var(--sb-space-2)", justifyContent: "flex-end" }}>
                 <button

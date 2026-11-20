@@ -165,6 +165,103 @@ describe("runSuggestSupportReply", () => {
     expect(system).toMatch(/Nunca invente/i);
     expect(system).toContain("{nome}");
   });
+
+  it("D-743: lê as 40 mensagens mais recentes em ordem decrescente e envia ao LLM em ordem cronológica, deduplicando skuIds no conhecimento", async () => {
+    const messageOrders: { column: string; ascending?: boolean }[] = [];
+    const knowledgeOrs: string[] = [];
+
+    const userClient = {
+      from: (table: string) => {
+        if (table === "support_cases") {
+          const chain = {
+            select: () => chain,
+            eq: () => chain,
+            maybeSingle: () =>
+              Promise.resolve({
+                data: {
+                  ...OPEN_CASE,
+                  support_case_links: [
+                    { sku_id: "sku-1", skus: { sku: "5821", title: "Baú 45L" }, listings: null },
+                    { sku_id: "sku-1", skus: { sku: "5821", title: "Baú 45L" }, listings: null },
+                  ],
+                },
+                error: null,
+              }),
+          };
+
+          return chain;
+        }
+
+        if (table === "support_messages") {
+          const chain = {
+            select: () => chain,
+            eq: () => chain,
+            order: (column: string, opts?: { ascending?: boolean }) => {
+              messageOrders.push({ column, ...(opts?.ascending === undefined ? {} : { ascending: opts.ascending }) });
+
+              return chain;
+            },
+            // Simula o Postgres devolvendo as mais recentes primeiro quando order é desc.
+            limit: () =>
+              Promise.resolve({
+                data: [
+                  {
+                    direction: "INBOUND",
+                    sender_kind: "CUSTOMER",
+                    body: "Última pergunta do cliente",
+                    body_state: "AVAILABLE",
+                    occurred_at: "2026-08-28T12:00:00Z",
+                  },
+                  {
+                    direction: "OUTBOUND",
+                    sender_kind: "SELLER",
+                    body: "Resposta anterior da loja",
+                    body_state: "AVAILABLE",
+                    occurred_at: "2026-08-28T11:00:00Z",
+                  },
+                ],
+                error: null,
+              }),
+          };
+
+          return chain;
+        }
+
+        if (table === "knowledge_entries") {
+          const chain = {
+            select: () => chain,
+            eq: () => chain,
+            or: (expr: string) => {
+              knowledgeOrs.push(expr);
+
+              return chain;
+            },
+            order: () => chain,
+            limit: () => Promise.resolve({ data: [], error: null }),
+          };
+
+          return chain;
+        }
+
+        throw new Error(`tabela inesperada: ${table}`);
+      },
+    } as unknown as UserClient;
+
+    const { anthropic, narrate } = narrateReturning("ok");
+
+    await runSuggestSupportReply(userClient, { supportCaseId: CASE_ID }, anthropic);
+
+    expect(messageOrders).toEqual([
+      { column: "occurred_at", ascending: false },
+      { column: "id", ascending: false },
+    ]);
+    const prompt = narrate.mock.calls[0]?.[0]?.prompt ?? "";
+
+    expect(prompt.indexOf("Loja: Resposta anterior da loja")).toBeLessThan(
+      prompt.indexOf("Cliente: Última pergunta do cliente"),
+    );
+    expect(knowledgeOrs).toEqual(["sku_id.is.null,sku_id.in.(sku-1)"]);
+  });
 });
 
 interface SuggestionFakes {

@@ -1,7 +1,67 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+
+/**
+ * Estado padrão das gavetas de inspeção: controla abertura, carregamento em
+ * transição, descarte de resposta atrasada ao fechar/reabrir e fallback de erro
+ * de transporte (sem prender a gaveta em "Lendo…", D-740).
+ */
+export function useLeituraDeGaveta<T extends { readonly error: string | null }>(
+  ler: () => Promise<T>,
+  mensagemTransporte = "Não foi possível carregar os detalhes. Feche e tente novamente.",
+): {
+  aberta: boolean;
+  retrato: T | null;
+  erro: string | null;
+  lendo: boolean;
+  abrir: () => void;
+  fechar: () => void;
+} {
+  const [aberta, setAberta] = useState(false);
+  const [retrato, setRetrato] = useState<T | null>(null);
+  const [erroTransporte, setErroTransporte] = useState<string | null>(null);
+  const [lendo, startTransition] = useTransition();
+  const pedido = useRef(0);
+
+  function abrir(): void {
+    pedido.current += 1;
+    const este = pedido.current;
+
+    setAberta(true);
+    setRetrato(null);
+    setErroTransporte(null);
+
+    startTransition(async () => {
+      try {
+        const resultado = await ler();
+
+        if (este === pedido.current) {
+          setRetrato(resultado);
+        }
+      } catch {
+        if (este === pedido.current) {
+          setErroTransporte(mensagemTransporte);
+        }
+      }
+    });
+  }
+
+  function fechar(): void {
+    pedido.current += 1;
+    setAberta(false);
+  }
+
+  return {
+    aberta,
+    retrato,
+    erro: erroTransporte ?? retrato?.error ?? null,
+    lendo,
+    abrir,
+    fechar,
+  };
+}
 
 /**
  * A GAVETA do Figma (`.drawer` do export, `QuickDetailDrawer` e os quatro

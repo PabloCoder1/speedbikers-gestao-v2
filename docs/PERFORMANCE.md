@@ -1,4 +1,4 @@
-﻿# Performance — baseline e histórico de otimização
+# Performance — baseline e histórico de otimização
 
 > Dono documental de: medições de performance, antes/depois, planos e
 > decisões de índice. O `HANDOFF` só aponta para cá — números não moram lá
@@ -1005,6 +1005,21 @@ Medido em 2026-09-13 nos logs de requisição do Cloud Run, sem tocar em nada �
 **Worker, no mesmo dia:** 5.724 invocações, p50 588 ms, p95 5,5 s. As 39 acima de 30 s são varreduras agendadas (casadas pelo instante de fim com o log `*_done` do mesmo segundo): `sync.fulfillment.snapshot` 266–323 s, a cada 6 h por conta; `sync.listing-visits.snapshot` 313–364 s, uma vez ao dia; `sync.order-financials` até 131 s; `sync.listings.snapshot` até 42 s. A maior usa 40% do timeout de 900 s.
 
 **Tráfego de usuário na `api`:** 89 chamadas de `/v1` em 7 dias. As telas leem o Supabase direto, e esse lado não aparece nestes logs — é a revisão de `pg_stat_statements` que o mede.
+
+### ACK observado após a recuperação da VM, 19/11/2026
+
+Leitura de Cloud Logging na revisão `api-00041-8m8`. Foram consultados
+os logs existentes da rota `POST /webhooks/mercado-livre` e os eventos
+de enfileiramento, em amostras distintas.
+
+| Amostra em Brasília | Volume | Resultado |
+| --- | ---: | --- |
+| 15:09:37 a 15:30:27 | 1.500 POSTs | 1.500 HTTP 200; ACK p50 1,9 ms, p95 242,4 ms, p99 304,0 ms. Um ACK acima de 500 ms |
+| 14:57:48 a 15:29:51 | 1.000 eventos enfileirados | Lookup p95 0 ms, enqueue p95 285 ms |
+
+Os dois limites de amostra foram atingidos. Os percentis correspondem
+às janelas e às populações acima. A leitura não mede pico induzido,
+comportamento em falha ou latência SQL da VM.
 
 ### Quanto do ACK é a conta e quanto é a Cloud Task (D-343)
 
@@ -2234,3 +2249,10 @@ Ensaio no Chromium com build de produção e Supabase local isolado. A fixture t
 | RPC e paginação da web após D-715 | 1.002 |
 
 A regressão conferiu o conteúdo inteiro, o vínculo manual, o vínculo pelo SKU do anúncio, as 500 linhas da loja sandbox com o selo Teste e a ausência dos dois itens apagados. A ordem usa nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. O trace registrou 1.000, 2 e zero linhas nos offsets 0, 1.000 e 1.002, com HTTP 206 na primeira página (`Content-Range: 0-999/1002`) e 200 nas seguintes. As duas leituras de SKU com só um anúncio terminaram na primeira chamada. A migration `20261117173152` foi aplicada apenas localmente. A leitura completa acrescenta chamadas quando ultrapassa uma página. Latência e frequência com dados reais seguem pendentes.
+
+### Timeline do Full (D-790, 19/11/2026)
+
+No Postgres local, a consulta `DISTINCT ON (ml_account_id, inventory_id)` com ordem de conta, inventário e instante descendente mostrou `Unique → Index Scan using fulfillment_stock_snapshots_unique` ao desabilitar a varredura sequencial para isolar a capacidade do índice. O teste de integração contou um único índice para essas três colunas. Uma segunda captura com a mesma chave retornou `23505`.
+
+
+A VM tinha estimativa de 346.394 linhas e `pg_table_size` de 50.454.528 bytes. Um Postgres 17.6 descartável, sem rede, recebeu 346.394 linhas sintéticas (48.971.776 bytes) e as definições prévias dos índices. A DDL versionada levou **549 ms** sem concorrência, medidos de ponta a ponta no cliente local. Com uma segunda sessão mantendo `ACCESS SHARE`, a troca abortou com `55P03` em **10,718 s**. O rollback preservou a constraint e os dois índices anteriores. Sem o bloqueio, a mesma DDL manteve as 346.394 linhas e deixou um índice único válido. A latência e a janela de bloqueio na VM seguem sem medição.

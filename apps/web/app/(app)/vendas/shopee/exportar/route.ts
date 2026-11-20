@@ -26,6 +26,10 @@ export async function GET(request: NextRequest): Promise<Response> {
     supabase.from("shopee_shops").select("id, organization_id"),
   ]);
 
+  if (membership.error !== null) {
+    return new Response("Não foi possível verificar sua organização no momento.", { status: 503 });
+  }
+
   if (membership.organizationId === null) {
     return new Response("Sua conta não está associada a nenhuma organização.", { status: 403 });
   }

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
 
 import { Icone } from "../../../../components/icons";
-import { createClient } from "../../../../lib/supabase/browser";
+import { lerTokenDeSessao } from "../../../../lib/chamar-api";
 import { describeUploadResponse } from "./describe-response";
 import { MAX_BYTES, tamanhoLegivel, triar, type ArquivoTriado } from "./triagem";
 
@@ -141,12 +141,10 @@ export function UploadForm(): ReactNode {
     setAviso(null);
     setEnviando(true);
 
-    const supabase = createClient();
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    const sessao = await lerTokenDeSessao("Sua sessão expirou. Entre de novo.");
 
-    if (token === undefined) {
-      setAviso({ tom: "bad", texto: "Sua sessão expirou. Entre de novo." });
+    if (!sessao.ok) {
+      setAviso({ tom: "bad", texto: sessao.mensagem });
       setEnviando(false);
 
       return;
@@ -166,7 +164,7 @@ export function UploadForm(): ReactNode {
 
           const item = lote[indice];
 
-          if (item !== undefined) documentos[indice] = await enviarUm(item, token);
+          if (item !== undefined) documentos[indice] = await enviarUm(item, sessao.token);
         }
       }),
     );
