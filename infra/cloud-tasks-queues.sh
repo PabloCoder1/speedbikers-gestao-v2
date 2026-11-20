@@ -28,7 +28,7 @@ source "$(dirname "$0")/lib.sh"
 create_queue() {
   local name="$1" dispatches="$2" concurrent="$3" attempts="$4" min_backoff="$5" max_backoff="$6"
 
-  if gc tasks queues describe "${name}" --location "${REGION}" >/dev/null 2>&1; then
+  if grep -Fxq -- "${name}" <<< "${EXISTING_QUEUES}"; then
     skip "${name}"
   else
     gc tasks queues create "${name}" \
@@ -62,6 +62,11 @@ create_queue() {
 step "Pré-condições"
 require_auth
 require_project
+
+# A ausência só pode ser inferida após uma listagem bem-sucedida da região.
+if ! EXISTING_QUEUES="$(gc tasks queues list --location "${REGION}" --format='value(name.basename())' | tr -d '\r')"; then
+  fail "Não foi possível listar as filas do Cloud Tasks em ${REGION}."
+fi
 
 # Fila por conta do Mercado Livre, quando um nome de conta é informado.
 if [ "$#" -gt 0 ]; then
@@ -108,7 +113,6 @@ info "backfill: enqueuer -> ${SA_WORKER} (auto-encadeamento)"
 create_queue "maintenance" 1 1 3 60s 600s
 
 step "Filas por conta do Mercado Livre"
-info "Nenhuma conta conectada ainda (Fase 2)."
 info "Ao conectar uma conta, rode: bash infra/cloud-tasks-queues.sh <slug-da-conta>"
 
 step "Concluído"
