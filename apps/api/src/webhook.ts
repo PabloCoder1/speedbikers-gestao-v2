@@ -29,12 +29,22 @@ import type { Enqueuer } from "./enqueue.js";
  * no lugar e trazem `actions`. Aceitar os dois evita rejeitar notificação
  * válida por causa de um campo que não usamos.
  */
+const positiveSafeIntSchema = z.union([
+  z.number().int().positive().refine(Number.isSafeInteger, "inteiro fora do intervalo seguro"),
+  z
+    .string()
+    .trim()
+    .regex(/^[1-9]\d*$/, "inteiro decimal positivo inválido")
+    .transform(Number)
+    .refine(Number.isSafeInteger, "inteiro fora do intervalo seguro"),
+]);
+
 export const mercadoLivreNotificationSchema = z.object({
   _id: z.string().optional(),
   id: z.string().optional(),
   resource: z.string().min(1),
   topic: z.string().min(1),
-  user_id: z.coerce.number().int(),
+  user_id: positiveSafeIntSchema,
   application_id: z.coerce.number().int().optional(),
   attempts: z.number().int().optional(),
   sent: z.string().optional(),
@@ -91,6 +101,7 @@ export type WebhookOutcome =
   | { status: "enqueued"; jobId: string; jobType: string; deduplicated: boolean }
   | { status: "unknown_account" }
   | { status: "lookup_unavailable" }
+  | { status: "enqueue_unavailable" }
   | { status: "unroutable_resource" }
   | { status: "ignored_action" }
   | { status: "no_consumer"; topic: string }
@@ -153,7 +164,7 @@ function routeJob(
     // valida `questionId` como inteiro positivo, e um `resource` com dígitos
     // demais passaria nessa validação já tendo perdido precisão — viraria uma
     // busca por uma pergunta que não existe, sem erro visível em lugar nenhum.
-    if (!Number.isSafeInteger(questionId)) {
+    if (!Number.isSafeInteger(questionId) || questionId <= 0) {
       return null;
     }
 
@@ -311,18 +322,36 @@ export async function receiveWebhook(deps: WebhookDeps, rawBody: unknown): Promi
   }
 
   const antesDaTask = relogio();
-  const result = await deps.enqueuer.enqueue({
-    jobType: job.jobType,
-    organizationId: conta.organization_id,
-    // Nome derivado do recurso (docs/ARCHITECTURE.md secao 10): notificações
-    // repetidas do mesmo recurso colapsam numa só, seja qual for o tópico.
-    // Uma regra de dedupe só, mesmo com mais de um `jobType` — dois tópicos
-    // nunca disputam o mesmo `resource`, porque é justamente o formato do
-    // `resource` que identifica o tópico.
-    dedupeKey: `ml-webhook:${notification.resource}:${window}`,
-    queue: `ml-sync-${conta.slug}`,
-    payload: job.payload,
-  });
+  let result;
+
+  try {
+    result = await deps.enqueuer.enqueue({
+      jobType: job.jobType,
+      organizationId: conta.organization_id,
+      // Nome derivado do recurso (docs/ARCHITECTURE.md secao 10): notificações
+      // repetidas do mesmo recurso colapsam numa só, seja qual for o tópico.
+      // Uma regra de dedupe só, mesmo com mais de um `jobType` — dois tópicos
+      // nunca disputam o mesmo `resource`, porque é justamente o formato do
+      // `resource` que identifica o tópico.
+      dedupeKey: `ml-webhook:${notification.resource}:${window}`,
+      queue: `ml-sync-${conta.slug}`,
+      payload: job.payload,
+    });
+  } catch (error) {
+    const enqueueMs = duracao(antesDaTask, relogio());
+
+    deps.logger.error("ml_webhook_enqueue_failed", {
+      job_type: job.jobType,
+      resource: notification.resource,
+      topic: notification.topic,
+      ml_account_id: conta.id,
+      lookup_ms: lookupMs,
+      enqueue_ms: enqueueMs,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+
+    return { status: "enqueue_unavailable" };
+  }
   const enqueueMs = duracao(antesDaTask, relogio());
 
   deps.logger.info("ml_webhook_enqueued", {

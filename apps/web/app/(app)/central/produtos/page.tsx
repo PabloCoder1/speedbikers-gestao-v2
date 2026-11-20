@@ -20,6 +20,7 @@ import {
 } from "../../../../lib/central-periodo";
 import { tomDaMargem } from "../../../../lib/faturamento";
 import { carregarLimites } from "../../../../lib/limites-central";
+import { resolverContaSolicitada } from "../../../../lib/postgrest-search";
 import { currentMembership } from "../../../../lib/request-membership";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../../lib/format";
 import { lerMargens, type LeituraMargens, type MargemRecorte } from "../../../../lib/purchase-analysis";
@@ -98,7 +99,7 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
   const ordem = ordemDaUrl(query.ordem);
   const pagina = paginaDaUrl(query.pagina);
 
-  const requestedSlug = typeof query.account === "string" ? query.account : null;
+  const requestedSlug = typeof query.account === "string" && query.account.trim() !== "" ? query.account.trim() : null;
   const argumentos = {
     p_date_from: periodo.atual.from,
     p_date_to: periodo.atual.to,
@@ -119,7 +120,33 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
   void rankingSemConta?.catch(() => undefined);
   const [accountsResult, membership] = await Promise.all([leituraContas, currentMembership()]);
   const accounts = accountsResult.data ?? [];
-  const selectedAccount = accounts.find((account) => account.slug === requestedSlug) ?? null;
+  const { conta: selectedAccount, erro: erroConta } = resolverContaSolicitada(
+    requestedSlug,
+    accountsResult,
+    (account, slug) => account.slug === slug,
+  );
+
+  if (erroConta !== null) {
+    const estadoErro: Estado = { periodo: periodoDaUrl(periodo), conta: requestedSlug, ordem, pagina };
+    return (
+      <>
+        <CabecalhoDaCentral
+          tela="produtos"
+          consulta={{ ...(periodo.invalido ? {} : query), account: requestedSlug ?? undefined }}
+          titulo="Ranking de produtos"
+          subtitulo={`${periodo.rotulo}: ${rotuloDoIntervalo(periodo.atual)}, comparado com ${rotuloDoIntervalo(periodo.anterior)}.`}
+        />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas"
+          descricao="O filtro de conta pedido na URL não pôde ser confirmado."
+          detalhe={erroConta.message}
+          acao={{ href: montarHref(estadoErro), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
+
   const conta = selectedAccount?.slug ?? null;
   const contaLabel = selectedAccount === null ? "Todas as contas" : selectedAccount.label;
   const estado: Estado = { periodo: periodoDaUrl(periodo), conta, ordem, pagina };

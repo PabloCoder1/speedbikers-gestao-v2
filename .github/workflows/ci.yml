@@ -459,12 +459,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verificação do backup diário
+        run: node --test infra/vm/check-daily-backup.test.mjs
+
+      - name: Provisionamento de infraestrutura com gcloud simulado
+        run: |
+          bash infra/alertas.test.sh
+          bash infra/cloud-scheduler.test.sh
+          bash infra/cloud-tasks-queues.test.sh
+          bash infra/deploy-cloud-run.test.sh
+
       # Os scripts de infra/ rodam em bash e são versionados. Erro de sintaxe
       # aqui só apareceria na hora de provisionar, no pior momento possível.
       - name: Sintaxe dos scripts
         run: |
           for f in infra/*.sh; do
-            bash -n "$f" && echo "ok: $f"
+            bash -n "$f"
+            echo "ok: $f"
           done
 
       # Consumidor antes do produtor. Em 2026-08-20 a ordem inversa fez a api

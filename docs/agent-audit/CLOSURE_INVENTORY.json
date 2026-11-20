@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19, candidato integra #341, D-776–D-781 e D-791",
+  "corte": "2026-11-20, candidato sobre a81f5235 integra #336, D-782 a D-784 e correções revisadas",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/ILIKE e zero getSession direto em clientes web (1.565 unit + 401/401 E2E em f3ae0df6)",
+      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121, D-783/A123, D-784/A124; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/Components fail-closed, ILIKE, teto .in() e zero getSession direto em clientes web (1.575 unit + 401/401 E2E em f3ae0df6)",
       "fase": 3
     },
     {
@@ -59,7 +59,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "apps/api/src; main dc69d1fb na API; D-770, D-775 e D-777 endurecem edição NF-e, saída manual, auth multi-org/503, OIDC email_verified, backfills 503, erroInterno e callback Shopee (566 testes)",
+      "evidencia": "apps/api/src; main dc69d1fb na API; D-770, D-775, D-777 e D-782 endurecem edição NF-e, saída manual, auth multi-org/503, OIDC email_verified, backfills 503, erroInterno, callback Shopee, convites 23505, webhook ML 503, frete e SAC (574 testes)",
       "fase": 3
     },
     {
@@ -209,7 +209,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Infra/Database",
-      "evidencia": "Restore integral do diário em container sem rede: 322 migrations, zero índices inválidos e reaplicação isolada da invoice conferida. Falta alerta de falha.",
+      "evidencia": "Restore integral do diário em container sem rede, com 322 migrations e zero índices inválidos. Dumps diários presentes de 18/11 a 20/11. Sondagem da cópia de 20/11 aprovada. Falta confirmar a entrega de um alerta.",
       "fase": 2
     },
     {
@@ -329,7 +329,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Todos/Sentinel",
-      "evidencia": "check 37/37 tarefas (4.258 unitários), build 10/10, 7 guardas web em b7d459ea; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 (sem nova migration)",
+      "evidencia": "check 37/37 tarefas (4.271 unitários), build 10/10, 7 guardas web em 4d2a90e1; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 (sem nova migration)",
       "fase": 5
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "D-769 validou upgrade incremental local, 1.213 testes de banco, 39 embeds e 15 E2E. CI do #336 aprovada em b552bfd6. Novo corte incorpora #341 e passou check, build e docs. CI do novo corte e registro em Dev pendentes",
+      "evidencia": "Candidato combina a main a81f5235, #336, D-782 a D-784, sete PRs independentes e a sondagem #345. PG17 isolado aplicou upgrade incremental de 324 para 328 migrations com versões temporárias. CI do SHA conciliado e registro de migrations em Dev pendentes.",
       "fase": 5
     },
     {

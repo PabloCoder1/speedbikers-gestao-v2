@@ -380,4 +380,17 @@ describe("requestSupportReply (D-096)", () => {
     });
     expect(ctx.enqueued).toHaveLength(0);
   });
+
+  it.each(["", "0", "-10", "1e5"])(
+    "D-782: identificador remoto %j fora de inteiro decimal positivo é recusado antes de gravar",
+    async (externalCaseId) => {
+      const ctx = deps({ supportCase: { ...DEFAULT_CASE, external_case_id: externalCaseId } });
+
+      expect(await requestSupportReply(ctx.deps, CALLER, CASE_ID, REQUEST)).toMatchObject({
+        status: "invalid",
+      });
+      expect(ctx.inserted).toHaveLength(0);
+      expect(ctx.enqueued).toHaveLength(0);
+    },
+  );
 });

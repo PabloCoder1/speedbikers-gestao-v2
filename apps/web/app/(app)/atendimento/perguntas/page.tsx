@@ -12,6 +12,7 @@ import { isPageBeyondEnd } from "../../../../lib/filters";
 import { formatCount, formatCurrency, formatDateTime } from "../../../../lib/format";
 import { monogramaDeProduto } from "../../../../lib/initials";
 import { pendingSupportReply, type PendingSupportReply } from "../../../../lib/pending-support-reply";
+import { resolverContaSolicitada } from "../../../../lib/postgrest-search";
 import type { SupportCaseLinkRow } from "../../../../lib/support-case-reference";
 import { resolveSupportCaseReference } from "../../../../lib/support-case-reference";
 import { describeDeadline } from "../../../../lib/support-deadline";
@@ -175,7 +176,11 @@ export default async function PerguntasPage({
   const pendente = tab === "pendente";
 
   const earlyAccounts = accountSlug !== null ? await accountsPromise : null;
-  const selectedAccount = earlyAccounts?.data?.find((account) => account.slug === accountSlug) ?? null;
+  const { conta: selectedAccount, erro: erroConta } = resolverContaSolicitada(
+    accountSlug,
+    earlyAccounts,
+    (account, slug) => account.slug === slug,
+  );
 
   /** `external_status.in.(...)` filtrado pela aba; Pendente também aceita nulo (D-067: sumir é pior que aparecer no lugar errado). */
   function recorte(statuses: readonly string[], incluiNulo: boolean): string {
@@ -184,41 +189,49 @@ export default async function PerguntasPage({
 
   // O embed limita os filhos por atendimento e preserva a linha do caso
   // quando a primeira mensagem recebida ainda não foi sincronizada.
-  let questionsQuery = supabase
-    .from("support_cases")
-    .select(
-      "id, external_case_id, external_status, priority, remote_reply_state, remote_reply_block_reason, resolved_at, last_activity_at, customer_external_id, ml_accounts(label), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku, image_url), listings(item_id, title, thumbnail_url, price, available_quantity)), support_case_deadlines(due_at, status), support_messages(body, body_state, occurred_at)",
-      { count: "exact" },
-    )
-    .eq("channel", "QUESTION")
-    .or(recorte(abaAtual.statuses, abaAtual.semStatusAqui))
-    .eq("support_messages.direction", "INBOUND")
-    .order("occurred_at", { referencedTable: "support_messages", ascending: true })
-    .order("id", { referencedTable: "support_messages", ascending: true })
-    .limit(1, { referencedTable: "support_messages" })
-    .order("last_activity_at", { ascending: false })
-    .range(from, from + PAGE_SIZE - 1);
+  const construirConsultaDePerguntas = () => {
+    let query = supabase
+      .from("support_cases")
+      .select(
+        "id, external_case_id, external_status, priority, remote_reply_state, remote_reply_block_reason, resolved_at, last_activity_at, customer_external_id, ml_accounts(label), support_case_links(order_id, sku_id, listing_id, external_entity_kind, external_entity_id, skus(sku, image_url), listings(item_id, title, thumbnail_url, price, available_quantity)), support_case_deadlines(due_at, status), support_messages(body, body_state, occurred_at)",
+        { count: "exact" },
+      )
+      .eq("channel", "QUESTION")
+      .or(recorte(abaAtual.statuses, abaAtual.semStatusAqui))
+      .eq("support_messages.direction", "INBOUND")
+      .order("occurred_at", { referencedTable: "support_messages", ascending: true })
+      .order("id", { referencedTable: "support_messages", ascending: true })
+      .limit(1, { referencedTable: "support_messages" })
+      .order("last_activity_at", { ascending: false })
+      .range(from, from + PAGE_SIZE - 1);
 
-  if (selectedAccount !== null) questionsQuery = questionsQuery.eq("ml_account_id", selectedAccount.id);
+    if (selectedAccount !== null) query = query.eq("ml_account_id", selectedAccount.id);
+
+    return query;
+  };
 
   // Uma contagem por aba, no MESMO recorte de conta — os números da faixa de
   // abas têm de bater com o que cada uma mostra (D-236), nunca ser a
-  // organização inteira enquanto a lista está filtrada por conta.
+  // organização inteira enquanto a lista está filtrada por conta (D-783).
   const [contagens, questionsResult, accountsResult] = await Promise.all([
-    Promise.all(
-      STATUS_TABS.map((candidateTab) => {
-        let contagemQuery = supabase
-          .from("support_cases")
-          .select("id", { count: "exact", head: true })
-          .eq("channel", "QUESTION")
-          .or(recorte(candidateTab.statuses, candidateTab.semStatusAqui));
+    erroConta !== null
+      ? Promise.resolve(STATUS_TABS.map(() => ({ count: null, error: erroConta })))
+      : Promise.all(
+          STATUS_TABS.map((candidateTab) => {
+            let contagemQuery = supabase
+              .from("support_cases")
+              .select("id", { count: "exact", head: true })
+              .eq("channel", "QUESTION")
+              .or(recorte(candidateTab.statuses, candidateTab.semStatusAqui));
 
-        if (selectedAccount !== null) contagemQuery = contagemQuery.eq("ml_account_id", selectedAccount.id);
+            if (selectedAccount !== null) contagemQuery = contagemQuery.eq("ml_account_id", selectedAccount.id);
 
-        return contagemQuery;
-      }),
-    ),
-    questionsQuery,
+            return contagemQuery;
+          }),
+        ),
+    erroConta !== null
+      ? Promise.resolve({ data: null, error: erroConta, count: null })
+      : construirConsultaDePerguntas(),
     accountsPromise,
   ]);
   const accounts = accountsResult.data ?? [];

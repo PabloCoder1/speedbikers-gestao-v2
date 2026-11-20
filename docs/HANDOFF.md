@@ -16,7 +16,7 @@
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | Base de integração `origin/main` em `a81f5235` (#348). O candidato usa branch própria. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Fechamento da V3** | 137/226 pontos (60,6%), 24/43 entregas pelo inventário Sentinel. [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md). |
-| **Sentinel: próximo passo** | Conciliar os candidatos, executar a CI da combinação e verificar catálogo e ordem das quatro migrations. Dev hosted confirmado inativo em 20/11. |
+| **Sentinel: próximo passo** | Candidato reúne D-782 a D-784, a sondagem de backup e as correções revisadas. Upgrade PG17 isolado passou de 324 para 328 migrations com versões temporárias. CI do conjunto e catálogo-alvo pendentes. Dev hosted confirmado inativo em 20/11. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo. A pausa das rotinas GCP está registrada em D-350. |
 | **Supabase** | Produção usa a VM `sb-db` (`speedbikers-prod`). O antigo projeto hosted `imvjfgnaprqsfjlnsyev` estava `INACTIVE` em 18/11. Convite, SMTP e recuperação Auth seguem pendentes. [VM](../infra/vm/README.md). |
 | **Produção** | Cloud Run em leitura de 20/11: API `api-00041-8m8` e worker `worker-00059-mjc`, 100% de tráfego nas respectivas revisões. A validação do alias web do catálogo de compras está registrada no #333. |

@@ -30,6 +30,7 @@ interface Cenario {
   sellerId?: number | null;
   temPermissao?: boolean;
   expiraEm?: Date;
+  ciphertextCorrompido?: boolean;
 }
 
 function banco(c: Cenario = {}): PricingQuoteDeps["db"] {
@@ -42,7 +43,7 @@ function banco(c: Cenario = {}): PricingQuoteDeps["db"] {
     },
     user_account_permissions: c.temPermissao === true ? { user_id: "u-op" } : null,
     ml_credentials: {
-      access_token_ciphertext: encryptToken("APP_USR-token", CHAVE),
+      access_token_ciphertext: c.ciphertextCorrompido === true ? "cifra-invalida" : encryptToken("APP_USR-token", CHAVE),
       access_token_expires_at: (c.expiraEm ?? new Date(AGORA.getTime() + 3 * 3_600_000)).toISOString(),
     },
   };
@@ -176,5 +177,56 @@ describe("quoteMlShipping — frete grátis e tarifa fixa (D-421)", () => {
     expect(tarifa(d)?.searchParams.get("logistic_type")).toBe("self_service");
     expect(tarifa(d)?.searchParams.get("billable_weight")).toBe("620");
     expect(tarifa(d)?.searchParams.get("listing_type_id")).toBe("gold_pro");
+  });
+
+  it("D-782: credencial corrompida devolve status error controlado em vez de lançar exceção", async () => {
+    const d = deps({ ciphertextCorrompido: true });
+
+    await expect(quoteMlShipping(d, ADMIN, PEDIDO)).resolves.toMatchObject({ status: "error" });
+    expect(d.chamadas).toHaveLength(0);
+  });
+
+  it("D-782: erro interno de transporte não vaza detalhe cru ao cliente e timeout evita disparar listing_prices tardio", async () => {
+    const falhaRede = vi.fn(() => Promise.reject(new Error("connect ECONNREFUSED 10.20.1.2:443"))) as unknown as typeof fetch;
+
+    const r = await quoteMlShipping(deps({}, falhaRede), ADMIN, PEDIDO);
+
+    expect(r).toEqual({
+      status: "unavailable",
+      reason: "falha ao cotar o frete no Mercado Livre",
+    });
+
+    vi.useFakeTimers();
+    try {
+      const chamadasTardias: string[] = [];
+      let resolverFrete: ((resp: Response) => void) | undefined;
+      const lento = vi.fn((url: string | URL | Request) => {
+        const pathname = new URL(url as string | URL).pathname;
+        chamadasTardias.push(pathname);
+
+        return new Promise<Response>((resolve) => {
+          resolverFrete = resolve;
+        });
+      }) as unknown as typeof fetch;
+
+      const promessa = quoteMlShipping(deps({}, lento), ADMIN, PEDIDO);
+      await vi.advanceTimersByTimeAsync(8_001);
+      expect(await promessa).toEqual({
+        status: "unavailable",
+        reason: "o Mercado Livre demorou para responder",
+      });
+
+      resolverFrete?.(
+        new Response(
+          JSON.stringify({ coverage: { all_country: { list_cost: 23.45, currency_id: "BRL", billable_weight: 620 } } }),
+          { status: 200 },
+        ),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(chamadasTardias).toEqual(["/users/244878077/shipping_options/free"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

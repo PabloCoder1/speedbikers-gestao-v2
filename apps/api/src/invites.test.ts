@@ -35,6 +35,8 @@ interface FakeOptions {
   falhaNaPermissao?: boolean;
   /** Outras organizações em que o alvo já é membro (auditoria de 28/09). */
   outrasOrganizacoes?: string[];
+  /** Corrida de INSERT em `organization_members` (Postgres 23505). */
+  conflitoAoVincular?: boolean;
 }
 
 function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { tabela: string; linha: unknown }[] } {
@@ -81,6 +83,10 @@ function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { ta
       }),
       insert: (linha: unknown) => {
         escritas.push({ tabela, linha });
+
+        if (tabela === "organization_members" && options.conflitoAoVincular === true) {
+          return Promise.resolve({ error: { code: "23505", message: "duplicate key value violates unique constraint" } });
+        }
 
         if (tabela === "user_account_permissions" && options.falhaNaPermissao === true) {
           return Promise.resolve({ error: { message: "permissão recusada" } });
@@ -384,5 +390,16 @@ describe("fronteira entre organizações no convite e no link (auditoria de 28/0
 
     expect(outcome.status).toBe("invalid");
     expect(escritas.some((e) => e.tabela === "auth.generateLink")).toBe(false);
+  });
+
+  it("D-782: corrida no INSERT em organization_members (23505) devolve already_member em vez de 500", async () => {
+    const { deps } = fakeDeps({
+      usuarios: [{ id: "u-existente", email: "duplo@empresa.com" }],
+      conflitoAoVincular: true,
+    });
+
+    const outcome = await inviteOrganizationMember(deps, ADMIN, { email: "duplo@empresa.com", role: "OPERADOR" });
+
+    expect(outcome).toEqual({ status: "already_member" });
   });
 });

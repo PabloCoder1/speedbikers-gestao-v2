@@ -19,6 +19,7 @@ import {
   type LinkStateKey,
   type SoldKey,
 } from "../../../lib/link-integrity-filters";
+import { resolverContaSolicitada } from "../../../lib/postgrest-search";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import {
@@ -179,7 +180,27 @@ export default async function VinculacoesPage({
   // A lista do cabeçalho pode falhar enquanto a organização é resolvida.
   void contasPromise.catch(() => undefined);
 
-  const { organizationId } = await membershipPromise;
+  const { organizationId, error: membershipError } = await membershipPromise;
+
+  if (membershipError !== null) {
+    await contasPromise;
+    return (
+      <>
+        <PageTitle
+          eyebrow="ESTOQUE / VINCULAÇÕES"
+          title="Integridade de Catálogo"
+          subtitle="Garantia de que os anúncios estão corretamente ligados aos SKUs internos do sistema."
+        />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membershipError.message}
+          acao={{ href: "/vinculacoes", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
 
   if (organizationId === null) {
     await contasPromise;
@@ -195,11 +216,31 @@ export default async function VinculacoesPage({
     );
   }
 
-  // Só o slug explícito exige a lista visível sob RLS. Slug desconhecido usa todas as contas.
-  const contaEscolhida =
-    filters.accountSlug === null
-      ? null
-      : ((await contasPromise).data?.find((a) => a.slug === filters.accountSlug) ?? null);
+  // Só o slug explícito exige a lista visível sob RLS; se a leitura falhar, falha fechado em vez de ler todas as contas.
+  const { conta: contaEscolhida, erro: erroConta } = resolverContaSolicitada(
+    filters.accountSlug,
+    filters.accountSlug === null ? null : await contasPromise,
+    (account, slug) => account.slug === slug,
+  );
+
+  if (erroConta !== null) {
+    return (
+      <>
+        <PageTitle
+          eyebrow="ESTOQUE / VINCULAÇÕES"
+          title="Integridade de Catálogo"
+          subtitle="Garantia de que os anúncios estão corretamente ligados aos SKUs internos do sistema."
+        />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas do Mercado Livre"
+          descricao="O filtro de conta pedido na URL não pôde ser confirmado."
+          detalhe={erroConta.message}
+          acao={{ href: buildLinkIntegrityHref(filters, {}), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
 
   const hoje = new Date();
   const desde = new Date(hoje.getTime() - JANELA_DIAS * 24 * 60 * 60 * 1000);

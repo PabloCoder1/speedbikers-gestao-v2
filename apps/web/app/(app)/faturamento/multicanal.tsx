@@ -32,6 +32,7 @@ import {
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../lib/format";
 import { carregarLimites } from "../../../lib/limites-central";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange } from "../../../lib/period";
+import { resolverContasSolicitadas } from "../../../lib/postgrest-search";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import {
@@ -111,9 +112,26 @@ export async function FaturamentoMulticanal({
   );
   // A leitura do cabeçalho pode terminar antes da associação à organização.
   void contasPromise.catch(() => undefined);
-  const { organizationId } = await membershipPromise;
+  const { organizationId, error: membershipError } = await membershipPromise;
+
+  if (membershipError !== null) {
+    await contasPromise;
+    return (
+      <>
+        <PageTitle eyebrow="COMERCIAL / RESULTADOS" title="Faturamento" barra="abaixo" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membershipError.message}
+          acao={{ href: hrefDeFaturamento({ escopo, periodo, contas: null }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
 
   if (organizationId === null) {
+    await contasPromise;
     return (
       <>
         <PageTitle eyebrow="COMERCIAL / RESULTADOS" title="Faturamento" />
@@ -123,11 +141,30 @@ export async function FaturamentoMulticanal({
   }
 
   const pediuLojas = typeof query.contas === "string" && query.contas.trim() !== "";
-  // Só a Shopee com filtro explícito precisa da lista para resolver as lojas visíveis.
-  const { selecionadas, descartadas } =
+  // Só a Shopee com filtro explícito precisa da lista para resolver as lojas visíveis; falha fechado se a lista falhar.
+  const { resultado: lojasResolvidas, erro: erroContas } =
     escopo === "shopee" && pediuLojas
-      ? resolverContas(query.contas, (await contasPromise).data ?? [], "shopee")
-      : { selecionadas: null, descartadas: 0 };
+      ? resolverContasSolicitadas(query.contas, await contasPromise, (raw, contas) =>
+          resolverContas(raw, contas, "shopee"),
+        )
+      : { resultado: null, erro: null };
+
+  if (erroContas !== null) {
+    return (
+      <>
+        <PageTitle eyebrow="COMERCIAL / RESULTADOS" title="Faturamento" barra="abaixo" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as lojas do recorte"
+          descricao="O filtro de lojas pedido na URL não pôde ser confirmado."
+          detalhe={erroContas.message}
+          acao={{ href: hrefDeFaturamento({ escopo, periodo, contas: null }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
+
+  const { selecionadas, descartadas } = lojasResolvidas ?? { selecionadas: null, descartadas: 0 };
   const contasIgnoradas = escopo === "todos" && pediuLojas;
   const recorte: RecorteDeFaturamento = { escopo, periodo, contas: selecionadas };
   // D-470: "Tentar de novo" é a mesma URL.

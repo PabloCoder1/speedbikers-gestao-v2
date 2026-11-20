@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **686** (D-001 a D-792).
+Decisões registradas: **689** (D-001 a D-792).
 
 ## Por domínio
 
@@ -141,7 +141,7 @@ Decisões registradas: **686** (D-001 a D-792).
 - **D-769** — Ordem de migrations validada por upgrade incremental
 - **D-790** — Um índice único atende a timeline do Full
 
-### estoque (57)
+### estoque (58)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -199,6 +199,7 @@ Decisões registradas: **686** (D-001 a D-792).
 - **D-763** — A reposição mostra o que já está encomendado, sem recalcular a sugestão
 - **D-765** — O envio ao Full conferido dá saída no estoque da loja
 - **D-776** — Captura de estoque Full fatia `.in(inventory_id)` em lotes de 100 e elimina varredura histórica completa de `fulfillment_stock_snapshots`
+- **D-783** — Server Components falham fechado em erro de contas/organização (`/precos`, `/full`, `/atendimento/perguntas`), escapam `ILIKE` e limitam `.in()` em `/atendimento`
 - **D-792** — Receber o pedido de compra dá entrada no estoque, e a conferência da invoice cria o SKU que falta
 
 ### interface (76)
@@ -280,7 +281,7 @@ Decisões registradas: **686** (D-001 a D-792).
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
 
-### mercado-livre (133)
+### mercado-livre (134)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -414,9 +415,10 @@ Decisões registradas: **686** (D-001 a D-792).
 - **D-742** — `relist.prepare` grava preflight reprovado atomicamente e retenta falhas transitórias do multiget
 - **D-772** — Paginação, fatiamento `.in()` e liberação garantida de trava no estoque Shopee, catálogo ML e hidratação Shopee do worker
 - **D-780** — Worker falha fechado em erro de gravação de visitas, registra `sync_runs` no backfill financeiro e protege unlock de refresh ML/Shopee
+- **D-782** — Endurecimento da API em convites (corrida 23505), webhook ML (`user_id`/`questionId`/enqueue), cotação de frete e resposta do SAC
 - **D-791** — O cliente usa o endpoint bulk de anúncios do Mercado Livre
 
-### outros (112)
+### outros (113)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -530,6 +532,7 @@ Decisões registradas: **686** (D-001 a D-792).
 - **D-774** — Rotas de exportação falham fechado em erro de contas/organização e `csvCell` neutraliza fórmulas com espaço/tab/CR
 - **D-775** — Autenticação da API recusa múltiplas organizações e separa 503 de 401/403; OIDC exige `email_verified`; unlock de `shopee.orders.sync` protegido no `finally`
 - **D-777** — Backfills internos respondem 503 em erro de banco, rotas D-766 usam `erroInterno` com `request_id` e callback Shopee exige inteiro seguro positivo
+- **D-784** — Demais Server Components web falham fechado em erro de contas/organização e BuscaSku trata rejeição de transporte
 
 ### processo/docs (1)
 

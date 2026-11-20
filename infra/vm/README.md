@@ -64,6 +64,35 @@ de configuração consultado do Ops Agent. Na consulta de 36 horas
 para a instância, o Cloud Logging não retornou marcadores de sucesso
 do dump diário. Coleta e alerta de falha seguem pendentes.
 
+## Verificação do backup diário
+
+O cron da VM começa às 06:15 UTC. A sondagem de leitura consulta os
+metadados de `diario/AAAA-MM-DD.dump` no Cloud Storage. Antes de 07:15 UTC
+(04:15 em Brasília), exige a cópia de ontem. A partir desse horário, exige a
+de hoje. Essa janela deixa uma hora para gerar, conferir e enviar o dump.
+
+```sh
+node infra/vm/check-daily-backup.mjs
+node --test infra/vm/check-daily-backup.test.mjs
+```
+
+A sondagem requer Node 24, Google Cloud CLI autenticado e permissão
+`storage.objects.get` no objeto. Saída em JSON com código 0 para objeto
+válido, 1 para nome, tamanho ou data inválidos, 2 quando a consulta falha
+(inclusive objeto ausente) ou não retorna JSON legível. A CLI consulta
+metadados; o ensaio de restore é a prova separada de legibilidade do dump.
+
+Em 19/11, o objeto diário de 183.547.863 bytes (geração
+`1795068954797517`) passou na sondagem. Um restore completo dessa geração
+em contêiner descartável isolado confirmou 322 migrations até
+`20261118211000` e zero índices inválidos. O SQL de invoice foi ensaiado
+em seguida e as cinco colunas apareceram no catálogo.
+
+Para ativar o alerta, executar a sondagem fora da VM do banco, com uma
+identidade de leitura, depois da janela diária e encaminhar falhas ao
+canal aprovado. Uma execução saudável e uma falha controlada devem confirmar
+a entrega antes de fechar o item de monitoramento.
+
 ## Fluxo oficial pendente de reconciliação
 
 O workflow versionado ainda usa o Supabase hosted, exige aplicação no Dev e

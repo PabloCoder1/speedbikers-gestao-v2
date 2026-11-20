@@ -226,6 +226,10 @@ export async function inviteOrganizationMember(
     .insert({ organization_id: caller.organizationId, user_id: userId, role: request.role });
 
   if (vinculo.error !== null) {
+    if (vinculo.error.code === "23505") {
+      return { status: "already_member" };
+    }
+
     return { status: "error", reason: vinculo.error.message };
   }
 
