@@ -12,7 +12,7 @@ Não despeje grandes blocos de trabalho sem necessidade. Trabalhe em etapas pequ
 
 ## 2. FONTE DE VERDADE E CONTINUIDADE
 
-O chat NÃO é a memória oficial do projeto.
+O chat NÃO é a memória oficial do projeto. Este documento inclui trechos de planejamento histórico: **seções 38–39 não são um roteiro para reconstruir a V3 já existente**. Para cada nova tarefa, parta de `AGENTS.md`, `docs/HANDOFF.md` validado contra a infraestrutura atual, código e migrations; use `CLAUDE.md` e `.claude/agents/` no Claude Code.
 
 A fonte de verdade é, nesta ordem prática:
 
@@ -43,10 +43,10 @@ Repositório: `PabloCoder1/speedbikers-gestao-v2`.
 
 Infraestrutura já preparada:
 
-- Supabase V3 Dev em São Paulo (`sa-east-1`), inicialmente sem tabelas da aplicação;
-- Google Cloud V3 em São Paulo (`southamerica-east1`) para backend pesado, workers, webhooks, tarefas e jobs;
-- Vercel será usado para o frontend Next.js da V3;
-- GitHub é a memória versionada do projeto.
+- Supabase Dev (`nmgccyqquwxecqffsidr`) e produção (`imvjfgnaprqsfjlnsyev`) em São Paulo (`sa-east-1`), com banco, RLS, Auth, RPCs e migrations versionadas; disponibilidade exige verificação atual.
+- Google Cloud Run (`apps/api` e `apps/worker`) em `southamerica-east1`, com Cloud Tasks, Scheduler, Storage e Secret Manager; deploy de API/worker separado da web.
+- Vercel `speedbikers-prod` hospeda `apps/web` da `main` em produção; o Dev web funciona localmente. Merge em `main` pode publicar automaticamente a web.
+- GitHub contém os commits, PRs, CI e histórico verificável; a auditoria Sentinel é um trabalho em branch/PR que precisa ser conferido antes de integrar mudanças.
 
 ## 4. VISÃO DO PRODUTO
 
@@ -108,7 +108,7 @@ Não criar microserviços, Redis, Kafka, Kubernetes, Elasticsearch ou outra infr
 
 Separar responsabilidades em domínios:
 
-### Mercado Livre
+### Marketplaces — Mercado Livre, Shopee e TikTok Shop (conforme cobertura real de cada integração)
 - OAuth;
 - contas;
 - pedidos/vendas;
@@ -691,11 +691,13 @@ Use `docs/AGENT_ROLES.md`.
 Papéis principais:
 
 - Arquiteto/Coordenador;
-- Backend/Mercado Livre;
+- Integrações ML/Shopee/TikTok;
 - Dados/Supabase/Estoque;
+- Compras/Reposição/Rentabilidade;
 - Analytics/Diagnóstico/IA;
 - Frontend/UX/Design System;
-- QA/Segurança/Performance.
+- QA/Segurança/Performance;
+- Auditoria/Infraestrutura (incluindo Sentinel).
 
 O Arquiteto mantém coerência. Papéis especializados não podem criar arquiteturas paralelas sem decisão documentada.
 
@@ -703,23 +705,13 @@ O Arquiteto mantém coerência. Papéis especializados não podem criar arquitet
 
 Antes de escrever código:
 
-1. confirmar repositório e branch;
-2. rodar/inspecionar `git status`;
-3. ler `README.md`;
-4. ler `AGENTS.md`;
-5. ler `docs/HANDOFF.md`;
-6. ler `docs/ROADMAP.md`;
-7. ler `docs/ARCHITECTURE.md`;
-8. ler `docs/PRODUCT_REQUIREMENTS.md`;
-9. ler `docs/AGENT_ROLES.md`;
-10. ler documentação específica da tarefa;
-11. inspecionar commits recentes;
-12. resumir:
-   - onde estamos;
-   - última etapa concluída;
-   - próxima etapa;
-   - riscos/bloqueios;
-13. só então propor a menor próxima ação.
+1. confirmar branch, HEAD remoto, estado de trabalho, PRs e branches concorrentes;
+2. ler `AGENTS.md` (roteador mínimo) e `docs/HANDOFF.md` (estado documentado, não necessariamente ao vivo);
+3. verificar, quando relevante, estado atual de Vercel, Supabase Dev/Prod e Cloud Run/Cloud Tasks; distinguir dados verificados de auditorias antigas;
+4. ler código, migrations e documentação **específicos da tarefa**; não carregar roadmap, decisões completas ou toda a arquitetura por padrão;
+5. localizar decisões por `docs/DECISIONS_INDEX.md` e ler apenas os trechos necessários;
+6. verificar trabalhos paralelos, especialmente Sentinel e seu PR quando ainda abertos;
+7. resumir estado atual, objetivo, plano pequeno de execução, validações e bloqueios; executar a tarefa autorizada, não apenas propor um projeto inicial.
 
 ## 37. PRIORIDADE DE CONSTRUÇÃO
 
@@ -806,29 +798,27 @@ Não inverter essa ordem para produzir interface “inteligente” sobre dados f
 
 As fases podem ser refinadas na documentação, mas não devem ser alteradas silenciosamente.
 
-## 39. PRIMEIRA TAREFA DESTE AGENTE
+## 39. PRIMEIRA TAREFA DESTE AGENTE — V3 JÁ EXISTENTE
 
-Não comece implementando uma feature.
+**A V3 está implementada e a `main` é produção.** Não refaça a arquitetura inicial, não recrie tabelas ou aplicações, não mude a fonte de verdade de estoque por iniciativa própria.
 
-Primeiro:
+1. Execute o protocolo da seção 36 e o roteador `AGENTS.md`.
+2. Identifique a tarefa específica autorizada, os fluxos existentes e as dependências de código, API, banco, UI, testes e infraestrutura.
+3. Compare a branch com o HEAD atualizado da `main` e avalie PRs ativos; não sobreponha correções de Sentinel ou de outros agentes.
+4. Faça a menor implementação completa, com estados de erro/ausência de dados, segurança, regressão e testes adequados.
+5. Use branch dedicada e Pull Request para revisão; não faça merge em `main` sem autorização, porque publica a Vercel.
+6. Documente somente o que mudou, com resultados de testes realmente executados e limitações de infraestrutura verificadas.
 
-1. execute o protocolo de nova sessão;
-2. confirme que está numa branch derivada de `origin/main` e que a árvore de trabalho está limpa;
-3. leia toda a documentação atual;
-4. consulte a `main` apenas para entender a estrutura V2 e lições úteis, sem copiar código;
-5. proponha a arquitetura inicial definitiva da V3, incluindo:
-   - estrutura de pastas/monorepo;
-   - limites entre web/api/worker;
-   - módulos/domínios;
-   - modelo de dados de alto nível;
-   - fluxo Mercado Livre -> processamento -> Supabase -> dashboard;
-   - estratégia de eventos/notificações;
-   - estratégia do Copiloto;
-6. identifique decisões ainda abertas;
-7. atualize `docs/ARCHITECTURE.md`, `docs/ROADMAP.md` e `docs/HANDOFF.md` com a proposta aprovada;
-8. somente depois prepare a criação da fundação técnica.
 
-Não criar tabelas ou código de domínio antes de fechar a arquitetura inicial.
+## Atualização operacional — novembro de 2026
+
+Os blocos de fases acima são **históricos** e não substituem a investigação da implementação atual. A `main` hospeda a V3; verifique o estado de cada integração (especialmente financeiramente TikTok Shop), banco e Cloud Run. O Sentinel (`codex/sentinel-audit`, PR #328 no último inventário) é fonte de correções pendentes de integração, não um estado permanente. Use `CLAUDE.md` e os subagentes da pasta `.claude/agents` no Claude Code; `docs/AGENT_ROLES.md` descreve ownership.
+
+**Compras e Reposição:** preservar rotas existentes, fonte ERP UpSeller, ledger, pré-preenchimento e estados de pedido. Reposição deve considerar giro, rupturas, estoque local/Full/em trânsito, produtos novos e segurança do cálculo. Alertas de baixo giro podem recomendar **retirar/reduzir itens do pedido, mas nunca excluí-los automaticamente do catálogo**; comprador mantém decisão. Margem por SKU: `(recebido pós-taxas - custo vendido) / receita bruta × 100`; consolidar valores por contas/canais e só então calcular porcentagem, distinguiendo custo histórico/estimado, cancelamentos e cobertura financeira. Shopee/TikTok não herdam taxas do Mercado Livre e não se inventam vendas ausentes.
+
+**Skills/ferramentas:** agentes podem instalar recursos confiáveis após inspecionar fonte e scripts; nunca conceder segredos, executar código remoto desconhecido ou autorizar gastos/deploys/destruição por uma skill.
+
+**Governança:** branches com trabalho incerto, migrations remotas, billing e merge em `main` exigem controle humano. Verificação local ou CI não prova produção. Testes relevantes, evidências, PR e handoff curto compõem a entrega.
 
 ## 40. FORMATO DE RESPOSTA DURANTE O DESENVOLVIMENTO
 
