@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cria os agendamentos do Cloud Scheduler.
 #
-# Idempotente: recria o job se ele já existir, para que a definição no script
+# Idempotente: atualiza o job se ele já existir, para que a definição no script
 # continue sendo a verdade.
 #
 # O Scheduler dispara APENAS reconciliação e manutenção. Nunca despacha fila —
@@ -27,7 +27,7 @@ upsert_job() {
   local name="$1" schedule="$2" uri="$3" description="$4"
 
   local action=create
-  if gc scheduler jobs describe "${name}" --location "${REGION}" >/dev/null 2>&1; then
+  if grep -Fxq -- "${name}" <<< "${EXISTING_JOBS}"; then
     action=update
   fi
 
@@ -58,6 +58,11 @@ require_project
 API_URL="$(gc run services describe api --region "${REGION}" --format='value(status.url)' 2>/dev/null || true)"
 [ -n "${API_URL}" ] || fail "Serviço api não existe. Rode: bash infra/deploy-cloud-run.sh api"
 info "api: ${API_URL}"
+
+# A ausência só é tratada como tal após consultar a região com sucesso.
+if ! EXISTING_JOBS="$(gc scheduler jobs list --location "${REGION}" --format='value(name.basename())' | tr -d '\r')"; then
+  fail "Não foi possível listar os jobs do Cloud Scheduler em ${REGION}."
+fi
 
 step "Agendamentos"
 
