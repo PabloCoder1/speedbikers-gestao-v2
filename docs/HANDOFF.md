@@ -77,6 +77,8 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   migrations do zero como o runner. Os dois verdes e a CI vermelha = **re-run
   do job**, nao correcao de codigo.
 
+- **Backup da VM:** política de falha em revisão. Faltam sondagem agendada fora da VM, canal e teste de entrega.
+
 - **Nada avisa quando o que está no ar ficou velho** (D-070). O deploy do
   Cloud Run é MANUAL; entre um e outro chegaram a se acumular 66 commits, e a
   correção que "já está pronta" não estava valendo. Quem mexe no `worker` ou
@@ -195,8 +197,6 @@ Nada disto pode ser feito por um agente.
 ---
 
 ## Próximos passos
-
-- **Backup da VM:** política de falha em revisão. Faltam sondagem agendada fora da VM, canal e teste de entrega.
 
 - **Sentinel.** D-714 e D-715 completam a leitura dos anúncios ML e Shopee no SKU, com regressões de 1.002 linhas por canal. D-717 recupera o popup de Vinculações após falha de transporte no vínculo manual, na resolução e no descarte de candidato. O SKU escolhido é preservado, e a operação não confirmada recebe aviso. O audit de produção da CI reprovava todo PR com um aviso alto do `picomatch` sem versão corrigida publicada: as ferramentas de lint de `@sb/config` passaram para `devDependencies` (A75). D-718 e D-719 liberam os diálogos de remover e vincular anúncio ML do SKU após falha de transporte. O inventário de 17/11 listou mais 12 componentes que aguardam Server Action sem tratar exceção, no plano. As migrations `20261117171808` e `20261117173152` foram aplicadas apenas no banco local e precedem a publicação da web. Na última consulta, o PR #328 tinha CI verde em `513c38f4`. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026)
 
