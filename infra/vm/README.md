@@ -60,10 +60,26 @@ em contêiner descartável isolado confirmou 322 migrations até
 `20261118211000` e zero índices inválidos. O SQL de invoice foi ensaiado
 em seguida e as cinco colunas apareceram no catálogo.
 
+A listagem de 20/11 encontrou três dumps diários, de 18 a 20/11,
+totalizando 540.814.378 bytes. O bucket tem versionamento e soft delete
+de sete dias. A configuração consultada tem zero regras de lifecycle.
+
 Para ativar o alerta, executar a sondagem fora da VM do banco, com uma
 identidade de leitura, depois da janela diária e encaminhar falhas ao
 canal aprovado. Uma execução saudável e uma falha controlada devem confirmar
 a entrega antes de fechar o item de monitoramento.
+
+Para uma sondagem executada como Cloud Run Job, gere a política para revisão:
+
+```sh
+node infra/vm/backup-alert-policy.mjs --project "$PROJECT_ID" --region "$REGION" \
+  --job "$JOB_NAME" --channel-id "$CHANNEL_ID" > backup-alert-policy.json
+```
+
+A política cobre os três estados de erro emitidos em JSON na saída de erro
+do job indicado. Uma execução que nunca iniciou ou morreu antes de emitir
+JSON exige monitoramento do agendamento e das execuções. São pré-requisitos
+para ativação o job externo, o agendamento e um canal confirmado.
 
 ## Fluxo oficial pendente de reconciliação
 

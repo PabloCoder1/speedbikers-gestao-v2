@@ -466,6 +466,9 @@ jobs:
       - name: Verificação do backup diário
         run: node --test infra/vm/check-daily-backup.test.mjs
 
+      - name: Política de alerta de falha do backup
+        run: node --test infra/vm/backup-alert-policy.test.mjs
+
       # Os scripts de infra/ rodam em bash e são versionados. Erro de sintaxe
       # aqui só apareceria na hora de provisionar, no pior momento possível.
       - name: Sintaxe dos scripts
