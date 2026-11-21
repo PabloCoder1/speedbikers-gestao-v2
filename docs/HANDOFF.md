@@ -71,6 +71,8 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   FONTE:** `get_stock_coverage` aparecia com 89 ms no `pg_stat_statements` e custava **27 s** na
   forma que a tela usa. Toda RPC nova pede ensaio deliberado como `authenticated`, em cada forma
   de chamada (detalhe no arquivo de 2026-09-17 e em `docs/PERFORMANCE.md`).
+- **E2E Shopee:** a fixture usa o dia comercial de São Paulo. CI da correção em validação.
+
 - **`supabase start` da CI falha as vezes, e a falha nao se distingue de
   defeito de migration pelo que a interface mostra** — aconteceu em `8dfea93`
   (09/09): reprovou em *Subir Supabase local*, ANTES de migration ou teste, e a
