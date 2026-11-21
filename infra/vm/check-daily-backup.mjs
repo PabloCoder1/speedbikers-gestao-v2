@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 
-const bucket = 'speedbikers-prod-db-backups'
+export const backupBucket = 'speedbikers-prod-db-backups'
 const minimumSize = 1_048_576
 export const backupFailure = Object.freeze({
   invalidBackup: 'invalid_backup',
@@ -28,7 +28,7 @@ export function isValidBackup(metadata, expected, now) {
 
 function run() {
   const expected = expectedBackup(new Date())
-  const uri = `gs://${bucket}/${expected.name}`
+  const uri = `gs://${backupBucket}/${expected.name}`
   const args = ['storage', 'objects', 'describe', uri, '--project=speedbikers-prod', '--quiet', '--format=json']
   const options = { encoding: 'utf8', timeout: 30_000 }
 

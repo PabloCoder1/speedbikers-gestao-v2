@@ -77,7 +77,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   migrations do zero como o runner. Os dois verdes e a CI vermelha = **re-run
   do job**, nao correcao de codigo.
 
-- **Backup da VM:** política de falha em revisão. Faltam sondagem agendada fora da VM, canal e teste de entrega.
+- **Backup da VM:** política e canal ativos. Sondagem externa e entrega sob validação operacional.
 
 - **Nada avisa quando o que está no ar ficou velho** (D-070). O deploy do
   Cloud Run é MANUAL; entre um e outro chegaram a se acumular 66 commits, e a

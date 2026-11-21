@@ -510,7 +510,7 @@ jobs:
         run: bash infra/guarda-migrations-producao.test.sh
 
       - name: Política de alerta de falha do backup
-        run: node --test infra/vm/backup-alert-policy.test.mjs
+        run: node --test infra/vm/backup-alert-policy.test.mjs infra/vm/run-backup-probe.test.mjs
 
       - name: Regra de build da Vercel (previas de feature fora do projeto de producao)
         run: bash apps/web/scripts/vercel-ignore.test.sh

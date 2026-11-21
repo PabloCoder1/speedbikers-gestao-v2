@@ -81,6 +81,14 @@ do job indicado. Uma execução que nunca iniciou ou morreu antes de emitir
 JSON exige monitoramento do agendamento e das execuções. São pré-requisitos
 para ativação o job externo, o agendamento e um canal confirmado.
 
+O contêiner da sondagem usa a identidade do Cloud Run para solicitar
+somente os campos de metadados do objeto diário. Construa a imagem com
+`docker build -f infra/vm/Dockerfile.backup-probe infra/vm`. Restrinja o
+acesso da identidade ao prefixo `diario/` do bucket de backups.
+Execute a verificação normal antes de testar o alerta. Para o ensaio de
+entrega, passe `--test-failure` somente como argumento de uma execução
+manual do job. O log indica `simulated: true` e a execução encerra com 2.
+
 ## Fluxo oficial pendente de reconciliação
 
 O workflow versionado ainda usa o Supabase hosted, exige aplicação no Dev e
