@@ -19899,3 +19899,11 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 **Consequência:** o SKU criado aqui só se junta ao produto do UpSeller se o código for idêntico (a importação do ERP casa por `sku_key`); o dono cria lá com o mesmo código.
 
 **Alternativas rejeitadas:** vincular sozinho o código parecido -- D-764 só aceita vínculo exato automático, e KC30 pode ser outro produto; esperar a NF-e para dar entrada -- é o que deixava a sugestão errada, e o pedido importado não tem nota no sistema.
+
+## D-791 - O cliente usa o endpoint bulk de anúncios do Mercado Livre
+
+**Evidência em 19/11.** A amostra de três horas do worker encontrou 31 respostas finais HTTP 403 com `ResourceDeprecated` na rota de multiget anterior. Em outra janela recente, três pares de conta e anúncio tiveram processamento posterior a uma falha. Esses sucessos não garantem acesso à rota antiga. O novo contrato especifica `/items/bulk`, `status_code`, ID no envelope e projeções `body.`. [Guia de migração do Mercado Livre](https://developers.mercadolivre.com.br/pt_br/convivencia-me1-me2/itens-e-buscas)
+
+**Correção.** O cliente usa o endpoint novo e normaliza o código por entrada. Preserva o limite de 20 e a lógica de releitura e de exclusão do worker. A busca do vendedor e as consultas singulares continuam em seus endpoints. O repositório usa `/users/me` para a leitura da conta.
+
+**Validação.** O teste local com envelope novo falhava no parser antigo. O corte passa os testes do cliente e do worker. Falta confirmar as leituras em produção após publicação autorizada.
