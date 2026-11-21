@@ -386,6 +386,24 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
     expect(result.itemsProcessed).toBe(45);
   });
 
+  it("hidrata e enriquece cada ID uma única vez quando páginas se sobrepõem", async () => {
+    const ids = Array.from({ length: 20 }, (_, index) => `MLB${String(index)}`);
+    const fake = fakeDb({});
+    const { client, requests } = fakeClient({
+      scanPages: [{ results: ids, scroll_id: "s1" }, { results: [...ids].reverse(), scroll_id: null }],
+    });
+
+    const result = await fetchListings(params(fake.db, client));
+
+    expect({
+      bulk: requests.filter((request) => request.searchParams?.ids !== undefined).length,
+      promotions: requests.filter((request) => request.path.startsWith("/seller-promotions/items/")).length,
+      descriptions: requests.filter((request) => request.path.endsWith("/description")).length,
+    }).toEqual({ bulk: 1, promotions: 20, descriptions: 20 });
+    expect(result).toMatchObject({ itemsDiscovered: 20, itemsProcessed: 20 });
+    expect(fake.upserted.map((row) => row.item_id)).toEqual(ids);
+  });
+
   it("code != 200 é falha POR ITEM: o lote continua, o resto entra", async () => {
     const fake = fakeDb({});
     const { client } = fakeClient({
