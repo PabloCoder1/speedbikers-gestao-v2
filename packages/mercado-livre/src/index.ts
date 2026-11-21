@@ -95,6 +95,7 @@ export { decryptToken, encryptToken, loadEncryptionKey } from "./token-cipher.js
 export {
   ITEMS_MULTIGET_MAX_IDS,
   SELLER_ITEMS_MAX_LIMIT,
+  SellerItemsScanLimitError,
   chunkItemIds,
   getItemsBatch,
   itemsMultigetEntrySchema,

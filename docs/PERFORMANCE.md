@@ -224,6 +224,14 @@ olhado. Medido no Dev, todas as execuções registradas:
 `backfill.orders` (415 execuções, 17 min de média) fica de fora da leitura:
 é carga histórica, roda uma vez por conta e não voltou desde 25/08.
 
+### Sobreposição de páginas no catálogo do Mercado Livre
+
+No ensaio de 21/11 com duas páginas contendo os mesmos 20 anúncios ativos,
+o worker passou de 82 para 41 chamadas de hidratação e enriquecimento:
+multiget de 2 para 1, promoções de 40 para 20 e descrições de 40 para 20.
+O resultado gravou 20 anúncios únicos. A contagem usa uma fixture, com as
+chamadas interceptadas pelos testes de `ml-listings-fetch.test.ts`.
+
 ### O que o `sync.webhook.received` esconde na média
 
 Os 96 ms médios são enganosos — a maioria das execuções não faz trabalho
