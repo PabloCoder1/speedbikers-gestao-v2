@@ -24,9 +24,9 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
 
@@ -58,7 +58,7 @@ jobs:
       # de lockfile gravar "tudo o que havia + o novo", e o store so cresceria
       # (o pnpm nao poda sozinho). Lockfile novo paga um download inteiro, uma vez.
       - name: Cache do store do pnpm
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
@@ -157,9 +157,9 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
 
@@ -188,7 +188,7 @@ jobs:
       # de lockfile gravar "tudo o que havia + o novo", e o store so cresceria
       # (o pnpm nao poda sozinho). Lockfile novo paga um download inteiro, uma vez.
       - name: Cache do store do pnpm
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
@@ -254,9 +254,9 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
 
@@ -285,7 +285,7 @@ jobs:
       # de lockfile gravar "tudo o que havia + o novo", e o store so cresceria
       # (o pnpm nao poda sozinho). Lockfile novo paga um download inteiro, uma vez.
       - name: Cache do store do pnpm
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
@@ -312,7 +312,7 @@ jobs:
       # vem do apt e continuam sendo instaladas. Com acerto, o passo abaixo so
       # confere que o binario esta la e segue.
       - name: Cache do navegador do Playwright
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           # `runner.os` e so "Linux": sem a imagem (`ImageOS`, ex. ubuntu24) e a
@@ -361,7 +361,7 @@ jobs:
 
       - name: Relatorio do Playwright em caso de falha
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-report
           path: apps/web/playwright-report/
@@ -460,7 +460,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v4
         with:
