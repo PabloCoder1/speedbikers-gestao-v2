@@ -188,5 +188,11 @@ com versões temporárias. A falha injetada antes do `COMMIT` do quarto
 arquivo deixou iguais a impressão digital do schema e o histórico de
 327 versões. Em outro contêiner, o mesmo artefato recuperou os 324
 identificadores exatos e a constraint e o índice originais do Full.
-O ensaio cobre schema e histórico. A recuperação dos dados e a troca
-de serviço ainda exigem ensaio próprio para o rollout.
+
+Em outro contêiner isolado, o restore integral da mesma geração terminou
+em 51 segundos, com `--single-transaction --no-owner --no-acl --exit-on-error`.
+Os quatro SQLs passaram em seguida e o catálogo avançou de 324 para 328
+versões temporárias. O índice único do Full ficou válido, e as contagens
+de 11 compras, 363.278 snapshots Full e 317.175 registros de `job_runs`
+foram preservadas. O tempo é do laboratório. O rollout ainda exige
+ensaiar privilégios, conexões e troca do serviço com o destino oficial.
