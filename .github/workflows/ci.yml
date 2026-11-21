@@ -459,6 +459,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verificação do backup diário
+        run: node --test infra/vm/check-daily-backup.test.mjs
+
       # Os scripts de infra/ rodam em bash e são versionados. Erro de sintaxe
       # aqui só apareceria na hora de provisionar, no pior momento possível.
       - name: Sintaxe dos scripts
@@ -501,6 +508,9 @@ jobs:
       # seria descoberta quebrada justamente nesse dia.
       - name: Guarda das migrations de produção
         run: bash infra/guarda-migrations-producao.test.sh
+
+      - name: Política de alerta de falha do backup
+        run: node --test infra/vm/backup-alert-policy.test.mjs
 
       - name: Regra de build da Vercel (previas de feature fora do projeto de producao)
         run: bash apps/web/scripts/vercel-ignore.test.sh
