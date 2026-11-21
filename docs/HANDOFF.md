@@ -44,8 +44,6 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## Riscos ativos
 
-- **Runtime das Actions:** a CI de testes migra para Actions com Node 24. A validação do runner está no PR de atualização.
-
 - **O faturamento do ML perto do `statement_timeout`** (19/10, `docs/PERFORMANCE.md`): D-499 em produção, 47 vezes menos páginas; 90 dias com detalhe ainda 2,1 s quente, todo CPU.
 - **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
   D-417/D-418, com o vigia agendado pelo dono em 14/10 (`vigiar-sincronizacao`, 30 min; cobre as lojas live); canal externo e Cloud NAT são do dono. O app ML da V2
@@ -71,17 +69,9 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   FONTE:** `get_stock_coverage` aparecia com 89 ms no `pg_stat_statements` e custava **27 s** na
   forma que a tela usa. Toda RPC nova pede ensaio deliberado como `authenticated`, em cada forma
   de chamada (detalhe no arquivo de 2026-09-17 e em `docs/PERFORMANCE.md`).
-- **E2E Shopee:** a fixture usa o dia comercial de São Paulo. CI da correção em validação.
-
-- **`supabase start` da CI falha as vezes, e a falha nao se distingue de
-  defeito de migration pelo que a interface mostra** — aconteceu em `8dfea93`
-  (09/09): reprovou em *Subir Supabase local*, ANTES de migration ou teste, e a
-  anotação publica diz so `exit code 1`. **Baixar o log do job exige ADMIN**, e
-  um agente nao tem. Sem o log, o roteiro: o job de e2e roda `supabase start`
-  identico (`ci.yml` 100 e 153) — se passou no MESMO run, a stack sobe; e
-  reproduzir com `supabase stop --no-backup && supabase start`, que aplica as
-  migrations do zero como o runner. Os dois verdes e a CI vermelha = **re-run
-  do job**, nao correcao de codigo.
+- **CI:** o E2E da Shopee usa datas de São Paulo. Os jobs de testes usam
+  Actions com Node 24. Em falha ao subir a stack, confira o log e reproduza
+  com um projeto Supabase local isolado. [Testes](TESTING.md).
 
 - **Backup da VM:** sondagem diária às 04:25 BRT. Scheduler, incidente e entrega do alerta confirmados. [Detalhes](../infra/vm/README.md).
 
