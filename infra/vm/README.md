@@ -171,3 +171,44 @@ node infra/vm/check-migration-catalog.mjs --expect-plan "$PLAN_ID" < catalogo-at
 aplicadas ou no conteúdo ou nome de um SQL pendente reprova a verificação.
 O ID cobre o catálogo e os SQLs pendentes. Registre também o SHA do commit e
 o ambiente de origem do catálogo na revisão.
+
+### Recuperar após falha durante a aplicação
+
+Os quatro SQLs atualmente em revisão incluem seus próprios `BEGIN` e
+`COMMIT`. O rollback da transação de um arquivo protege esse arquivo.
+Os commits anteriores permanecem aplicados. Em uma falha, interrompa a
+sequência, confira o catálogo e os objetos criados, e registre o último
+commit confirmado antes de decidir entre retomada e recuperação isolada.
+O pg_dump imediatamente anterior e seu catálogo compõem a base de
+recuperação. Valide a restauração fora da VM antes de qualquer troca.
+
+Em 21/11, o ensaio em PG17 sem rede partiu do schema e das 324 versões do
+dump de 20/11, geração `1795155357048726`. Foram aplicados três arquivos
+com versões temporárias. A falha injetada antes do `COMMIT` do quarto
+arquivo deixou iguais a impressão digital do schema e o histórico de
+327 versões. Em outro contêiner, o mesmo artefato recuperou os 324
+identificadores exatos e a constraint e o índice originais do Full.
+
+Em outro contêiner isolado, o restore integral da mesma geração terminou
+em 51 segundos, com `--single-transaction --no-owner --no-acl --exit-on-error`.
+Os quatro SQLs passaram em seguida e o catálogo avançou de 324 para 328
+versões temporárias. O índice único do Full ficou válido, e as contagens
+de 11 compras, 363.278 snapshots Full e 317.175 registros de `job_runs`
+foram preservadas. O tempo é do laboratório. O rollout ainda exige
+conferir a identidade do executor e ensaiar a conexão pelo destino oficial.
+
+O catálogo vivo conferido por IAP em 21/11 tinha as mesmas 324 versões do
+dump e terminava em `20261119180000`. A sessão de leitura confirmou que
+`postgres` é dono da tabela de snapshots Full e tem SELECT e INSERT no
+histórico. Os quatro nomes do Git ainda caem antes da última versão. O
+preflight com nomes temporários aceitou exatamente quatro pendências.
+
+O ensaio de troca restaurou owners e ACLs em dois PostgreSQL 17, numa
+rede Docker interna, sem portas publicadas. A segunda cópia recebeu os
+quatro SQLs. As RPCs de NF-e e ERP ficaram exclusivas de `service_role`;
+o expurgo de telemetria permaneceu privado. O mesmo endereço do PostgREST
+foi apontado para a base, para a cópia atualizada e de volta para a base.
+Nos três passos, `anon` recebeu 401, `authenticated` sem vínculo viu
+zero compras e `service_role` viu 11. O ensaio usa credenciais locais e
+cobre a troca do PostgREST. O roteiro oficial ainda precisa de uma
+identidade de CI para a VM e validação das conexões de Auth, API e worker.

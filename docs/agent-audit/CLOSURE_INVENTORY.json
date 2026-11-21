@@ -209,7 +209,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Infra/Database",
-      "evidencia": "Restore integral do diário de 19/11 em container sem rede, com 322 migrations e zero índices inválidos. Sondagem externa diária ativa, com entrega do alerta confirmada após falha sintética (#372). Faltam política de retenção e ensaios de restore recorrentes.",
+      "evidencia": "Restores integrais dos diários de 19/11 e 20/11, com 322 e 324 migrations e zero índices inválidos, em contêineres sem rede. Sondagem diária ativa e alerta entregue (#372). Faltam política de retenção e rotina de ensaios.",
       "fase": 2
     },
     {
@@ -229,7 +229,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Infra/Database",
-      "evidencia": "Preflight do catálogo e hash do plano aprovados na CI (#366/#374). O workflow oficial ainda aponta para o hosted. Faltam integração com a VM e ensaio do rollback.",
+      "evidencia": "Catálogo vivo da VM e privilégios do operador confirmados. Restore integral, rollback e troca PostgREST ensaiados em PG17 com ACLs preservadas (#375). Faltam workflow, identidade de CI da VM e conexões de Auth/API/worker.",
       "fase": 2
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "CI verde no #364 em 2e25fb72 e no recorte de infraestrutura #374 em 4c678480. PG17 isolado aplicou upgrade de 324 para 328 migrations com versões temporárias. Faltam CI da composição e registro oficial de migrations no Dev.",
+      "evidencia": "CI completa do #364 em fcaf257d: 1.220 testes SQL e 402 Playwright. Dev original inativo. Dev alternativo belreinigpkyzhfzrmsm ativo, aguardando credencial de bootstrap e registro das quatro migrations.",
       "fase": 5
     },
     {
