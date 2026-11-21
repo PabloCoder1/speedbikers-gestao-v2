@@ -654,7 +654,11 @@ A V3 guarda `listings.sub_status` e `listings.deleted_at` e esconde o excluído 
 - a notificação `items`, que agora tem job próprio (`sync.listing.item`) e relê aquele anúncio na hora;
 - depois de cada varredura inteira, a releitura do que a V3 tem vivo e a varredura não listou.
 
-No multiget, o item que não volta com 200 é relido sozinho, e só o 404 dessa leitura vale como "não existe mais".
+No bulk, só um 404 isolado com o ID pedido confirma a exclusão. O cliente
+descarta IDs fora do pedido e envelopes duplicados. O worker só grava um
+200 quando o ID do corpo coincide com o do envelope. Em lote múltiplo,
+IDs sem envelope aceito ou com código de erro são relidos isoladamente.
+Um 200 com corpo inválido conta como falha do item.
 
 Desde a D-631 b o excluído também sai das contagens (/produtos, curadoria, /contas, integridade de vínculo), da queda por anúncio e do alerta de frete, e a conferência da republicação o bloqueia (`EXCLUIDO_NO_MERCADO_LIVRE`).
 

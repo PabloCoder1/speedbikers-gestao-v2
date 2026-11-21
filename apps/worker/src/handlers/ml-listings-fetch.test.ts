@@ -211,6 +211,7 @@ function fakeClient(options: {
   scanPages: { results: string[]; scroll_id?: string | null }[];
   bodies?: Record<string, Record<string, unknown>>;
   codes?: Record<string, number>;
+  envelopeIds?: Record<string, string>;
   /** Promoções por item_id (D-389) — item ausente do mapa devolve `[]` (sem promoção), como o Mercado Livre faz para item fora de campanha. */
   promotions?: Record<string, unknown[]>;
   /** item_id -> erro a lançar na chamada de promoção, para testar que a falha não derruba o item. */
@@ -237,7 +238,7 @@ function fakeClient(options: {
       if (request.path === "/items/bulk") {
         const ids = String(request.searchParams?.ids ?? "").split(",").filter(Boolean);
         const entries = ids.map((id) => ({
-          id,
+          id: options.envelopeIds?.[id] ?? id,
           status_code: options.codes?.[id] ?? 200,
           body: options.bodies?.[id] ?? item(id),
         }));
@@ -804,6 +805,33 @@ describe("fetchListings — o anúncio excluído e a leitura por notificação (
     expect(multigets(requests)).toEqual(["MLB1"]);
     expect(result.itemsOutsideScan).toBe(0);
     expect(fake.upserted[0]).toMatchObject({ item_id: "MLB1", deleted_at: "2026-08-01T00:00:00.000Z" });
+  });
+
+  it("não marca como excluído quando o 404 da leitura isolada pertence a outro anúncio", async () => {
+    const fake = fakeDb({ previous: [{
+      item_id: "MLB1",
+      title: "Anúncio existente",
+      status: "active",
+      price: 100,
+      available_quantity: 1,
+    }] });
+    const { client } = fakeClient({ scanPages: [], codes: { MLB1: 404 }, envelopeIds: { MLB1: "MLB2" } });
+
+    const result = await fetchListings({ ...params(fake.db, client), itemIds: ["MLB1"] });
+
+    expect(fake.marcados).toEqual([]);
+    expect(result.itemsFailed).toBe(1);
+  });
+
+  it("não grava um corpo cujo ID diverge do envelope do bulk", async () => {
+    const fake = fakeDb({});
+    const { client, requests } = fakeClient({ scanPages: [], bodies: { MLB1: item("MLB2") } });
+
+    const result = await fetchListings({ ...params(fake.db, client), itemIds: ["MLB1"] });
+
+    expect(fake.upserted).toEqual([]);
+    expect(result.itemsFailed).toBe(1);
+    expect(requests.map((request) => request.path)).toEqual(["/items/bulk"]);
   });
 
   it("o item que não volta no lote é relido sozinho; o 404 sozinho é o anúncio que não existe mais", async () => {

@@ -162,7 +162,10 @@ describe("getItemsBatch", () => {
 
     expect(calls[0]?.path).toBe("/items/bulk");
     expect(calls[0]?.searchParams).toEqual({ ids: "MLB1,MLB2", attributes: "body.id,body.title" });
-    expect(entries).toEqual([{ code: 404, body: null }, { code: 200, body: { id: "MLB1" } }]);
+    expect(entries).toEqual([
+      { id: "MLB2", code: 404, body: null },
+      { id: "MLB1", code: 200, body: { id: "MLB1" } },
+    ]);
   });
 
   it("acima de 20 ids FALHA em vez de deixar a API truncar em silêncio", async () => {
@@ -172,6 +175,19 @@ describe("getItemsBatch", () => {
     const ids = Array.from({ length: 21 }, (_, i) => `MLB${String(i)}`);
 
     await expect(getItemsBatch({ client, ids, accessToken: "t" })).rejects.toThrow(/no máximo 20/);
+  });
+
+  it("ignora respostas de outro ID e IDs com entradas conflitantes", async () => {
+    const { client } = fakeClient([[
+      { id: "MLB3", status_code: 404, body: null },
+      { id: "MLB2", status_code: 200, body: { id: "MLB2" } },
+      { id: "MLB2", status_code: 404, body: null },
+      { id: "MLB1", status_code: 200, body: { id: "MLB1" } },
+    ]]);
+
+    const entries = await getItemsBatch({ client, ids: ["MLB1", "MLB2"], accessToken: "t" });
+
+    expect(entries).toEqual([{ id: "MLB1", code: 200, body: { id: "MLB1" } }]);
   });
 
   it("lista vazia não chama a API", async () => {
