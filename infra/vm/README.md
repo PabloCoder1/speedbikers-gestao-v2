@@ -89,6 +89,16 @@ Execute a verificação normal antes de testar o alerta. Para o ensaio de
 entrega, passe `--test-failure` somente como argumento de uma execução
 manual do job. O log indica `simulated: true` e a execução encerra com 2.
 
+Em 20/11/2026 (horário de Brasília), o job `sb-backup-check` foi
+ativado em `speedbikers-prod`, região `southamerica-east1`, com a imagem
+do commit `6def173a` e identidade `sb-backup-probe`. O Cloud Scheduler
+`sb-backup-check-diario` chama a API do Cloud Run com a identidade
+`sb-backup-scheduler` todos os dias às 07:25 UTC (04:25 em Brasília).
+A execução acionada pelo Scheduler `sb-backup-check-v8vjq` terminou
+com sucesso. A execução manual `sb-backup-check-4kj7f` registrou a
+falha sintética. Evidências de entrega no
+[checkpoint Sentinel](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351).
+
 ## Fluxo oficial pendente de reconciliação
 
 O workflow versionado ainda usa o Supabase hosted, exige aplicação no Dev e
