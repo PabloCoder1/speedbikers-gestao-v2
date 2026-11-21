@@ -1,7 +1,12 @@
 import { spawnSync } from 'node:child_process'
 
-const bucket = 'speedbikers-prod-db-backups'
+export const backupBucket = 'speedbikers-prod-db-backups'
 const minimumSize = 1_048_576
+export const backupFailure = Object.freeze({
+  invalidBackup: 'invalid_backup',
+  invalidMetadata: 'invalid_metadata',
+  unavailable: 'unavailable',
+})
 
 export function expectedBackup(now) {
   // The dump starts at 06:15 UTC. Allow one hour for dump, validation and upload.
@@ -23,7 +28,7 @@ export function isValidBackup(metadata, expected, now) {
 
 function run() {
   const expected = expectedBackup(new Date())
-  const uri = `gs://${bucket}/${expected.name}`
+  const uri = `gs://${backupBucket}/${expected.name}`
   const args = ['storage', 'objects', 'describe', uri, '--project=speedbikers-prod', '--quiet', '--format=json']
   const options = { encoding: 'utf8', timeout: 30_000 }
 
@@ -38,21 +43,25 @@ function run() {
     try {
       metadata = JSON.parse(result.stdout)
     } catch {
-      console.error(JSON.stringify({ status: 'invalid_metadata', object: uri }))
+      reportFailure(backupFailure.invalidMetadata, uri)
       return 2
     }
   } else {
-    console.error(JSON.stringify({ status: 'unavailable', object: uri }))
+    reportFailure(backupFailure.unavailable, uri)
     return 2
   }
 
   if (!isValidBackup(metadata, expected, Date.now())) {
-    console.error(JSON.stringify({ status: 'invalid_backup', object: uri }))
+    reportFailure(backupFailure.invalidBackup, uri)
     return 1
   }
 
   console.log(JSON.stringify({ status: 'ok', object: uri, bytes: Number(metadata.size) }))
   return 0
+}
+
+function reportFailure(status, object) {
+  console.error(JSON.stringify({ severity: 'ERROR', status, object }))
 }
 
 if (import.meta.main) process.exitCode = run()

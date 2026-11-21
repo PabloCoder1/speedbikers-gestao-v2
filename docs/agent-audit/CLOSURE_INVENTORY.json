@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-20, candidato sobre a81f5235 integra #336, D-782 a D-784 e correções revisadas",
+  "corte": "2026-11-21, candidato sobre a81f5235 concilia a infraestrutura do #374",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -209,7 +209,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Infra/Database",
-      "evidencia": "Restore integral do diário em container sem rede, com 322 migrations e zero índices inválidos. Dumps diários presentes de 18/11 a 20/11. Sondagem da cópia de 20/11 aprovada. Falta confirmar a entrega de um alerta.",
+      "evidencia": "Restore integral do diário de 19/11 em container sem rede, com 322 migrations e zero índices inválidos. Sondagem externa diária ativa, com entrega do alerta confirmada após falha sintética (#372). Faltam política de retenção e ensaios de restore recorrentes.",
       "fase": 2
     },
     {
@@ -217,9 +217,9 @@
       "area": "Google Cloud e infraestrutura",
       "entrega": "Monitoramento externo, disco e falha de backup",
       "peso": 3,
-      "status": "Não iniciado",
+      "status": "Em andamento",
       "responsavel": "Infra/Dono",
-      "evidencia": "Monitoring sem alertas ou uptime checks na última leitura. VM com cron e Ops Agent ativos; arquivo do backup existe e não está listado na configuração consultada do agente",
+      "evidencia": "Sondagem externa do backup ativa, com incidente e e-mail confirmados (#372). Métrica de disco conferida e política versionada (#370/#374). Faltam ativação e ensaio de disco e monitoramento de indisponibilidade.",
       "fase": 2
     },
     {
@@ -227,9 +227,9 @@
       "area": "Google Cloud e infraestrutura",
       "entrega": "Pipeline de migrations para VM e rollback ensaiado",
       "peso": 5,
-      "status": "Não iniciado",
+      "status": "Em andamento",
       "responsavel": "Infra/Database",
-      "evidencia": "workflow ainda Supabase hospedado; README pendência6",
+      "evidencia": "Preflight do catálogo e hash do plano aprovados na CI (#366/#374). O workflow oficial ainda aponta para o hosted. Faltam integração com a VM e ensaio do rollback.",
       "fase": 2
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "Candidato combina a main a81f5235, #336, D-782 a D-784, sete PRs independentes e a sondagem #345. PG17 isolado aplicou upgrade incremental de 324 para 328 migrations com versões temporárias. CI do SHA conciliado e registro de migrations em Dev pendentes.",
+      "evidencia": "CI verde no #364 em 2e25fb72 e no recorte de infraestrutura #374 em 4c678480. PG17 isolado aplicou upgrade de 324 para 328 migrations com versões temporárias. Faltam CI da composição e registro oficial de migrations no Dev.",
       "fase": 5
     },
     {
