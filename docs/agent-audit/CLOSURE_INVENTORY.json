@@ -229,7 +229,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Infra/Database",
-      "evidencia": "Preflight aprovado (#366/#374). PG17 isolado reverteu o quarto SQL interrompido; em outra cópia, restore integral e upgrade de 324 para 328 preservaram as contagens verificadas. Faltam workflow na VM, privilégios e troca do serviço.",
+      "evidencia": "Catálogo vivo da VM e privilégios do operador confirmados. Restore integral, rollback e troca PostgREST ensaiados em PG17 com ACLs preservadas (#375). Faltam workflow, identidade de CI da VM e conexões de Auth/API/worker.",
       "fase": 2
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "CI verde no #364 em 2e25fb72 e no #374 em 4c678480. A composição fcaf257d passou 1.220 testes SQL na CI. Playwright final pendente. Registro no Dev bloqueado: provedor recusou restaurar 2,0 GB no plano gratuito.",
+      "evidencia": "CI completa do #364 em fcaf257d: 1.220 testes SQL e 402 Playwright. Dev original inativo. Dev alternativo belreinigpkyzhfzrmsm ativo, aguardando credencial de bootstrap e registro das quatro migrations.",
       "fase": 5
     },
     {

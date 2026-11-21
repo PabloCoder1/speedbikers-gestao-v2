@@ -195,4 +195,20 @@ Os quatro SQLs passaram em seguida e o catálogo avançou de 324 para 328
 versões temporárias. O índice único do Full ficou válido, e as contagens
 de 11 compras, 363.278 snapshots Full e 317.175 registros de `job_runs`
 foram preservadas. O tempo é do laboratório. O rollout ainda exige
-ensaiar privilégios, conexões e troca do serviço com o destino oficial.
+conferir a identidade do executor e ensaiar a conexão pelo destino oficial.
+
+O catálogo vivo conferido por IAP em 21/11 tinha as mesmas 324 versões do
+dump e terminava em `20261119180000`. A sessão de leitura confirmou que
+`postgres` é dono da tabela de snapshots Full e tem SELECT e INSERT no
+histórico. Os quatro nomes do Git ainda caem antes da última versão. O
+preflight com nomes temporários aceitou exatamente quatro pendências.
+
+O ensaio de troca restaurou owners e ACLs em dois PostgreSQL 17, numa
+rede Docker interna, sem portas publicadas. A segunda cópia recebeu os
+quatro SQLs. As RPCs de NF-e e ERP ficaram exclusivas de `service_role`;
+o expurgo de telemetria permaneceu privado. O mesmo endereço do PostgREST
+foi apontado para a base, para a cópia atualizada e de volta para a base.
+Nos três passos, `anon` recebeu 401, `authenticated` sem vínculo viu
+zero compras e `service_role` viu 11. O ensaio usa credenciais locais e
+cobre a troca do PostgREST. O roteiro oficial ainda precisa de uma
+identidade de CI para a VM e validação das conexões de Auth, API e worker.

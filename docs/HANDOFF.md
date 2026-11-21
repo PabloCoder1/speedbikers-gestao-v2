@@ -16,11 +16,11 @@
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | Base de integração `origin/main` em `a81f5235` (#348). O candidato usa branch própria. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Fechamento da V3** | 137/226 pontos (60,6%), 24/43 entregas pelo inventário Sentinel. [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md). |
-| **Sentinel: próximo passo** | Restore integral e upgrade PG17 isolado de 324 para 328. Rollback do quarto SQL ensaiado. Faltam CI completa, catálogo atual da VM e registro das quatro migrations no Dev. |
-| **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo. Em 21/11, o provedor recusou a retomada: banco de 2,0 GB acima do plano gratuito. Rotinas GCP pausadas (D-350). |
+| **Sentinel: próximo passo** | CI do #364 verde em `fcaf257d`. Catálogo da VM conferido e troca PostgREST ensaiada em laboratório. Faltam registro das quatro migrations e workflow oficial para a VM. |
+| **Deploy Dev** | Original `nmgccyqquwxecqffsidr` inativo (2,0 GB). Alternativo gratuito `belreinigpkyzhfzrmsm` ativo, aguardando credencial de bootstrap. Rotinas GCP pausadas (D-350). |
 | **Supabase** | Produção usa a VM `sb-db` (`speedbikers-prod`). O antigo projeto hosted `imvjfgnaprqsfjlnsyev` estava `INACTIVE` em 18/11. Convite, SMTP e recuperação Auth seguem pendentes. [VM](../infra/vm/README.md). |
 | **Produção** | Cloud Run em leitura de 20/11: API `api-00041-8m8` e worker `worker-00059-mjc`, 100% de tráfego nas respectivas revisões. A validação do alias web do catálogo de compras está registrada no #333. |
-| **Migrations** | Última versão da base Git `20261119180000`. A leitura histórica da VM confirmou 323 versões até `20261119120000`. Ordem definitiva e workflow para a VM pendentes. [VM](../infra/vm/README.md). |
+| **Migrations** | Catálogo vivo da VM em 21/11: 324 versões até `20261119180000`. Quatro migrations pendem de registro no Dev para ordenar o rollout. [VM](../infra/vm/README.md). |
 | **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | Compras inteligentes, importação anterior e invoice/proforma entregues. D-792 acrescenta entrada no LOCAL e criação do SKU na conferência. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
 | **Notas (D-765, D-766)** | #334 registrou saída para Full. #335 incorporou Saída Manual e edição de itens. O aceite operacional de ponta a ponta segue no fechamento. |
 | **UX (Agente 3)** | Central integrada até D-519. [Escopo e evidências](UX_SYSTEM.md). |
