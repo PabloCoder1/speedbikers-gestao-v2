@@ -62,6 +62,8 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   `--project`; e no Windows `--format=value()` termina a linha com `\r` — em laço,
   `tr -d '\r'`, senão só o último item funciona.
 
+- **Disco da VM:** Ops Agent publica utilização. Política em revisão, pendente de canal de alerta e ativação.
+
 - **As 22 RPCs foram varridas; sobra vigilância, não suspeita (D-305→D-307).** Duas tinham
   plano genérico, uma tinha desperdício e 16 estavam saudáveis. **A lição que fica é sobre a
   FONTE:** `get_stock_coverage` aparecia com 89 ms no `pg_stat_statements` e custava **27 s** na
