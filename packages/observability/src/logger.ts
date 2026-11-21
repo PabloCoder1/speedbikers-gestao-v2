@@ -29,21 +29,66 @@ export interface LoggerOptions {
 import { redactSecretText, SENSITIVE_KEY_NAMES } from "./sensitive.js";
 
 const REDACTED = "[REDACTED]";
+const CIRCULAR = "[Circular]";
 
 const SENSITIVE_KEY = new RegExp(SENSITIVE_KEY_NAMES.join("|"), "i");
 
 /**
- * Redige um VALOR qualquer: string passa pelas regras de texto, objeto e array
- * descem, o resto (número, booleano, nulo) volta como veio.
+ * Redige um VALOR qualquer: string passa pelas regras de texto, `Error` é
+ * serializado em qualquer profundidade (com `cause` se houver), objetos e
+ * arrays descem com guarda contra ciclos, o resto volta como veio (D-779).
  */
-function redactValue(value: unknown): unknown {
+function redactValue(value: unknown, seen: WeakSet<object>): unknown {
   if (typeof value === "string") return redactSecretText(value, REDACTED);
 
-  if (Array.isArray(value)) return value.map(redactValue);
+  if (value instanceof Date) return value.toISOString();
 
-  if (value !== null && typeof value === "object") return redact(value as LogContext);
+  if (value instanceof Error) {
+    if (seen.has(value)) return CIRCULAR;
+    seen.add(value);
+    try {
+      return {
+        name: value.name,
+        message: redactSecretText(value.message, REDACTED),
+        ...(value.stack === undefined ? {} : { stack: redactSecretText(value.stack, REDACTED) }),
+        ...(value.cause === undefined ? {} : { cause: redactValue(value.cause, seen) }),
+      };
+    } finally {
+      seen.delete(value);
+    }
+  }
+
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return CIRCULAR;
+    seen.add(value);
+    try {
+      return value.map((item) => redactValue(item, seen));
+    } finally {
+      seen.delete(value);
+    }
+  }
+
+  if (value !== null && typeof value === "object") {
+    if (seen.has(value)) return CIRCULAR;
+    seen.add(value);
+    try {
+      return redactObject(value as LogContext, seen);
+    } finally {
+      seen.delete(value);
+    }
+  }
 
   return value;
+}
+
+function redactObject(context: LogContext, seen: WeakSet<object>): LogContext {
+  const result: LogContext = {};
+
+  for (const [key, value] of Object.entries(context)) {
+    result[key] = SENSITIVE_KEY.test(key) ? REDACTED : redactValue(value, seen);
+  }
+
+  return result;
 }
 
 /**
@@ -55,31 +100,16 @@ function redactValue(value: unknown): unknown {
  *    inteiro por engano.
  * 2. **Por VALOR**, em toda string: a camada 1 deixava passar `{ reason:
  *    error.message }`, e é por esse campo que a mensagem de um cliente de
- *    terceiro chega aqui. Vale para `message` e `stack` de um `Error`, que
- *    `serializeError` já transformou em objeto antes de chegar a esta função.
+ *    terceiro chega aqui. Vale para `message` e `stack` de qualquer `Error`
+ *    encontrado no contexto e para o próprio `message` da linha (D-779).
  *
  * Arrays também descem agora — antes uma lista de strings passava intacta.
  */
 export function redact(context: LogContext): LogContext {
-  const result: LogContext = {};
+  const seen = new WeakSet<object>();
+  seen.add(context);
 
-  for (const [key, value] of Object.entries(context)) {
-    result[key] = SENSITIVE_KEY.test(key) ? REDACTED : redactValue(value);
-  }
-
-  return result;
-}
-
-function serializeError(value: unknown): unknown {
-  if (value instanceof Error) {
-    return {
-      name: value.name,
-      message: value.message,
-      stack: value.stack,
-    };
-  }
-
-  return value;
+  return redactObject(context, seen);
 }
 
 function defaultSink(line: string): void {
@@ -92,20 +122,12 @@ export function createLogger(base: LogContext = {}, options: LoggerOptions = {})
 
   function write(severity: LogSeverity, message: string, context: LogContext = {}): void {
     const combined: LogContext = { ...base, ...context };
-
-    // Serializar ANTES de redigir: `name`, `message` e `stack` de um Error não
-    // são enumeráveis, então percorrê-lo como objeto comum devolve `{}` e o
-    // erro some do log exatamente quando ele importa.
-    if ("error" in combined) {
-      combined.error = serializeError(combined.error);
-    }
-
     const merged = redact(combined);
 
     sink(
       JSON.stringify({
         severity,
-        message,
+        message: redactSecretText(message, REDACTED),
         timestamp: now().toISOString(),
         ...merged,
       }),

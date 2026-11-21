@@ -14,6 +14,7 @@ import { formatBusinessDate } from "../../../lib/format";
 import { carregarLimites } from "../../../lib/limites-central";
 import { contarLojasShopee } from "../../../lib/marketplace";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange, type PeriodRange } from "../../../lib/period";
+import { resolverContaSolicitada } from "../../../lib/postgrest-search";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import { resolverEscopoVendas } from "../../../lib/vendas-multicanal";
@@ -103,18 +104,38 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
   const isCustom = days === null;
   const periodo: Periodo = isCustom ? range : { days };
 
-  const requestedSlug = typeof query.account === "string" ? query.account : null;
+  const requestedSlug = typeof query.account === "string" && query.account.trim() !== "" ? query.account.trim() : null;
   const accountsPromise = Promise.resolve(supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }));
   const lojasShopeePromise = contarLojasShopee(supabase);
-  const contaPromise =
-    requestedSlug === null
-      ? Promise.resolve(null)
-      : accountsPromise.then(({ data }) => data?.find((account) => account.slug === requestedSlug) ?? null);
-  const filtroPromise = contaPromise.then((conta) => (conta === null ? {} : { p_ml_account_id: conta.id }));
+  void lojasShopeePromise.catch(() => undefined);
+
+  const { conta: selectedAccount, erro: erroConta } = resolverContaSolicitada(
+    requestedSlug,
+    requestedSlug === null ? null : await accountsPromise,
+    (account, slug) => account.slug === slug,
+  );
+
+  if (erroConta !== null) {
+    await lojasShopeePromise;
+    return (
+      <>
+        <PageTitle eyebrow="COMERCIAL / RESULTADOS" title="Faturamento" barra="abaixo" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas"
+          descricao="O filtro de conta pedido na URL não pôde ser confirmado."
+          detalhe={erroConta.message}
+          acao={{ href: montarHref("/faturamento", periodo, requestedSlug), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
+
+  const contaFiltro = selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id };
 
   // As leituras do período só esperam a conta pedida na URL. A contagem de
   // lojas Shopee controla o seletor de marketplace.
-  const leituras = filtroPromise.then((contaFiltro) => Promise.all([
+  const leituras = Promise.all([
     supabase.rpc("get_faturamento", { p_date_from: range.from, p_date_to: range.to, ...contaFiltro }),
     supabase.rpc("get_faturamento", {
       p_date_from: previousRange.from,
@@ -122,20 +143,22 @@ async function FaturamentoContent({ searchParams }: { searchParams: Promise<Cons
       ...contaFiltro,
       p_detalhe: false,
     }),
-  ]));
+  ]);
 
-  const leituraAds = filtroPromise.then((contaFiltro) => supabase.rpc("get_ads_overview", {
-    p_date_from: range.from,
-    p_date_to: range.to,
-    ...contaFiltro,
-  }));
+  const leituraAds = Promise.resolve(
+    supabase.rpc("get_ads_overview", {
+      p_date_from: range.from,
+      p_date_to: range.to,
+      ...contaFiltro,
+    }),
+  );
 
   // Se a leitura do cabeçalho lançar, os blocos abaixo não chegam a consumir
   // estas promises. Cada bloco ainda recebe a rejeição da sua leitura.
   void leituras.catch(() => undefined);
   void leituraAds.catch(() => undefined);
 
-  const [accountsResult, lojasShopee, selectedAccount] = await Promise.all([accountsPromise, lojasShopeePromise, contaPromise]);
+  const [accountsResult, lojasShopee] = await Promise.all([accountsPromise, lojasShopeePromise]);
   const accounts = accountsResult.data ?? [];
   const contaSlug = selectedAccount?.slug ?? null;
   const contaLabel = selectedAccount === null ? "Todas as contas" : selectedAccount.label;

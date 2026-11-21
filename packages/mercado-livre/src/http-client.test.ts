@@ -249,4 +249,27 @@ describe("createMercadoLivreClient - request", () => {
       schema: orderSchema,
     });
   });
+
+  it("D-773: cancela o body de respostas 429/5xx antes de retentar para não vazar socket keep-alive", async () => {
+    const cancel429 = vi.fn(() => Promise.resolve());
+    const cancel503 = vi.fn(() => Promise.resolve());
+    const resp429 = jsonResponse(429, { message: "rate limited" });
+    const resp503 = jsonResponse(503, { message: "unavailable" });
+
+    Object.defineProperty(resp429, "body", { value: { cancel: cancel429 } });
+    Object.defineProperty(resp503, "body", { value: { cancel: cancel503 } });
+
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(resp429)
+      .mockResolvedValueOnce(resp503)
+      .mockResolvedValueOnce(jsonResponse(200, { id: 1, status: "paid" }));
+
+    const client = createMercadoLivreClient({ fetchImpl, sleep: NOOP_SLEEP });
+    const order = await client.request({ method: "GET", path: "/orders/1", schema: orderSchema });
+
+    expect(order.status).toBe("paid");
+    expect(cancel429).toHaveBeenCalledTimes(1);
+    expect(cancel503).toHaveBeenCalledTimes(1);
+  });
 });

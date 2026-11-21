@@ -1,5 +1,10 @@
 import type { AdminClient, Json } from "@sb/db";
-import { canTransitionRelist, collectRelistInventoryIds, evaluateRelistPreflight } from "@sb/domain";
+import {
+  RELIST_REOPENABLE_STATES,
+  canTransitionRelist,
+  collectRelistInventoryIds,
+  evaluateRelistPreflight,
+} from "@sb/domain";
 import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-livre";
 import { getItemsBatch } from "@sb/mercado-livre";
 import { z } from "zod";
@@ -70,6 +75,32 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
     }
 
     const organizationId = account.data.organization_id;
+
+    // D-742: se já existe operação viva para este anúncio, encerra antes de
+    // chamar o Mercado Livre e evita gravar um PREFLIGHT_FAILED paralelo.
+    const existingLive = await deps.db
+      .from("listing_relists")
+      .select("id")
+      .eq("ml_account_id", mlAccountId)
+      .eq("parent_item_id", itemId)
+      .not("status", "in", `(${RELIST_REOPENABLE_STATES.join(",")})`)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingLive.error !== null) {
+      return {
+        status: "failed",
+        retryable: true,
+        reason: `falha ao verificar operação ativa de republicação: ${existingLive.error.message}`,
+      };
+    }
+
+    if (existingLive.data !== null) {
+      context.logger.info("relist_prepare_duplicate", { ml_account_id: mlAccountId, item_id: itemId });
+
+      return { status: "done", processed: 0 };
+    }
+
     const tokenResult = await ensureAccessToken(deps, mlAccountId, now);
 
     if (!tokenResult.ok) {
@@ -84,13 +115,21 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
 
     const entry = entries[0];
 
-    if (entry?.code !== 200) {
-      // Item que o ML não devolve (removido, banido) não vira operação: não
-      // há snapshot para auditar nem pai para fechar. Retry não muda isso.
+    if (entry === undefined || entry.code === 429 || entry.code >= 500) {
+      return {
+        status: "failed",
+        retryable: true,
+        reason: `falha transitória ao ler o anúncio no Mercado Livre (código ${String(entry?.code ?? "ausente")})`,
+      };
+    }
+
+    if (entry.code !== 200) {
+      // Item que o ML recusa definitivamente (removido, banido, 4xx): não há
+      // snapshot para auditar nem pai para fechar. Retry não muda isso.
       context.logger.warn("relist_prepare_item_unavailable", {
         ml_account_id: mlAccountId,
         item_id: itemId,
-        code: entry?.code ?? null,
+        code: entry.code,
       });
 
       return { status: "done", processed: 0 };
@@ -127,13 +166,21 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
       logFields: { ml_account_id: mlAccountId, item_id: itemId },
     });
 
+    // D-742: o preflight é avaliado ANTES do insert para que uma operação
+    // reprovada já nasça atomicamente em PREFLIGHT_FAILED — nunca exposta como
+    // REQUESTED nem presa no índice único em caso de falha transitória + retry.
+    const preflight = evaluateRelistPreflight(snapshot, fullStock, sellerUserProducts);
+    const rejected = !preflight.approved && canTransitionRelist("REQUESTED", "PREFLIGHT_FAILED");
+    const failureReason = rejected ? preflight.blocks.map((block) => block.descricao).join(" ") : null;
+
     const inserted = await deps.db
       .from("listing_relists")
       .insert({
         organization_id: organizationId,
         ml_account_id: mlAccountId,
         parent_item_id: itemId,
-        status: "REQUESTED",
+        status: rejected ? "PREFLIGHT_FAILED" : "REQUESTED",
+        ...(failureReason !== null ? { failure_reason: failureReason } : {}),
         // O corpo veio de `response.json()` do multiget — é JSON por
         // construção; o guard acima já fixou objeto com o id certo.
         parent_snapshot: snapshot as Json,
@@ -177,27 +224,7 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
       });
     }
 
-    const preflight = evaluateRelistPreflight(snapshot, fullStock, sellerUserProducts);
-
-    if (!preflight.approved && canTransitionRelist("REQUESTED", "PREFLIGHT_FAILED")) {
-      const failureReason = preflight.blocks.map((block) => block.descricao).join(" ");
-
-      const updated = await deps.db
-        .from("listing_relists")
-        .update({ status: "PREFLIGHT_FAILED", failure_reason: failureReason })
-        .eq("id", relistId);
-
-      if (updated.error !== null) {
-        // Sem a transição gravada, a operação ficaria REQUESTED aprovável —
-        // o oposto do veredito. Isso é falha do job, com retry (o update é
-        // idempotente).
-        return {
-          status: "failed",
-          retryable: true,
-          reason: `falha ao registrar o preflight reprovado: ${updated.error.message}`,
-        };
-      }
-
+    if (rejected) {
       const failedEvent = await deps.db.from("listing_relist_events").insert({
         organization_id: organizationId,
         ml_account_id: mlAccountId,

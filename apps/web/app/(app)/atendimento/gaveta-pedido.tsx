@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import { DetailRow, Drawer } from "../../../components/drawer";
+import { DetailRow, Drawer, useLeituraDeGaveta } from "../../../components/drawer";
 import { TOM, tomDeStatus } from "../../../components/tone";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { monogramaDeProduto } from "../../../lib/initials";
@@ -34,20 +34,7 @@ import { inspecionarPedido, type OrderInspection } from "./pedido";
  * que têm fonte.
  */
 export function GavetaPedido({ orderId }: { orderId: number }): ReactNode {
-  const [aberta, setAberta] = useState(false);
-  const [retrato, setRetrato] = useState<OrderInspection | null>(null);
-  const [lendo, startTransition] = useTransition();
-
-  function abrir(): void {
-    setAberta(true);
-    setRetrato(null);
-
-    startTransition(() => {
-      void (async () => {
-        setRetrato(await inspecionarPedido(orderId));
-      })();
-    });
-  }
+  const { aberta, retrato, erro, lendo, abrir, fechar } = useLeituraDeGaveta(() => inspecionarPedido(orderId));
 
   return (
     <>
@@ -60,22 +47,20 @@ export function GavetaPedido({ orderId }: { orderId: number }): ReactNode {
           chao
           eyebrow="Detalhe de pedido"
           label={`Detalhe do pedido ${String(orderId)}`}
-          onClose={() => {
-            setAberta(false);
-          }}
+          onClose={fechar}
         >
-          {retrato === null || lendo ? (
+          {erro !== null ? (
+            <div className="sb-drawer-card">
+              <Identidade orderId={orderId} buyerId={null} status={null} />
+              <p role="alert" className="sb-note sb-note-perigo" style={{ margin: "var(--sb-space-2) 0 0", fontSize: "0.6875rem" }}>
+                {erro}
+              </p>
+            </div>
+          ) : retrato === null || lendo ? (
             <div className="sb-drawer-card">
               <Identidade orderId={orderId} buyerId={null} status={null} />
               <p style={{ margin: "var(--sb-space-2) 0 0", fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>
                 Lendo o pedido…
-              </p>
-            </div>
-          ) : retrato.error !== null ? (
-            <div className="sb-drawer-card">
-              <Identidade orderId={orderId} buyerId={null} status={null} />
-              <p role="alert" className="sb-note sb-note-perigo" style={{ margin: "var(--sb-space-2) 0 0", fontSize: "0.6875rem" }}>
-                {retrato.error}
               </p>
             </div>
           ) : (

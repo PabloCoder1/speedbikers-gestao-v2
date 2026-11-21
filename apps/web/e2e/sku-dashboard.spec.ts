@@ -9,7 +9,7 @@ import {
   E2E_LOCAL_STOCK,
   E2E_SKU_SALES,
 } from "./constants.js";
-import { login } from "./helpers.js";
+import { derrubarPrimeiraAcao, login } from "./helpers.js";
 import { readSeedOutput } from "./seed-output.js";
 
 /**
@@ -847,4 +847,26 @@ test("Diagnóstico do SKU: Reler agora lê dados novos e preserva o escopo da co
     expect.soft(restaurado.error).toBeNull();
     expect.soft(removida.error).toBeNull();
   }
+});
+
+test("Diagnóstico do SKU: falha de transporte em 'O que aconteceu?' destrava o botão e permite tentar de novo", async ({
+  page,
+}) => {
+  const seed = await readSeedOutput();
+
+  await login(page, `/skus/${seed.skuId}?aba=diagnostico`);
+
+  const secao = page.getByRole("region", { name: "Diagnóstico de venda" });
+  const botao = secao.getByRole("button", { name: "O que aconteceu?" });
+
+  const caiu = await derrubarPrimeiraAcao(page);
+  await botao.click();
+
+  expect(caiu()).toBe(true);
+  await expect(secao.getByRole("alert")).toContainText("Não foi possível");
+  await expect(botao).toBeEnabled();
+
+  await botao.click();
+  await expect(secao.getByRole("alert")).toHaveCount(0);
+  await expect(secao.getByText(/Histórico insuficiente|nenhuma anomalia|Veredito/)).toBeVisible();
 });

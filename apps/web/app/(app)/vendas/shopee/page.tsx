@@ -136,6 +136,21 @@ export default async function VendasShopeePage({
 
   const organizationId = membership.organizationId;
 
+  if (membership.error !== null) {
+    await cabecalhoPromise;
+    return (
+      <SemVendas>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membership.error.message}
+          acao={{ href: "/vendas/shopee", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </SemVendas>
+    );
+  }
+
   if (organizationId === null) {
     await cabecalhoPromise;
     return (

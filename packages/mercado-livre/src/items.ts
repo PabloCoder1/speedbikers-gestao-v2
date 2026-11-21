@@ -24,7 +24,7 @@ import type { MercadoLivreClient } from "./http-client.js";
  * já que a varredura completa não depende de ordem.
  */
 
-/** Máximo documentado do multiget `/items?ids=`. Não é escolha nossa. */
+/** Máximo documentado do multiget `/items/bulk?ids=`. Não é escolha nossa. */
 export const ITEMS_MULTIGET_MAX_IDS = 20;
 
 /** Máximo documentado de `limit` na busca (o ES desambigua o PT). */
@@ -115,14 +115,17 @@ export async function* scanSellerItems(
 }
 
 /**
- * Envelope VERBOSE do multiget: cada item traz o próprio `code`, então uma
- * falha é por item e não da chamada inteira. `body` é deliberadamente
- * `unknown` — quem chama valida com o schema do seu próprio caso de uso.
+ * O bulk retorna o ID e o status de cada entrada no envelope. Mapeamos
+ * `status_code` para o código que os consumidores usam. Cada consumidor
+ * valida o corpo segundo o próprio caso de uso.
  */
-export const itemsMultigetEntrySchema = z.object({
-  code: z.number().int(),
-  body: z.unknown(),
-});
+export const itemsMultigetEntrySchema = z
+  .object({
+    id: itemIdSchema,
+    status_code: z.number().int(),
+    body: z.unknown(),
+  })
+  .transform(({ status_code, body }) => ({ code: status_code, body }));
 
 export const itemsMultigetSchema = z.array(itemsMultigetEntrySchema);
 
@@ -169,11 +172,11 @@ export async function getItemsBatch(options: GetItemsBatchOptions): Promise<Item
 
   return await options.client.request({
     method: "GET",
-    path: "/items",
+    path: "/items/bulk",
     accessToken: options.accessToken,
     searchParams: {
       ids: options.ids.join(","),
-      attributes: options.attributes === undefined ? undefined : options.attributes.join(","),
+      attributes: options.attributes?.map((attribute) => `body.${attribute}`).join(","),
     },
     schema: itemsMultigetSchema,
   });

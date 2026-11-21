@@ -13,14 +13,28 @@ const CALLER = { userId: "user-1", organizationId: "org-1", role: "ADMIN" as con
 const DOC = "9c8b7a6d-5e4f-4a3b-9c1d-0e9f8a7b6c5d";
 
 function cenario(
-  options: { status?: string; itens?: number; vinculados?: number; unitValue?: number | null; itemExiste?: boolean } = {},
+  options: {
+    status?: string;
+    itens?: number;
+    vinculados?: number;
+    unitValue?: number | null;
+    itemExiste?: boolean;
+    docErro?: boolean;
+    itemErro?: boolean;
+    mutacaoSemLinha?: boolean;
+    recontagemSemLinha?: boolean;
+  } = {},
 ): { deps: DocumentItemsDeps; consultas: ConsultaFalsa[] } {
   const responder = (consulta: ConsultaFalsa): Resposta => {
     if (consulta.tabela === "documents" && consulta.operacao === "select") {
+      if (options.docErro === true) return { error: { message: "connection timeout" } };
+
       return { data: { id: DOC, status: options.status ?? "PARSED" } };
     }
 
     if (consulta.tabela === "document_items" && consulta.operacao === "select" && consulta.single) {
+      if (options.itemErro === true) return { error: { message: "connection timeout" } };
+
       return {
         data:
           options.itemExiste === false
@@ -33,6 +47,14 @@ function cenario(
       const vinculados = consulta.filtros.some(([op]) => op === "not.is");
 
       return { count: vinculados ? (options.vinculados ?? 2) : (options.itens ?? 3) };
+    }
+
+    if (consulta.tabela === "document_items" && (consulta.operacao === "update" || consulta.operacao === "delete")) {
+      return { data: options.mutacaoSemLinha === true ? null : { id: 7 } };
+    }
+
+    if (consulta.tabela === "documents" && consulta.operacao === "update") {
+      return { data: options.recontagemSemLinha === true ? null : { id: DOC } };
     }
 
     return {};
@@ -123,5 +145,39 @@ describe("editDocumentItem", () => {
     const ctx = cenario({ itemExiste: false });
 
     expect((await editDocumentItem(ctx.deps, CALLER, DOC, 99, { acao: "remover" })).status).toBe("not_found");
+  });
+
+  it("D-770: erro transitório ao ler documento ou item devolve failed em vez de not_found", async () => {
+    const erroDoc = cenario({ docErro: true });
+    const resDoc = await editDocumentItem(erroDoc.deps, CALLER, DOC, 7, { acao: "quantidade", quantidade: 5 });
+
+    expect(resDoc.status).toBe("failed");
+
+    const erroItem = cenario({ itemErro: true });
+    const resItem = await editDocumentItem(erroItem.deps, CALLER, DOC, 7, { acao: "quantidade", quantidade: 5 });
+
+    expect(resItem.status).toBe("failed");
+  });
+
+  it("D-770: remoção ou alteração concorrente que afeta zero linhas devolve not_found sem recontar", async () => {
+    const rem = cenario({ mutacaoSemLinha: true });
+    const resRem = await editDocumentItem(rem.deps, CALLER, DOC, 7, { acao: "remover" });
+
+    expect(resRem.status).toBe("not_found");
+    expect(rem.consultas.some((c) => c.tabela === "documents" && c.operacao === "update")).toBe(false);
+
+    const alt = cenario({ mutacaoSemLinha: true });
+    const resAlt = await editDocumentItem(alt.deps, CALLER, DOC, 7, { acao: "quantidade", quantidade: 4 });
+
+    expect(resAlt.status).toBe("not_found");
+    expect(alt.consultas.some((c) => c.tabela === "documents" && c.operacao === "update")).toBe(false);
+  });
+
+  it("D-770: se o documento sair de PARSED antes de recontar, devolve rejected em vez de updated", async () => {
+    const ctx = cenario({ recontagemSemLinha: true });
+
+    const outcome = await editDocumentItem(ctx.deps, CALLER, DOC, 7, { acao: "quantidade", quantidade: 4 });
+
+    expect(outcome.status).toBe("rejected");
   });
 });

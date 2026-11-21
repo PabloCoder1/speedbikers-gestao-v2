@@ -49,6 +49,10 @@ export async function GET(request: NextRequest): Promise<Response> {
     supabase.from("marketplace_accounts").select("account_id, marketplace, name, environment"),
   ]);
 
+  if (membership.error !== null) {
+    return new Response("Não foi possível verificar sua organização no momento.", { status: 503 });
+  }
+
   if (membership.organizationId === null) {
     return new Response("Sua conta não está associada a nenhuma organização.", { status: 403 });
   }
@@ -120,6 +124,10 @@ function trechoDaMarca(marca: FiltroDeMarca): string | null {
 async function exportarDiasDoMl(query: Readonly<Record<string, string>>): Promise<Response> {
   const supabase = await createClient();
   const [membership, contas] = await Promise.all([currentMembership(supabase), supabase.from("ml_accounts").select("id, slug")]);
+
+  if (membership.error !== null) {
+    return new Response("Não foi possível verificar sua organização no momento.", { status: 503 });
+  }
 
   if (membership.organizationId === null) {
     return new Response("Sua conta não está associada a nenhuma organização.", { status: 403 });

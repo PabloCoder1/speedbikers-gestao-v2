@@ -57,6 +57,22 @@ Quando `api` e `worker` são publicados juntos, `infra/deploy-cloud-run.sh` impl
 
 Essa janela causou um incidente real em 2026-08-20: quatro tasks `erp.import.parse` chegaram à revisão antiga do worker, receberam `400 unknown_job_type` nas três tentativas e foram descartadas, deixando os batches em `UPLOADED`. Consumidor antes do produtor passa a ser regra de deploy, não convenção informal.
 
+### Identidade do Cloud Build
+
+`CLOUD_BUILD_SERVICE_ACCOUNT` permite selecionar uma conta de build no formato
+`projects/<projeto>/serviceAccounts/<email-da-conta>`. Sem a variável, o Cloud Build
+usa a identidade padrão do projeto. As contas de execução da API e do worker são
+configuradas em separado.
+
+Para migrar, prepare uma conta dedicada com leitura do bucket de origem, escrita
+no repositório de imagens e escrita no Cloud Logging, que já é o destino dos logs
+em `infra/cloudbuild.yaml`. O operador precisa poder usar a conta com `actAs`.
+Valide primeiro um build isolado, a identidade gravada no build, seus logs e a
+imagem publicada no registro. A remoção de `roles/editor` da conta padrão depende
+de verificar os outros consumidores e simular o impacto da mudança. Consulte o
+[guia de contas dedicadas do Cloud Build](https://docs.cloud.google.com/build/docs/securing-builds/configure-user-specified-service-accounts)
+e a [orientação do Compute Engine](https://docs.cloud.google.com/compute/docs/access/service-accounts).
+
 ---
 
 ## 4. Filas

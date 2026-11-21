@@ -221,12 +221,33 @@ export function createShopeeItemsHydrateHandler(deps: ShopeeItemsHydrateDeps): J
     }
 
     const soltar = async (): Promise<void> => {
-      await deps.db.from("shopee_shops").update({ items_hydrate_locked_until: null }).eq("id", loja.id);
+      try {
+        const solta = await deps.db
+          .from("shopee_shops")
+          .update({ items_hydrate_locked_until: null })
+          .eq("id", loja.id);
+
+        if (solta.error !== null) {
+          context.logger.warn("shopee_items_hydrate_unlock_failed", {
+            shopee_shop_id: loja.id,
+            reason: solta.error.message,
+          });
+        }
+      } catch (error) {
+        context.logger.warn("shopee_items_hydrate_unlock_failed", {
+          shopee_shop_id: loja.id,
+          reason: error instanceof Error ? error.message : "erro desconhecido",
+        });
+      }
     };
 
-    const resultado = await hidratar(deps, context, loja);
+    let resultado: { outcome: JobOutcome; temMais: boolean };
 
-    await soltar();
+    try {
+      resultado = await hidratar(deps, context, loja);
+    } finally {
+      await soltar();
+    }
 
     if (resultado.temMais) {
       await deps.enqueuer.enqueue({

@@ -93,11 +93,15 @@ export default async function AcoesPage({
   const userId = auth.user?.id ?? null;
   const organizationId = membership.organizationId;
 
-  if (organizationId === null || userId === null) {
+  if (membership.error !== null || organizationId === null || userId === null) {
     return (
       <>
         <PageTitle eyebrow="VISÃO GERAL / INBOX" title="Central de Ações" />
-        <p className="sb-empty">Sua conta não está associada a nenhuma organização.</p>
+        <p role={membership.error !== null ? "alert" : undefined} className="sb-empty">
+          {membership.error !== null
+            ? "Não foi possível verificar sua organização. Tente recarregar a página."
+            : "Sua conta não está associada a nenhuma organização."}
+        </p>
       </>
     );
   }

@@ -35,6 +35,8 @@ interface FakeOptions {
   falhaNaPermissao?: boolean;
   /** Outras organizações em que o alvo já é membro (auditoria de 28/09). */
   outrasOrganizacoes?: string[];
+  /** Corrida de INSERT em `organization_members` (Postgres 23505). */
+  conflitoAoVincular?: boolean;
 }
 
 function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { tabela: string; linha: unknown }[] } {
@@ -57,10 +59,14 @@ function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { ta
           then: <R>(resolve: (value: { data: unknown; error: null }) => R) =>
             Promise.resolve({ data: vinculos, error: null }).then(resolve),
           // ml_accounts e shopee_shops: .select().eq(org).in(ids)
+          // Postgres devolve cada linha correspondente uma única vez, mesmo com ids repetidos no IN.
           in: (_coluna: string, ids: string[]) => {
             const daOrganizacao = tabela === "shopee_shops" ? lojas : contas;
 
-            return Promise.resolve({ data: ids.filter((id) => daOrganizacao.includes(id)).map((id) => ({ id })), error: null });
+            return Promise.resolve({
+              data: daOrganizacao.filter((id) => ids.includes(id)).map((id) => ({ id })),
+              error: null,
+            });
           },
           // organization_members: .select().eq(org).eq(user).maybeSingle()
           eq: () => ({
@@ -77,6 +83,10 @@ function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; escritas: { ta
       }),
       insert: (linha: unknown) => {
         escritas.push({ tabela, linha });
+
+        if (tabela === "organization_members" && options.conflitoAoVincular === true) {
+          return Promise.resolve({ error: { code: "23505", message: "duplicate key value violates unique constraint" } });
+        }
 
         if (tabela === "user_account_permissions" && options.falhaNaPermissao === true) {
           return Promise.resolve({ error: { message: "permissão recusada" } });
@@ -270,6 +280,25 @@ describe("inviteOrganizationMember (D-296)", () => {
     expect(JSON.stringify(registros)).not.toContain("sigilo@empresa.com");
     expect(JSON.stringify(registros)).toContain("invite_created");
   });
+
+  it("D-744: mlAccountIds e shopeeShopIds repetidos são deduplicados antes da validação e da gravação", async () => {
+    const { deps, escritas } = fakeDeps();
+
+    const outcome = await inviteOrganizationMember(deps, ADMIN, {
+      email: "dup@empresa.com",
+      role: "OPERADOR",
+      mlAccountIds: [CONTA, CONTA],
+      shopeeShopIds: [LOJA, LOJA],
+    });
+
+    expect(outcome.status).toBe("invited");
+    expect(escritas.find((e) => e.tabela === "user_account_permissions")?.linha).toEqual([
+      { user_id: "novo-dup@empresa.com", ml_account_id: CONTA },
+    ]);
+    expect(escritas.find((e) => e.tabela === "user_shopee_shop_permissions")?.linha).toEqual([
+      { user_id: "novo-dup@empresa.com", shopee_shop_id: LOJA },
+    ]);
+  });
 });
 
 /**
@@ -361,5 +390,16 @@ describe("fronteira entre organizações no convite e no link (auditoria de 28/0
 
     expect(outcome.status).toBe("invalid");
     expect(escritas.some((e) => e.tabela === "auth.generateLink")).toBe(false);
+  });
+
+  it("D-782: corrida no INSERT em organization_members (23505) devolve already_member em vez de 500", async () => {
+    const { deps } = fakeDeps({
+      usuarios: [{ id: "u-existente", email: "duplo@empresa.com" }],
+      conflitoAoVincular: true,
+    });
+
+    const outcome = await inviteOrganizationMember(deps, ADMIN, { email: "duplo@empresa.com", role: "OPERADOR" });
+
+    expect(outcome).toEqual({ status: "already_member" });
   });
 });

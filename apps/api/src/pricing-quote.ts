@@ -132,9 +132,20 @@ export async function quoteMlShipping(
   }
 
   let relogio: ReturnType<typeof setTimeout> | undefined;
+  const tempoEsgotado = new AbortController();
 
   const freteGratis = freteGratisEfetivo(request.preco, request.ofereceFreteGratis ?? false);
-  const accessToken = decryptToken(credentials.data.access_token_ciphertext, deps.encryptionKey);
+  let accessToken: string;
+
+  try {
+    accessToken = decryptToken(credentials.data.access_token_ciphertext, deps.encryptionKey);
+  } catch (error) {
+    return {
+      status: "error",
+      reason: error instanceof Error ? error.message : "falha ao decifrar credencial da conta",
+    };
+  }
+
   const listingTypeId = request.tipoAnuncio === "premium" ? "gold_pro" : "gold_special";
   const sellerId = account.data.seller_id;
 
@@ -153,6 +164,11 @@ export async function quoteMlShipping(
           logistica: request.logistica,
           freteGratis,
         });
+
+        if (tempoEsgotado.signal.aborted) {
+          throw new Error("o Mercado Livre demorou para responder");
+        }
+
         const tarifaFixa = await quoteSaleFixedFee(deps.client, {
           accessToken,
           preco: request.preco,
@@ -165,6 +181,7 @@ export async function quoteMlShipping(
       })(),
       new Promise<never>((_resolve, reject) => {
         relogio = setTimeout(() => {
+          tempoEsgotado.abort();
           reject(new Error("o Mercado Livre demorou para responder"));
         }, TIMEOUT_MS);
       }),
@@ -172,16 +189,23 @@ export async function quoteMlShipping(
 
     return { status: "ok", cotacao, tarifaFixa, freteGratis };
   } catch (error) {
-    const reason =
+    const logReason =
       error instanceof MercadoLivreApiError
         ? `o Mercado Livre recusou a cotação (HTTP ${String(error.status)})`
         : error instanceof Error
           ? error.message
           : "falha ao cotar o frete";
 
-    deps.logger.warn("pricing_quote_failed", { ml_account_id: request.mlAccountId, reason });
+    deps.logger.warn("pricing_quote_failed", { ml_account_id: request.mlAccountId, reason: logReason });
 
-    return { status: "unavailable", reason };
+    const clientReason =
+      error instanceof MercadoLivreApiError
+        ? `o Mercado Livre recusou a cotação (HTTP ${String(error.status)})`
+        : tempoEsgotado.signal.aborted
+          ? "o Mercado Livre demorou para responder"
+          : "falha ao cotar o frete no Mercado Livre";
+
+    return { status: "unavailable", reason: clientReason };
   } finally {
     clearTimeout(relogio);
   }

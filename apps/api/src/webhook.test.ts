@@ -594,4 +594,26 @@ describe("receiveWebhook — contas em memória (D-346)", () => {
     expect(await receiveWebhook(ctx.deps, NOTIFICATION)).toEqual({ status: "lookup_unavailable" });
     expect(ctx.enqueued).toHaveLength(0);
   });
+
+  it("D-782: recusa user_id vazio/falso/zero e /questions/0, e trata falha de enqueue como enqueue_unavailable", async () => {
+    for (const userIdInvalido of ["", null, false, 0, -5]) {
+      const ctx = deps();
+      const outcome = await receiveWebhook(ctx.deps, { ...NOTIFICATION, user_id: userIdInvalido });
+      expect(outcome, String(userIdInvalido)).toMatchObject({ status: "invalid_payload" });
+      expect(ctx.enqueued).toHaveLength(0);
+    }
+
+    const ctxZero = deps();
+    expect(
+      await receiveWebhook(ctxZero.deps, { ...NOTIFICATION, topic: "questions", resource: "/questions/0" }),
+    ).toEqual({ status: "unroutable_resource" });
+    expect(ctxZero.enqueued).toHaveLength(0);
+
+    const ctxFila = deps();
+    ctxFila.deps.enqueuer = {
+      enqueue: () => Promise.reject(new Error("Cloud Tasks unavailable")),
+    };
+    expect(await receiveWebhook(ctxFila.deps, NOTIFICATION)).toEqual({ status: "enqueue_unavailable" });
+    expect(ctxFila.lines.join("\n")).toContain("ml_webhook_enqueue_failed");
+  });
 });

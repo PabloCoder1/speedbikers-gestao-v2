@@ -1,8 +1,13 @@
 import type { AdminClient } from "@sb/db";
 import { computeShopeeStockMovements, type RecordedSale, type ShopeeSaleItem, type StockMovementDraft } from "@sb/domain";
 
+import { chunk, LOOKUP_CHUNK } from "../chunk.js";
+import { readAllPages } from "../read-all-pages.js";
 import { CriticalWriteError } from "./assert-written.js";
 import { readErpCutoffs } from "./persist-order.js";
+
+/** Lote de UUIDs no `.in()` do PostgREST (~3,7 KB/GET) para evitar HTTP 414. */
+const SKU_LOOKUP_CHUNK = 100;
 
 /**
  * A venda da Shopee no estoque (D-495 b): depois de cada lote gravado pela
@@ -56,31 +61,60 @@ export async function baixarVendasDaShopee(
   if (loja.environment !== "live" || orderSns.length === 0) return 0;
 
   const sns = [...new Set(orderSns)];
+  const lotesDeSns = chunk(sns, LOOKUP_CHUNK);
 
-  const pedidos = await db
-    .from("shopee_orders")
-    .select("order_sn, order_status, paid_at, shopee_updated_at, fulfillment_flag")
-    .eq("shopee_shop_id", loja.id)
-    .in("order_sn", sns);
+  const pedidosData: {
+    order_sn: string;
+    order_status: string;
+    paid_at: string | null;
+    shopee_updated_at: string;
+    fulfillment_flag: string | null;
+  }[] = [];
 
-  if (pedidos.error !== null) throw falhaDeLeitura("os pedidos", pedidos.error.message);
+  for (const lote of lotesDeSns) {
+    const pedidos = await db
+      .from("shopee_orders")
+      .select("order_sn, order_status, paid_at, shopee_updated_at, fulfillment_flag")
+      .eq("shopee_shop_id", loja.id)
+      .in("order_sn", lote);
 
-  const itens = await db
-    .from("shopee_order_items")
-    .select("order_sn, position, quantity, sku_id")
-    .eq("shopee_shop_id", loja.id)
-    .in("order_sn", sns);
+    if (pedidos.error !== null) throw falhaDeLeitura("os pedidos", pedidos.error.message);
 
-  if (itens.error !== null) throw falhaDeLeitura("os itens", itens.error.message);
+    pedidosData.push(...pedidos.data);
+  }
 
-  const skuIds = [...new Set(itens.data.map((i) => i.sku_id).filter((s): s is string => s !== null))];
+  const itensData: { order_sn: string; position: number; quantity: number; sku_id: string | null }[] = [];
+
+  for (const lote of lotesDeSns) {
+    const paginaDeItens = await readAllPages<{
+      order_sn: string;
+      position: number;
+      quantity: number;
+      sku_id: string | null;
+    }>(
+      (from, to) =>
+        db
+          .from("shopee_order_items")
+          .select("order_sn, position, quantity, sku_id")
+          .eq("shopee_shop_id", loja.id)
+          .in("order_sn", lote)
+          .order("order_sn")
+          .order("position")
+          .range(from, to),
+      { label: "baixa da Shopee: falha ao ler os itens" },
+    );
+
+    itensData.push(...paginaDeItens);
+  }
+
+  const skuIds = [...new Set(itensData.map((i) => i.sku_id).filter((s): s is string => s !== null))];
   const skus = new Map<string, { kind: "PRODUTO" | "KIT"; components: { componentSkuId: string; quantity: number }[] }>();
 
-  if (skuIds.length > 0) {
+  for (const lote of chunk(skuIds, SKU_LOOKUP_CHUNK)) {
     const lidos = await db
       .from("skus")
       .select("id, kind, sku_components!sku_components_kit_sku_id_fkey(component_sku_id, quantity)")
-      .in("id", skuIds);
+      .in("id", lote);
 
     if (lidos.error !== null) throw falhaDeLeitura("os SKUs", lidos.error.message);
 
@@ -90,26 +124,48 @@ export async function baixarVendasDaShopee(
         components: sku.sku_components.map((c) => ({ componentSkuId: c.component_sku_id, quantity: c.quantity })),
       });
     }
-
-    for (const id of skuIds) {
-      // Cair em PRODUTO baixaria a linha do kit em vez dos componentes, e o
-      // ledger não desfaz (a mesma guarda do ML, `linkResolvido`).
-      if (!skus.has(id)) throw new Error(`baixa da Shopee: o SKU ${id} do item não foi lido`);
-    }
   }
 
-  const gravadas = await db
-    .from("stock_movements")
-    .select("idempotency_key, sku_id, qty_delta, occurred_at, created_at")
-    .eq("organization_id", loja.organization_id)
-    .eq("source_type", SHOPEE_ORDER_SOURCE)
-    .eq("movement_type", MOVIMENTO_VENDA_SHOPEE)
-    .in("source_id", sns);
+  for (const id of skuIds) {
+    // Cair em PRODUTO baixaria a linha do kit em vez dos componentes, e o
+    // ledger não desfaz (a mesma guarda do ML, `linkResolvido`).
+    if (!skus.has(id)) throw new Error(`baixa da Shopee: o SKU ${id} do item não foi lido`);
+  }
 
-  if (gravadas.error !== null) throw falhaDeLeitura("as vendas gravadas", gravadas.error.message);
+  const gravadasData: {
+    idempotency_key: string;
+    sku_id: string;
+    qty_delta: number;
+    occurred_at: string;
+    created_at: string;
+  }[] = [];
+
+  for (const lote of lotesDeSns) {
+    const paginaGravadas = await readAllPages<{
+      idempotency_key: string;
+      sku_id: string;
+      qty_delta: number;
+      occurred_at: string;
+      created_at: string;
+    }>(
+      (from, to) =>
+        db
+          .from("stock_movements")
+          .select("idempotency_key, sku_id, qty_delta, occurred_at, created_at")
+          .eq("organization_id", loja.organization_id)
+          .eq("source_type", SHOPEE_ORDER_SOURCE)
+          .eq("movement_type", MOVIMENTO_VENDA_SHOPEE)
+          .in("source_id", lote)
+          .order("id")
+          .range(from, to),
+      { label: "baixa da Shopee: falha ao ler as vendas gravadas" },
+    );
+
+    gravadasData.push(...paginaGravadas);
+  }
 
   const vendasGravadas = new Map<string, RecordedSale>(
-    gravadas.data.map((m) => [
+    gravadasData.map((m) => [
       m.idempotency_key,
       { skuId: m.sku_id, qtyDelta: m.qty_delta, occurredAt: new Date(m.occurred_at), recordedAt: new Date(m.created_at) },
     ]),
@@ -138,7 +194,7 @@ export async function baixarVendasDaShopee(
 
   const itensPorPedido = new Map<string, ShopeeSaleItem[]>();
 
-  for (const item of itens.data) {
+  for (const item of itensData) {
     const sku = item.sku_id === null ? undefined : skus.get(item.sku_id);
     const lista = itensPorPedido.get(item.order_sn) ?? [];
 
@@ -154,7 +210,7 @@ export async function baixarVendasDaShopee(
 
   const linhas: Linha[] = [];
 
-  for (const pedido of pedidos.data) {
+  for (const pedido of pedidosData) {
     const m = computeShopeeStockMovements(
       {
         shopId: loja.id,

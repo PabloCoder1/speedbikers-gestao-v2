@@ -143,7 +143,7 @@ export async function requestSupportReply(
     };
   }
 
-  const questionId = Number(supportCase.external_case_id);
+  const questionId = /^[1-9]\d*$/.test(supportCase.external_case_id) ? Number(supportCase.external_case_id) : Number.NaN;
 
   if (!Number.isSafeInteger(questionId)) {
     return { status: "invalid", reason: "identificador remoto da pergunta inválido" };

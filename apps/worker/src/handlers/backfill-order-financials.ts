@@ -117,38 +117,41 @@ export function createBackfillOrderFinancialsHandler(deps: BackfillOrderFinancia
       return { status: "failed", retryable: tokenResult.retryable, reason: tokenResult.reason };
     }
 
-    // Paginado (classe D-131): um dia de uma conta cabe em uma página hoje,
-    // mas o teto do PostgREST não pode virar o total da recuperação.
-    const orders = await readAllPages<OrderToSweep>(
-      (from, to) =>
-        deps.db
-          .from("orders")
-          .select("id, shipping_id")
-          .eq("ml_account_id", mlAccountId)
-          .in("status", ["paid", "partially_refunded"])
-          .gte("date_created", desde.toISOString())
-          .lt("date_created", ate.toISOString())
-          .order("id")
-          .range(from, to),
-      { label: "falha ao ler orders do pedaço" },
-    );
-
-    const alreadyCaptured = new Set<number>();
-
-    for (let i = 0; i < orders.length; i += LOTE_DE_IDS) {
-      const ids = orders.slice(i, i + LOTE_DE_IDS).map((order) => order.id);
-      const lidos = await deps.db.from("order_financials").select("order_id").in("order_id", ids);
-
-      if (lidos.error !== null) {
-        return { status: "failed", retryable: true, reason: `falha ao ler o checkpoint: ${lidos.error.message}` };
-      }
-
-      for (const row of lidos.data) alreadyCaptured.add(row.order_id);
-    }
-
+    let orders: OrderToSweep[];
     let resultado;
 
     try {
+      // Paginado (classe D-131): um dia de uma conta cabe em uma página hoje,
+      // mas o teto do PostgREST não pode virar o total da recuperação.
+      // D-780: leituras dentro do try/catch para registrar `sync_runs`/`sync_errors`
+      // em falha de banco, igual a `backfill-order-user-products.ts`.
+      orders = await readAllPages<OrderToSweep>(
+        (from, to) =>
+          deps.db
+            .from("orders")
+            .select("id, shipping_id")
+            .eq("ml_account_id", mlAccountId)
+            .in("status", ["paid", "partially_refunded"])
+            .gte("date_created", desde.toISOString())
+            .lt("date_created", ate.toISOString())
+            .order("id")
+            .range(from, to),
+        { label: "falha ao ler orders do pedaço" },
+      );
+
+      const alreadyCaptured = new Set<number>();
+
+      for (let i = 0; i < orders.length; i += LOTE_DE_IDS) {
+        const ids = orders.slice(i, i + LOTE_DE_IDS).map((order) => order.id);
+        const lidos = await deps.db.from("order_financials").select("order_id").in("order_id", ids);
+
+        if (lidos.error !== null) {
+          throw new Error(`falha ao ler o checkpoint: ${lidos.error.message}`);
+        }
+
+        for (const row of lidos.data) alreadyCaptured.add(row.order_id);
+      }
+
       resultado = await capturarCustosDosPedidos({
         deps,
         context,

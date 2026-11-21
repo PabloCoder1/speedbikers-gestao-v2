@@ -41,6 +41,8 @@ function healthyItemBody(): Record<string, unknown> {
 function chain(result: unknown): unknown {
   const self = {
     eq: () => self,
+    not: () => self,
+    limit: () => self,
     select: () => self,
     maybeSingle: () => Promise.resolve(result),
     then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
@@ -51,6 +53,8 @@ function chain(result: unknown): unknown {
 
 interface FakeDbOptions {
   accountStatus?: string;
+  existingLiveRelist?: { id: string } | null;
+  existingLiveRelistError?: { message: string };
   relistInsertError?: { code?: string; message: string };
   relistUpdateError?: { message: string };
 }
@@ -87,6 +91,14 @@ function fakeDb(options: FakeDbOptions = {}): {
 
         if (table === "ml_credentials") {
           return chain({ data: credentials, error: null });
+        }
+
+        if (table === "listing_relists") {
+          if (options.existingLiveRelistError !== undefined) {
+            return chain({ data: null, error: options.existingLiveRelistError });
+          }
+
+          return chain({ data: options.existingLiveRelist ?? null, error: null });
         }
 
         return chain({ data: null, error: null });
@@ -238,16 +250,17 @@ describe("relist.prepare (D-161)", () => {
     expect(requests).toHaveLength(1);
   });
 
-  it("preflight reprovado: operação vai a PREFLIGHT_FAILED com os motivos, evento SEM ator (transição do sistema)", async () => {
-    const { db, relistUpdates, eventInserts } = fakeDb();
+  it("preflight reprovado: operação nasce PREFLIGHT_FAILED com os motivos, evento SEM ator (transição do sistema)", async () => {
+    const { db, relistInserts, relistUpdates, eventInserts } = fakeDb();
     const { client } = fakeClient([{ code: 200, body: { ...healthyItemBody(), tags: ["relist"] } }]);
 
     const outcome = await run(db, client);
 
     expect(outcome).toEqual({ status: "done", processed: 1 });
-    expect(relistUpdates).toHaveLength(1);
-    expect(relistUpdates[0]).toMatchObject({ status: "PREFLIGHT_FAILED" });
-    expect(String(relistUpdates[0]?.failure_reason)).toContain("relist");
+    expect(relistUpdates).toHaveLength(0);
+    expect(relistInserts).toHaveLength(1);
+    expect(relistInserts[0]).toMatchObject({ status: "PREFLIGHT_FAILED" });
+    expect(String(relistInserts[0]?.failure_reason)).toContain("relist");
 
     expect(eventInserts).toHaveLength(2);
     expect(eventInserts[1]).toMatchObject({
@@ -259,7 +272,7 @@ describe("relist.prepare (D-161)", () => {
   });
 
   it("D-369: snapshot com variações de user products reprova no pedido com VARIACOES_USER_PRODUCT — a execução nunca é oferecida", async () => {
-    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { db, relistInserts, relistUpdates, eventInserts } = fakeDb();
     const { client } = fakeClient([
       {
         code: 200,
@@ -277,7 +290,8 @@ describe("relist.prepare (D-161)", () => {
     const outcome = await run(db, client);
 
     expect(outcome).toEqual({ status: "done", processed: 1 });
-    expect(relistUpdates).toEqual([
+    expect(relistUpdates).toHaveLength(0);
+    expect(relistInserts).toEqual([
       expect.objectContaining({
         status: "PREFLIGHT_FAILED",
         failure_reason:
@@ -288,7 +302,7 @@ describe("relist.prepare (D-161)", () => {
   });
 
   it("D-369 (A3): variações SEM user_product_id e a conta com a tag user_product_seller reprovam no pedido — a regra é pela conta", async () => {
-    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { db, relistInserts, relistUpdates, eventInserts } = fakeDb();
     const { client, requests } = fakeClient([{ code: 200, body: itemWithVariations() }], {
       sellerTags: ["normal", "user_product_seller"],
     });
@@ -297,7 +311,8 @@ describe("relist.prepare (D-161)", () => {
 
     expect(outcome).toEqual({ status: "done", processed: 1 });
     expect(requests.map((request) => request.path)).toContain("/users/me");
-    expect(relistUpdates).toEqual([expect.objectContaining({ status: "PREFLIGHT_FAILED" })]);
+    expect(relistUpdates).toHaveLength(0);
+    expect(relistInserts).toEqual([expect.objectContaining({ status: "PREFLIGHT_FAILED" })]);
     expect(eventInserts[1]).toMatchObject({ to_status: "PREFLIGHT_FAILED", reason: "VARIACOES_USER_PRODUCT" });
   });
 
@@ -314,7 +329,7 @@ describe("relist.prepare (D-161)", () => {
   });
 
   it("D-369 (A3): leitura da conta que falha reprova com USER_PRODUCT_NAO_VERIFICADO — nunca presume que passa", async () => {
-    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { db, relistInserts, relistUpdates, eventInserts } = fakeDb();
     const { client } = fakeClient([{ code: 200, body: itemWithVariations() }], {
       sellerTags: new MercadoLivreApiError("Mercado Livre respondeu 503 para GET /users/me.", {
         status: 503,
@@ -326,8 +341,9 @@ describe("relist.prepare (D-161)", () => {
     const outcome = await run(db, client);
 
     expect(outcome).toEqual({ status: "done", processed: 1 });
-    expect(relistUpdates).toEqual([expect.objectContaining({ status: "PREFLIGHT_FAILED" })]);
-    expect(String(relistUpdates[0]?.failure_reason)).toContain("não foi possível confirmar agora se a conta está no modelo de user products");
+    expect(relistUpdates).toHaveLength(0);
+    expect(relistInserts).toEqual([expect.objectContaining({ status: "PREFLIGHT_FAILED" })]);
+    expect(String(relistInserts[0]?.failure_reason)).toContain("não foi possível confirmar agora se a conta está no modelo de user products");
     expect(eventInserts[1]).toMatchObject({ to_status: "PREFLIGHT_FAILED", reason: "USER_PRODUCT_NAO_VERIFICADO" });
   });
 
@@ -385,8 +401,8 @@ describe("relist.prepare (D-161)", () => {
     expect(relistInserts).toHaveLength(0);
   });
 
-  it("falha ao gravar a transição de preflight reprovado: job FALHA com retry — REQUESTED aprovável seria o oposto do veredito", async () => {
-    const { db } = fakeDb({ relistUpdateError: { message: "boom" } });
+  it("falha ao gravar o preflight reprovado: job FALHA com retry — REQUESTED aprovável nunca é criado", async () => {
+    const { db } = fakeDb({ relistInsertError: { message: "boom" } });
     const { client } = fakeClient([{ code: 200, body: { ...healthyItemBody(), tags: ["relist"] } }]);
 
     const outcome = await run(db, client);
@@ -428,7 +444,7 @@ describe("relist.prepare com cadastro no Full (D-360)", () => {
   });
 
   it("unidades no Full reprovam com a quantidade no motivo", async () => {
-    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { db, relistInserts, relistUpdates, eventInserts } = fakeDb();
     const { client } = fakeClient([{ code: 200, body: { ...healthyItemBody(), inventory_id: "LCQI05831" } }], {
       fullStock: { LCQI05831: { inventory_id: "LCQI05831", available_quantity: 2, not_available_quantity: 1 } },
     });
@@ -436,14 +452,15 @@ describe("relist.prepare com cadastro no Full (D-360)", () => {
     const outcome = await run(db, client);
 
     expect(outcome).toEqual({ status: "done", processed: 1 });
-    expect(relistUpdates[0]).toMatchObject({ status: "PREFLIGHT_FAILED" });
-    expect(String(relistUpdates[0]?.failure_reason)).toContain("3 unidade(s)");
+    expect(relistUpdates).toHaveLength(0);
+    expect(relistInserts[0]).toMatchObject({ status: "PREFLIGHT_FAILED" });
+    expect(String(relistInserts[0]?.failure_reason)).toContain("3 unidade(s)");
     expect(eventInserts[1]).toMatchObject({ reason: "FULL_BLOQUEADO" });
   });
 
   it("estoque do Full ilegível (404 ou resposta sem os campos) reprova com FULL_NAO_VERIFICADO — nunca presume zero", async () => {
     for (const fullStock of [{}, { TBWT07652: { inventory_id: "TBWT07652", available_quantity: 0 } }]) {
-      const { db, relistUpdates, eventInserts } = fakeDb();
+      const { db, relistInserts, relistUpdates, eventInserts } = fakeDb();
       const { client } = fakeClient([{ code: 200, body: { ...healthyItemBody(), inventory_id: "TBWT07652" } }], {
         fullStock,
       });
@@ -451,13 +468,14 @@ describe("relist.prepare com cadastro no Full (D-360)", () => {
       const outcome = await run(db, client);
 
       expect(outcome).toEqual({ status: "done", processed: 1 });
-      expect(relistUpdates[0]).toMatchObject({ status: "PREFLIGHT_FAILED" });
+      expect(relistUpdates).toHaveLength(0);
+      expect(relistInserts[0]).toMatchObject({ status: "PREFLIGHT_FAILED" });
       expect(eventInserts[1]).toMatchObject({ reason: "FULL_NAO_VERIFICADO" });
     }
   });
 
   it("resposta de OUTRO inventário não confere nada: FULL_NAO_VERIFICADO, mesmo com zero unidades", async () => {
-    const { db, relistUpdates, eventInserts } = fakeDb();
+    const { db, relistInserts, relistUpdates, eventInserts } = fakeDb();
     const { client } = fakeClient([{ code: 200, body: { ...healthyItemBody(), inventory_id: "TBWT07652" } }], {
       fullStock: { TBWT07652: { inventory_id: "LCQI05831", available_quantity: 0, not_available_quantity: 0 } },
     });
@@ -465,7 +483,8 @@ describe("relist.prepare com cadastro no Full (D-360)", () => {
     const outcome = await run(db, client);
 
     expect(outcome).toEqual({ status: "done", processed: 1 });
-    expect(relistUpdates[0]).toMatchObject({ status: "PREFLIGHT_FAILED" });
+    expect(relistUpdates).toHaveLength(0);
+    expect(relistInserts[0]).toMatchObject({ status: "PREFLIGHT_FAILED" });
     expect(eventInserts[1]).toMatchObject({ reason: "FULL_NAO_VERIFICADO" });
   });
 
@@ -478,6 +497,143 @@ describe("relist.prepare com cadastro no Full (D-360)", () => {
     });
 
     await expect(run(db, client)).rejects.toThrow("serviço indisponível");
+    expect(relistInserts).toHaveLength(0);
+  });
+});
+
+describe("relist.prepare — atomicidade do preflight e erros transitórios (D-742)", () => {
+  it("preflight reprovado já nasce PREFLIGHT_FAILED num único INSERT — falha transitória + retry nunca prende a operação em REQUESTED", async () => {
+    const stored: { id: string; status: string; failure_reason: string | null }[] = [];
+    let failFirstWrite = true;
+
+    const credentials = {
+      access_token_ciphertext: encryptToken("APP_USR-valido", ENCRYPTION_KEY),
+      refresh_token_ciphertext: encryptToken("TG-valido", ENCRYPTION_KEY),
+      access_token_expires_at: new Date(NOW.getTime() + 3_600_000).toISOString(),
+    };
+
+    const db = {
+      from: (table: string) => ({
+        select: () => {
+          if (table === "ml_accounts") {
+            return chain({ data: { id: ML_ACCOUNT_ID, organization_id: ORGANIZATION_ID, status: "CONNECTED" }, error: null });
+          }
+
+          if (table === "ml_credentials") {
+            return chain({ data: credentials, error: null });
+          }
+
+          if (table === "listing_relists") {
+            const live = stored.find((row) => row.status !== "PREFLIGHT_FAILED" && row.status !== "CLOSE_FAILED") ?? null;
+
+            return chain({ data: live === null ? null : { id: live.id }, error: null });
+          }
+
+          return chain({ data: null, error: null });
+        },
+        insert: (row: Record<string, unknown>) => {
+          if (table === "listing_relists") {
+            const status = String(row.status);
+            const hasLive = stored.some((item) => item.status !== "PREFLIGHT_FAILED" && item.status !== "CLOSE_FAILED");
+
+            return {
+              select: () => ({
+                single: () => {
+                  if (status !== "PREFLIGHT_FAILED" && status !== "CLOSE_FAILED" && hasLive) {
+                    return Promise.resolve({ data: null, error: { code: "23505", message: "duplicate" } });
+                  }
+
+                  if (failFirstWrite && status === "PREFLIGHT_FAILED") {
+                    failFirstWrite = false;
+
+                    return Promise.resolve({ data: null, error: { message: "db blip" } });
+                  }
+
+                  const id = `op-${String(stored.length + 1)}`;
+
+                  stored.push({
+                    id,
+                    status,
+                    failure_reason: (row.failure_reason as string | null | undefined) ?? null,
+                  });
+
+                  return Promise.resolve({ data: { id }, error: null });
+                },
+              }),
+            };
+          }
+
+          return Promise.resolve({ error: null });
+        },
+        update: (patch: Record<string, unknown>) => ({
+          eq: (_column: string, id: string) => {
+            if (failFirstWrite) {
+              failFirstWrite = false;
+
+              return Promise.resolve({ error: { message: "db blip" } });
+            }
+
+            const target = stored.find((item) => item.id === id);
+
+            if (target !== undefined) {
+              target.status = String(patch.status);
+              target.failure_reason = (patch.failure_reason as string | null | undefined) ?? null;
+            }
+
+            return Promise.resolve({ error: null });
+          },
+        }),
+      }),
+    } as unknown as RelistPrepareDeps["db"];
+
+    const { client } = fakeClient([{ code: 200, body: { ...healthyItemBody(), tags: ["relist"] } }]);
+
+    const firstAttempt = await run(db, client);
+
+    expect(firstAttempt).toMatchObject({ status: "failed", retryable: true });
+    // Nenhuma operação reprovada pode ficar exposta como REQUESTED após a 1ª tentativa.
+    expect(stored.some((row) => row.status === "REQUESTED")).toBe(false);
+
+    const retryAttempt = await run(db, client);
+
+    expect(retryAttempt).toEqual({ status: "done", processed: 1 });
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.status).toBe("PREFLIGHT_FAILED");
+    expect(String(stored[0]?.failure_reason)).toContain("relist");
+  });
+
+  it("multiget com erro transitório (429, 503 ou resposta vazia) falha com retry em vez de encerrar como done", async () => {
+    for (const entries of [[{ code: 503, body: null }], [{ code: 429, body: null }], []]) {
+      const { db, relistInserts } = fakeDb();
+      const { client } = fakeClient(entries);
+
+      const outcome = await run(db, client);
+
+      expect(outcome).toMatchObject({ status: "failed", retryable: true });
+      expect(relistInserts).toHaveLength(0);
+    }
+  });
+
+  it("operação viva existente encerra em paz sem chamar o Mercado Livre nem gravar PREFLIGHT_FAILED duplicado", async () => {
+    const { db, relistInserts, eventInserts } = fakeDb({ existingLiveRelist: { id: "op-viva" } });
+    const { client, requests } = fakeClient([{ code: 200, body: { ...healthyItemBody(), tags: ["relist"] } }]);
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(requests).toHaveLength(0);
+    expect(relistInserts).toHaveLength(0);
+    expect(eventInserts).toHaveLength(0);
+  });
+
+  it("falha transitória ao checar operação viva retorna failed retryable sem tocar no Mercado Livre", async () => {
+    const { db, relistInserts } = fakeDb({ existingLiveRelistError: { message: "connection reset" } });
+    const { client, requests } = fakeClient([{ code: 200, body: healthyItemBody() }]);
+
+    const outcome = await run(db, client);
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(requests).toHaveLength(0);
     expect(relistInserts).toHaveLength(0);
   });
 });

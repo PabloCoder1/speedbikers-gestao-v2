@@ -66,7 +66,11 @@ export async function editDocumentItem(
     .eq("organization_id", caller.organizationId)
     .maybeSingle();
 
-  if (documento.error !== null || documento.data === null) {
+  if (documento.error !== null) {
+    return { status: "failed", reason: "não foi possível consultar o documento" };
+  }
+
+  if (documento.data === null) {
     return { status: "not_found" };
   }
 
@@ -81,7 +85,11 @@ export async function editDocumentItem(
     .eq("document_id", documentId)
     .maybeSingle();
 
-  if (item.error !== null || item.data === null) {
+  if (item.error !== null) {
+    return { status: "failed", reason: "não foi possível consultar o item" };
+  }
+
+  if (item.data === null) {
     return { status: "not_found" };
   }
 
@@ -101,10 +109,20 @@ export async function editDocumentItem(
       return { status: "rejected", reason: "o documento precisa de ao menos um item" };
     }
 
-    const removido = await deps.db.from("document_items").delete().eq("id", itemId).eq("document_id", documentId);
+    const removido = await deps.db
+      .from("document_items")
+      .delete()
+      .eq("id", itemId)
+      .eq("document_id", documentId)
+      .select("id")
+      .maybeSingle();
 
     if (removido.error !== null) {
       return { status: "failed", reason: "não foi possível remover o item" };
+    }
+
+    if (removido.data === null) {
+      return { status: "not_found" };
     }
   } else {
     const alterado = await deps.db
@@ -114,17 +132,27 @@ export async function editDocumentItem(
         total_value: valorTotalDoItem(item.data.unit_value, comando.quantidade),
       })
       .eq("id", itemId)
-      .eq("document_id", documentId);
+      .eq("document_id", documentId)
+      .select("id")
+      .maybeSingle();
 
     if (alterado.error !== null) {
       return { status: "failed", reason: "não foi possível alterar a quantidade" };
+    }
+
+    if (alterado.data === null) {
+      return { status: "not_found" };
     }
   }
 
   const contagem = await recontar(deps.db, documentId);
 
-  if (contagem === null) {
+  if (contagem.status === "failed") {
     return { status: "failed", reason: "o item mudou, mas a contagem do documento não foi refeita — recarregue" };
+  }
+
+  if (contagem.status === "left_parsed") {
+    return { status: "rejected", reason: "o documento saiu de conferência durante a edição — recarregue" };
   }
 
   deps.logger.info("document_item_edited", {
@@ -136,13 +164,17 @@ export async function editDocumentItem(
     by: caller.userId,
   });
 
-  return { status: "updated", ...contagem };
+  return { status: "updated", totalItems: contagem.totalItems, resolvedItems: contagem.resolvedItems };
 }
 
 async function recontar(
   db: AdminClient,
   documentId: string,
-): Promise<{ totalItems: number; resolvedItems: number } | null> {
+): Promise<
+  | { status: "ok"; totalItems: number; resolvedItems: number }
+  | { status: "left_parsed" }
+  | { status: "failed" }
+> {
   const [total, vinculados] = await Promise.all([
     db.from("document_items").select("id", { count: "exact", head: true }).eq("document_id", documentId),
     db
@@ -152,20 +184,24 @@ async function recontar(
       .not("sku_id", "is", null),
   ]);
 
-  if (total.error !== null || vinculados.error !== null) return null;
+  if (total.error !== null || vinculados.error !== null) return { status: "failed" };
 
   const totalItems = total.count ?? 0;
   const resolvedItems = vinculados.count ?? 0;
 
   // Só enquanto o documento segue em conferência: se a confirmação chegou no
-  // meio, a contagem que ela leu é a que vale.
+  // meio, a contagem que ela leu é a que vale (D-770: devolve rejected).
   const gravado = await db
     .from("documents")
     .update({ total_items: totalItems, resolved_items: resolvedItems })
     .eq("id", documentId)
-    .eq("status", "PARSED");
+    .eq("status", "PARSED")
+    .select("id")
+    .maybeSingle();
 
-  if (gravado.error !== null) return null;
+  if (gravado.error !== null) return { status: "failed" };
 
-  return { totalItems, resolvedItems };
+  if (gravado.data === null) return { status: "left_parsed" };
+
+  return { status: "ok", totalItems, resolvedItems };
 }

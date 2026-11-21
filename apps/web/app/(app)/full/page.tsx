@@ -34,6 +34,7 @@ import {
   type FullFilters,
 } from "../../../lib/full-filters";
 import { monogramaDeProduto } from "../../../lib/initials";
+import { resolverContaSolicitada } from "../../../lib/postgrest-search";
 import { formatAge } from "../../../lib/relative-time";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
@@ -114,23 +115,33 @@ export default async function FullPage({
   );
   void accountsPromise.catch(() => undefined);
 
-  const { organizationId } = await membershipPromise;
+  const { organizationId, error: membershipError } = await membershipPromise;
 
-  if (organizationId === null) {
+  if (membershipError !== null || organizationId === null) {
     await accountsPromise;
     return (
       <>
         <PageTitle eyebrow="ESTOQUE / FULL" title="Central Full" />
-        <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
+        {membershipError !== null ? (
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível verificar sua organização."
+            descricao="Tente recarregar a página; nenhum registro foi alterado."
+            detalhe={membershipError.message}
+            acao={{ href: "/full", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          />
+        ) : (
+          <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />
+        )}
       </>
     );
   }
 
-  // Só a conta pedida na URL precisa ser confirmada na lista visível sob RLS.
-  const account =
-    filters.account !== null && (await accountsPromise).data?.some((row) => row.id === filters.account)
-      ? filters.account
-      : null;
+  // Só a conta pedida na URL precisa ser confirmada na lista visível sob RLS;
+  // em erro de `ml_accounts`, falha fechado (D-783) em vez de consultar todas.
+  const earlyAccounts = filters.account !== null ? await accountsPromise : null;
+  const { conta: contaSelecionada, erro: erroConta } = resolverContaSolicitada(filters.account, earlyAccounts);
+  const account = contaSelecionada?.id ?? null;
   const atual: FullFilters = { ...filters, account };
 
   const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS);
@@ -148,12 +159,14 @@ export default async function FullPage({
   };
 
   const [leitura, accounts] = await Promise.all([
-    supabase.rpc("get_fulfillment_overview", {
-      ...argumentos,
-      p_focus: atual.focus,
-      p_sort: atual.sort,
-      p_low_coverage_days: LOW_COVERAGE_DAYS,
-    }),
+    erroConta !== null
+      ? Promise.resolve({ data: null, error: erroConta })
+      : supabase.rpc("get_fulfillment_overview", {
+          ...argumentos,
+          p_focus: atual.focus,
+          p_sort: atual.sort,
+          p_low_coverage_days: LOW_COVERAGE_DAYS,
+        }),
     accountsPromise,
   ]);
 
@@ -164,7 +177,7 @@ export default async function FullPage({
     página continuam valendo; foco e ordem não existem lá e são ignorados, e a
     cobertura é calculada aqui com a MESMA fórmula da RPC. A tela diz isso.
   */
-  const legado = leitura.error?.code === "PGRST202";
+  const legado = erroConta === null && "code" in (leitura.error ?? {}) && (leitura.error as { code?: string }).code === "PGRST202";
   const resposta = legado ? await supabase.rpc("get_fulfillment_overview", argumentos) : leitura;
   const { error } = resposta;
   const data = legado

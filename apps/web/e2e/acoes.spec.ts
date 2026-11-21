@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { E2E_ACAO_RECLAMACAO } from "./constants.js";
-import { login } from "./helpers.js";
+import { derrubarPrimeiraAcao, login } from "./helpers.js";
 
 /**
  * `/acoes` — a Central de Ações depois da migração para o frame
@@ -131,4 +131,21 @@ test("/acoes: o filtro de tipo recorta a fila e mora na URL", async ({ page }) =
   await expect(page.getByRole("heading", { name: "Reclamações recorrentes", level: 3 })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Venda anômala/, level: 3 })).toHaveCount(0);
   await expect(painel.getByRole("link", { name: "Todas as ações 3" })).toBeVisible();
+});
+
+test("/acoes: falha de transporte ao assumir destrava os botões e exibe erro sem alterar a ação", async ({ page }) => {
+  await login(page, "/acoes");
+
+  const card = page.locator("article.sb-action-card").first();
+  const assumir = card.getByRole("button", { name: "Assumir" });
+
+  await expect(assumir).toBeVisible();
+
+  const caiu = await derrubarPrimeiraAcao(page);
+  await assumir.click();
+
+  expect(caiu()).toBe(true);
+  await expect(card.getByRole("alert")).toContainText("Não foi possível atualizar a ação");
+  await expect(assumir).toBeEnabled();
+  await expect(card.getByRole("button", { name: "Resolver" })).toBeEnabled();
 });

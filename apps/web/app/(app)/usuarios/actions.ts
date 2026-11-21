@@ -45,14 +45,19 @@ export async function changeMemberRole(
 ): Promise<AccessResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("organization_members")
     .update({ role })
     .eq("organization_id", organizationId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .select("user_id");
 
   if (error !== null) {
     return { ok: false, message: traduzir(error) };
+  }
+
+  if (data.length === 0) {
+    return { ok: false, message: "O papel não foi alterado. O membro pode ter sido removido ou suas permissões mudaram. Atualize a página para conferir." };
   }
 
   revalidatePath("/usuarios");
@@ -79,14 +84,19 @@ export async function grantAccountAccess(userId: string, mlAccountId: string): P
 export async function revokeAccountAccess(userId: string, mlAccountId: string): Promise<AccessResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("user_account_permissions")
     .delete()
     .eq("user_id", userId)
-    .eq("ml_account_id", mlAccountId);
+    .eq("ml_account_id", mlAccountId)
+    .select("user_id");
 
   if (error !== null) {
     return { ok: false, message: traduzir(error) };
+  }
+
+  if (data.length === 0) {
+    return { ok: false, message: "O acesso não foi alterado. Ele já pode ter sido removido ou suas permissões mudaram. Atualize a página para conferir." };
   }
 
   revalidatePath("/usuarios");
@@ -118,14 +128,19 @@ export async function grantShopeeShopAccess(userId: string, shopeeShopId: string
 export async function revokeShopeeShopAccess(userId: string, shopeeShopId: string): Promise<AccessResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("user_shopee_shop_permissions")
     .delete()
     .eq("user_id", userId)
-    .eq("shopee_shop_id", shopeeShopId);
+    .eq("shopee_shop_id", shopeeShopId)
+    .select("user_id");
 
   if (error !== null) {
     return { ok: false, message: traduzir(error) };
+  }
+
+  if (data.length === 0) {
+    return { ok: false, message: "O acesso não foi alterado. Ele já pode ter sido removido ou suas permissões mudaram. Atualize a página para conferir." };
   }
 
   revalidatePath("/usuarios");

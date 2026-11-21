@@ -178,6 +178,21 @@ export default async function AnunciosShopeePage({
 
   const organizationId = membership.organizationId;
 
+  if (membership.error !== null) {
+    await cabecalhoPromise;
+    return (
+      <SemCatalogo>
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membership.error.message}
+          acao={{ href: "/anuncios/shopee", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </SemCatalogo>
+    );
+  }
+
   if (organizationId === null) {
     await cabecalhoPromise;
     return (

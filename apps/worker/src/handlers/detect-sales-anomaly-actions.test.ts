@@ -43,6 +43,48 @@ const STABLE_ROW = {
   sample_count: 8,
 };
 
+/** `max_rows` do PostgREST (`supabase/config.toml`): vale também para RPC que devolve conjunto. */
+const POSTGREST_CAP = 1000;
+
+/**
+ * Resposta encadeável e "awaitable" como o builder do PostgREST: aceita
+ * `.order()`/`.range()` e corta em `POSTGREST_CAP` sem erro, exatamente como
+ * o servidor faz quando o chamador não pagina.
+ */
+function pagedResult(
+  rows: readonly unknown[],
+  error: { message: string } | null,
+  onOrder: (columns: string[]) => void,
+): PromiseLike<unknown> & { order: (column: string) => unknown; range: (from: number, to: number) => unknown } {
+  let from = 0;
+  let to = Number.POSITIVE_INFINITY;
+  const columns: string[] = [];
+
+  const builder = {
+    order: (column: string) => {
+      columns.push(column);
+
+      return builder;
+    },
+    range: (start: number, end: number) => {
+      from = start;
+      to = end;
+
+      return builder;
+    },
+    then: <R1, R2>(resolve?: (value: unknown) => R1, reject?: (reason: unknown) => R2) => {
+      onOrder(columns);
+
+      const result =
+        error !== null ? { data: null, error } : { data: rows.slice(from, Math.min(to + 1, from + POSTGREST_CAP)), error: null };
+
+      return Promise.resolve(result).then(resolve, reject);
+    },
+  };
+
+  return builder as never;
+}
+
 function fakeDeps(options: {
   baseline?: typeof ANOMALY_ROW[];
   baselineFails?: boolean;
@@ -51,42 +93,45 @@ function fakeDeps(options: {
   prices?: { sku_id: string; average_price: number; marketplace: string }[];
   pricesFail?: boolean;
   cicloFails?: boolean;
+  claimLinks?: { sku_id: string; support_case_id: string }[];
+  claimLinksFail?: boolean;
 }): {
   deps: DetectSalesAnomalyActionsDeps;
   upserted: Record<string, unknown>[];
   lines: string[];
   args: Record<string, Record<string, unknown>>;
+  orderedBy: Record<string, string[][]>;
+  claimInSizes: number[];
 } {
   const upserted: Record<string, unknown>[] = [];
   const lines: string[] = [];
   const args: Record<string, Record<string, unknown>> = {};
+  const orderedBy: Record<string, string[][]> = {};
+  const claimInSizes: number[] = [];
 
   const baseline = options.baseline ?? [ANOMALY_ROW];
   const events = options.events ?? [];
   const prices = options.prices ?? [{ sku_id: "sku-a", average_price: 50, marketplace: "ML" }];
+  const noteOrder = (fn: string) => (columns: string[]) => {
+    (orderedBy[fn] ??= []).push(columns);
+  };
 
   const db = {
     rpc: (fn: string, rpcArgs: Record<string, unknown>) => {
       args[fn] = rpcArgs;
 
       if (fn === "get_sku_sales_baseline") {
-        return Promise.resolve(
-          options.baselineFails === true ? { data: null, error: { message: "boom" } } : { data: baseline, error: null },
-        );
+        return pagedResult(baseline, options.baselineFails === true ? { message: "boom" } : null, noteOrder(fn));
       }
 
       if (fn === "get_sku_average_prices") {
-        return Promise.resolve(
-          options.pricesFail === true ? { data: null, error: { message: "boom" } } : { data: prices, error: null },
-        );
+        return pagedResult(prices, options.pricesFail === true ? { message: "boom" } : null, noteOrder(fn));
       }
 
       // D-152: a correlação virou RPC (fonte única com /diagnostico e o
       // painel do SKU) — linhas já chegam mapeadas por sku_id.
       if (fn === "get_sku_correlated_events") {
-        return Promise.resolve(
-          options.eventsFails === true ? { data: null, error: { message: "boom" } } : { data: events, error: null },
-        );
+        return pagedResult(events, options.eventsFails === true ? { message: "boom" } : null, noteOrder(fn));
       }
 
       // D-643: as detecções do dia vão ao ciclo de episódio, não a `actions`.
@@ -104,11 +149,49 @@ function fakeDeps(options: {
       // D-116 — sinal de SAC: vazio por padrão nos testes de anomalia; a
       // presença de claims tem teste próprio.
       if (table === "support_case_links") {
+        let ids: Set<string> | null = null;
+        let paged: ReturnType<typeof pagedResult> | null = null;
+        const columns: string[] = [];
+
+        const resolveRows = () =>
+          (options.claimLinks ?? []).filter((row) => ids === null || ids.has(row.sku_id));
+
         const chain = {
           select: () => chain,
           eq: () => chain,
-          in: () => chain,
-          neq: () => Promise.resolve({ data: [], error: null }),
+          neq: () => chain,
+          in: (_column: string, values: string[]) => {
+            claimInSizes.push(values.length);
+            ids = new Set(values);
+
+            return chain;
+          },
+          order: (column: string) => {
+            columns.push(column);
+
+            return chain;
+          },
+          range: (start: number, end: number) => {
+            paged = pagedResult(
+              resolveRows(),
+              options.claimLinksFail === true ? { message: "boom" } : null,
+              () => {
+                noteOrder("support_case_links")([...columns]);
+              },
+            );
+            paged.range(start, end);
+
+            return paged;
+          },
+          then: <R1, R2>(resolve?: (value: unknown) => R1, reject?: (reason: unknown) => R2) =>
+            (paged ??
+              pagedResult(
+                resolveRows(),
+                options.claimLinksFail === true ? { message: "boom" } : null,
+                () => {
+                  noteOrder("support_case_links")([...columns]);
+                },
+              )).then(resolve, reject),
         };
 
         return chain;
@@ -118,7 +201,7 @@ function fakeDeps(options: {
     },
   } as unknown as DetectSalesAnomalyActionsDeps["db"];
 
-  return { deps: { db, now: () => NOW }, upserted, lines, args };
+  return { deps: { db, now: () => NOW }, upserted, lines, args, orderedBy, claimInSizes };
 }
 
 function ctx(lines: string[], payload: unknown): { logger: ReturnType<typeof createLogger>; payload: unknown } {
@@ -268,5 +351,72 @@ describe("detecção de anomalia de venda vira ação (Fase 6, D-064)", () => {
     const outcome = await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { nada: true }));
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
+  });
+
+  it("D-738: baseline acima de 1.000 linhas — a anomalia depois do corte do PostgREST ainda é detectada", async () => {
+    // Uma linha por SKU e canal: com dois canais e o catálogo crescendo, o
+    // conjunto passa de 1.000. Sem paginação a RPC voltava cortada, sem erro e
+    // sem ordem — a anomalia (e o episódio aberto dela) sumia daquele dia.
+    const stable = Array.from({ length: 1250 }, (_, index) => ({ ...STABLE_ROW, sku_id: `sku-s${String(index)}` }));
+    const { deps, upserted, lines, orderedBy } = fakeDeps({ baseline: [...stable, ANOMALY_ROW] });
+
+    const outcome = await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(upserted[0]).toMatchObject({ subject_key: "ML:sku-a" });
+    expect(lines.some((line) => line.includes('"signals":1251'))).toBe(true);
+    // Paginação só é segura com ordem estável: (canal, SKU) é única no retorno.
+    expect(orderedBy.get_sku_sales_baseline?.every((columns) => columns.join(",") === "marketplace,sku_id")).toBe(true);
+  });
+
+  it("D-738: eventos, preços e SAC de muitos candidatos chegam completos e o `.in` vai em lotes de até 200", async () => {
+    const candidates = Array.from({ length: 600 }, (_, index) => ({ ...ANOMALY_ROW, sku_id: `sku-c${String(index)}` }));
+    const last = "sku-c599";
+    const fillerEvents = Array.from({ length: 1100 }, (_, index) => ({
+      sku_id: `sku-c${String(index % 599)}`,
+      event_type: "listing.price.changed",
+      occurred_at: "2026-08-22T20:00:00.000Z",
+      marketplace: "ML",
+    }));
+    const prices = candidates.flatMap((row) => [
+      { sku_id: row.sku_id, average_price: 10, marketplace: "SHOPEE" },
+      { sku_id: row.sku_id, average_price: row.sku_id === last ? 70 : 50, marketplace: "ML" },
+    ]);
+    const claimLinks = Array.from({ length: 1100 }, (_, index) => ({
+      sku_id: index < 1097 ? `sku-c${String(index % 599)}` : last,
+      support_case_id: `case-${String(index)}`,
+    }));
+    const { deps, upserted, lines, claimInSizes, orderedBy } = fakeDeps({
+      baseline: candidates,
+      events: [...fillerEvents, { sku_id: last, event_type: "stock.depleted", occurred_at: "2026-08-22T21:00:00.000Z", marketplace: null }],
+      prices,
+      claimLinks,
+    });
+
+    const outcome = await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 600 });
+
+    const lastDetection = upserted.find((row) => row.subject_key === `ML:${last}`);
+    const evidence = lastDetection?.evidence as { causas_candidatas: { event_type: string }[]; evidencias: { descricao: string }[] };
+
+    // current=0, mean=3 -> |delta|=3; preço ML do último candidato = 70 (linha 1.200 de preços).
+    expect(lastDetection?.impacto).toBe(210);
+    expect(evidence.causas_candidatas.map((causa) => causa.event_type)).toContain("stock.depleted");
+    // Os três claims do último SKU estão depois da linha 1.000 dos vínculos.
+    expect(JSON.stringify(evidence.evidencias)).toMatch(/"3 reclama/);
+    expect(Math.max(...claimInSizes)).toBeLessThanOrEqual(200);
+    expect(claimInSizes.reduce((sum, size) => sum + size, 0)).toBe(600);
+    expect(orderedBy.support_case_links?.every((columns) => columns.includes("id"))).toBe(true);
+  });
+
+  it("D-738: falha no SAC continua degradando para 'sem sinal', sem derrubar o diagnóstico", async () => {
+    const { deps, upserted, lines } = fakeDeps({ claimLinksFail: true });
+
+    const outcome = await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(upserted).toHaveLength(1);
+    expect(lines.some((line) => line.includes("sales_anomaly_support_signal_failed"))).toBe(true);
   });
 });

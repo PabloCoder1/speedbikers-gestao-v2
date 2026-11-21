@@ -107,6 +107,10 @@ export async function assignToMe(caseId: string): Promise<TriageResult> {
     .eq("id", caseId)
     .maybeSingle();
 
+  if (current.error !== null) {
+    return { ok: false, message: "Não foi possível verificar o estado do atendimento. Tente novamente." };
+  }
+
   const promote = current.data?.internal_status === "NOVO";
 
   return callTriage({

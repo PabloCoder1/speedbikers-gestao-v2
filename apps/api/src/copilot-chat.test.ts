@@ -182,7 +182,7 @@ describe("runCopilotChat (D-114)", () => {
     expect(events.at(-1)?.type).toBe("done");
   });
 
-  it("o teto de rodadas corta loop infinito com aviso, nunca em silêncio", async () => {
+  it("o teto de rodadas corta loop infinito com aviso, nunca em silêncio e sem sobrescrever com done (D-743)", async () => {
     const round: PlanResult = {
       blocks: [
         { type: "tool_use", id: "tu-x", name: "sales_summary", input: { dateFrom: "2026-08-21", dateTo: "2026-08-28" } },
@@ -194,6 +194,8 @@ describe("runCopilotChat (D-114)", () => {
     const { events } = await run([round, round, round, round]);
 
     expect(events.some((event) => event.type === "error" && event.message.includes("limite de consultas"))).toBe(true);
+    expect(events.at(-1)?.type).toBe("error");
+    expect(events.some((event) => event.type === "done")).toBe(false);
   });
 
   it("o system prompt carrega hoje, as contas do usuário e a proibição de inventar", async () => {
@@ -223,6 +225,21 @@ describe("runCopilotChat (D-114)", () => {
     expect(run0.cost_usd).toBeCloseTo(0.003);
     expect(run0.tool_names).toEqual(["copilot_chat", "sales_summary"]);
     expect(run0.llm_used).toBe(true);
+  });
+
+  it("D-743: stream SSE desconectado no onText ou catch não gera rejeição não tratada e ainda grava ai_runs", async () => {
+    const { copilot, recorded } = deps([finalText("texto parcial")]);
+    const emit = vi.fn<(_event: CopilotChatEvent) => Promise<void>>(() =>
+      Promise.reject(new Error("stream closed")),
+    );
+
+    await expect(
+      runCopilotChat(copilot, CALLER, "token", { message: "como foram as vendas?" }, emit),
+    ).resolves.toBeUndefined();
+
+    expect(recorded).toHaveLength(1);
+    expect(emit).toHaveBeenCalledWith({ type: "text", delta: "texto parcial" });
+    expect(emit).toHaveBeenCalledWith({ type: "error", message: "Falha ao consultar o Copiloto. Tente de novo." });
   });
 });
 

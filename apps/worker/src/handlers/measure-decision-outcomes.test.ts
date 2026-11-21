@@ -35,9 +35,17 @@ function fakeDeps(options: {
   actionsFails?: boolean;
   snapshotFails?: boolean;
   upsertFails?: boolean;
-}): { deps: MeasureDecisionOutcomesDeps; upserted: Record<string, unknown>[]; lines: string[] } {
+}): {
+  deps: MeasureDecisionOutcomesDeps;
+  upserted: Record<string, unknown>[];
+  lines: string[];
+  rpcCalls: string[];
+  inBatchSizes: number[];
+} {
   const upserted: Record<string, unknown>[] = [];
   const lines: string[] = [];
+  const rpcCalls: string[] = [];
+  const inBatchSizes: number[] = [];
 
   const decisions =
     options.decisions ??
@@ -45,11 +53,47 @@ function fakeDeps(options: {
   const outcomes = options.outcomes ?? [];
   const actions = options.actions ?? [{ id: "action-1", sku_id: "sku-a" }];
 
+  function pagedChain<T>(
+    rowsProvider: () => { data: T[] | null; error: { message: string } | null },
+  ) {
+    let from = 0;
+    let to = Number.POSITIVE_INFINITY;
+
+    const execute = () => {
+      const res = rowsProvider();
+
+      if (res.error !== null || res.data === null) {
+        return Promise.resolve(res);
+      }
+
+      const end = to === Number.POSITIVE_INFINITY ? from + 1000 : Math.min(to + 1, from + 1000);
+
+      return Promise.resolve({ data: res.data.slice(from, end), error: null });
+    };
+
+    const chain = {
+      eq: () => chain,
+      order: () => chain,
+      range: (f: number, t: number) => {
+        from = f;
+        to = t;
+
+        return chain;
+      },
+      then: <R>(resolve: (value: { data: T[] | null; error: { message: string } | null }) => R) =>
+        execute().then(resolve),
+    };
+
+    return chain;
+  }
+
   const db = {
-    rpc: (fn: string) => {
+    rpc: (fn: string, args: { p_sku_id?: string }) => {
       if (fn !== "get_sku_decision_snapshot") {
         throw new Error(`rpc inesperada no fake: ${fn}`);
       }
+
+      rpcCalls.push(args.p_sku_id ?? "");
 
       return Promise.resolve(
         options.snapshotFails === true ? { data: null, error: { message: "boom" } } : { data: SNAPSHOT, error: null },
@@ -58,26 +102,32 @@ function fakeDeps(options: {
     from: (table: string) => {
       if (table === "action_decisions") {
         return {
-          select: () => ({
-            eq: () =>
-              Promise.resolve(
-                options.decisionsFails === true
-                  ? { data: null, error: { message: "boom" } }
-                  : { data: decisions, error: null },
-              ),
-          }),
+          select: () =>
+            pagedChain(() =>
+              options.decisionsFails === true
+                ? { data: null, error: { message: "boom" } }
+                : { data: decisions, error: null },
+            ),
         };
       }
 
       if (table === "actions") {
         return {
           select: () => ({
-            in: () =>
-              Promise.resolve(
-                options.actionsFails === true
-                  ? { data: null, error: { message: "boom" } }
-                  : { data: actions, error: null },
-              ),
+            in: (_col: string, ids: string[]) => {
+              inBatchSizes.push(ids.length);
+
+              if (options.actionsFails === true) {
+                return Promise.resolve({ data: null, error: { message: "boom" } });
+              }
+
+              const idSet = new Set(ids);
+
+              return Promise.resolve({
+                data: actions.filter((a) => idSet.has(a.id)).slice(0, 1000),
+                error: null,
+              });
+            },
           }),
         };
       }
@@ -85,12 +135,22 @@ function fakeDeps(options: {
       if (table === "action_outcomes") {
         return {
           select: () => ({
-            in: () =>
-              Promise.resolve(
-                options.outcomesFails === true
-                  ? { data: null, error: { message: "boom" } }
-                  : { data: outcomes, error: null },
-              ),
+            in: (_col: string, ids: string[]) => {
+              inBatchSizes.push(ids.length);
+
+              return pagedChain(() => {
+                if (options.outcomesFails === true) {
+                  return { data: null, error: { message: "boom" } };
+                }
+
+                const idSet = new Set(ids);
+
+                return {
+                  data: outcomes.filter((o) => idSet.has(o.action_decision_id)),
+                  error: null,
+                };
+              });
+            },
           }),
           upsert: (rows: Record<string, unknown>[]) => {
             upserted.push(...rows);
@@ -106,7 +166,7 @@ function fakeDeps(options: {
     },
   } as unknown as MeasureDecisionOutcomesDeps["db"];
 
-  return { upserted, lines, deps: { db, now: () => NOW } };
+  return { upserted, lines, rpcCalls, inBatchSizes, deps: { db, now: () => NOW } };
 }
 
 function ctx(lines: string[], payload: unknown): { logger: ReturnType<typeof createLogger>; payload: unknown } {
@@ -237,5 +297,73 @@ describe("measure-decision-outcomes", () => {
     const outcome = await createMeasureDecisionOutcomesHandler(deps)(ENVELOPE, ctx(lines, { nada: true }));
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
+  });
+
+  it("memoiza snapshot por SKU na mesma execução mesmo com múltiplas janelas e decisões", async () => {
+    const { deps, upserted, lines, rpcCalls } = fakeDeps({
+      decisions: [
+        { id: "decision-1", action_id: "action-1", created_at: "2026-07-01T10:00:00.000Z" },
+        { id: "decision-2", action_id: "action-2", created_at: "2026-07-02T10:00:00.000Z" },
+      ],
+      actions: [
+        { id: "action-1", sku_id: "sku-a" },
+        { id: "action-2", sku_id: "sku-a" },
+      ],
+    });
+
+    const outcome = await createMeasureDecisionOutcomesHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 6 });
+    expect(upserted).toHaveLength(6);
+    expect(rpcCalls).toEqual(["sku-a"]);
+  });
+
+  it("pagina action_decisions acima de 1.000 linhas e fragmenta filtros .in", async () => {
+    const decisions: DecisionFixture[] = Array.from({ length: 1250 }, (_, index) => ({
+      id: `dec-${String(index)}`,
+      action_id: `act-${String(index)}`,
+      // 16 dias atrás em Brasília: janelas de 7 e 15 vencidas; deixamos a de
+      // 7 já medida para restar 1 pendente por decisão (1.250 upserts).
+      created_at: "2026-08-08T10:00:00.000Z",
+    }));
+    const outcomes = decisions.map((d) => ({ action_decision_id: d.id, window_days: 7 }));
+    const actions = decisions.map((d) => ({ id: d.action_id, sku_id: "sku-bulk" }));
+
+    const { deps, upserted, lines, inBatchSizes, rpcCalls } = fakeDeps({
+      decisions,
+      outcomes,
+      actions,
+    });
+
+    const outcome = await createMeasureDecisionOutcomesHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1250 });
+    expect(upserted).toHaveLength(1250);
+    expect(rpcCalls).toEqual(["sku-bulk"]);
+    expect(Math.max(...inBatchSizes)).toBeLessThanOrEqual(200);
+  });
+
+  it("não perde outcomes já medidos quando ultrapassam 1.000 linhas na soma", async () => {
+    const decisions: DecisionFixture[] = Array.from({ length: 450 }, (_, index) => ({
+      id: `dec-${String(index)}`,
+      action_id: "action-1",
+      created_at: "2026-07-01T10:00:00.000Z",
+    }));
+    const outcomes = decisions.flatMap((d) => [
+      { action_decision_id: d.id, window_days: 7 },
+      { action_decision_id: d.id, window_days: 15 },
+      { action_decision_id: d.id, window_days: 30 },
+    ]);
+
+    const { deps, upserted, lines, inBatchSizes } = fakeDeps({
+      decisions,
+      outcomes,
+    });
+
+    const outcome = await createMeasureDecisionOutcomesHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(upserted).toHaveLength(0);
+    expect(Math.max(...inBatchSizes)).toBeLessThanOrEqual(200);
   });
 });

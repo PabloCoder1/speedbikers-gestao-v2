@@ -16,6 +16,46 @@ export type TipoDeSaida = (typeof TIPOS_DE_SAIDA)[number]["valor"];
 export const OBSERVACAO_MAX = 450;
 export const MAX_ITENS = 300;
 export const MAX_QUANTIDADE = 1_000_000;
+/** Lote seguro de chaves/UUIDs no `.in()` do PostgREST para evitar HTTP 414 (D-771). */
+export const LOTE_CONSULTA_SAIDA = 100;
+/** Teto de códigos distintos consultados ao colar uma lista antes de contar o excedente. */
+export const MAX_CHAVES_IMPORTACAO = 1_000;
+
+/** Divide uma lista em lotes de tamanho fixo para consultas `.in()` sem estourar URL (D-771). */
+export function particionarEmLotes<T>(itens: readonly T[], tamanho = LOTE_CONSULTA_SAIDA): T[][] {
+  const lotes: T[][] = [];
+
+  for (let inicio = 0; inicio < itens.length; inicio += tamanho) {
+    lotes.push(itens.slice(inicio, inicio + tamanho));
+  }
+
+  return lotes;
+}
+
+/** Soma quantidades na lista respeitando `MAX_QUANTIDADE`, sem gerar valor inválido (D-771). */
+export function somarQuantidadeNoLimite(atual: number, extra: number): number {
+  return Math.min(MAX_QUANTIDADE, atual + extra);
+}
+
+/** Confirma que a resposta 200 da saída manual carrega o mesmo `requestId` enviado (D-771). */
+export function respostaDeSaidaValida(payload: unknown, requestId: string): boolean {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "requestId" in payload &&
+    (payload as { requestId?: unknown }).requestId === requestId
+  );
+}
+
+/** Confirma que a resposta 200 de edição de item devolve a contagem atualizada (D-771). */
+export function respostaDeEdicaoDeItemValida(payload: unknown): boolean {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "totalItems" in payload &&
+    typeof (payload as { totalItems?: unknown }).totalItems === "number"
+  );
+}
 
 /** A mesma normalização da coluna gerada `skus.sku_key`: `upper(btrim(sku))`. */
 export function chaveDoSku(codigo: string): string {
