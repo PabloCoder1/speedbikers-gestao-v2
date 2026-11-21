@@ -24,7 +24,7 @@ import type { MercadoLivreClient } from "./http-client.js";
  * já que a varredura completa não depende de ordem.
  */
 
-/** Máximo documentado do multiget `/items?ids=`. Não é escolha nossa. */
+/** Máximo documentado do multiget `/items/bulk?ids=`. Não é escolha nossa. */
 export const ITEMS_MULTIGET_MAX_IDS = 20;
 
 /** Máximo documentado de `limit` na busca (o ES desambigua o PT). */
@@ -115,14 +115,17 @@ export async function* scanSellerItems(
 }
 
 /**
- * Envelope VERBOSE do multiget: cada item traz o próprio `code`, então uma
- * falha é por item e não da chamada inteira. `body` é deliberadamente
- * `unknown` — quem chama valida com o schema do seu próprio caso de uso.
+ * O bulk retorna o ID e o status de cada entrada no envelope. Mapeamos
+ * `status_code` para o código que os consumidores usam. Cada consumidor
+ * valida o corpo segundo o próprio caso de uso.
  */
-export const itemsMultigetEntrySchema = z.object({
-  code: z.number().int(),
-  body: z.unknown(),
-});
+export const itemsMultigetEntrySchema = z
+  .object({
+    id: itemIdSchema,
+    status_code: z.number().int(),
+    body: z.unknown(),
+  })
+  .transform(({ id, status_code, body }) => ({ id, code: status_code, body }));
 
 export const itemsMultigetSchema = z.array(itemsMultigetEntrySchema);
 
@@ -167,14 +170,26 @@ export async function getItemsBatch(options: GetItemsBatchOptions): Promise<Item
     );
   }
 
-  return await options.client.request({
+  const entries = await options.client.request({
     method: "GET",
-    path: "/items",
+    path: "/items/bulk",
     accessToken: options.accessToken,
     searchParams: {
       ids: options.ids.join(","),
-      attributes: options.attributes === undefined ? undefined : options.attributes.join(","),
+      attributes: options.attributes?.map((attribute) => `body.${attribute}`).join(","),
     },
     schema: itemsMultigetSchema,
   });
+
+  const requested = new Set(options.ids);
+  const byId = new Map<string, ItemsMultigetEntry | null>();
+
+  for (const entry of entries) {
+    if (requested.has(entry.id)) {
+      // Duas respostas para o mesmo ID ficam ambíguas, inclusive num lote unitário.
+      byId.set(entry.id, byId.has(entry.id) ? null : entry);
+    }
+  }
+
+  return Array.from(byId.values()).filter((entry) => entry !== null);
 }
