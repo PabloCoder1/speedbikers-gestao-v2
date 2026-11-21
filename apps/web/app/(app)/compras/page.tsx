@@ -8,7 +8,7 @@ import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { StatusPill } from "../../../components/status-pill";
 import { TOM, type Tom } from "../../../components/tone";
-import { formatCount, formatCurrency, formatDay } from "../../../lib/format";
+import { formatCount, formatCurrency, formatDay, formatMoney } from "../../../lib/format";
 import { purchaseOrderStatusLabel } from "../../../lib/labels";
 import {
   PAGE_SIZE,
@@ -497,7 +497,7 @@ export default async function ComprasPage({
                           (`docs/METRICS.md` 5C.2).
                         */}
                         <td className="sb-num">
-                          <span className="sb-cmp-valor">{formatCurrency(pedido.valor)}</span>
+                          <span className="sb-cmp-valor">{formatMoney(pedido.valor, pedido.moeda)}</span>
                           {pedido.sem_custo > 0 && (
                             <span className="sb-cmp-sub sb-cmp-ressalva">
                               {formatCount(pedido.sem_custo)} de {formatCount(pedido.itens)} sem custo

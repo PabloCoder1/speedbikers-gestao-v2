@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { E2E_ANOMALIA, E2E_SKU_CODE } from "./constants.js";
 import { factValue, login } from "./helpers.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * A jornada de compras inteligentes (D-720 a D-725), com o seed de sempre:
@@ -94,9 +95,9 @@ test("pedido: revisão antes de confirmar, decisão gravada, recebimento parcial
 
   /*
     Cancelar fecha só o trânsito AINDA pendente (D-724): +5 pedido, −2 recebido,
-    −3 cancelado. E é também o que deixa o saldo do SKU do seed como estava —
-    os specs seguintes (`reposicao`, `estoque`) recalculam o aproveitável pelas
-    constantes do seed.
+    −3 cancelado. Desde D-792 as 2 recebidas entram no LOCAL; a saída manual
+    no fim devolve o saldo do SKU do seed ao que era — os specs seguintes
+    (`reposicao`, `estoque`) recalculam o aproveitável pelas constantes do seed.
   */
   await page.getByRole("button", { name: "Fechar" }).click();
   await page.getByRole("button", { name: "Cancelar pedido" }).click();
@@ -104,4 +105,15 @@ test("pedido: revisão antes de confirmar, decisão gravada, recebimento parcial
   await page.getByRole("button", { name: "Confirmar cancelamento" }).click();
   await expect(page.getByText(/Cancelado:/)).toBeVisible();
   await expect(factValue(page, "Recebido")).toHaveText("2 de 5 un");
+
+  // D-792: o recebido entrou no estoque da loja; tira as 2 de volta.
+  const seed = await readSeedOutput();
+
+  await page.goto(`/estoque/${seed.skuId}/ajuste`);
+  await page.getByText("Saída", { exact: true }).click();
+  await page.getByLabel("Quantidade que sai").fill("2");
+  await page.getByText("Correção de saldo", { exact: true }).click();
+  await page.getByLabel(/Observação/).fill("e2e: desfaz o recebimento do teste");
+  await page.getByRole("button", { name: "Registrar saída de 2 un." }).click();
+  await expect(page.getByRole("status").filter({ hasText: "✓" })).toBeVisible();
 });

@@ -96,6 +96,7 @@ export interface ProdutoDoRanking {
   readonly taxas_ml: number | null;
   readonly pedidos_cobertos: number;
   readonly receita_coberta: number | null;
+  readonly taxas_ml_cobertas: number | null;
   readonly frete_vendedor: number | null;
   readonly custo_produtos: number | null;
   readonly resultado_venda: number | null;
@@ -198,6 +199,7 @@ const ITEM_NUMEROS = ["unidades", "pedidos", "receita_bruta", "pedidos_cobertos"
 const ITEM_NULOS = [
   "taxas_ml",
   "receita_coberta",
+  "taxas_ml_cobertas",
   "frete_vendedor",
   "custo_produtos",
   "resultado_venda",

@@ -34,8 +34,10 @@ export interface LinhaCompra {
   /** `null` só na leitura antiga (`get_purchase_orders` não traz unidades). */
   readonly unidades: number | null;
   readonly sem_custo: number;
-  /** D-254: 0 sem item (zero sabido), `null` quando nenhum item tem custo. */
+  /** D-254: 0 sem item (zero sabido), `null` quando nenhum item tem custo. Na moeda do pedido. */
   readonly valor: number | null;
+  /** D-792: moeda de `valor` (ISO 4217). A leitura antiga não traz e vale BRL. */
+  readonly moeda: string;
 }
 
 export interface AgregadoCompra {
@@ -121,6 +123,8 @@ function lerLinha(v: unknown): LinhaCompra | null {
     unidades: v.unidades,
     sem_custo: v.sem_custo,
     valor: v.valor,
+    // D-792: ausente até a migration chegar ao banco; antes dela tudo saía como real.
+    moeda: typeof v.moeda === "string" && /^[A-Z]{3}$/.test(v.moeda) ? v.moeda : "BRL",
     ...(textos as Record<(typeof TEXTOS_OU_NULOS)[number], string | null>),
   };
 }
@@ -209,6 +213,7 @@ export function linhaDoLegado(row: LinhaLegado): LinhaCompra {
     unidades: null,
     sem_custo: row.items_missing_cost,
     valor: row.estimated_value,
+    moeda: "BRL",
   };
 }
 

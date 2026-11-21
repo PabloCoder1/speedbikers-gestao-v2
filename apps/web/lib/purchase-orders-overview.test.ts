@@ -31,6 +31,7 @@ const linha: LinhaCompra = {
   unidades: 7,
   sem_custo: 0,
   valor: 252.5,
+  moeda: "BRL",
 };
 
 const resposta = {
@@ -53,6 +54,18 @@ describe("lerVisaoCompras", () => {
   });
 
   /** D-254: valor desconhecido chega nulo e continua nulo — nunca vira zero na leitura. */
+  it("D-792: a linha traz a moeda do pedido, e a leitura sem ela vale real", () => {
+    const dolar = lerVisaoCompras({ ...resposta, linhas: [{ ...linha, moeda: "USD" }] });
+
+    expect(dolar?.linhas[0]?.moeda).toBe("USD");
+
+    const antiga: Record<string, unknown> = { ...linha };
+
+    delete antiga.moeda;
+
+    expect(lerVisaoCompras({ ...resposta, linhas: [antiga] })?.linhas[0]?.moeda).toBe("BRL");
+  });
+
   it("aceita valor nulo no agregado, na contagem e na linha", () => {
     const visao = lerVisaoCompras({
       ...resposta,

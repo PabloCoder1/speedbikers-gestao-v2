@@ -502,6 +502,9 @@ jobs:
       - name: Guarda de ambiente (dev x prod)
         run: bash infra/ambiente.test.sh
 
+      - name: Política de alerta de disco da VM
+        run: node --test infra/vm/disk-alert-policy.test.mjs
+
       # D-334: migrations-producao.yml só aplica a partir da main, com o ambiente
       # travado (revisor e restrição de branch) e o mesmo commit já verde e já
       # aplicado no Dev. Uma guarda que só roda no dia de aplicar em produção
