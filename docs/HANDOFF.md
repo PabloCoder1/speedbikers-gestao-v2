@@ -44,6 +44,8 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## Riscos ativos
 
+- **Scan do catálogo ML:** teste de sobreposição passou com IDs únicos. Teto com cursor aberto registra falha.
+
 - **O faturamento do ML perto do `statement_timeout`** (19/10, `docs/PERFORMANCE.md`): D-499 em produção, 47 vezes menos páginas; 90 dias com detalhe ainda 2,1 s quente, todo CPU.
 - **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
   D-417/D-418, com o vigia agendado pelo dono em 14/10 (`vigiar-sincronizacao`, 30 min; cobre as lojas live); canal externo e Cloud NAT são do dono. O app ML da V2
