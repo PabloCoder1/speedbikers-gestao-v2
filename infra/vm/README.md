@@ -171,3 +171,22 @@ node infra/vm/check-migration-catalog.mjs --expect-plan "$PLAN_ID" < catalogo-at
 aplicadas ou no conteúdo ou nome de um SQL pendente reprova a verificação.
 O ID cobre o catálogo e os SQLs pendentes. Registre também o SHA do commit e
 o ambiente de origem do catálogo na revisão.
+
+### Recuperar após falha durante a aplicação
+
+Os quatro SQLs atualmente em revisão incluem seus próprios `BEGIN` e
+`COMMIT`. O rollback da transação de um arquivo protege esse arquivo.
+Os commits anteriores permanecem aplicados. Em uma falha, interrompa a
+sequência, confira o catálogo e os objetos criados, e registre o último
+commit confirmado antes de decidir entre retomada e recuperação isolada.
+O pg_dump imediatamente anterior e seu catálogo compõem a base de
+recuperação. Valide a restauração fora da VM antes de qualquer troca.
+
+Em 21/11, o ensaio em PG17 sem rede partiu do schema e das 324 versões do
+dump de 20/11, geração `1795155357048726`. Foram aplicados três arquivos
+com versões temporárias. A falha injetada antes do `COMMIT` do quarto
+arquivo deixou iguais a impressão digital do schema e o histórico de
+327 versões. Em outro contêiner, o mesmo artefato recuperou os 324
+identificadores exatos e a constraint e o índice originais do Full.
+O ensaio cobre schema e histórico. A recuperação dos dados e a troca
+de serviço ainda exigem ensaio próprio para o rollout.

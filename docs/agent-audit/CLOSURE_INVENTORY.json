@@ -229,7 +229,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Infra/Database",
-      "evidencia": "Preflight do catálogo e hash do plano aprovados na CI (#366/#374). O workflow oficial ainda aponta para o hosted. Faltam integração com a VM e ensaio do rollback.",
+      "evidencia": "Preflight aprovado (#366/#374). Ensaio PG17 de 21/11 reverteu o quarto SQL interrompido e recompôs schema e 324 versões em outro contêiner. Faltam integração do workflow com a VM e ensaio de recuperação dos dados e troca do serviço.",
       "fase": 2
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "CI verde no #364 em 2e25fb72 e no recorte de infraestrutura #374 em 4c678480. PG17 isolado aplicou upgrade de 324 para 328 migrations com versões temporárias. Faltam CI da composição e registro oficial de migrations no Dev.",
+      "evidencia": "CI verde no #364 em 2e25fb72 e no #374 em 4c678480. A composição fcaf257d passou 1.220 testes SQL na CI. Playwright final pendente. Registro no Dev bloqueado: provedor recusou restaurar 2,0 GB no plano gratuito.",
       "fase": 5
     },
     {
