@@ -123,13 +123,22 @@ describe("scanSellerItems", () => {
     expect(await drain(scanSellerItems({ client, sellerId: 1, accessToken: "t" }))).toEqual([]);
   });
 
-  it("maxPages é teto de segurança contra scroll que nunca termina", async () => {
+  it("no teto, sinaliza varredura incompleta se o scroll ainda estiver aberto", async () => {
     const infinitas = Array.from({ length: 50 }, () => ({ results: ["MLB1"], scroll_id: "s1" }));
     const { client, calls } = fakeClient(infinitas);
 
-    await drain(scanSellerItems({ client, sellerId: 1, accessToken: "t", maxPages: 3 }));
+    await expect(drain(scanSellerItems({ client, sellerId: 1, accessToken: "t", maxPages: 3 })))
+      .rejects.toThrow(/atingiu o limite de 3 páginas/u);
 
     expect(calls).toHaveLength(3);
+  });
+
+  it("aceita a última página quando o cursor termina no teto", async () => {
+    const { client, calls } = fakeClient([{ results: ["MLB1"], scroll_id: null }]);
+
+    await expect(drain(scanSellerItems({ client, sellerId: 1, accessToken: "t", maxPages: 1 })))
+      .resolves.toEqual(["MLB1"]);
+    expect(calls).toHaveLength(1);
   });
 });
 

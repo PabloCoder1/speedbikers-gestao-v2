@@ -57,6 +57,15 @@ export interface ScanSellerItemsOptions {
 
 const DEFAULT_MAX_PAGES = 500;
 
+export class SellerItemsScanLimitError extends Error {
+  readonly errorClass = "not_retryable";
+
+  constructor(maxPages: number) {
+    super(`varredura de anúncios atingiu o limite de ${String(maxPages)} páginas com cursor aberto`);
+    this.name = "SellerItemsScanLimitError";
+  }
+}
+
 /**
  * Percorre o catálogo inteiro por `search_type=scan`, devolvendo lotes de IDs.
  *
@@ -107,7 +116,7 @@ export async function* scanSellerItems(
     }
 
     if (pages >= maxPages) {
-      return;
+      throw new SellerItemsScanLimitError(maxPages);
     }
 
     scrollId = page.scroll_id;

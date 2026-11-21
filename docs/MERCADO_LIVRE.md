@@ -593,6 +593,9 @@ GET /users/{id}/items/search?search_type=scan&scroll_id=<mesmo id>   # seguintes
 ```
 
 - O `scroll_id` **expira em 5 minutos** e deve ser o MESMO em todas as chamadas.
+- Se a varredura atingir 500 páginas com o cursor aberto, o snapshot registra
+  falha e encerra antes da hidratação. A descoberta usa IDs únicos, inclusive
+  quando as páginas se sobrepõem.
 - No fim da lista o retorno é `null` — **a doc não diz qual campo** vira null.
 - *"remova o deslocamento"* (`offset`).
 

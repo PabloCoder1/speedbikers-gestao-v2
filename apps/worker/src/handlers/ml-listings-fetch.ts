@@ -302,7 +302,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
 
   // Fase 1 — descoberta. Drenada INTEIRA antes de escrever: o scroll expira
   // em 5 min e a FAQ oficial diz que deixá-lo aberto gera 429.
-  const discovered: string[] = soEstes === null ? [] : [...soEstes];
+  const listados = new Set(soEstes ?? []);
   let scanPages = 0;
 
   if (soEstes === null) {
@@ -312,7 +312,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       accessToken: params.accessToken,
       limit: 100,
     })) {
-      discovered.push(...batch);
+      for (const id of batch) listados.add(id);
       scanPages += 1;
     }
   }
@@ -322,12 +322,11 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   // para sempre. Depois da varredura INTEIRA (ela drena ou lança), o que a V3
   // tem vivo e a varredura não listou é relido pelo multiget: excluído,
   // encerrado ou ainda vivo, a linha converge.
-  const listados = new Set(discovered);
   const foraDaVarredura =
     soEstes === null
       ? previousRows.filter((row) => (row.deleted_at ?? null) === null && !listados.has(row.item_id)).map((row) => row.item_id)
       : [];
-  const paraLer = [...discovered, ...foraDaVarredura];
+  const paraLer = [...listados, ...foraDaVarredura];
   // D-631: o que o Mercado Livre não devolve mais (404 na leitura do item
   // sozinho) — "depois de um tempo, os itens finalizados não serão mais
   // mostrados para sua consulta" (documentação oficial).
@@ -644,7 +643,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   params.logger.info("listings_catalog_probe", {
     ml_account_id: params.mlAccountId,
     scan_pages: scanPages,
-    items_discovered: discovered.length,
+    items_discovered: listados.size,
     items_without_link: itemsWithoutLink,
     links_known: skuByItem.size,
     status_seen: Object.fromEntries(statusSeen),
@@ -657,7 +656,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   });
 
   return {
-    itemsDiscovered: discovered.length,
+    itemsDiscovered: listados.size,
     itemsProcessed,
     itemsFailed,
     itemsWithoutLink,
