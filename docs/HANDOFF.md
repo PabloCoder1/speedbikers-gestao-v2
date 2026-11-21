@@ -77,7 +77,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   migrations do zero como o runner. Os dois verdes e a CI vermelha = **re-run
   do job**, nao correcao de codigo.
 
-- **Backup da VM:** sondagem diária às 04:25 BRT. Scheduler e falha sintética conferidos. [Detalhes](../infra/vm/README.md).
+- **Backup da VM:** sondagem diária às 04:25 BRT. Scheduler, incidente e entrega do alerta confirmados. [Detalhes](../infra/vm/README.md).
 
 - **Nada avisa quando o que está no ar ficou velho** (D-070). O deploy do
   Cloud Run é MANUAL; entre um e outro chegaram a se acumular 66 commits, e a

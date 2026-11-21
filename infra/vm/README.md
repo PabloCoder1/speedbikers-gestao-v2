@@ -95,8 +95,9 @@ do commit `6def173a` e identidade `sb-backup-probe`. O Cloud Scheduler
 `sb-backup-check-diario` chama a API do Cloud Run com a identidade
 `sb-backup-scheduler` todos os dias às 07:25 UTC (04:25 em Brasília).
 A execução acionada pelo Scheduler `sb-backup-check-v8vjq` terminou
-com sucesso. A execução manual `sb-backup-check-4kj7f` registrou a
-falha sintética. Evidências de entrega no
+com sucesso. A repetição da falha sintética (`sb-backup-check-x66xz`)
+abriu o incidente `0.of9jh2tr03e9` às 22:41 BRT. O e-mail do Google Cloud
+Alerting chegou ao canal autorizado. Evidências no
 [checkpoint Sentinel](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351).
 
 ## Fluxo oficial pendente de reconciliação
