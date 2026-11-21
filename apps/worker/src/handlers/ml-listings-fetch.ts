@@ -317,7 +317,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
 
   // Fase 1 — descoberta. Drenada INTEIRA antes de escrever: o scroll expira
   // em 5 min e a FAQ oficial diz que deixá-lo aberto gera 429.
-  const discovered: string[] = soEstes === null ? [] : [...soEstes];
+  const listados = new Set(soEstes ?? []);
   let scanPages = 0;
 
   if (soEstes === null) {
@@ -327,7 +327,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       accessToken: params.accessToken,
       limit: 100,
     })) {
-      discovered.push(...batch);
+      for (const id of batch) listados.add(id);
       scanPages += 1;
     }
   }
@@ -337,12 +337,11 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   // para sempre. Depois da varredura INTEIRA (ela drena ou lança), o que a V3
   // tem vivo e a varredura não listou é relido pelo multiget: excluído,
   // encerrado ou ainda vivo, a linha converge.
-  const listados = new Set(discovered);
   const foraDaVarredura =
     soEstes === null
       ? previousRows.filter((row) => (row.deleted_at ?? null) === null && !listados.has(row.item_id)).map((row) => row.item_id)
       : [];
-  const paraLer = [...discovered, ...foraDaVarredura];
+  const paraLer = [...listados, ...foraDaVarredura];
   // D-631: o que o Mercado Livre não devolve mais (404 na leitura do item
   // sozinho) — "depois de um tempo, os itens finalizados não serão mais
   // mostrados para sua consulta" (documentação oficial).
@@ -368,19 +367,18 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     });
 
     const itensValidos: ParsedListingItem[] = [];
-    // D-631: o multiget não promete a ordem das entradas nem o corpo do 404.
-    // O item que voltou é reconhecido pelo `id` do corpo; o resto do lote é
-    // relido SOZINHO, e só o 404 dessa leitura diz que o item não existe.
+    // D-631: a ordem e o corpo do 404 não identificam o item. O bulk fornece
+    // o ID pelo envelope. Só o 404 de uma leitura isolada confirma a exclusão.
     const devolvidos = new Set<string>();
 
-    const classificar = (entry: ItemsMultigetEntry, idDaLeituraSozinha: string | null): void => {
+    const classificar = (entry: ItemsMultigetEntry, leituraSozinha: boolean): void => {
       // O envelope verbose carrega o código POR ITEM: um anúncio removido
       // entre a varredura e a hidratação não derruba o lote inteiro.
       if (entry.code !== 200) {
-        if (idDaLeituraSozinha === null) return;
+        if (!leituraSozinha) return;
 
         if (entry.code === 404) {
-          inexistentes.push(idDaLeituraSozinha);
+          inexistentes.push(entry.id);
 
           return;
         }
@@ -388,17 +386,14 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
         itemsFailed += 1;
         params.logger.warn("listing_item_fetch_failed", {
           ml_account_id: params.mlAccountId,
-          item_id: idDaLeituraSozinha,
+          item_id: entry.id,
           code: entry.code,
         });
 
         return;
       }
 
-      const idDoCorpo = (entry.body as { id?: unknown } | null)?.id;
-
-      if (typeof idDoCorpo === "string") devolvidos.add(idDoCorpo);
-
+      devolvidos.add(entry.id);
       const parsed = listingItemSchema.safeParse(entry.body);
 
       if (!parsed.success) {
@@ -406,6 +401,17 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
         params.logger.warn("listing_item_schema_rejected", {
           ml_account_id: params.mlAccountId,
           reason: parsed.error.message,
+        });
+
+        return;
+      }
+
+      if (parsed.data.id !== entry.id) {
+        itemsFailed += 1;
+        params.logger.warn("listing_item_id_mismatch", {
+          ml_account_id: params.mlAccountId,
+          item_id: entry.id,
+          body_item_id: parsed.data.id,
         });
 
         return;
@@ -426,9 +432,11 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       itensValidos.push(parsed.data);
     };
 
-    for (const entry of entries) classificar(entry, chunk.length === 1 ? (chunk[0] ?? null) : null);
+    for (const entry of entries) classificar(entry, chunk.length === 1);
 
-    if (chunk.length > 1) {
+    if (chunk.length === 1 && entries.length === 0) {
+      itemsFailed += 1;
+    } else if (chunk.length > 1) {
       for (const id of chunk.filter((item) => !devolvidos.has(item))) {
         const [sozinho] = await getItemsBatch({
           client: params.mercadoLivre,
@@ -442,7 +450,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
           continue;
         }
 
-        classificar(sozinho, id);
+        classificar(sozinho, true);
       }
     }
 
@@ -650,7 +658,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   params.logger.info("listings_catalog_probe", {
     ml_account_id: params.mlAccountId,
     scan_pages: scanPages,
-    items_discovered: discovered.length,
+    items_discovered: listados.size,
     items_without_link: itemsWithoutLink,
     links_known: skuByItem.size,
     status_seen: Object.fromEntries(statusSeen),
@@ -663,7 +671,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   });
 
   return {
-    itemsDiscovered: discovered.length,
+    itemsDiscovered: listados.size,
     itemsProcessed,
     itemsFailed,
     itemsWithoutLink,

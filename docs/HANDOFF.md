@@ -37,6 +37,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## P0 ativos
 
+- **Catálogo ML (D-791).** #377 consolida #368 e #376. Falta publicar o worker e confirmar a recuperação da fila.
 - **Recuperação após corte para a VM.** Navegação autenticada registrada pelo #333. Provar convite/reset, atraso de pedidos/financeiro/SAC e saldos contra ERP. Conferir os efeitos dos agendamentos no banco.
 - **Recuperação de desastre e migrations.** #333 registra restore isolado completo e ensaio dos 17 SQLs. Em 19/11 há snapshot automático READY. Prefixo `diario/` vazio na listagem. Faltam confirmar o dump recorrente, alertas e adequação do workflow à VM.
 - **Segurança: patches locais.** Next (`16.4.6`), Zod, ERP/NF-e apply e webhook Shopee corrigidos localmente; falta publicar. `pnpm audit --prod --audit-level high` passa com 1 moderado transitivo (`uuid`). [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md).

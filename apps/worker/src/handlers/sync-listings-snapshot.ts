@@ -1,6 +1,6 @@
 import type { AdminClient } from "@sb/db";
 import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-livre";
-import { MercadoLivreApiError } from "@sb/mercado-livre";
+import { MercadoLivreApiError, SellerItemsScanLimitError } from "@sb/mercado-livre";
 import { z } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
@@ -107,7 +107,9 @@ export function createSyncListingsSnapshotHandler(deps: SyncListingsSnapshotDeps
       });
     } catch (error) {
       const finishedAt = deps.now?.() ?? new Date();
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+      const errorClass = error instanceof MercadoLivreApiError || error instanceof SellerItemsScanLimitError
+        ? error.errorClass
+        : "retryable";
       const reason = error instanceof Error ? error.message : "erro desconhecido ao sincronizar listings";
 
       await recordSyncRunFailure(deps.db, {

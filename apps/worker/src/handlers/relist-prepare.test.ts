@@ -147,7 +147,7 @@ interface FakeClientOptions {
 }
 
 function fakeClient(
-  entries: { code: number; body: unknown }[],
+  entries: { id?: string; code: number; body: unknown }[],
   options: FakeClientOptions = {},
 ): {
   client: MercadoLivreClient;
@@ -181,7 +181,15 @@ function fakeClient(
         return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(request.schema.parse(answer));
       }
 
-      return Promise.resolve(entries);
+      if (request.path === "/items/bulk") {
+        return Promise.resolve(request.schema.parse(entries.map(({ id = ITEM_ID, code, body }) => ({
+          id,
+          status_code: code,
+          body,
+        }))));
+      }
+
+      throw new Error(`chamada inesperada: ${request.path}`);
     },
   } as unknown as MercadoLivreClient;
 
@@ -388,6 +396,18 @@ describe("relist.prepare (D-161)", () => {
     const outcome = await run(db, client);
 
     expect(outcome).toEqual({ status: "done", processed: 0 });
+    expect(relistInserts).toHaveLength(0);
+  });
+
+  it.each([
+    { id: "MLB999999999", code: 404, body: null },
+    { code: 429, body: null },
+    { code: 503, body: null },
+  ])("tenta novamente quando o bulk não confirma a leitura: $code", async (entry) => {
+    const { db, relistInserts } = fakeDb();
+    const { client } = fakeClient([entry]);
+
+    await expect(run(db, client)).resolves.toMatchObject({ status: "failed", retryable: true });
     expect(relistInserts).toHaveLength(0);
   });
 
