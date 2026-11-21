@@ -36,7 +36,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## P0 ativos
 
-- **Multiget de anúncios (D-791).** `403 ResourceDeprecated` confirmado. O cliente usa `/items/bulk` e valida o ID do envelope. Falta publicar e verificar o worker.
+- **Catálogo ML (D-791).** #368 troca a rota desativada e valida IDs. #376 deduplica o scan e detecta truncamento. Falta publicar e medir a fila.
 - **Aceite pós-recuperação.** A API respondeu 200 e o worker grava `job_runs` na VM. Falta o aceite autenticado e a validação após publicar o multiget.
 - **Workflow de banco ainda aponta ao hosted pausado.** Dev e antigo hosted de produção continuam INACTIVE; a VM de produção e a web estão operacionais, conferidas em 18/11. O job Dev da main falhava antes desta entrega e exige reconciliação de infraestrutura; não foi desativado. Ver `infra/vm/README.md`.
 - **Avisos críticos do Next.js.** A branch local atualiza Next.js e Zod e passa a auditoria no corte alto. A publicação segue o fluxo da `main` e os deploys da API e do worker. [Achados](agent-audit/FINDINGS.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
@@ -44,8 +44,6 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 ---
 
 ## Riscos ativos
-
-- **Scan do catálogo ML:** teste de sobreposição passou com IDs únicos. Teto com cursor aberto registra falha.
 
 - **O faturamento do ML perto do `statement_timeout`** (19/10, `docs/PERFORMANCE.md`): D-499 em produção, 47 vezes menos páginas; 90 dias com detalhe ainda 2,1 s quente, todo CPU.
 - **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
