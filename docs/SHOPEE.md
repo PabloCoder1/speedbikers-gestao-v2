@@ -234,7 +234,9 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
   REVIEWING, SELLER_DELETE, SHOPEE_DELETE), `update_time_from`/`_to`
   opcionais. Devolve `item[] {item_id, item_status, update_time}`,
   `has_next_page`, `next_offset`, `total_count`. Há limite de offset
-  ("use the next field"): seguir sempre o `next_offset`.
+  ("use the next field"): seguir sempre o `next_offset`. Se `has_next_page`
+  indica continuação, o offset precisa avançar. Um offset ausente ou que
+  não avança causa falha com retentativa, antes de gravar ou avançar o marco.
 - **Detalhe** (`GET /api/v2/product/get_item_base_info`): até **50** em
   `item_id_list`, separados por vírgula. Traz `item_name`, `item_sku` (o
   SKU "pai"), `has_model`, `image`, `stock_info_v2.summary_info`; `price_info`
