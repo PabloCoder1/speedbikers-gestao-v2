@@ -116,7 +116,9 @@ Tabelas: `shopee_shops`, `shopee_credentials` (cifrada, como
 - **Lista** (`GET /api/v2/order/get_order_list`): `time_range_field`
   (`create_time` | `update_time`), `time_from`/`time_to` com no máximo
   **15 dias**, `page_size` até **100**, `cursor`; devolve `more`,
-  `next_cursor` e `order_list[].order_sn`.
+  `next_cursor` e `order_list[].order_sn`. Com `more=true`, cursor ausente,
+  nulo ou vazio provoca falha retentável. A próxima tentativa relê a janela
+  a partir do mesmo marco.
 - **Detalhe** (`GET /api/v2/order/get_order_detail`): até **50**
   `order_sn` por chamada; itens e valores só com `response_optional_fields`.
   A V3 pede `item_list,total_amount,pay_time,shipping_carrier,
