@@ -2276,3 +2276,36 @@ A primeira chamada após o restore e o `ANALYZE` pode encontrar cache
 do sistema operacional. A medição cobre o PostgreSQL local e deixa
 pendente a confirmação na VM sob concorrência e com a memória disponível
 em produção. Nenhuma configuração de memória foi aplicada ao serviço.
+
+#### Concorrência com os limites da VM
+
+A configuração observada em `sb-db` foi `e2-standard-2`, 2 vCPUs e
+8 GiB. A VM respondeu PostgreSQL 17.6, `shared_buffers=128MB`,
+`work_mem=4MB`, `effective_cache_size=128MB`,
+`max_parallel_workers_per_gather=2` e JIT ligado. O contêiner local
+reproduziu esses parâmetros e limitou CPU e memória a 2 vCPUs e 8 GiB.
+A geração restaurada foi a mesma da série anterior.
+
+Cada rodada simulou duas sessões da Central, com seis consultas SQL em
+paralelo: duas de faturamento detalhado de 24/08 a 21/11, duas de resumo
+de 26/05 a 23/08 e duas do detector de frete para 22/11. As chamadas
+rodaram como `authenticated`, com janela de partida de até 2,17 ms.
+O tempo inclui a produção do JSON até sua conversão em texto. A série
+usou o limite histórico de 8 segundos por consulta. Foram uma rodada
+após reiniciar o PostgreSQL para cada configuração, com os buffers
+compartilhados reiniciados, e cinco rodadas adicionais por configuração
+com cache aquecido e ordem intercalada.
+
+| `work_mem` de faturamento | Detalhe atual, mediana quente (ms) | Resumo anterior, mediana quente (ms) | Frete, mediana quente (ms) | Máximo na primeira rodada (ms) | Máximo nas rodadas quentes (ms) |
+|---|---:|---:|---:|---:|---:|
+| 32 MiB | 3.276 | 2.816 | 2.471 | 3.176 | 3.842 |
+| 64 MiB | 3.216 | 2.828 | 2.401 | 3.304 | 3.462 |
+
+As 72 consultas terminaram dentro do limite e o contêiner registrou
+zero eventos de memória insuficiente. Os tamanhos das respostas foram
+estáveis por consulta. O resultado combina o ganho de blocos temporários
+da série sequencial com diferenças pequenas de latência na série
+concorrente. A configuração de 32 MiB foi restabelecida no contêiner
+antes de encerrá-lo. Os resultados cobrem um recorte SQL da Central
+com CPU e memória equivalentes. Disco, cache do sistema operacional,
+PostgREST e tráfego de produção seguem fora do ensaio.

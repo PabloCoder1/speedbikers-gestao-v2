@@ -44,7 +44,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## Riscos ativos
 
-- **P02.** Faturamento e frete medidos após restore local. Validação sob carga na VM pendente.
+- **P02.** Faturamento e frete medidos após restore, com 6 consultas concorrentes e limites da VM.
 
 - **O faturamento do ML perto do `statement_timeout`** (19/10, `docs/PERFORMANCE.md`): D-499 em produção, 47 vezes menos páginas; 90 dias com detalhe ainda 2,1 s quente, todo CPU.
 - **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
