@@ -79,9 +79,19 @@ em contêiner descartável isolado confirmou 322 migrations até
 `20261118211000` e zero índices inválidos. O SQL de invoice foi ensaiado
 em seguida e as cinco colunas apareceram no catálogo.
 
-A listagem de 20/11 encontrou três dumps diários, de 18 a 20/11,
-totalizando 540.814.378 bytes. O bucket tem versionamento e soft delete
-de sete dias. A configuração consultada tem zero regras de lifecycle.
+Em 22/11, uma segunda geração diária (`1795328157907250`, 192.128.482
+bytes) passou por restore integral em PostgreSQL 17.6 isolado, com
+`pg_restore --no-owner --exit-on-error`. O MD5 e o tamanho coincidiram
+com o objeto do GCS, o TOC teve 2.814 entradas e o restore terminou em
+91,26 segundos. A cópia tinha 324 migrations até `20261119180000`, RLS
+nas 97 tabelas de `public`, zero índices inválidos e zero divergências
+entre ledger e projeção de estoque na organização restaurada. O ensaio
+usou roles locais e preservou as permissões do dump. O contêiner e o
+arquivo temporário foram removidos após a verificação.
+
+A consulta de 22/11 confirmou os três dumps de 20 a 22/11 e uma regra
+de ciclo de vida de 35 dias para `diario/`. O bucket tem versionamento e
+soft delete de sete dias.
 
 Para ativar o alerta, executar a sondagem fora da VM do banco, com uma
 identidade de leitura, depois da janela diária e encaminhar falhas ao
@@ -116,7 +126,9 @@ do commit `6def173a` e identidade `sb-backup-probe`. O Cloud Scheduler
 A execução acionada pelo Scheduler `sb-backup-check-v8vjq` terminou
 com sucesso. A repetição da falha sintética (`sb-backup-check-x66xz`)
 abriu o incidente `0.of9jh2tr03e9` às 22:41 BRT. O e-mail do Google Cloud
-Alerting chegou ao canal autorizado. Evidências no
+Alerting chegou ao canal autorizado. As sondagens automáticas de 21/11
+(`sb-backup-check-nqcw2`) e 22/11 (`sb-backup-check-8zv48`) registraram
+`ok` para os respectivos dumps. Evidências no
 [checkpoint Sentinel](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351).
 
 ## Fluxo oficial pendente de reconciliação
