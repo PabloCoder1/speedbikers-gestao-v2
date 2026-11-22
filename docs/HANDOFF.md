@@ -54,7 +54,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   uma só e está em produção desde 2026-09-14 17:30 UTC; o Dev ficou sem webhooks e
   está **pausado** (15 jobs e 7 filas). Retomá-lo sem app próprio volta a disputar a
   cota e a renovar os tokens das mesmas contas.
-- **Pedidos Shopee.** Continuação sem cursor falha antes de gravar ou avançar o marco.
+- **Shopee.** Cursor ausente preserva o marco dos pedidos.
 
 - **Estoque: D-351 publicada e F3 aplicada em 17/09** (§13), provada em 18/09; D-352 publicada em 18/09 (§8) e
   `v3-reconcile-balances` despausado pelo dono. Entrada manual das
