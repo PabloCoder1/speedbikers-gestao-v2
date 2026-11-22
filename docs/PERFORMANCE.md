@@ -1,4 +1,4 @@
-﻿# Performance — baseline e histórico de otimização
+# Performance — baseline e histórico de otimização
 
 > Dono documental de: medições de performance, antes/depois, planos e
 > decisões de índice. O `HANDOFF` só aponta para cá — números não moram lá
@@ -2234,3 +2234,45 @@ Ensaio no Chromium com build de produção e Supabase local isolado. A fixture t
 | RPC e paginação da web após D-715 | 1.002 |
 
 A regressão conferiu o conteúdo inteiro, o vínculo manual, o vínculo pelo SKU do anúncio, as 500 linhas da loja sandbox com o selo Teste e a ausência dos dois itens apagados. A ordem usa nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. O trace registrou 1.000, 2 e zero linhas nos offsets 0, 1.000 e 1.002, com HTTP 206 na primeira página (`Content-Range: 0-999/1002`) e 200 nas seguintes. As duas leituras de SKU com só um anúncio terminaram na primeira chamada. A migration `20261117173152` foi aplicada apenas localmente. A leitura completa acrescenta chamadas quando ultrapassa uma página. Latência e frequência com dados reais seguem pendentes.
+
+### Faturamento e frete na cópia restaurada de 22/11 (Sentinel, P02)
+
+Backup diário de 22/11, geração `1795328157907250`, com 324 migrations
+até `20261119180000`. PostgreSQL 17.6 local em Docker sem rede nem portas.
+Após o restore, rodei `ANALYZE` na cópia. As consultas rodaram como
+`authenticated`, com a associação de ADMIN da organização restaurada,
+em transação READ ONLY para a primeira série.
+
+A janela de 24/08 a 21/11 cobriu 90 dias completos em São Paulo.
+O faturamento consolidado retornou 75.825 pedidos e o detector de frete
+analisou 568 linhas. O detector recebeu `p_hoje = 22/11`.
+A medição usou `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON)`,
+uma primeira execução e cinco repetições por consulta. O contêiner
+rodou em Docker com 12 CPUs e 15,5 GiB disponíveis, PostgreSQL com
+128 MiB de `shared_buffers` e blocos de 8 KiB.
+
+| Consulta | Primeira (ms) | Mediana das 5 repetições (ms) | Leitura em buffers compartilhados, primeira / repetições | Blocos temporários lidos / escritos |
+|---|---:|---:|---:|---:|
+| Frete, 90 dias | 649 | 551 | 3.509 / 0 | 0 / 0 |
+| Faturamento com detalhe, 90 dias | 1.298 | 1.030 | 3.634 / 0 | 440 / 793 |
+| Faturamento resumido, 90 dias | 849 | 817 | 0 / 0 | 440 / 793 |
+
+Na segunda série, alterei `work_mem` só em `get_faturamento` na cópia
+restaurada, em uma transação revertida ao final. Foram cinco medições
+intercaladas por configuração, com o mesmo recorte detalhado. A
+comparação do hash do JSON com o resultado inicial coincidiu nos três
+valores. Após o rollback, a configuração original de 32 MiB foi
+confirmada.
+
+| `work_mem` da RPC | Mediana (ms) | Blocos temporários lidos | Blocos temporários escritos |
+|---|---:|---:|---:|
+| 32 MiB | 1.008 | 440 | 793 |
+| 48 MiB | 1.007 | 47 | 115 |
+| 64 MiB | 983 | 0 | 0 |
+
+Com 64 MiB o trabalho temporário chegou a zero no teste, com diferença
+de 26 ms entre medianas. O efeito medido foi a redução de I/O temporário.
+A primeira chamada após o restore e o `ANALYZE` pode encontrar cache
+do sistema operacional. A medição cobre o PostgreSQL local e deixa
+pendente a confirmação na VM sob concorrência e com a memória disponível
+em produção. Nenhuma configuração de memória foi aplicada ao serviço.
