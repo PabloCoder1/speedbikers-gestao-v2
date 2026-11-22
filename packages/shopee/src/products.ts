@@ -59,13 +59,20 @@ export async function getItemListPage(
     schema: itemListSchema,
   });
 
+  const { has_next_page: hasNextPage, next_offset: rawNextOffset } = resposta.response;
+  const nextOffset = hasNextPage ? (rawNextOffset ?? null) : null;
+
+  if (hasNextPage && (nextOffset === null || nextOffset <= options.offset)) {
+    throw new Error("a lista de itens da Shopee retornou offset de continuação inválido");
+  }
+
   return {
     items: (resposta.response.item ?? []).map((item) => ({
       itemId: item.item_id,
       itemStatus: item.item_status,
       updateTime: item.update_time,
     })),
-    nextOffset: resposta.response.has_next_page ? (resposta.response.next_offset ?? null) : null,
+    nextOffset,
     totalCount: resposta.response.total_count ?? null,
   };
 }

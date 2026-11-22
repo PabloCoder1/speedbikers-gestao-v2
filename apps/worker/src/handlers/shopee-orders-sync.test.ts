@@ -138,7 +138,7 @@ function pedido(sn: string) {
 }
 
 /** Shopee falsa: a lista em páginas pelo cursor, o detalhe do que foi pedido. */
-function fakeShopee(opcoes: { paginas: string[][]; erroNaLista?: string }) {
+function fakeShopee(opcoes: { paginas: string[][]; erroNaLista?: string; cursorAusenteNaPagina?: number }) {
   const listas: URLSearchParams[] = [];
   const detalhes: string[][] = [];
   const fetchImpl = (url: URL) => {
@@ -158,7 +158,7 @@ function fakeShopee(opcoes: { paginas: string[][]; erroNaLista?: string }) {
             error: "",
             response: {
               more: mais,
-              next_cursor: mais ? String(indice + 1) : "",
+              ...(indice === opcoes.cursorAusenteNaPagina ? {} : { next_cursor: mais ? String(indice + 1) : "" }),
               order_list: (opcoes.paginas[indice] ?? []).map((order_sn) => ({ order_sn })),
             },
           }),
@@ -329,6 +329,34 @@ describe("shopee.orders.sync (D-426)", () => {
     expect(outcome).toEqual({ status: "done", processed: 90 });
     expect(shopee.listas.map((l) => l.get("cursor"))).toEqual([null, "1", "2"]);
     expect(shopee.detalhes.map((d) => d.length)).toEqual([50, 40]);
+  });
+
+  it("cursor ausente preserva o marco e permite reler a janela inteira", async () => {
+    const loja = { ...LOJA, orders_synced_until: new Date(NOW.getTime() - 3_600_000).toISOString() };
+    const paginas = [["A1"], ["A2"], ["A3"]];
+    const incompleta = fakeShopee({ paginas, cursorAusenteNaPagina: 1 });
+
+    const falhou = await rodar(loja, incompleta);
+
+    expect(falhou.outcome).toEqual({
+      status: "failed",
+      retryable: true,
+      reason: "a lista de pedidos da Shopee retornou cursor de continuação ausente",
+    });
+    expect(incompleta.listas.map((lista) => lista.get("cursor"))).toEqual([null, "1"]);
+    expect(incompleta.detalhes).toEqual([]);
+    expect(falhou.gravado.lotes).toEqual([]);
+    expect(falhou.gravado.marcos).toEqual([]);
+    expect(falhou.gravado.eventos).toEqual(["trava", "solta"]);
+    expect(falhou.enfileirados).toEqual([]);
+
+    const completa = fakeShopee({ paginas });
+    const recuperou = await rodar(loja, completa);
+
+    expect(recuperou.outcome).toEqual({ status: "done", processed: 3 });
+    expect(completa.listas[0]?.toString()).toBe(incompleta.listas[0]?.toString());
+    expect(completa.detalhes).toEqual([["A1", "A2", "A3"]]);
+    expect(recuperou.gravado.marcos).toEqual([NOW.toISOString()]);
   });
 
   it("erro da Shopee na lista: falha, e o marco não anda", async () => {

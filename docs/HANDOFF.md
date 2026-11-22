@@ -16,7 +16,7 @@
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | Base de integração `origin/main` em `a81f5235` (#348). O candidato usa branch própria. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Fechamento da V3** | 137/226 pontos (60,6%), 24/43 entregas pelo inventário Sentinel. [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md). |
-| **Sentinel: próximo passo** | Candidato concilia o #364 com a infraestrutura do #374. Upgrade PG17 isolado de 324 para 328 com versões temporárias. Validar a CI da composição, obter o catálogo atual da VM e registrar as quatro migrations no Dev. |
+| **Sentinel: próximo passo** | #378 reúne o catálogo ML e as correções Shopee de #379 e #380 sobre #364. Validar a CI conjunta. A conciliação de infraestrutura segue em #374 e o registro no Dev está em espera. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo. Em 21/11, o provedor recusou a retomada: banco de 2,0 GB acima do plano gratuito. Rotinas GCP pausadas (D-350). |
 | **Supabase** | Produção usa a VM `sb-db` (`speedbikers-prod`). O antigo projeto hosted `imvjfgnaprqsfjlnsyev` estava `INACTIVE` em 18/11. Convite, SMTP e recuperação Auth seguem pendentes. [VM](../infra/vm/README.md). |
 | **Produção** | Cloud Run em leitura de 20/11: API `api-00041-8m8` e worker `worker-00059-mjc`, 100% de tráfego nas respectivas revisões. A validação do alias web do catálogo de compras está registrada no #333. |
@@ -47,6 +47,8 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## Riscos ativos
 
+- **Catálogo Shopee.** Offset inválido interrompe a leitura e preserva o marco para nova tentativa.
+
 - **O faturamento do ML perto do `statement_timeout`** (19/10, `docs/PERFORMANCE.md`): D-499 em produção, 47 vezes menos páginas; 90 dias com detalhe ainda 2,1 s quente, todo CPU.
 - **Produção sem alerta externo** (rechecado em 18/11: zero uptime checks e políticas no Monitoring): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
   D-417/D-418, com o vigia agendado pelo dono em 14/10 (`vigiar-sincronizacao`, 30 min; cobre as lojas live); canal externo e Cloud NAT são do dono. O app ML da V2
@@ -57,6 +59,8 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   uma só e está em produção desde 2026-09-14 17:30 UTC; o Dev ficou sem webhooks e
   está **pausado** (15 jobs e 7 filas). Retomá-lo sem app próprio volta a disputar a
   cota e a renovar os tokens das mesmas contas.
+- **Shopee.** Cursor ausente preserva o marco dos pedidos.
+
 - **Estoque: D-351 publicada e F3 aplicada em 17/09** (§13), provada em 18/09; D-352 publicada em 18/09 (§8) e
   `v3-reconcile-balances` despausado pelo dono. Entrada manual das
   devoluções pela lista do ledger, não pelas notificações: 26 já voltaram sozinhas.

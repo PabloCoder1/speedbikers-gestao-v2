@@ -52,9 +52,16 @@ export async function getOrderListPage(
     schema: orderListSchema,
   });
 
+  const { more, next_cursor: cursor, order_list: orders } = resposta.response;
+  const nextCursor = more ? (cursor ?? null) : null;
+
+  if (more && (nextCursor === null || nextCursor === "")) {
+    throw new Error("a lista de pedidos da Shopee retornou cursor de continuação ausente");
+  }
+
   return {
-    orderSns: resposta.response.order_list.map((pedido) => pedido.order_sn),
-    nextCursor: resposta.response.more ? (resposta.response.next_cursor ?? null) : null,
+    orderSns: orders.map((pedido) => pedido.order_sn),
+    nextCursor,
   };
 }
 

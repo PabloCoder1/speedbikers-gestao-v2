@@ -270,7 +270,7 @@ async function listarJanela(
 
     for (const sn of resposta.orderSns) vistos.add(sn);
 
-    if (resposta.nextCursor === null || resposta.nextCursor === "") {
+    if (resposta.nextCursor === null) {
       return [...vistos];
     }
 
