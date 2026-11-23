@@ -57,6 +57,14 @@ describe("calculateBackfillProgress", () => {
       state: "in_progress",
     });
   });
+
+  it("now inválido devolve indisponível em vez de lançar RangeError (D-799)", () => {
+    expect(calculateBackfillProgress(CONNECTED_AT, null, new Date("invalida"))).toEqual({
+      percent: null,
+      state: "unavailable",
+      targetFrom: null,
+    });
+  });
 });
 
 const NOW = new Date("2026-08-30T12:00:00Z");
@@ -119,6 +127,9 @@ describe("failureRateLabel", () => {
   it("zero falha ou zero execução não produz alerta", () => {
     expect(failureRateLabel(24, 0)).toBeNull();
     expect(failureRateLabel(0, 0)).toBeNull();
+    expect(failureRateLabel(24, -1)).toBeNull();
+    expect(failureRateLabel(-5, 2)).toBeNull();
+    expect(failureRateLabel(Number.NaN, 1)).toBeNull();
   });
 });
 
@@ -305,5 +316,14 @@ describe("RECONCILIATION_RESOURCE — um dono só para nome e cadência (D-273)"
 
   it("recurso desconhecido devolve a própria chave, sem inventar nome", () => {
     expect(resourceLabel("recurso_que_nao_existe")).toBe("recurso_que_nao_existe");
+  });
+
+  it("chaves de protótipo e timestamps malformados degradam para sem_cadencia/nunca em vez de critico (D-799)", () => {
+    expect(classifyJobFreshness("toString", minutesAgo(5), NOW)).toBe("sem_cadencia");
+    expect(classifyJobFreshness("constructor", minutesAgo(5), NOW)).toBe("sem_cadencia");
+    expect(classifyResourceFreshness("toString", "reconciliation", minutesAgo(5), NOW)).toBe("sem_cadencia");
+    expect(classifyJobFreshness("sync.orders.window", "data-invalida", NOW)).toBe("nunca");
+    expect(classifyResourceFreshness("orders", "reconciliation", "data-invalida", NOW)).toBe("nunca");
+    expect(resourceLabel("toString")).toBe("toString");
   });
 });

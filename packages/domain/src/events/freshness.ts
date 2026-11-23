@@ -30,6 +30,10 @@ export function classifySyncFreshness(latestRecordAt: Date | null, now: Date): F
 
   const ageMs = now.getTime() - latestRecordAt.getTime();
 
+  if (!Number.isFinite(ageMs)) {
+    return "nunca_sincronizado";
+  }
+
   if (ageMs <= OK_MS) {
     return "ok";
   }

@@ -170,6 +170,19 @@ describe("DANFE", () => {
       motivo: "este PDF não parece um DANFE",
     });
   });
+
+  it("ignora data inexistente no calendário no DANFE em vez de emitir ISO inválido (D-799)", () => {
+    const comDataImpossivel = danfeFixture().map((l) =>
+      l.texto === "20/08/2026" ? linha([[7, "31/02/2026"]], { y: l.y }) : l,
+    );
+
+    const resultado = lerDanfe(comDataImpossivel, CNPJ_PROPRIO);
+
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+
+    expect(resultado.valor.emitidoEm).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------- UpSeller
@@ -251,6 +264,20 @@ describe("Pedido de Saída do UpSeller", () => {
 
     expect(resultado.ok && resultado.valor.itens).toHaveLength(1);
   });
+
+  it("sem bloco Observação não captura a primeira linha do PDF como referência, e data/hora inválida vira null (D-799)", () => {
+    const semObservacao = upsellerFixture()
+      .filter((l) => l.texto !== "Observação" && l.texto !== "ENVIO FULL #77375684 CONTA 1")
+      .map((l) => (l.texto.startsWith("Imprimir:") ? linha([[599, "Imprimir: 31/02/2026 25:99"]], { y: l.y }) : l));
+
+    const resultado = lerSaidaUpseller(semObservacao);
+
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+
+    expect(resultado.valor.referencia).toBe("Armazém ESTOQUE LOJA");
+    expect(resultado.valor.emitidoEm).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------- Envio ao Full
@@ -307,6 +334,21 @@ describe("instruções de envio ao Full", () => {
 
     expect(resultado.motivo).toContain("BFE-VM");
     expect(resultado.motivo).toContain("quantidade");
+  });
+
+  it("recusa quantidade zero ou fora de inteiro seguro no envio ao Full (D-799)", () => {
+    const { linhas, pedacos } = mlFixture();
+    const comZero = lerEnvioFullMl(
+      linhas,
+      pedacos.map((p) => (p.texto === "10" ? { ...p, texto: "0" } : p)),
+    );
+    const comOverflow = lerEnvioFullMl(
+      linhas,
+      pedacos.map((p) => (p.texto === "10" ? { ...p, texto: "99999999999999999999" } : p)),
+    );
+
+    expect(comZero.ok).toBe(false);
+    expect(comOverflow.ok).toBe(false);
   });
 });
 

@@ -27,4 +27,9 @@ describe("classifySyncFreshness", () => {
   it("registro no futuro (relógio adiantado) ainda conta como ok, nunca negativo", () => {
     expect(classifySyncFreshness(new Date("2026-08-21T16:00:00.000Z"), NOW)).toBe("ok");
   });
+
+  it("Date inválida devolve nunca_sincronizado em vez de cair em critico (D-799)", () => {
+    expect(classifySyncFreshness(new Date("invalida"), NOW)).toBe("nunca_sincronizado");
+    expect(classifySyncFreshness(new Date("2026-08-21T14:00:00.000Z"), new Date("invalida"))).toBe("nunca_sincronizado");
+  });
 });

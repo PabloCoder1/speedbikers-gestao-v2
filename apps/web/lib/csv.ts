@@ -18,9 +18,9 @@ export function csvCell(value: string): string {
   return /[";\n\r]/.test(seguro) ? `"${seguro.replace(/"/g, '""')}"` : seguro;
 }
 
-/** Número com vírgula decimal e sem separador de milhar; ausente vira célula vazia. */
+/** Número com vírgula decimal e sem separador de milhar; ausente ou não finito vira célula vazia. */
 export function csvNumber(value: number | null): string {
-  return value === null ? "" : DECIMAL.format(value);
+  return value === null || !Number.isFinite(value) ? "" : DECIMAL.format(value);
 }
 
 /** O arquivo inteiro: BOM, cabeçalho e linhas já montadas. */

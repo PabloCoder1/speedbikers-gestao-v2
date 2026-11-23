@@ -100,9 +100,17 @@ export function lerEnvioFullMl(linhas: readonly LinhaPdf[], pedacos: readonly Pe
     return { ok: false, motivo: "nenhum SKU foi reconhecido nas instruções de preparação" };
   }
 
-  const unidades = pedacos.filter(
-    (p) => p.x >= COLUNA_UNIDADES.minimo && p.x <= COLUNA_UNIDADES.maximo && /^\d+$/.test(p.texto.trim()),
-  );
+  const unidades = pedacos.filter((p) => {
+    if (p.x < COLUNA_UNIDADES.minimo || p.x > COLUNA_UNIDADES.maximo) return false;
+
+    const textoUnidade = p.texto.trim();
+
+    if (!/^\d+$/.test(textoUnidade)) return false;
+
+    const quantidade = Number(textoUnidade);
+
+    return Number.isSafeInteger(quantidade) && quantidade > 0;
+  });
 
   const usadas = new Set<PedacoPdf>();
   const itens: ItemLido[] = [];
