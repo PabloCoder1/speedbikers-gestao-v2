@@ -64,7 +64,7 @@ bash infra/storage-buckets.sh
 
 O provisionador de Storage usa Node para validar a configuração JSON do lifecycle. A regra D-030 entra na criação de `raw-ml`. Se o bucket já existe, o script exige que a regra esteja presente e preserva as demais regras. Erros de leitura ou divergências interrompem o provisionamento antes de criar buckets ou conceder IAM.
 
-O provisionador do NAT exige uma listagem bem-sucedida das APIs habilitadas antes de habilitar o Compute Engine. A detecção usa o nome completo da API.
+O provisionador do NAT exige uma listagem bem-sucedida para habilitar o Compute Engine. Com a API habilitada, consulta redes, sub-redes, endereços e roteadores antes de criar recursos de rede. Se o roteador existe, também lista seus gateways. A criação exige ausência pelo nome completo e o IP final precisa estar preenchido.
 
 ## O que cada um cria
 
