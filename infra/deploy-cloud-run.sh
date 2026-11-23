@@ -156,6 +156,11 @@ build_and_deploy() {
     "${build_identity[@]}" \
     .
 
+  local revision_nonce revision_suffix revisao
+  revision_nonce="$(od -An -N8 -tx1 /dev/urandom | tr -d '[:space:]')"
+  [[ "${revision_nonce}" =~ ^[0-9a-f]{16}$ ]] || fail "Não foi possível gerar um identificador para a revisão de ${app}."
+  revision_suffix="sentinel-${revision_nonce}"
+  revisao="${app}-${revision_suffix}"
   step "Deploy: ${app}"
 
   if [ "${app}" = "api" ]; then
@@ -244,6 +249,7 @@ YAML
     # webhook e provoca reentrega.
     gc run deploy "${app}" \
       --image "${image}" \
+      --revision-suffix="${revision_suffix}" \
       --region "${REGION}" \
       --service-account "$(sa_email "${SA_API}")" \
       --allow-unauthenticated \
@@ -276,6 +282,7 @@ YAML
 
     gc run deploy "${app}" \
       --image "${image}" \
+      --revision-suffix="${revision_suffix}" \
       --region "${REGION}" \
       --service-account "$(sa_email "${SA_WORKER}")" \
       --no-allow-unauthenticated \
@@ -300,22 +307,14 @@ YAML
   # antigo respondendo. Conferir aqui custa uma chamada; descobrir pelo
   # /health, quando alguém lembrar de olhar, custa o deploy inteiro.
   #
-  # A revisão conferida é `latestCreatedRevisionName`, a que ESTE deploy criou.
-  # `latestReadyRevisionName` NÃO serve: com o tráfego fixo, o Cloud Run não o
-  # move para a revisão nova — medido em 2026-09-14, ele seguia apontando a
-  # revisão revertida de D-339. Pelo mesmo motivo a saída sugerida nomeia a
-  # revisão e nunca usa `--to-latest`: "latest" é esse campo velho, e teria
-  # mandado o tráfego para o código revertido.
-  #
-  # `tr -d '\r'`: o gcloud no Windows pode terminar a linha com CR, e "100\r"
-  # não é "100".
-  local revisao percentual
-  revisao="$(gc run services describe "${app}" --region "${REGION}" --format='value(status.latestCreatedRevisionName)' | tr -d '\r')"
+  # Confira o nome reservado por esta execução. Outro deploy pode avançar
+  # latestCreatedRevisionName antes desta leitura.
+  local percentual
   percentual="$(gc run services describe "${app}" --region "${REGION}" \
     --flatten=status.traffic \
     --format='csv[no-heading](status.traffic.revisionName,status.traffic.percent)' |
     tr -d '\r' |
-    awk -F, -v r="${revisao}" '$1 == r { p = $2 } END { print (p == "" ? 0 : p) }')"
+    awk -F, -v r="${revisao}" '$1 == r && $2 ~ /^[0-9]+$/ { p += $2 } END { print p + 0 }')"
 
   [ "${percentual}" = "100" ] ||
     fail "${app}: a revisão ${revisao} foi publicada mas serve ${percentual}% do tráfego — ele está fixo noutra revisão. Confira a revisão e, se a publicação é para valer: gcloud run services update-traffic ${app} --region ${REGION} --project ${PROJECT_ID} --to-revisions ${revisao}=100"

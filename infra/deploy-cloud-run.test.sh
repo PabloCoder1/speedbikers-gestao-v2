@@ -29,7 +29,7 @@ case "$1 $2" in
     case "$3" in
       list)
         case "$inventory" in
-          existing|success|binding_denied) printf 'api\thttps://api.example.invalid\r\nworker\thttps://worker.example.invalid\r\n' ;;
+          existing|success|binding_denied|displaced|tagged) printf 'api\thttps://api.example.invalid\r\nworker\thttps://worker.example.invalid\r\n' ;;
           api_missing) printf 'worker\thttps://worker.example.invalid\r\n' ;;
           worker_missing) printf 'api\thttps://api.example.invalid\r\n' ;;
           worker_pending) printf 'worker\t\r\n' ;;
@@ -48,7 +48,16 @@ case "$1 $2" in
       describe)
         case "$*" in
           *latestCreatedRevisionName*) echo worker-00001-fixture ;;
-          *status.traffic*) echo worker-00001-fixture,100 ;;
+          *status.traffic*)
+            suffix="$(sed -n 's/^--revision-suffix=//p' "${DEPLOY_ARGS_FIXTURE}")"
+            revision=worker-00001-fixture
+            if [[ -n "$suffix" ]]; then revision="$4-$suffix"; fi
+            case "$inventory" in
+              displaced) printf 'worker-00001-fixture,100\r\n' ;;
+              tagged) printf '%s,100\r\n%s,0\r\n' "$revision" "$revision" ;;
+              *) printf '%s,100\r\n' "${revision%-}" ;;
+            esac
+            ;;
           *--format=*) printf 'https://worker.example.invalid
 ' ;;
           *) if [[ "$inventory" = binding_denied ]]; then echo 'PERMISSION_DENIED no describe simulado' >&2; exit 1; fi ;;
@@ -71,7 +80,7 @@ case "$1 $2" in
       fi
     fi
     if [[ "${RUN_INVENTORY:-}" = combined && "$3" = worker ]]; then exit 0; fi
-    if [[ "${RUN_INVENTORY:-}" = success || "${RUN_INVENTORY:-}" = binding_denied ]]; then exit 0; fi
+    case "${RUN_INVENTORY:-}" in success|binding_denied|displaced|tagged) exit 0 ;; esac
     exit 43
     ;;
   'builds submit')
@@ -195,6 +204,10 @@ NESTED_DEPLOY_SCRIPT="$script" rodar_push present api >/dev/null || codigo=$?
 outer="$(grep -A1 -Fx -- --env-vars-file "${fixture}/deploy-args" | tail -n1)"
 inner="$(grep -A1 -Fx -- --env-vars-file "${fixture}/nested-args" | tail -n1)"
 [[ "$outer" != "$inner" && ! -e "${fixture}/$outer" && ! -e "${fixture}/$inner" ]]
+outer_revision="$(sed -n 's/^--revision-suffix=//p' "${fixture}/deploy-args")"
+inner_revision="$(sed -n 's/^--revision-suffix=//p' "${fixture}/nested-args")"
+[[ "$outer_revision" =~ ^sentinel-[0-9a-f]{16}$ &&
+   "$inner_revision" =~ ^sentinel-[0-9a-f]{16}$ && "$outer_revision" != "$inner_revision" ]]
 printf 'ok    execuções sobrepostas isolam e limpam somente seus arquivos de configuração\n'
 
 RUN_INVENTORY=success rodar_push present api >/dev/null
@@ -234,3 +247,13 @@ assert_invalid_target typo
 assert_invalid_target ''
 assert_invalid_target api worker
 printf 'ok    alvo desconhecido, vazio e argumentos excedentes não chegam ao gcloud\n'
+
+if saida="$(RUN_INVENTORY=displaced rodar_push present worker 2>&1)" ||
+  [[ "$saida" != *'serve 0% do tráfego'* || "$saida" = *'== Concluído'* ]]; then
+  printf 'FALHA: tráfego de uma revisão concorrente não confirma o deploy atual\n%s\n' "$saida" >&2
+  exit 1
+fi
+printf 'ok    revisão concorrente com 100%% não confirma o deploy atual\n'
+
+RUN_INVENTORY=tagged rodar_push present api >/dev/null
+printf 'ok    tráfego zero de uma tag da mesma revisão não apaga a alocação efetiva\n'
