@@ -2562,3 +2562,10 @@ latência máxima no banco real.
 
 Em uma amostra adicional, o PostgREST 14.18 aceitou a projeção exata do
 cabeçalho e devolveu apenas a linha própria, visível e sem leitura.
+
+Na Atividade recente da Home, o limite ainda incide sobre os vínculos
+de destinatário antes de descartar eventos ocultados pela RLS. Em uma
+amostra sintética de dez linhas, as cinco mais recentes estavam sem
+evento visível. O join interno antes do limite recuperou os cinco
+eventos visíveis mais antigos. O ensaio orienta a próxima alteração
+da lista, com a espera separada da renderização principal.

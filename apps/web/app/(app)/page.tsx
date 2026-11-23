@@ -314,7 +314,7 @@ async function AtencaoNecessaria({
   acoesOutras,
   openCases,
   mediations,
-  unread,
+  unreadPromise,
   pausados,
 }: {
   // Nula só sem organização — e aí a página já voltou antes de chegar aqui.
@@ -323,10 +323,10 @@ async function AtencaoNecessaria({
   acoesOutras: Contagem;
   openCases: Contagem;
   mediations: Contagem;
-  unread: Contagem;
+  unreadPromise: Promise<Contagem>;
   pausados: Contagem;
 }): Promise<ReactNode> {
-  const coverage = await segundaRodada;
+  const [coverage, unread] = await Promise.all([segundaRodada, unreadPromise]);
 
   if (coverage === null) return null;
 
@@ -399,7 +399,7 @@ async function AtencaoNecessaria({
     {
       label: "Notificações não lidas",
       caption: "eventos que ainda não foram vistos",
-      href: "/notificacoes",
+      href: "/notificacoes?estado=nao-lidas",
       cta: "Ver notificações",
       impacto: (n) => `${formatCount(n)} ${n === 1 ? "evento ainda não visto" : "eventos ainda não vistos"}`,
       count: unread.count,
@@ -598,7 +598,18 @@ export default async function HomePage({
     ]);
   });
 
-  const [membership, acoesAltas, acoesOutras, openCases, mediations, unread, pausados, vendasMulticanal, atividade, perfil] =
+  // A contagem exata usa a visibilidade da Central e só a seção de atenção a aguarda.
+  const unreadPromise: Promise<Contagem> = Promise.resolve(
+    supabase
+      .from("notification_recipients")
+      .select("notification_id, notifications!inner(domain_event_id, domain_events!inner(id))", {
+        count: "exact",
+        head: true,
+      })
+      .is("read_at", null),
+  ).catch((error: unknown) => ({ count: null, error: error ?? new Error("contagem de não lidas falhou") }));
+
+  const [membership, acoesAltas, acoesOutras, openCases, mediations, pausados, vendasMulticanal, atividade, perfil] =
     await Promise.all([
       membershipPromise,
       supabase
@@ -620,14 +631,6 @@ export default async function HomePage({
         .select("id", { count: "exact", head: true })
         .eq("is_mediation", true)
         .neq("internal_status", "RESOLVIDO"),
-      supabase
-        .from("notification_recipients")
-        // `notification_id`, e NÃO `id`: esta tabela não tem coluna `id` — a
-        // chave é composta `(notification_id, user_id)`. Pedir `id` fazia o
-        // PostgREST recusar, e este card dizia "Não foi possível carregar"
-        // desde que existe (D-241).
-        .select("notification_id", { count: "exact", head: true })
-        .is("read_at", null),
       // "Anúncios pausados" com estoque: o MESMO predicado de `/anuncios` com
       // pausados e com estoque (`status = 'paused'` e `available_quantity > 0`),
       // contado direto. Era `get_listings_dashboard` com `p_limit 1`, que monta a
@@ -733,7 +736,7 @@ export default async function HomePage({
           acoesOutras={acoesOutras}
           openCases={openCases}
           mediations={mediations}
-          unread={unread}
+          unreadPromise={unreadPromise}
           pausados={pausados}
         />
       </Suspense>

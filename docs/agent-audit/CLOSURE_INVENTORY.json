@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "CI integral do #378 em 35cbb00f (45177870113) e do #382 em 20e5aef1 (45164397505). Upgrade isolado 324→328 com versões temporárias. Falta ordem definitiva e registro oficial no Dev.",
+      "evidencia": "CI integral do #378 em 3ba96d16 (45225611347) e do #382 em 20e5aef1 (45164397505). Upgrade isolado 324→328 com versões temporárias. Falta ordem definitiva e registro oficial no Dev.",
       "fase": 5
     },
     {

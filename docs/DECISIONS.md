@@ -20433,3 +20433,18 @@ No backup, a contagem exata com o join teve mediana de 585 ms no
 cenário de acesso simulado. A consulta limitada a 100 usou o índice
 parcial de não lidas no ensaio sintético. O PostgREST devolveu 0, 99 e
 100 linhas conforme a visibilidade. [Medição](PERFORMANCE.md#contagem-visível-no-cabeçalho-d-854).
+
+## D-855 - Contagem das notificações na Home segue a visibilidade da Central
+
+**23/11/2026 · Visão Geral.** O cartão de não lidas usa contagem exata
+com os eventos visíveis pela RLS. Seu link abre a Central em não lidas.
+A consulta inicia junto das demais. Só a seção Atenção necessária
+aguarda o total, pela fronteira de Suspense que já aguarda a cobertura.
+Se houver erro na leitura, o cartão continua mostrando a falha.
+
+No PostgREST isolado, o destinatário tinha quatro vínculos sem leitura
+e dois eventos visíveis. A contagem anterior devolveu quatro, e a nova
+devolveu os mesmos dois que a lista abriu. A renderização isolada da
+Home devolveu os indicadores enquanto a contagem estava pendente e
+depois renderizou o cartão com o número e o link esperados. A medição
+de custo do join em cópia do backup está em D-854 no PERFORMANCE.
