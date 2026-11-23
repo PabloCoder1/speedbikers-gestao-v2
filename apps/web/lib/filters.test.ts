@@ -156,4 +156,32 @@ describe("summarizePagedWindow", () => {
     expect(r.label).toBe("Nenhum anúncio no filtro atual.");
     expect(r.totalPages).toBe(0);
   });
+
+  it("D-801: resolvePageParam exige inteiro seguro, resolvePageSize exige dígitos e summarizePagedWindow protege divisores inválidos", () => {
+    expect(resolvePageParam("99999999999999999999")).toBe(1);
+    expect(resolvePageSize("0x32", 20)).toBe(20);
+    expect(resolvePageSize("5e1", 20)).toBe(20);
+    expect(resolvePageSize(" 50 ", 20)).toBe(20);
+
+    expect(
+      summarizePagedWindow({
+        page: 1,
+        totalCount: Number.NaN,
+        rowsOnPage: 0,
+        pageSize: 50,
+        noun: { singular: "item", plural: "itens" },
+        emptyLabel: "vazio",
+      }),
+    ).toEqual({ label: "vazio", totalPages: 0 });
+    expect(
+      summarizePagedWindow({
+        page: 1,
+        totalCount: 10,
+        rowsOnPage: 0,
+        pageSize: 0,
+        noun: { singular: "item", plural: "itens" },
+        emptyLabel: "vazio",
+      }),
+    ).toEqual({ label: "vazio", totalPages: 0 });
+  });
 });

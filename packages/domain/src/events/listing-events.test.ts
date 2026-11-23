@@ -223,4 +223,20 @@ describe("detectListingEvents", () => {
 
     expect(first[0]?.dedupKey).not.toBe(second[0]?.dedupKey);
   });
+
+  it("D-801: ignora preço/estoque não finitos (NaN/Infinity) e data syncedAt inválida sem lançar RangeError", () => {
+    expect(
+      detectListingEvents(snapshot({ price: Number.NaN }), snapshot({ price: Number.NaN }), SYNCED_AT),
+    ).toEqual([]);
+    expect(
+      detectListingEvents(
+        snapshot({ price: 100, availableQuantity: 5 }),
+        snapshot({ price: Number.POSITIVE_INFINITY, availableQuantity: Number.NaN }),
+        SYNCED_AT,
+      ),
+    ).toEqual([]);
+    expect(
+      detectListingEvents(snapshot({ price: 100 }), snapshot({ price: 90 }), new Date("invalid")),
+    ).toEqual([]);
+  });
 });

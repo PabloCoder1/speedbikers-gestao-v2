@@ -29,11 +29,13 @@ export function numeroDigitado(texto: string): number | null {
   let normal: string;
 
   if (limpo.includes(",")) {
-    if (limpo.indexOf(",") !== limpo.lastIndexOf(",")) return null;
+    if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+),\d+$/.test(limpo)) return null;
     normal = limpo.replace(/\./g, "").replace(",", ".");
   } else if ((limpo.match(/\./g) ?? []).length > 1 || /^\d{1,3}\.\d{3}$/.test(limpo)) {
+    if (!/^\d{1,3}(?:\.\d{3})+$/.test(limpo)) return null;
     normal = limpo.replace(/\./g, "");
   } else {
+    if (!/^\d+(?:\.\d+)?$/.test(limpo)) return null;
     normal = limpo;
   }
 
@@ -133,10 +135,16 @@ const NOME_DO_MES = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "num
 
 /** "2026-09-01" → "setembro de 2026". */
 export function rotuloDoMes(primeiroDia: string): string {
-  return NOME_DO_MES.format(new Date(`${primeiroDia}T00:00:00Z`));
+  const validada = lerData(primeiroDia);
+
+  if (!validada.ok) return primeiroDia;
+
+  return NOME_DO_MES.format(new Date(`${validada.valor}T00:00:00Z`));
 }
 
 /** Fração → "6,5%" com até três casas, sem zero sobrando ("6%", "6,25%"). */
 export function formatarAliquota(fracao: number): string {
+  if (!Number.isFinite(fracao)) return "—";
+
   return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 }).format(fracao * 100)}%`;
 }

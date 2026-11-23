@@ -53,10 +53,23 @@ export function computeReconciliationAdjustments(
   businessDate: string,
   occurredAt: Date,
 ): ReconciliationAdjustment[] {
-  const ledgerByKey = new Map(ledgerBalances.map((b) => [`${b.skuId}:${b.locationKind}`, b.quantity]));
+  const ledgerByKey = new Map<string, number>();
+
+  for (const b of ledgerBalances) {
+    if (!Number.isFinite(b.quantity)) {
+      throw new RangeError(`quantidade inválida no ledger para ${b.skuId}:${b.locationKind}`);
+    }
+
+    ledgerByKey.set(`${b.skuId}:${b.locationKind}`, b.quantity);
+  }
+
   const adjustments: ReconciliationAdjustment[] = [];
 
   for (const snapshot of snapshotBalances) {
+    if (!Number.isFinite(snapshot.quantity)) {
+      throw new RangeError(`quantidade inválida no snapshot para ${snapshot.skuId}:${snapshot.locationKind}`);
+    }
+
     const ledgerQuantity = ledgerByKey.get(`${snapshot.skuId}:${snapshot.locationKind}`) ?? 0;
     const delta = snapshot.quantity - ledgerQuantity;
 

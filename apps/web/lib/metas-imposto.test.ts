@@ -101,4 +101,15 @@ describe("lerMarketplaceDaMeta", () => {
     expect(doMarketplaceDaMeta("SHOPEE")).toBe("da Shopee");
     expect(doMarketplaceDaMeta("TIKTOK")).toBe("de outro marketplace");
   });
+
+  it("D-801: recusa pontuação sem dígitos ou malformada e protege rotuloDoMes/formatarAliquota", () => {
+    for (const texto of ["...", "..", "1..000", "1.2.3", ",", "1,,2", ".5", "5."]) {
+      expect(lerPercentual(texto).ok, texto).toBe(false);
+    }
+
+    expect(rotuloDoMes("2026-02-31")).toBe("2026-02-31");
+    expect(rotuloDoMes("invalida")).toBe("invalida");
+    expect(formatarAliquota(Number.NaN)).toBe("—");
+    expect(formatarAliquota(Number.POSITIVE_INFINITY)).toBe("—");
+  });
 });

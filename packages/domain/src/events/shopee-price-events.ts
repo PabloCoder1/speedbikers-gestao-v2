@@ -51,6 +51,10 @@ function chave(reading: ShopeePriceReading): string {
 }
 
 export function detectShopeePriceEvents(input: ShopeePriceEventsInput): DomainEventDraft[] {
+  if (!Number.isFinite(input.readAt.getTime())) {
+    return [];
+  }
+
   const anteriores = new Map(input.previous.map((reading) => [chave(reading), reading]));
   const readAtKey = input.readAt.toISOString();
   const events: DomainEventDraft[] = [];
@@ -58,7 +62,14 @@ export function detectShopeePriceEvents(input: ShopeePriceEventsInput): DomainEv
   for (const atual of input.current) {
     const anterior = anteriores.get(chave(atual));
 
-    if (anterior?.price == null || atual.price === null) continue;
+    if (
+      anterior?.price == null ||
+      atual.price === null ||
+      !Number.isFinite(anterior.price) ||
+      !Number.isFinite(atual.price)
+    ) {
+      continue;
+    }
     if (anterior.price === atual.price) continue;
 
     const modelo = atual.modelId === null ? "item" : String(atual.modelId);

@@ -28,7 +28,7 @@ export function resolvePageParam(raw: unknown): number {
 
   const parsed = Number.parseInt(raw, 10);
 
-  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+  return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : 1;
 }
 
 /**
@@ -83,7 +83,7 @@ export type PageSize = (typeof PAGE_SIZES)[number];
  * entrada de terceiro, e "300000" não pode virar `limit`.
  */
 export function resolvePageSize(raw: unknown, padrao: PageSize): PageSize {
-  if (typeof raw !== "string") return padrao;
+  if (typeof raw !== "string" || !/^\d+$/.test(raw)) return padrao;
 
   /*
     `Number`, e não `Number.parseInt`: o `parseInt` lê "50abc" como 50, e aqui
@@ -132,7 +132,7 @@ export function summarizePagedWindow(input: {
   const { page, totalCount, rowsOnPage, pageSize, emptyLabel } = input;
   const trailing = input.trailing ?? "";
 
-  if (totalCount === 0) {
+  if (!Number.isFinite(totalCount) || totalCount <= 0 || !Number.isFinite(pageSize) || pageSize <= 0) {
     return { label: emptyLabel, totalPages: 0 };
   }
 

@@ -52,9 +52,18 @@ export function detectSupportPatterns(aggregates: readonly SkuClaimAggregate[]):
   const findings: SupportPatternFinding[] = [];
 
   for (const aggregate of aggregates) {
-    if (aggregate.openClaims < SUPPORT_PATTERN_MIN_OPEN_CLAIMS) {
+    if (!Number.isFinite(aggregate.openClaims) || aggregate.openClaims < SUPPORT_PATTERN_MIN_OPEN_CLAIMS) {
       continue;
     }
+
+    const openMediations =
+      Number.isFinite(aggregate.openMediations) && aggregate.openMediations > 0 ? aggregate.openMediations : 0;
+    const impactBrl =
+      aggregate.linkedOrdersTotalBrl !== null &&
+      Number.isFinite(aggregate.linkedOrdersTotalBrl) &&
+      aggregate.linkedOrdersTotalBrl > 0
+        ? aggregate.linkedOrdersTotalBrl
+        : null;
 
     const nome = aggregate.title === null ? aggregate.sku : `${aggregate.sku} (${aggregate.title})`;
 
@@ -63,19 +72,19 @@ export function detectSupportPatterns(aggregates: readonly SkuClaimAggregate[]):
         tipo: "reclamacoes_abertas",
         descricao: `${String(aggregate.openClaims)} reclamações abertas simultaneamente no SKU ${nome}.`,
       },
-      ...(aggregate.openMediations > 0
+      ...(openMediations > 0
         ? [
             {
               tipo: "mediacoes",
-              descricao: `${String(aggregate.openMediations)} delas já em mediação com o Mercado Livre.`,
+              descricao: `${String(openMediations)} delas já em mediação com o Mercado Livre.`,
             },
           ]
         : []),
-      ...(aggregate.linkedOrdersTotalBrl !== null
+      ...(impactBrl !== null
         ? [
             {
               tipo: "valor_em_risco",
-              descricao: `Pedidos vinculados somam R$ ${aggregate.linkedOrdersTotalBrl.toFixed(2)} em risco de reembolso.`,
+              descricao: `Pedidos vinculados somam R$ ${impactBrl.toFixed(2)} em risco de reembolso.`,
             },
           ]
         : []),
@@ -84,8 +93,8 @@ export function detectSupportPatterns(aggregates: readonly SkuClaimAggregate[]):
     findings.push({
       skuId: aggregate.skuId,
       openClaims: aggregate.openClaims,
-      openMediations: aggregate.openMediations,
-      impactBrl: aggregate.linkedOrdersTotalBrl,
+      openMediations,
+      impactBrl,
       evidencias,
       recomendacao:
         "Revisar as reclamações abertas deste SKU na Caixa de Entrada e investigar causa comum (defeito de lote, anúncio enganoso, problema de envio).",
