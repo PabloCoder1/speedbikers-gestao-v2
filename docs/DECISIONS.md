@@ -20448,3 +20448,18 @@ devolveu os mesmos dois que a lista abriu. A renderização isolada da
 Home devolveu os indicadores enquanto a contagem estava pendente e
 depois renderizou o cartão com o número e o link esperados. A medição
 de custo do join em cópia do backup está em D-854 no PERFORMANCE.
+
+## D-856 - Atividade recente da Home limita a lista aos eventos visíveis
+
+**23/11/2026 · Visão Geral.** A lista usa joins internos com a
+notificação e o evento para aplicar RLS antes de selecionar as cinco
+linhas mais recentes. Empates na data de chegada são ordenados pelo
+ID. A data exibida continua sendo a do fato. A leitura segue em
+paralelo com os outros dados e o painel aguarda a própria resposta
+por Suspense.
+
+No PostgREST isolado, a projeção anterior retornou cinco vínculos
+sem evento visível. A nova retornou cinco eventos mais antigos,
+com conta e data do fato preservadas, em ordem estável. O teste
+de renderização confirmou que os indicadores chegaram antes da
+resposta da atividade.

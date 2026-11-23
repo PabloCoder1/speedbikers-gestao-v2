@@ -2563,9 +2563,11 @@ latência máxima no banco real.
 Em uma amostra adicional, o PostgREST 14.18 aceitou a projeção exata do
 cabeçalho e devolveu apenas a linha própria, visível e sem leitura.
 
-Na Atividade recente da Home, o limite ainda incide sobre os vínculos
-de destinatário antes de descartar eventos ocultados pela RLS. Em uma
-amostra sintética de dez linhas, as cinco mais recentes estavam sem
-evento visível. O join interno antes do limite recuperou os cinco
-eventos visíveis mais antigos. O ensaio orienta a próxima alteração
-da lista, com a espera separada da renderização principal.
+Na Atividade recente da Home, o limite incidia sobre os vínculos de
+destinatário antes de descartar eventos ocultados pela RLS. Em ensaios
+isolados com PostgreSQL e PostgREST, as cinco linhas mais recentes
+retornavam sem evento visível. O join interno antes do limite
+recuperou os cinco eventos visíveis mais antigos. Desde D-856, a
+contagem e a atividade iniciam em paralelo, e cada uma tem sua
+própria fronteira de espera. O teste de renderização reteve a resposta
+do PostgREST simulado e confirmou a entrega inicial dos indicadores.
