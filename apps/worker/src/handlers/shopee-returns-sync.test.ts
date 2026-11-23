@@ -244,4 +244,21 @@ describe("shopee.returns.sync (D-447)", () => {
 
     expect(desconectada.outcome).toEqual({ status: "done", processed: 0 });
   });
+
+  it("D-795: marco no futuro (desvio de relógio) ou inválido nunca produz janela invertida nem RangeError", async () => {
+    const futuro = new Date((AGORA_S + 3600) * 1000).toISOString();
+    const shopeeFuturo = fakeShopee({ paginas: [[]] });
+    const resFuturo = await rodar({ ...LOJA, returns_synced_until: futuro }, shopeeFuturo);
+
+    expect(resFuturo.outcome).toEqual({ status: "done", processed: 0 });
+    expect(shopeeFuturo.listas[0]?.get("update_time_from")).toBe(String(AGORA_S - 600));
+    expect(shopeeFuturo.listas[0]?.get("update_time_to")).toBe(String(AGORA_S));
+
+    const shopeeInvalido = fakeShopee({ paginas: [[]] });
+    const resInvalido = await rodar({ ...LOJA, returns_synced_until: "data-invalida" }, shopeeInvalido);
+
+    expect(resInvalido.outcome).toEqual({ status: "done", processed: 0 });
+    expect(shopeeInvalido.listas[0]?.get("update_time_from")).toBe(String(AGORA_S - 90 * 86400));
+    expect(shopeeInvalido.listas[0]?.get("update_time_to")).toBe(String(AGORA_S - 90 * 86400 + 15 * 86400));
+  });
 });

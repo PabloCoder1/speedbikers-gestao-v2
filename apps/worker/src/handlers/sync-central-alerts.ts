@@ -78,10 +78,19 @@ export function createSyncCentralAlertsHandler(deps: SyncCentralAlertsDeps): Job
     let erroTransitorio = false;
 
     for (const fonte of FONTES_ALERTAS) {
-      const result = await deps.db.rpc("sincronizar_alertas_central", {
-        p_organization_id: organizationId,
-        p_fontes: [fonte],
-      });
+      let result;
+
+      try {
+        result = await deps.db.rpc("sincronizar_alertas_central", {
+          p_organization_id: organizationId,
+          p_fontes: [fonte],
+        });
+      } catch (error) {
+        erroTransitorio = true;
+        falhas.push(`${fonte}: ${error instanceof Error ? error.message : String(error)}`);
+
+        continue;
+      }
 
       if (result.error !== null) {
         erroTransitorio = true;

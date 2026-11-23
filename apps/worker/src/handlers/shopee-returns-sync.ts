@@ -57,7 +57,8 @@ export function createShopeeReturnsSyncHandler(deps: ShopeeReturnsSyncDeps): Job
     const shop = { accessToken: token.accessToken, shopId: loja.shop_id };
     const agoraS = Math.floor(now.getTime() / 1000);
     const marco = marcoLido.data?.returns_synced_until ?? null;
-    const marcoS = marco === null ? null : Math.floor(new Date(marco).getTime() / 1000);
+    const marcoMs = marco === null ? Number.NaN : new Date(marco).getTime();
+    const marcoS = Number.isFinite(marcoMs) ? Math.min(Math.floor(marcoMs / 1000), agoraS) : null;
     const deS = marcoS === null ? agoraS - PRIMEIRA_LEITURA_S : Math.max(marcoS - SOBREPOSICAO_S, 0);
     const ateS = Math.min(deS + RETURN_LIST_MAX_WINDOW_S, agoraS);
 

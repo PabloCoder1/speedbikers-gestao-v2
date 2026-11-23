@@ -35,13 +35,18 @@ import { persistSupportConversation } from "./persist-support-conversation.js";
  * UPSERTs de `persistSupportConversation` convergem.
  */
 
+const positiveSafeIdSchema = z
+  .string()
+  .regex(/^[0-9]+$/)
+  .transform((value) => value.replace(/^0+(?=\d)/, ""))
+  .refine((value) => /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)), {
+    message: "packOrOrderId deve ser inteiro positivo seguro",
+  });
+
 const payloadSchema = z
   .object({
     mlAccountId: z.uuid(),
-    packOrOrderId: z
-      .string()
-      .regex(/^[0-9]+$/)
-      .optional(),
+    packOrOrderId: positiveSafeIdSchema.optional(),
     kind: z.enum(["PACK", "ORDER"]).optional(),
     messageId: z.string().min(1).max(200).optional(),
     unreadCount: z.number().int().nonnegative().optional(),
