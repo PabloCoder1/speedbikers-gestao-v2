@@ -2396,6 +2396,36 @@ parciais, a última execução, o último sucesso usado pela tela e o maior
 marco importado por organização, conta, recurso e canal. Os agregados
 de saúde dos **44 grupos** ficaram iguais com e sem o recorte, incluindo
 o ID da última execução e os contadores de 24 h. A conferência usa as
-mesmas projeções do SQL da tela na cópia seletiva. A política de acesso
-ao histórico e a restauração do arquivo ainda dependem de definição e
-ensaio. As tabelas ativas não receberam alterações.
+mesmas projeções do SQL da tela na cópia seletiva.
+
+#### Dependências e restauração do arquivo (D04)
+
+A chave `sync_errors.sync_run_id` usa `ON DELETE SET NULL`. As duas
+tabelas têm proteções append-only. Uma execução referenciada por erro
+fica fora do recorte, mesmo quando satisfaz os filtros de idade e
+sucesso. No backup, **532 execuções distintas** tinham um erro vinculado.
+Nenhuma estava entre as candidatas. Uma amostra sintética com a migration
+base de sincronização confirmou a exclusão dessa candidata e que o
+trigger bloqueou a tentativa de remoção, preservando a referência.
+
+Na mesma geração do backup, o arquivo restrito no Postgres 17 guardou
+**37.325 notificações, 37.325 vínculos de destinatário e 12.782
+execuções**. A chave estrangeira ligou os destinatários às notificações
+dentro do arquivo. O dump de **3.807.702 bytes** foi restaurado em outro
+banco descartável. A exportação ordenada de cada tabela manteve o
+SHA-256 e os papéis `anon`, `authenticated` e `service_role` seguiram
+sem acesso ao schema. A amostra sintética também confirmou que a chave
+estrangeira rejeita um destinatário órfão após o restore.
+
+A Central de Notificações pagina e conta o histórico lido. Um arquivo
+restrito separado da consulta atual mudaria esse resultado. A política
+ainda precisa definir a consulta do histórico arquivado e o procedimento
+de separação do histórico append-only. A cópia ensaiada preservou as
+tabelas de origem.
+
+O ensaio também descartou um particionamento direto de `sync_runs` por
+`finished_at` com as chaves atuais. O Postgres recusou a chave primária
+só em `id` (`0A000`) e, com a chave composta, recusou a referência só em
+`id` de `sync_errors` (`42830`). A próxima alternativa a ensaiar é uma
+manutenção restrita que preserve a chave e os vínculos atuais. [Limites do
+particionamento no PostgreSQL 17](https://www.postgresql.org/docs/17/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE-LIMITATIONS).

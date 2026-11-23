@@ -16,7 +16,7 @@
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | Base de integração `origin/main` em `a81f5235` (#348). O candidato usa branch própria. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Fechamento da V3** | 155/226 pontos (68,58%), 28/43 entregas. [Inventário Sentinel](agent-audit/CLOSURE_INVENTORY.json). [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7107161168). |
-| **Sentinel: próximo passo** | #378 com CI verde em 35cbb00f. Full (D-850) e Cloud Tasks (48/48, 16 retentativas) ensaiados em ambientes isolados. Próximo gate da VM: quatro timestamps definitivos no Dev e adequação do workflow. |
+| **Sentinel: próximo passo** | #378 com CI verde em 35cbb00f. Arquivo D04 restaurado em cópia com hashes iguais. Falta definir acesso ao histórico e separação de sync append-only. VM aguarda quatro versões definitivas no Dev e adequação do workflow. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo, com 2,0 GB acima do limite gratuito. Google Cloud segue como ambiente atual. Lembrete para retomar em 01/12, condicionado ao Dev ativo. Rotinas Dev pausadas (D-350). |
 | **Supabase** | Produção usa a VM `sb-db` (`speedbikers-prod`). O antigo projeto hosted `imvjfgnaprqsfjlnsyev` estava `INACTIVE` em 18/11. Convite, SMTP e recuperação Auth seguem pendentes. [VM](../infra/vm/README.md). |
 | **Produção** | Cloud Run em leitura de 20/11: API `api-00041-8m8` e worker `worker-00059-mjc`, 100% de tráfego nas respectivas revisões. A validação do alias web do catálogo de compras está registrada no #333. |
