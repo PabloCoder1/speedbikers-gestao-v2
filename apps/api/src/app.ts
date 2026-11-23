@@ -80,6 +80,8 @@ import type { ReconcileDeps } from "./reconcile.js";
 import { triggerOrdersReconciliation } from "./reconcile.js";
 import type { SalesAnomalyActionsScheduleDeps } from "./sales-anomaly-actions-schedule.js";
 import { triggerSalesAnomalyActionsDetection } from "./sales-anomaly-actions-schedule.js";
+import type { LowMarginSalesScheduleOutcome } from "./low-margin-sales-schedule.js";
+import { triggerLowMarginSalesDetection } from "./low-margin-sales-schedule.js";
 import type { WebhookDeps } from "./webhook.js";
 import { receiveWebhook } from "./webhook.js";
 
@@ -538,7 +540,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerMetricsRefresh(metricsRefreshSchedule);
 
-    return respostaDoAgendador(context, outcome);
+    // D-858: a mesma hora enfileira o alerta de venda abaixo da margem. Falhar
+    // aqui (a tabela antes da migration, a fila) não derruba o piso: a resposta
+    // continua sendo a do piso, e o alerta diz o que houve no corpo e no log.
+    let alertaDeMargem: LowMarginSalesScheduleOutcome | { failed: true; reason: string };
+
+    try {
+      alertaDeMargem = await triggerLowMarginSalesDetection(metricsRefreshSchedule);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+
+      metricsRefreshSchedule.logger.error("low_margin_sales_schedule_failed", { reason });
+      alertaDeMargem = { failed: true, reason };
+    }
+
+    const resposta = { ...outcome, alertaDeMargem };
+
+    return respostaDoAgendador(context, resposta);
   });
 
   // --------------------------------------------------------------------
