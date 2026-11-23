@@ -34,12 +34,14 @@ import { shiftBusinessDate } from "../metrics/business-date.js";
 function computeCoverageDays(stockQuantity: number, avgDailySales: number): number | null {
   if (avgDailySales <= 0) return null;
 
-  return Math.round((stockQuantity / avgDailySales) * 10) / 10;
+  const coverage = Math.round((stockQuantity / avgDailySales) * 10) / 10;
+
+  return Number.isFinite(coverage) ? coverage : null;
 }
 
 function assertNonNegative(value: number, label: string): void {
-  if (value < 0) {
-    throw new RangeError(`${label} não pode ser negativo`);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(`${label} deve ser um número finito não negativo`);
   }
 }
 
@@ -81,6 +83,10 @@ export function simulateRequiredQuantity(targetDays: number, avgDailySales: numb
   assertNonNegative(avgDailySales, "venda média diária");
 
   const product = Math.round(targetDays * avgDailySales * 1e9) / 1e9;
+
+  if (!Number.isFinite(product)) {
+    throw new RangeError("quantidade necessária excede o limite numérico");
+  }
 
   return { targetDays, avgDailySales, requiredQuantity: Math.ceil(product) };
 }

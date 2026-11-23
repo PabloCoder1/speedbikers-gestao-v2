@@ -62,13 +62,27 @@ export function hasRelistStock(quantity: number): boolean {
   return Number.isInteger(quantity) && quantity > 0;
 }
 
+function isValidRelistPrice(price: number): boolean {
+  return Number.isFinite(price) && price > 0;
+}
+
+function parseRelistVariationId(id: number | string): number | null {
+  const numeric = typeof id === "number" ? id : /^\d+$/u.test(id) ? Number(id) : Number.NaN;
+
+  return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : null;
+}
+
 /**
  * O corpo do relist para este pai, ou `null` quando não há estoque para
  * republicar — e aí o POST não pode sair.
  */
 export function buildRelistBody(parent: RelistParentForBody): RelistBody | null {
+  if (parent.listing_type_id.trim() === "") {
+    return null;
+  }
+
   if (parent.variations.length === 0) {
-    if (!hasRelistStock(parent.available_quantity)) {
+    if (!hasRelistStock(parent.available_quantity) || !isValidRelistPrice(parent.price)) {
       return null;
     }
 
@@ -79,13 +93,25 @@ export function buildRelistBody(parent: RelistParentForBody): RelistBody | null 
     };
   }
 
-  const variations = parent.variations
-    .filter((variation) => hasRelistStock(variation.available_quantity))
-    .map((variation) => ({
-      id: Number(variation.id),
+  const variations: RelistBodyVariation[] = [];
+
+  for (const variation of parent.variations) {
+    if (!hasRelistStock(variation.available_quantity)) {
+      continue;
+    }
+
+    const id = parseRelistVariationId(variation.id);
+
+    if (id === null || !isValidRelistPrice(variation.price)) {
+      return null;
+    }
+
+    variations.push({
+      id,
       price: variation.price,
       quantity: variation.available_quantity,
-    }));
+    });
+  }
 
   if (variations.length === 0) {
     return null;

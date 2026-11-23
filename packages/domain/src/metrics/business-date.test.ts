@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   businessDateRangeLength,
+  isValidBusinessDate,
   previousBusinessDateRange,
   shiftBusinessDate,
   toSalesMetricDate,
@@ -44,6 +45,19 @@ describe("shiftBusinessDate", () => {
 
   it("recusa formato inválido", () => {
     expect(() => shiftBusinessDate("21/08/2026", -1)).toThrow(/data de negócio inválida/);
+  });
+
+  it("recusa data inexistente no calendário e deslocamento não inteiro ou não finito (D-799)", () => {
+    expect(() => shiftBusinessDate("2026-02-31", 1)).toThrow(/data de negócio inválida/);
+    expect(() => shiftBusinessDate("2026-02-29", 0)).toThrow(/data de negócio inválida/);
+    expect(() => shiftBusinessDate("2026-13-01", 0)).toThrow(/data de negócio inválida/);
+    expect(() => shiftBusinessDate("2026-08-21", Number.NaN)).toThrow(RangeError);
+    expect(() => shiftBusinessDate("2026-08-21", Number.POSITIVE_INFINITY)).toThrow(RangeError);
+    expect(() => shiftBusinessDate("2026-08-21", 1.5)).toThrow(RangeError);
+    expect(isValidBusinessDate("2024-02-29")).toBe(true);
+    expect(isValidBusinessDate("2026-02-29")).toBe(false);
+    expect(isValidBusinessDate("2026-02-31")).toBe(false);
+    expect(isValidBusinessDate("2026-13-01")).toBe(false);
   });
 });
 

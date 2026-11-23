@@ -43,8 +43,14 @@ export function calculateBackfillProgress(
     return { percent: null, state: "unavailable", targetFrom: null };
   }
 
+  const nowMs = now.getTime();
+
+  if (!Number.isFinite(nowMs)) {
+    return { percent: null, state: "unavailable", targetFrom: null };
+  }
+
   const connectedAtMs = new Date(connectedAt).getTime();
-  const targetFromMs = now.getTime() - ORDER_BACKFILL_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const targetFromMs = nowMs - ORDER_BACKFILL_RETENTION_DAYS * 24 * 60 * 60 * 1000;
   const targetFrom = new Date(targetFromMs).toISOString();
   const totalMs = connectedAtMs - targetFromMs;
 
@@ -123,9 +129,13 @@ export const RECONCILIATION_RESOURCE: Readonly<Record<string, ReconciliationReso
   ads: { label: "Mercado Ads", cadenceMin: 1440 }, // v3-ads-campaigns-sync: "0 11 * * *"
 };
 
+function ownEntry<T>(map: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.hasOwn(map, key) ? map[key] : undefined;
+}
+
 /** O nome do recurso na tela; chave desconhecida devolve a própria chave. */
 export function resourceLabel(resource: string): string {
-  return RECONCILIATION_RESOURCE[resource]?.label ?? resource;
+  return ownEntry(RECONCILIATION_RESOURCE, resource)?.label ?? resource;
 }
 
 /**
@@ -217,6 +227,7 @@ function verdictFromCadence(cadenceMin: number | undefined, lastAt: string | nul
 
   const ageMin = (now.getTime() - new Date(lastAt).getTime()) / 60_000;
 
+  if (!Number.isFinite(ageMin)) return "nunca";
   if (ageMin <= cadenceMin * 2) return "ok";
   if (ageMin <= cadenceMin * 4) return "atencao";
 
@@ -233,7 +244,7 @@ function verdictFromCadence(cadenceMin: number | undefined, lastAt: string | nul
  * pouco mais de quatro horas.
  */
 export function classifyJobFreshness(jobType: string, lastRunAt: string | null, now: Date): SyncVerdict {
-  return verdictFromCadence(JOB_CADENCE_MIN[jobType] ?? EVENT_JOB_SILENCE_MIN[jobType], lastRunAt, now);
+  return verdictFromCadence(ownEntry(JOB_CADENCE_MIN, jobType) ?? ownEntry(EVENT_JOB_SILENCE_MIN, jobType), lastRunAt, now);
 }
 
 /**
@@ -282,7 +293,7 @@ export function classifyResourceFreshness(
     return "sem_cadencia";
   }
 
-  return verdictFromCadence(RECONCILIATION_RESOURCE[resource]?.cadenceMin, lastSuccessAt, now);
+  return verdictFromCadence(ownEntry(RECONCILIATION_RESOURCE, resource)?.cadenceMin, lastSuccessAt, now);
 }
 
 /**
@@ -293,7 +304,7 @@ export function classifyResourceFreshness(
  * nome, não uma média que esconde.
  */
 export function failureRateLabel(runs24h: number, failed24h: number): string | null {
-  if (runs24h === 0 || failed24h === 0) {
+  if (!Number.isFinite(runs24h) || !Number.isFinite(failed24h) || runs24h <= 0 || failed24h <= 0) {
     return null;
   }
 

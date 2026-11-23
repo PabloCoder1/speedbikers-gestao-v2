@@ -124,8 +124,9 @@ function readLegibleVariation(variation: unknown): LegibleVariation | null {
 
   const { id, price, available_quantity: quantity } = variation;
   const idText = typeof id === "number" ? String(id) : typeof id === "string" ? id : "";
-  const legibleId = /^\d+$/u.test(idText) && Number.isSafeInteger(Number(idText));
-  const legiblePrice = typeof price === "number" && Number.isFinite(price);
+  const numericId = /^\d+$/u.test(idText) ? Number(idText) : Number.NaN;
+  const legibleId = Number.isSafeInteger(numericId) && numericId > 0;
+  const legiblePrice = typeof price === "number" && Number.isFinite(price) && price > 0;
 
   return legibleId && legiblePrice && isNonNegativeInteger(quantity) ? { id: idText, available_quantity: quantity } : null;
 }

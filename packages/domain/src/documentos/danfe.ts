@@ -1,3 +1,4 @@
+import { isValidBusinessDate } from "../metrics/business-date.js";
 import { digitos, mesmaEmpresa, numeroBr, type DocumentoLido, type ItemLido, type LeituraDocumento, type LinhaPdf } from "./tipos.js";
 
 /**
@@ -195,15 +196,22 @@ function acharEmitenteNome(linhas: readonly LinhaPdf[]): string | null {
 }
 
 function acharData(texto: string): string | null {
-  const data = /(\d{2})\/(\d{2})\/(\d{4})/.exec(texto);
-  const dia = data?.[1];
-  const mes = data?.[2];
-  const ano = data?.[3];
+  for (const data of texto.matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)) {
+    const dia = data[1];
+    const mes = data[2];
+    const ano = data[3];
 
-  if (dia === undefined || mes === undefined || ano === undefined) return null;
+    if (dia === undefined || mes === undefined || ano === undefined) continue;
 
-  // Meio-dia UTC: o DANFE traz a data civil, e a hora não decide nada aqui.
-  return `${ano}-${mes}-${dia}T12:00:00.000Z`;
+    const dataIso = `${ano}-${mes}-${dia}`;
+
+    if (!isValidBusinessDate(dataIso)) continue;
+
+    // Meio-dia UTC: o DANFE traz a data civil, e a hora não decide nada aqui.
+    return `${dataIso}T12:00:00.000Z`;
+  }
+
+  return null;
 }
 
 /**
