@@ -16,7 +16,7 @@
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | Base de integração `origin/main` em `a81f5235` (#348). O candidato usa branch própria. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Fechamento da V3** | 147/226 pontos (65,04%), 26/43 entregas. [Inventário Sentinel](agent-audit/CLOSURE_INVENTORY.json). [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7087810088). |
-| **Sentinel: próximo passo** | #378 integra #364, marketplaces e #374. CI verde em c60cc19c. P03: compactação diária simulada, −61% na cópia. Falta comparar RPCs sob RLS. Dev segue inativo. |
+| **Sentinel: próximo passo** | #378 integra #364, marketplaces e #374. CI verde em c60cc19c. P03: −61% na cópia; 60 comparações sob RLS iguais. Pendente política de histórico bruto. Dev segue inativo. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo. Em 21/11, o provedor recusou a retomada: banco de 2,0 GB acima do plano gratuito. Rotinas GCP pausadas (D-350). |
 | **Supabase** | Produção usa a VM `sb-db` (`speedbikers-prod`). O antigo projeto hosted `imvjfgnaprqsfjlnsyev` estava `INACTIVE` em 18/11. Convite, SMTP e recuperação Auth seguem pendentes. [VM](../infra/vm/README.md). |
 | **Produção** | Cloud Run em leitura de 20/11: API `api-00041-8m8` e worker `worker-00059-mjc`, 100% de tráfego nas respectivas revisões. A validação do alias web do catálogo de compras está registrada no #333. |

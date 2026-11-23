@@ -319,7 +319,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database",
-      "evidencia": "Cópia isolada: -61,21% com últimos 30 dias, transições e fechamento diário, zero divergências nas projeções comparadas. Faltam RPCs sob RLS e política aprovada (PERFORMANCE.md, P03).",
+      "evidencia": "Cópia isolada: -61,21% com últimos 30 dias, transições e fechamento diário, zero divergências nas projeções comparadas. Treze RPCs sob RLS: 60 pares iguais. Falta política de histórico bruto e ensaio físico (PERFORMANCE.md, P03).",
       "fase": 3
     },
     {

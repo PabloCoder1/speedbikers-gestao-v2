@@ -2311,3 +2311,43 @@ Faltam a comparação das RPCs completas sob RLS, a auditoria dos demais
 consumidores e a aprovação da política. A medição não projeta economia em
 disco na VM. Os dois contêineres temporários e arquivos locais foram
 removidos ao fim dos ensaios.
+
+#### RPCs e controle de acesso na cópia integral
+
+A mesma geração diária foi restaurada integralmente em PostgreSQL 17.6
+isolado, com 324 migrations até `20261119180000`, ACLs do dump, owners
+locais e execução do cron desativada. Uma política restritiva temporária
+sobre `fulfillment_stock_snapshots` simulou a visibilidade pós-compactação.
+As políticas de produção foram preservadas e as 13 funções que referenciam
+a tabela no catálogo consultado são `SECURITY INVOKER`.
+
+O ensaio comparou **60 pares** de respostas completas sob
+`authenticated`, sem divergências no recorte. Para funções que devolvem
+conjuntos, as linhas foram ordenadas por seu JSON antes da comparação.
+
+| Grupo | Comparações | Cobertura |
+| --- | ---: | --- |
+| RPCs centrais | 36 | Análise de compra em quatro datas e dois modos, reposição, Full, Curva ABC sem Full e painel de SKU |
+| Outros consumidores diretos | 24 | Lista e contagens de anúncios, vinculações, sugestões e alcance de reposição, análise ABC, saldos e resumo de estoque |
+
+O administrador manteve as quatro contas, com 382.574 → 148.093 linhas
+visíveis. O gestor sintético com permissão em uma conta manteve esse único
+escopo, com 106.114 → 39.422 linhas. O usuário sem vínculo viu zero linhas
+de snapshots e nenhuma linha de análise de compra antes e depois. Três
+RPCs agregadas devolveram estrutura de resumo para esse usuário nas duas
+fases. O rollback deixou as 382.574 linhas originais e removeu a política
+de ensaio e o schema auxiliar.
+
+O teste prova equivalência das respostas comparadas no backup com a
+visibilidade simulada. A política em produção precisa definir o acesso ao
+histórico bruto, pois 234.481 capturas deixam de aparecer pela regra.
+Ainda faltam política aprovada, avaliação de impacto sobre a trilha bruta
+e ensaio do mecanismo físico de compactação com concorrência e rollback.
+
+Na VM, a janela de `pg_stat_statements` começou em 18/11 às 13:49 UTC.
+A leitura agregada de 23/11 identificou 48.240 chamadas de inserção e
+7.427 leituras PostgREST diretas, ambas como `service_role`. Nenhuma
+leitura PostgREST direta autenticada apareceu no recorte. O contador
+cobre os padrões ainda disponíveis em `pg_stat_statements` e a busca
+classifica SQL por referência textual. O resultado não exclui acesso
+eventual, chamadas fora da janela ou consultas não capturadas.
