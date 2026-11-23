@@ -12,6 +12,7 @@ import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { formatBusinessDate, formatCount, formatCurrency } from "../../../lib/format";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { PAGE_SIZE, buildStockHref, resolveStockFilters, summarizeStockWindow } from "../../../lib/stock-filters";
 import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/request-membership";
@@ -86,6 +87,21 @@ export default async function EstoquePage({
 
   const membership = await currentMembership();
   const organizationId = membership.organizationId;
+
+  if (membership.error !== null) {
+    return (
+      <>
+        <PageTitle eyebrow="ESTOQUE / OPERAÇÃO" title="Estoque" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membership.error.message}
+          acao={{ href: mesmaUrl("/estoque", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
 
   if (organizationId === null) {
     return (

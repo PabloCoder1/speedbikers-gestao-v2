@@ -155,7 +155,7 @@ export default async function CurvaAbcPage({
           titulo="Não foi possível confirmar sua organização."
           descricao="Tente novamente em instantes."
           detalhe={membershipError.message}
-          acao={{ href: "/curva-abc", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          acao={{ href: mesmaUrl("/curva-abc", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       </>
     );
@@ -197,7 +197,7 @@ export default async function CurvaAbcPage({
           titulo="Não foi possível carregar as contas do recorte"
           descricao="A seleção de contas pedida na URL não pôde ser confirmada."
           detalhe={erroConta.message}
-          acao={{ href: "/curva-abc", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          acao={{ href: mesmaUrl("/curva-abc", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       </>
     );

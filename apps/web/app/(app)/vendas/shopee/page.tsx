@@ -27,6 +27,7 @@ import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-t
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../../../lib/format";
 import { pageNumbers } from "../../../../lib/listings-dashboard";
 import { contarContasMl } from "../../../../lib/marketplace";
+import { mesmaUrl } from "../../../../lib/mesma-url";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS } from "../../../../lib/period";
 import { formatAge } from "../../../../lib/relative-time";
 import { currentMembership } from "../../../../lib/request-membership";
@@ -145,7 +146,7 @@ export default async function VendasShopeePage({
           titulo="Não foi possível confirmar sua organização."
           descricao="Tente novamente em instantes."
           detalhe={membership.error.message}
-          acao={{ href: "/vendas/shopee", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          acao={{ href: mesmaUrl("/vendas/shopee", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       </SemVendas>
     );

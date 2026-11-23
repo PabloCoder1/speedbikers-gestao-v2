@@ -7,6 +7,7 @@ import { CabecalhoDaCentral, SendoAtivado } from "../comum";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
 import { descreverLimites, GRUPOS_DOS_LIMITES, LIMITES_PADRAO, lerLimites } from "../../../../lib/limites-central";
+import { mesmaUrl } from "../../../../lib/mesma-url";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
@@ -54,6 +55,22 @@ async function LimitesContent({ searchParams }: { searchParams: Promise<Consulta
   const consulta = await searchParams;
   const supabase = await createClient();
   const membership = await currentMembership();
+
+  if (membership.error !== null) {
+    return (
+      <>
+        <Titulo consulta={consulta} />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membership.error.message}
+          acao={{ href: mesmaUrl("/central/limites", consulta), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
+
   const podeEditar = membership.role === "ADMIN" || membership.role === "GESTOR";
 
   const resposta =
@@ -101,7 +118,7 @@ async function LimitesContent({ searchParams }: { searchParams: Promise<Consulta
           titulo="Não foi possível carregar os limites"
           descricao="A central está julgando com os padrões."
           detalhe={resposta.error.message}
-          acao={{ href: "/central/limites", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          acao={{ href: mesmaUrl("/central/limites", consulta), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       )}
 

@@ -5,6 +5,7 @@ import { Icone } from "../../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { StatePill, type PillTone } from "../../../components/state-pill";
 import { tomDeStatus } from "../../../components/tone";
 import { formatCount, formatDateTime, formatDay } from "../../../lib/format";
@@ -133,6 +134,21 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
 
   const membership = await currentMembership();
   const organizationId = membership.organizationId;
+
+  if (membership.error !== null) {
+    return (
+      <>
+        <PageTitle eyebrow="OPERAÇÃO / INTEGRAÇÕES" title="Sincronização" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membership.error.message}
+          acao={{ href: "/sincronizacao", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
 
   if (organizationId === null) {
     return (

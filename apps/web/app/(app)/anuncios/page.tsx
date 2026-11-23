@@ -14,6 +14,7 @@ import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../lib/format";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { monogramaDeProduto } from "../../../lib/initials";
 import { listingStatusLabel } from "../../../lib/labels";
 import {
@@ -213,7 +214,7 @@ export default async function AnunciosPage({
           titulo="Não foi possível confirmar sua organização."
           descricao="Tente novamente em instantes."
           detalhe={membershipError.message}
-          acao={{ href: "/anuncios", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          acao={{ href: mesmaUrl("/anuncios", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       </>
     );
@@ -248,7 +249,7 @@ export default async function AnunciosPage({
           titulo="Não foi possível carregar as contas do Mercado Livre"
           descricao="O filtro de conta pedido na URL não pôde ser confirmado."
           detalhe={erroConta.message}
-          acao={{ href: "/anuncios", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          acao={{ href: mesmaUrl("/anuncios", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       </>
     );
