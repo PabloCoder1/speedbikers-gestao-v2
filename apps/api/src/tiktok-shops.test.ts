@@ -268,4 +268,24 @@ describe("completeTikTokConnect (D-645)", () => {
     expect(vazio.gravado.rpc).toHaveLength(0);
     expect(deOutra.gravado.rpc).toHaveLength(1);
   });
+
+  it("D-793: epoch de expiração fora da faixa de Date devolve rejected sem lançar RangeError", async () => {
+    const { deps, gravado } = montar({
+      respostas: {
+        "/api/v2/token/get": {
+          ...TOKEN,
+          data: { ...TOKEN.data, access_token_expire_in: 9_000_000_000_000 },
+        },
+        "/authorization/202309/shops": LOJAS,
+      },
+    });
+
+    const outcome = await completeTikTokConnect(deps, { state: "s", code: "TTP_code" });
+
+    expect(outcome).toEqual({
+      status: "rejected",
+      reason: "não foi possível concluir a autorização com o TikTok Shop",
+    });
+    expect(gravado.rpc).toHaveLength(0);
+  });
 });

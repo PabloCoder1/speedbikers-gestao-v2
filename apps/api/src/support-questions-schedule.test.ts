@@ -150,4 +150,26 @@ describe("triggerSupportQuestionsReconcile (D-089)", () => {
     });
     expect(enqueued).toHaveLength(0);
   });
+
+  it("D-793: falha ao enfileirar uma conta não interrompe as demais e sinaliza failed para 503", async () => {
+    const { deps: d, enqueued } = deps();
+    const baseEnqueue = d.enqueuer.enqueue;
+    d.enqueuer = {
+      enqueue: (request) => {
+        if (request.queue.endsWith("speedbikers-loja-1")) {
+          return Promise.reject(new Error("fila indisponível"));
+        }
+
+        return baseEnqueue(request);
+      },
+    };
+
+    expect(await triggerSupportQuestionsReconcile(d)).toEqual({
+      accountsScanned: 2,
+      enqueued: 1,
+      deduplicated: 0,
+      failed: true,
+    });
+    expect(enqueued.map((e) => e.queue)).toEqual(["ml-sync-sbmotos"]);
+  });
 });

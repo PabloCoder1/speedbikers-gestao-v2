@@ -229,7 +229,7 @@ export async function completeConnect(
     p_access_token_ciphertext: encryptToken(token.access_token, deps.encryptionKey),
     p_refresh_token_ciphertext: encryptToken(token.refresh_token, deps.encryptionKey),
     p_access_token_expires_at: new Date(now.getTime() + token.expires_in * 1000).toISOString(),
-    p_scopes: token.scope.split(" "),
+    p_scopes: token.scope.trim().split(/\s+/).filter(Boolean),
   });
 
   if (connected.error?.code === "PT409") {
@@ -289,10 +289,17 @@ async function markError(
   reason: string,
 ): Promise<void> {
   // O filtro no UPDATE protege a conexão que outro callback pode ter gravado.
-  await deps.db
+  const updated = await deps.db
     .from("ml_accounts")
     .update({ status: "ERROR", last_error: reason.slice(0, 2000) })
     .eq("id", mlAccountId)
     .eq("organization_id", organizationId)
     .neq("status", "CONNECTED");
+
+  if (updated.error !== null) {
+    deps.logger.error("ml_account_mark_error_failed", {
+      ml_account_id: mlAccountId,
+      reason: updated.error.message,
+    });
+  }
 }

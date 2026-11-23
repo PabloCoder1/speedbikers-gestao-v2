@@ -27,11 +27,14 @@ export function buildAuthorizationUrl(options: { serviceId: string; state: strin
  * durações: o access token vale 7 dias por padrão; o refresh token, a duração
  * de autorização que o vendedor escolheu.
  */
+/** Limite máximo de instante Unix em segundos suportado por `Date` (±8,64e15 ms). */
+const MAX_UNIX_EPOCH_SECONDS = 8_640_000_000_000;
+
 export const tiktokShopTokenSchema = z.object({
   access_token: z.string().min(1),
-  access_token_expire_in: z.number().int().positive(),
+  access_token_expire_in: z.number().int().positive().max(MAX_UNIX_EPOCH_SECONDS),
   refresh_token: z.string().min(1),
-  refresh_token_expire_in: z.number().int().positive(),
+  refresh_token_expire_in: z.number().int().positive().max(MAX_UNIX_EPOCH_SECONDS),
   open_id: z.string().min(1),
   seller_name: z.string().nullable().optional(),
   seller_base_region: z.string().nullable().optional(),
@@ -62,5 +65,9 @@ export function refreshAccessToken(client: TikTokShopClient, refreshToken: strin
 
 /** O instante Unix (segundos) da doc como ISO. */
 export function tiktokEpochToIso(segundos: number): string {
+  if (!Number.isFinite(segundos) || segundos <= 0 || segundos > MAX_UNIX_EPOCH_SECONDS) {
+    throw new RangeError(`Instante Unix inválido do TikTok Shop: ${String(segundos)}`);
+  }
+
   return new Date(segundos * 1000).toISOString();
 }

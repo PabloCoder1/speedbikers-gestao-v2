@@ -149,13 +149,28 @@ export async function requestListingRelistExecution(
 
   const minuteWindow = now.toISOString().slice(0, 16);
 
-  const enqueued = await deps.enqueuer.enqueue({
-    jobType: "relist.execute",
-    organizationId: caller.organizationId,
-    dedupeKey: `relist-execute:${relistId}:${minuteWindow}`,
-    queue: `ml-sync-${slug}`,
-    payload: { relistId },
-  });
+  let enqueued;
+
+  try {
+    enqueued = await deps.enqueuer.enqueue({
+      jobType: "relist.execute",
+      organizationId: caller.organizationId,
+      dedupeKey: `relist-execute:${relistId}:${minuteWindow}`,
+      queue: `ml-sync-${slug}`,
+      payload: { relistId },
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "falha ao enfileirar execução de republicação";
+
+    deps.logger.error("relist_execute_enqueue_failed", {
+      relist_id: relistId,
+      parent_item_id: row.parent_item_id,
+      confirmed_by: caller.userId,
+      reason,
+    });
+
+    return { status: "error", reason };
+  }
 
   deps.logger.info("relist_execute_queued", {
     relist_id: relistId,
@@ -245,16 +260,31 @@ export async function requestListingRelistRetry(
   // colidir com o nome retido de uma execução do mesmo minuto (classe D-051).
   const minuteWindow = now.toISOString().slice(0, 16);
 
-  const enqueued = await deps.enqueuer.enqueue({
-    jobType: "relist.execute",
-    organizationId: caller.organizationId,
-    dedupeKey: `relist-retry:${relistId}:${minuteWindow}`,
-    queue: `ml-sync-${slug}`,
-    // Quem autorizou vai no payload e o worker grava no evento da retomada:
-    // o histórico append-only guarda o ator humano (contrato de
-    // `listing_relist_events.actor_user_id`), não só o log.
-    payload: { relistId, retomada: true, autorizadoPor: caller.userId },
-  });
+  let enqueued;
+
+  try {
+    enqueued = await deps.enqueuer.enqueue({
+      jobType: "relist.execute",
+      organizationId: caller.organizationId,
+      dedupeKey: `relist-retry:${relistId}:${minuteWindow}`,
+      queue: `ml-sync-${slug}`,
+      // Quem autorizou vai no payload e o worker grava no evento da retomada:
+      // o histórico append-only guarda o ator humano (contrato de
+      // `listing_relist_events.actor_user_id`), não só o log.
+      payload: { relistId, retomada: true, autorizadoPor: caller.userId },
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "falha ao enfileirar retomada de republicação";
+
+    deps.logger.error("relist_retry_enqueue_failed", {
+      relist_id: relistId,
+      parent_item_id: row.parent_item_id,
+      confirmed_by: caller.userId,
+      reason,
+    });
+
+    return { status: "error", reason };
+  }
 
   deps.logger.info("relist_retry_queued", {
     relist_id: relistId,
@@ -336,19 +366,34 @@ export async function requestListingRelist(
   // (D-159), não este nome.
   const minuteWindow = now.toISOString().slice(0, 16);
 
-  const enqueued = await deps.enqueuer.enqueue({
-    jobType: "relist.prepare",
-    organizationId: caller.organizationId,
-    dedupeKey: `relist-prepare:${request.itemId}:${minuteWindow}`,
-    // Fila da conta: a captura do snapshot fala com o Mercado Livre e disputa
-    // o rate limit daquela conta (D-036).
-    queue: `ml-sync-${account.data.slug}`,
-    payload: {
-      mlAccountId: request.mlAccountId,
-      itemId: request.itemId,
-      requestedBy: caller.userId,
-    },
-  });
+  let enqueued;
+
+  try {
+    enqueued = await deps.enqueuer.enqueue({
+      jobType: "relist.prepare",
+      organizationId: caller.organizationId,
+      dedupeKey: `relist-prepare:${request.itemId}:${minuteWindow}`,
+      // Fila da conta: a captura do snapshot fala com o Mercado Livre e disputa
+      // o rate limit daquela conta (D-036).
+      queue: `ml-sync-${account.data.slug}`,
+      payload: {
+        mlAccountId: request.mlAccountId,
+        itemId: request.itemId,
+        requestedBy: caller.userId,
+      },
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "falha ao enfileirar preparo de republicação";
+
+    deps.logger.error("relist_prepare_enqueue_failed", {
+      ml_account_id: request.mlAccountId,
+      item_id: request.itemId,
+      requested_by: caller.userId,
+      reason,
+    });
+
+    return { status: "error", reason };
+  }
 
   deps.logger.info("relist_prepare_queued", {
     ml_account_id: request.mlAccountId,
