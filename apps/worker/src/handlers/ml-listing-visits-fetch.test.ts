@@ -2,7 +2,9 @@ import { createLogger } from "@sb/observability";
 import type { MercadoLivreClient, RequestOptions } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
+import { listingVisitsTimeWindowSchema } from "./listing-visits-schema.js";
 import type { FetchListingVisitsParams } from "./ml-listing-visits-fetch.js";
 import { fetchListingVisits } from "./ml-listing-visits-fetch.js";
 
@@ -331,5 +333,63 @@ describe("fetchListingVisits (D-032)", () => {
     const { client } = fakeMercadoLivreClient({});
 
     await expect(fetchListingVisits(baseParams(db, client))).rejects.toThrow(/listings/);
+  });
+
+  it("D-797: resposta fora do contrato (ZodError) num item pula só ele sem derrubar os demais", async () => {
+    const { db, upserted } = fakeDb({ links: [{ item_id: "MLB-ruim" }, { item_id: "MLB2" }] });
+    const lines: string[] = [];
+    const client = {
+      request: (options: RequestOptions<unknown>) => {
+        if (options.path === "/items/MLB-ruim/visits/time_window") {
+          return Promise.reject(
+            new ZodError([{ code: "invalid_type", expected: "array", path: ["results"], message: "x" }]),
+          );
+        }
+
+        return Promise.resolve({ item_id: "MLB2", results: [{ date: "2026-08-22T00:00:00Z", total: 5 }] });
+      },
+    } as unknown as MercadoLivreClient;
+
+    const result = await fetchListingVisits(baseParams(db, client, lines));
+
+    expect(result).toEqual({ itemsProcessed: 1, itemsFailed: 1, itemsSkipped: 0 });
+    expect(upserted).toHaveLength(1);
+    expect(upserted[0]?.item_id).toBe("MLB2");
+    expect(lines.join("\n")).toContain("listing_visits_fetch_failed");
+  });
+
+  it("D-797: deduplica metric_date repetida no mesmo lote (evita Postgres 21000) e schema valida data/total", async () => {
+    expect(
+      listingVisitsTimeWindowSchema.safeParse({
+        item_id: "MLB1",
+        results: [{ date: "2026-02-31T00:00:00Z", total: 10 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      listingVisitsTimeWindowSchema.safeParse({
+        item_id: "MLB1",
+        results: [{ date: "2026-08-21T00:00:00Z", total: -1 }],
+      }).success,
+    ).toBe(false);
+
+    const { db, batches } = fakeDb({ links: [{ item_id: "MLB1" }] });
+    const { client } = fakeMercadoLivreClient({
+      MLB1: {
+        item_id: "MLB1",
+        results: [
+          { date: "2026-08-21T00:00:00Z", total: 10 },
+          { date: "2026-08-21T03:00:00Z", total: 14 },
+          { date: "2026-08-22T00:00:00Z", total: 7 },
+        ],
+      },
+    });
+
+    const result = await fetchListingVisits(baseParams(db, client));
+
+    expect(result).toEqual({ itemsProcessed: 1, itemsFailed: 0, itemsSkipped: 0 });
+    expect(batches[0]).toEqual([
+      expect.objectContaining({ metric_date: "2026-08-21", visits: 14 }),
+      expect.objectContaining({ metric_date: "2026-08-22", visits: 7 }),
+    ]);
   });
 });

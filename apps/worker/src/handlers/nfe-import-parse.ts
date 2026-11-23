@@ -186,9 +186,18 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       return marcarFalhaDeLeitura(deps.db, documentId, version, reason, true);
     }
 
-    const leitura = ehPdf
-      ? lerPdf(arquivo as Uint8Array, organization.data.cnpj)
-      : lerXml(arquivo, organization.data.cnpj);
+    let leitura: Leitura;
+
+    try {
+      leitura = ehPdf
+        ? lerPdf(arquivo as Uint8Array, organization.data.cnpj)
+        : lerXml(arquivo, organization.data.cnpj);
+    } catch (error) {
+      leitura = {
+        ok: false,
+        motivo: error instanceof Error ? error.message : "falha ao interpretar o documento",
+      };
+    }
 
     if (!leitura.ok) {
       context.logger.error("documento_parse_invalido", {

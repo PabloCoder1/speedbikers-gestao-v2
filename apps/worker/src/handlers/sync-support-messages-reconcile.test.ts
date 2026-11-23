@@ -303,4 +303,14 @@ describe("sync.support.messages.reconcile", () => {
     expect(ctx.lines.join("\n")).toContain("sync_support_messages_reconcile_done");
     expect(ctx.lines.join("\n")).not.toContain("cadê meu pedido?");
   });
+
+  it("D-797: ZodError ao listar /messages/unread falha como not_retryable", async () => {
+    const ctx = setup(DEFAULT_ACCOUNT, { unreadPayload: { user_id: "invalido", results: "nao-array" } });
+
+    await expect(run(ctx.deps, ctx.lines)).resolves.toMatchObject({
+      status: "failed",
+      retryable: false,
+    });
+    expect(recordSyncRunFailureMock.mock.calls[0]?.[1]).toMatchObject({ errorClass: "not_retryable" });
+  });
 });

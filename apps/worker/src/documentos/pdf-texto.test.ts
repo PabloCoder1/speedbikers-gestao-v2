@@ -99,4 +99,20 @@ describe("texto posicionado", () => {
   it("arquivo que não é PDF não estoura — devolve vazio", () => {
     expect(lerLinhasDoPdf(Buffer.from("isto é um texto qualquer", "utf8"))).toEqual([]);
   });
+
+  it("D-797: ignora stream Flate acima do limite (zip bomb) sem alocar nem travar e preserva streams válidos", () => {
+    const bomba = deflateSync(Buffer.from(`${escrever(10, 10, "BOMBA")}${" ".repeat(5 * 1024 * 1024)}`, "latin1"));
+    const normal = deflateSync(Buffer.from(escrever(10, 50, "CONTEUDO VALIDO"), "latin1"));
+    const bytes = Buffer.concat([
+      Buffer.from("%PDF-1.7\n1 0 obj\nstream\n", "latin1"),
+      bomba,
+      Buffer.from("\nendstream\n2 0 obj\nstream\n", "latin1"),
+      normal,
+      Buffer.from("\nendstream\n%%EOF", "latin1"),
+    ]);
+
+    const linhas = lerLinhasDoPdf(bytes);
+
+    expect(linhas.map((l) => l.texto)).toEqual(["CONTEUDO VALIDO"]);
+  });
 });

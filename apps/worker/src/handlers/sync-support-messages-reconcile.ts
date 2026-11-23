@@ -131,7 +131,12 @@ export function createSyncSupportMessagesReconcileHandler(
         accessToken: tokenResult.accessToken,
       });
     } catch (error) {
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+      const errorClass =
+        error instanceof MercadoLivreApiError
+          ? error.errorClass
+          : error instanceof z.ZodError
+            ? "not_retryable"
+            : "retryable";
       const reason =
         error instanceof Error ? error.message : "erro desconhecido ao listar conversas não lidas";
 

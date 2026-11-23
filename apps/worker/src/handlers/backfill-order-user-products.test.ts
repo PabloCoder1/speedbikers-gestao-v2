@@ -258,6 +258,7 @@ function run(
   db: BackfillOrderUserProductsDeps["db"],
   client: MercadoLivreClient,
   payload: Record<string, unknown> = { mlAccountId: ML_ACCOUNT_ID, ate: ATE, limite: LIMITE },
+  opcoes: { falharEnqueuePara?: (request: EnqueueRequest) => boolean } = {},
 ) {
   const enfileirados: EnqueueRequest[] = [];
   const handler = createBackfillOrderUserProductsHandler({
@@ -269,6 +270,10 @@ function run(
     sleep: () => Promise.resolve(),
     enqueuer: {
       enqueue: (request) => {
+        if (opcoes.falharEnqueuePara?.(request) === true) {
+          return Promise.reject(new Error("cloud tasks unavailable"));
+        }
+
         enfileirados.push(request);
 
         return Promise.resolve({ deduplicated: false });
@@ -545,5 +550,31 @@ describe("backfill.order-user-products (D-362, 3ª parte)", () => {
     expect(outcome).toEqual({ status: "done", processed: 1_005 });
     expect(items.every((i) => i.sku_id === "sku-bulk")).toBe(true);
     expect(calls).toEqual([]);
+  });
+
+  it("D-797: falha ao enfileirar analytics.recompute num dia é isolada e mantém os demais dias, sync_runs e próximo pedaço", async () => {
+    const { db, syncRuns } = fakeDb({
+      orders: [
+        { id: 9001, date_created: "2026-09-15T16:00:00.000Z" },
+        { id: 9002, date_created: "2026-09-16T14:00:00.000Z" },
+      ],
+      items: [item(9001, "MLB1", "MLBU111"), item(9002, "MLB2", "MLBU222")],
+      links: [
+        link("l-up1", "sku-1", { userProduct: "MLBU111" }),
+        link("l-up2", "sku-2", { userProduct: "MLBU222" }),
+      ],
+    });
+    const { client } = fakeClient({});
+
+    const { outcome, enfileirados, lines } = await run(db, client, undefined, {
+      falharEnqueuePara: (req) =>
+        req.jobType === "analytics.recompute" && (req.payload as { metricDate?: string }).metricDate === "2026-09-15",
+    });
+
+    expect(outcome).toEqual({ status: "done", processed: 2 });
+    expect(syncRuns).toHaveLength(1);
+    expect(enfileirados.map((e) => e.jobType)).toEqual(["analytics.recompute", "backfill.order-user-products"]);
+    expect(enfileirados[0]?.payload).toMatchObject({ metricDate: "2026-09-16" });
+    expect(lines.join("\n")).toContain("backfill_order_user_products_recompute_enqueue_failed");
   });
 });
