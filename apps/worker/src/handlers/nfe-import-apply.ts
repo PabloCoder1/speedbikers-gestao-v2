@@ -148,10 +148,16 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
     });
 
     if (recusa !== null) {
-      await deps.db
+      const failed = await deps.db
         .from("documents")
         .update({ status: "FAILED", last_error: recusa.motivo, last_error_code: recusa.codigo })
         .eq("id", documentId);
+
+      // D-787: falha transitória ao marcar o documento como FAILED não pode
+      // retornar `retryable: false`, senão o documento ficaria preso em APPLYING.
+      if (failed.error !== null) {
+        return { status: "failed", retryable: true, reason: failed.error.message };
+      }
 
       return { status: "failed", retryable: false, reason: recusa.motivo };
     }

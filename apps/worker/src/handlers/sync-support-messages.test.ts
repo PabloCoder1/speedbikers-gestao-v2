@@ -345,4 +345,40 @@ describe("sync.support.messages", () => {
 
     expect(persistMock.mock.calls[0]?.[2].case.remoteUnreadCount).toBe(4);
   });
+
+  it("D-787: avança offset pela quantidade recebida quando a API devolve menos que PAGE_LIMIT", async () => {
+    const ctx = setup(
+      {},
+      {
+        pages: [
+          conversation(
+            Array.from({ length: 50 }, (_, index) => buyerMessage(`p0-${String(index)}`)),
+            120,
+          ),
+          conversation(
+            Array.from({ length: 50 }, (_, index) => buyerMessage(`p1-${String(index)}`)),
+            120,
+          ),
+          conversation(
+            Array.from({ length: 20 }, (_, index) => buyerMessage(`p2-${String(index)}`)),
+            120,
+          ),
+        ],
+      },
+    );
+
+    await run(ctx.deps, ctx.lines);
+
+    expect(ctx.requests.map((r) => r.searchParams?.offset)).toEqual([0, 50, 100]);
+    expect(persistMock.mock.calls[0]?.[2].messages).toHaveLength(120);
+  });
+
+  it("D-787: primeira página vazia encerra sem segunda chamada mesmo com total > 0", async () => {
+    const ctx = setup({}, { pages: [conversation([], 10)] });
+
+    await run(ctx.deps, ctx.lines);
+
+    expect(ctx.requests).toHaveLength(1);
+    expect(persistMock.mock.calls[0]?.[2].messages).toHaveLength(0);
+  });
 });

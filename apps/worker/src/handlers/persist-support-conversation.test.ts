@@ -60,6 +60,7 @@ function fakeDb(options: { orders?: Row[]; ordersError?: { message: string } } =
   const messages = new Map<string, Row>();
   const links: Row[] = [];
   const orders = options.orders ?? [];
+  let ordersSelectCalls = 0;
   let caseSequence = 0;
 
   function caseIdentity(row: Row): string {
@@ -148,6 +149,7 @@ function fakeDb(options: { orders?: Row[]; ordersError?: { message: string } } =
       return {
         select: () => {
           if (table === "orders") {
+            ordersSelectCalls += 1;
             return listChain(orders, options.ordersError ?? null);
           }
 
@@ -228,7 +230,7 @@ function fakeDb(options: { orders?: Row[]; ordersError?: { message: string } } =
     },
   };
 
-  return { db: db as never, rpcCalls, cases, messages, links };
+  return { db: db as never, rpcCalls, cases, messages, links, getOrdersSelectCalls: () => ordersSelectCalls };
 }
 
 describe("persistSupportConversation", () => {
@@ -424,4 +426,26 @@ describe("persistSupportConversation", () => {
     expect(fake.messages.size).toBe(0);
     expect(fake.cases.size).toBe(1);
   });
+
+  it.each(["", "0", "nao-numerico", "99999999999999999999"])(
+    "D-787: pedido avulso com externalCaseId inválido/inseguro (%j) cai em vínculo EXTERNAL sem consultar orders",
+    async (badExternalCaseId) => {
+      const fake = fakeDb({
+        orders: [{ id: 0, organization_id: CONTEXT.organizationId, ml_account_id: CONTEXT.mlAccountId, pack_id: null }],
+      });
+      const base = projection({ kind: "ORDER", id: "1234567871", sellerId: SELLER_ID });
+      const malformed = {
+        ...base,
+        case: { ...base.case, externalCaseId: badExternalCaseId, packId: null },
+      };
+
+      const result = await persistSupportConversation(fake.db, CONTEXT, malformed);
+
+      expect(result).toMatchObject({ linkMode: "EXTERNAL", linkedOrderIds: [] });
+      expect(fake.getOrdersSelectCalls()).toBe(0);
+      expect(fake.links).toEqual([
+        expect.objectContaining({ external_entity_kind: "ORDER", external_entity_id: badExternalCaseId }),
+      ]);
+    },
+  );
 });
