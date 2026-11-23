@@ -520,6 +520,9 @@ jobs:
       - name: Guarda de ambiente (dev x prod)
         run: bash infra/ambiente.test.sh
 
+      - name: Paginação e falhas no provisionamento de alertas
+        run: bash infra/alertas.test.sh
+
       - name: Política de alerta de disco da VM
         run: node --test infra/vm/disk-alert-policy.test.mjs
 

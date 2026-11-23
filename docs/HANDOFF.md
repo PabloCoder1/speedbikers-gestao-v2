@@ -12,11 +12,11 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-11-21 |
+| **Atualizado em** | 2026-11-22 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | Base de integração `origin/main` em `a81f5235` (#348). O candidato usa branch própria. [Checkpoint](agent-audit/SESSION_LOG.md). |
-| **Fechamento da V3** | 137/226 pontos (60,6%), 24/43 entregas pelo inventário Sentinel. [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md). |
-| **Sentinel: próximo passo** | #378 reúne o catálogo ML e as correções Shopee de #379 e #380 sobre #364. Validar a CI conjunta. A conciliação de infraestrutura segue em #374 e o registro no Dev está em espera. |
+| **Fechamento da V3** | 147/226 pontos (65,0%), 26/43 entregas pelo inventário Sentinel. [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7087810088). |
+| **Sentinel: próximo passo** | #378 reúne Mercado Livre, Shopee e infraestrutura do #374 sobre #364. Validar a CI conjunta. O registro no Dev segue em espera. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo. Em 21/11, o provedor recusou a retomada: banco de 2,0 GB acima do plano gratuito. Rotinas GCP pausadas (D-350). |
 | **Supabase** | Produção usa a VM `sb-db` (`speedbikers-prod`). O antigo projeto hosted `imvjfgnaprqsfjlnsyev` estava `INACTIVE` em 18/11. Convite, SMTP e recuperação Auth seguem pendentes. [VM](../infra/vm/README.md). |
 | **Produção** | Cloud Run em leitura de 20/11: API `api-00041-8m8` e worker `worker-00059-mjc`, 100% de tráfego nas respectivas revisões. A validação do alias web do catálogo de compras está registrada no #333. |
@@ -55,6 +55,8 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   (6429063609355665) ainda deve notificar o `.vercel.app` excluído: tirar a URL no painel.
 - **`frete_anomalo` passa de 8 s a frio** (D-404): na rodada de 25/09, 9,7 s na 1ª tentativa e 2,4 s na repetição do
   Cloud Tasks, que fechou o ciclo. Atacado em D-409 (migration `20260923195958`): conferir o tempo a frio depois dela.
+- **Alertas externos.** O provisionador percorre as páginas e recusa nomes ambíguos.
+
 - **Um só app do Mercado Livre para Dev e produção** (D-350). A URL de notificação é
   uma só e está em produção desde 2026-09-14 17:30 UTC; o Dev ficou sem webhooks e
   está **pausado** (15 jobs e 7 filas). Retomá-lo sem app próprio volta a disputar a
@@ -209,7 +211,7 @@ Nada disto pode ser feito por um agente.
 
 | | |
 |---|---|
-| backup e restore **verificados** | O dump diário de 19/11 restaurou 322 migrations em contêiner isolado. A sondagem de leitura confirmou a cópia no Cloud Storage. Falta agendamento externo e confirmação do canal em falha controlada. [VM](../infra/vm/README.md) |
+| backup e restore **verificados** | Dumps diários de 19 e 22/11 restaurados em isolamento. A sondagem automática passou em 21 e 22/11 e o alerta chegou no teste controlado. [VM](../infra/vm/README.md) |
 | ~~revisão de segurança e de secrets~~ | ✅ **FEITA em quatro fatias**: segredos e dependências (D-328); superfície de entrada conferida ao vivo, D-045 fechada e cabeçalhos da `web` confirmados na Vercel (D-329); redação de log por VALOR (D-330); CSP completa com nonce, com e2e que exige zero violações (D-331). **Sem lacuna técnica aberta.** A guarda de `pnpm audit` que ficou sem dono entrou na CI em D-336 (`--prod`, corte em alta) |
 | load tests e revisão de `pg_stat_statements` | **carga real medida (D-339)**: 65,8 mil webhooks/dia, pico de 1.050/min, e o ACK passa de 7 s nos picos. **A correção de D-339 foi publicada e voltada** (D-340): esfriou as conexões e piorou `orders_v2`. O pico continua aberto. O log do webhook passou a medir cada etapa (`lookup_ms`, `enqueue_ms`; D-343) — publicado em `api-00039-9vm`. Fora de pico, a Cloud Task custa ~185 ms fixos e a consulta da conta ~50 ms, que esfria depois de pausa. **A primeira rajada medida respondeu: é a consulta da conta** — p95 de 2,8 s na rajada, contra 103 ms fora dela, com a Cloud Task igual (D-345). Em 10 dias foram 26.748 ACKs acima de 2 s, em 78 rajadas sem horário fixo. **A correção foi publicada em D-346** (contas em memória, com carga única em voo e recarga limitada; `api-00040-qrk`): depois da primeira carga, `lookup_ms` caiu para 0 ms, e na rajada de 319/s das 13:49 UTC ficou em 0, com ACK máx 190 ms numa instância (D-346 §6). **O pico do ACK fechou.** Falta também a revisão de `pg_stat_statements` (`report:health` pede a senha do Dev — ato humano) |
 | ~~Supabase e Cloud Run de **produção**~~ | ✅ **CRIADOS em 2026-09-14** (D-348, D-349, D-350): GCP, Supabase e Vercel `speedbikers-prod`; migrations por `migrations-producao.yml`, com duas aprovações; api e worker em `36a23ad`, juntado na `v3` pelo PR #2 (`da130c0`) com CI verde |
