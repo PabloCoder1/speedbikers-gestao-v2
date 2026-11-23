@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 fixture="$(mktemp -d)"
-trap 'rm -f "${fixture}/gcloud" "${fixture}/build-args" "${fixture}/deploy-args" "${fixture}/git" "${fixture}/.env.deploy.yaml"; rmdir "${fixture}"' EXIT
+trap 'rm -f "${fixture}/gcloud" "${fixture}/build-args" "${fixture}/deploy-args" "${fixture}/git" "${fixture}/.env.deploy.yaml" "${fixture}/nested-args" "${fixture}/nested-build"; rmdir "${fixture}"' EXIT
 
 cat > "${fixture}/gcloud" <<'SH'
 #!/usr/bin/env bash
@@ -29,7 +29,7 @@ case "$1 $2" in
     case "$3" in
       list)
         case "$inventory" in
-          existing) printf 'api\thttps://api.example.invalid\r\nworker\thttps://worker.example.invalid\r\n' ;;
+          existing|success) printf 'api\thttps://api.example.invalid\r\nworker\thttps://worker.example.invalid\r\n' ;;
           api_missing) printf 'worker\thttps://worker.example.invalid\r\n' ;;
           worker_missing) printf 'api\thttps://api.example.invalid\r\n' ;;
           worker_pending) printf 'worker\t\r\n' ;;
@@ -42,6 +42,7 @@ case "$1 $2" in
           *) exit 1 ;;
         esac
         ;;
+      add-iam-policy-binding) ;;
       describe)
         case "$*" in
           *latestCreatedRevisionName*) echo worker-00001-fixture ;;
@@ -54,8 +55,19 @@ case "$1 $2" in
     ;;
   'run deploy')
     printf '%s\n' "$@" > "${DEPLOY_ARGS_FIXTURE}"
-    if [[ "$3" = api ]]; then grep -E '^(API_URL|WORKER_URL):' .env.deploy.yaml >> "${DEPLOY_ARGS_FIXTURE}"; fi
+    if [[ "$3" = api ]]; then
+      while [[ "$1" != --env-vars-file ]]; do shift; done
+      config="$2"
+      grep -E '^(API_URL|WORKER_URL):' "$config" >> "${DEPLOY_ARGS_FIXTURE}"
+      if [[ -n "${NESTED_DEPLOY_SCRIPT:-}" ]]; then
+        nested=0
+        NESTED_DEPLOY_SCRIPT='' DEPLOY_ARGS_FIXTURE="$PWD/nested-args" BUILD_ARGS_FIXTURE="$PWD/nested-build" \
+          bash "$NESTED_DEPLOY_SCRIPT" api >/dev/null || nested=$?
+        [[ "$nested" = 43 && -f "$config" ]]
+      fi
+    fi
     if [[ "${RUN_INVENTORY:-}" = combined && "$3" = worker ]]; then exit 0; fi
+    if [[ "${RUN_INVENTORY:-}" = success ]]; then exit 0; fi
     exit 43
     ;;
   'builds submit')
@@ -111,6 +123,7 @@ rodar_push() (
   cd "${fixture}"
   env -i PATH="${fixture}:$PATH" GCLOUD_BIN="${fixture}/gcloud" MERCADO_LIVRE_CLIENT_ID=123 \
     SHOPEE_PARTNER_ID=456 PUSH_INVENTORY="$local_inventory" BUILD_ARGS_FIXTURE="${fixture}/build-args" \
+    NESTED_DEPLOY_SCRIPT="${NESTED_DEPLOY_SCRIPT:-}" \
     RUN_INVENTORY="${RUN_INVENTORY:-existing}" DEPLOY_ARGS_FIXTURE="${fixture}/deploy-args" bash "$script" "$@"
 )
 
@@ -169,3 +182,19 @@ grep -Fq '_APP=worker,' "${fixture}/build-args"
 grep -Fq '_APP=api,' "${fixture}/build-args"
 grep -Fxq 'WORKER_URL: "https://worker.example.invalid"' "${fixture}/deploy-args"
 printf 'ok    deploy combinado relê a URL do worker recém-criado\n'
+
+printf 'arquivo preexistente\n' > "${fixture}/.env.deploy.yaml"
+codigo=0
+NESTED_DEPLOY_SCRIPT="$script" rodar_push present api >/dev/null || codigo=$?
+[[ "$codigo" = 43 ]]
+[[ "$(cat "${fixture}/.env.deploy.yaml")" = 'arquivo preexistente' ]]
+outer="$(grep -A1 -Fx -- --env-vars-file "${fixture}/deploy-args" | tail -n1)"
+inner="$(grep -A1 -Fx -- --env-vars-file "${fixture}/nested-args" | tail -n1)"
+[[ "$outer" != "$inner" && ! -e "${fixture}/$outer" && ! -e "${fixture}/$inner" ]]
+printf 'ok    execuções sobrepostas isolam e limpam somente seus arquivos de configuração\n'
+
+RUN_INVENTORY=success rodar_push present api >/dev/null
+success_file="$(grep -A1 -Fx -- --env-vars-file "${fixture}/deploy-args" | tail -n1)"
+[[ -n "$success_file" && ! -e "${fixture}/$success_file" ]]
+[[ "$(cat "${fixture}/.env.deploy.yaml")" = 'arquivo preexistente' ]]
+printf 'ok    deploy bem-sucedido remove seu temporário e preserva o arquivo preexistente\n'

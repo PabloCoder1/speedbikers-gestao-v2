@@ -141,15 +141,12 @@ build_and_deploy() {
     # Secret Manager (docs/DEPLOYMENT.md secao 5).
     # Caminho no diretório do repositório, não em /tmp: o gcloud.cmd é um
     # programa Windows nativo e não entende o caminho MSYS `/tmp/...`.
-    # O nome casa com `.env.*` do .gitignore, então não há risco de versionar.
-    local env_file=".env.deploy.yaml"
-    trap 'rm -f "${env_file}"' RETURN
-    # RETURN só dispara quando a função retorna. Se o script PARA no meio —
-    # `fail` sai com `exit`, como a guarda de tráfego logo abaixo —, o arquivo
-    # ficava para trás (D-341). O EXIT cobre esse caminho.
-    trap 'rm -f .env.deploy.yaml' EXIT
+    # O nome único casa com .gitignore e .gcloudignore. Cada processo limpa
+    # somente o arquivo que criou, inclusive quando o deploy falha.
+    api_env_file="$(mktemp .env.deploy.XXXXXXXX.yaml)"
+    trap 'rm -f -- "${api_env_file}"' EXIT
 
-    cat > "${env_file}" <<YAML
+    cat > "${api_env_file}" <<YAML
 NODE_ENV: production
 # Commit desta imagem — o MESMO que a taggeia. E o que a Saude do Sistema
 # (D-176) compara com o commit da web para dizer se o que esta no ar e o que
@@ -183,7 +180,7 @@ YAML
     # segredo sem acesso não falha o deploy, falha a PARTIDA do container.
     local shopee_secret=""
     if [ -n "${SHOPEE_PARTNER_ID}" ]; then
-      cat >> "${env_file}" <<YAML
+      cat >> "${api_env_file}" <<YAML
 SHOPEE_PARTNER_ID: "${SHOPEE_PARTNER_ID}"
 SHOPEE_ENVIRONMENT: "${SHOPEE_ENVIRONMENT}"
 SHOPEE_REDIRECT_URI: "${SHOPEE_REDIRECT_URI:-${api_url}/oauth/shopee/callback}"
@@ -200,7 +197,7 @@ YAML
     # Center. Na fatia 1 só a api usa o TikTok.
     local tiktok_secret=""
     if [ -n "${TIKTOK_SHOP_SERVICE_ID}" ]; then
-      cat >> "${env_file}" <<YAML
+      cat >> "${api_env_file}" <<YAML
 TIKTOK_SHOP_SERVICE_ID: "${TIKTOK_SHOP_SERVICE_ID}"
 YAML
       tiktok_secret=",TIKTOK_SHOP_APP_KEY=${SECRET_TIKTOK_SHOP_APP_KEY}:latest,TIKTOK_SHOP_APP_SECRET=${SECRET_TIKTOK_SHOP_APP_SECRET}:latest"
@@ -224,7 +221,7 @@ YAML
       --concurrency 80 \
       --timeout 60s \
       --cpu 1 --memory 512Mi \
-      --env-vars-file "${env_file}" \
+      --env-vars-file "${api_env_file}" \
       --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest,ANTHROPIC_API_KEY=${SECRET_ANTHROPIC_KEY}:latest${shopee_secret}${tiktok_secret}" \
       --quiet
   else
