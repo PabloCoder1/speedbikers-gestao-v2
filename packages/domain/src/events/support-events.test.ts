@@ -86,4 +86,10 @@ describe("detectClaimSupportEvents", () => {
       isMediation: true,
     });
   });
+
+  it("D-788: datas inválidas (openedAt, notifyEpoch ou lastActivityAt) ficam silenciosas em vez de burlar a época por NaN", () => {
+    expect(detectClaimSupportEvents({ ...BASE, openedAt: "data-invalida" })).toEqual([]);
+    expect(detectClaimSupportEvents({ ...BASE, notifyEpoch: "epoca-invalida" })).toEqual([]);
+    expect(detectClaimSupportEvents({ ...BASE, lastActivityAt: "atividade-invalida" })).toEqual([]);
+  });
 });

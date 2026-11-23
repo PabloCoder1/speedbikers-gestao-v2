@@ -85,6 +85,14 @@ describe("calcularPreco — Mercado Livre", () => {
     expect(calcularPreco({ plataforma: "shopee", preco: 0, custo: 10 }).ok).toBe(false);
     expect(calcularPreco({ plataforma: "shopee", preco: 10, custo: -1 }).ok).toBe(false);
   });
+
+  it("D-788: recusa freteMl ou tarifaFixaMl NaN, infinito ou negativo", () => {
+    expect(calcularPreco({ ...ml, preco: 100, custo: 50, freteMl: Number.NaN }).ok).toBe(false);
+    expect(calcularPreco({ ...ml, preco: 100, custo: 50, freteMl: Number.POSITIVE_INFINITY }).ok).toBe(false);
+    expect(calcularPreco({ ...ml, preco: 100, custo: 50, freteMl: -5 }).ok).toBe(false);
+    expect(calcularPreco({ plataforma: "mercado_livre", preco: 100, custo: 50, freteMl: 10, tarifaFixaMl: Number.NaN }).ok).toBe(false);
+    expect(calcularPreco({ plataforma: "mercado_livre", preco: 100, custo: 50, freteMl: 10, tarifaFixaMl: -1 }).ok).toBe(false);
+  });
 });
 
 describe("calcularPreco — Shopee", () => {
