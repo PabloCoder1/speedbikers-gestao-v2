@@ -7,6 +7,14 @@
 # Uso:  bash infra/deploy-cloud-run.sh          # api e worker
 #       bash infra/deploy-cloud-run.sh api      # só um serviço
 
+case "$#:${1-}" in
+  0:|1:api|1:worker) ;;
+  *)
+    printf 'Uso: bash infra/deploy-cloud-run.sh [api|worker]\n' >&2
+    exit 2
+    ;;
+esac
+
 source "$(dirname "$0")/lib.sh"
 
 REPO="speedbikers-v3"

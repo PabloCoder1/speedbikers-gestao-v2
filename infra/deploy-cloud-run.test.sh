@@ -219,3 +219,18 @@ if saida="$(RUN_INVENTORY=binding_denied rodar_push present 2>&1)" ||
   exit 1
 fi
 printf 'ok    deploy combinado bloqueia a API se o worker não receber run.invoker\n'
+
+assert_invalid_target() {
+  local saida
+  if saida="$(rodar_push present "$@" 2>&1)" ||
+    [[ "$saida" != *'Uso: bash infra/deploy-cloud-run.sh [api|worker]'* || "$saida" = *'Pré-condições'* ||
+       -s "${fixture}/build-args" || -s "${fixture}/deploy-args" ]]; then
+    printf 'FALHA: argumento inválido deve ser rejeitado antes de consultar o projeto\n%s\n' "$saida" >&2
+    exit 1
+  fi
+}
+
+assert_invalid_target typo
+assert_invalid_target ''
+assert_invalid_target api worker
+printf 'ok    alvo desconhecido, vazio e argumentos excedentes não chegam ao gcloud\n'
