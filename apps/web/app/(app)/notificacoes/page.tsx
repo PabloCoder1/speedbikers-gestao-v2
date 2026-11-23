@@ -16,6 +16,7 @@ import {
   NOTIFICATION_SEVERITIES,
   PAGE_SIZE,
   buildNotificationHref,
+  buildNotificationUnreadKpiHref,
   countNotificationFilters,
   describeNotificationRecorte,
   notificationFamilyLabel,
@@ -225,7 +226,7 @@ export default async function NotificacoesPage({
   const naoLidasGerais = temRecorte
     ? supabase
         .from("notification_recipients")
-        .select("notification_id", { count: "exact", head: true })
+        .select(SELECT_CONTAGEM, { count: "exact", head: true })
         .is("read_at", null)
     : null;
 
@@ -416,7 +417,7 @@ export default async function NotificacoesPage({
       value: formatCount(unreadGeral),
       previous: null,
       ressalva: "em toda a Central, não no recorte",
-      href: buildNotificationHref({ ...filters, severity: null, family: null, account: null }, { state: "nao-lidas" }),
+      href: buildNotificationUnreadKpiHref(filters),
       tom: "info",
     },
     {
@@ -424,10 +425,7 @@ export default async function NotificacoesPage({
       formula: "Não lidas cujo domain_event tem severity = critico.",
       value: formatCount(criticasNaoLidas),
       previous: null,
-      href: buildNotificationHref(
-        { ...filters, family: null, account: null },
-        { state: "nao-lidas", severity: "critico" },
-      ),
+      href: buildNotificationUnreadKpiHref(filters, "critico"),
       tom: "perigo",
       // `exactOptionalPropertyTypes`: propriedade opcional não aceita
       // `undefined` explícito, então ela ENTRA ou não entra.
@@ -438,10 +436,7 @@ export default async function NotificacoesPage({
       formula: "Não lidas cujo domain_event tem severity = importante.",
       value: formatCount(importantesNaoLidas),
       previous: null,
-      href: buildNotificationHref(
-        { ...filters, family: null, account: null },
-        { state: "nao-lidas", severity: "importante" },
-      ),
+      href: buildNotificationUnreadKpiHref(filters, "importante"),
       tom: "atencao",
     },
   ];

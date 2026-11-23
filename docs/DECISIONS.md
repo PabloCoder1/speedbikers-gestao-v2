@@ -20389,3 +20389,17 @@ horário retornaram ordens diferentes em uma leitura por índice e em uma
 leitura sequencial. As duas leituras passaram a devolver a mesma página
 com o desempate. As contagens e os filtros continuam usando o mesmo
 recorte. Como o destinatário é fixado por RLS, o ID é único na lista.
+
+## D-852 - Cartões da Central de Notificações contam e abrem o mesmo escopo
+
+**23/11/2026 · Central de Notificações.** Os três cartões de não lidas
+abrem a primeira página da Central inteira, conservando apenas a
+severidade do cartão. A loja selecionada antes ficava nas três URLs e
+reduzia o destino a um conjunto menor do que o número exibido.
+
+A contagem geral usa também o join com `domain_events`, sujeito à RLS,
+mesmo quando a lista está filtrada. Em PostgreSQL isolado, a contagem
+direta retornou seis vínculos sem leitura. A contagem com o join
+retornou três eventos visíveis, excluindo um evento de conta, um de loja
+e um de organização sem acesso. O histórico combinado preservou listas
+por loja e contagens por severidade no ensaio.

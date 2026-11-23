@@ -2448,8 +2448,13 @@ No PostgREST 14.18 isolado, o embed automático sobre a view com `UNION`
 respondeu `400/PGRST200`. Uma segunda view trouxe as colunas do evento
 pelo join em SQL e retornou a página filtrada com `Content-Range: 1-1/2`,
 isolou o segundo destinatário e recusou a leitura anônima com `401`.
-O ensaio usou dados e tokens sintéticos. A migração e o cliente web ainda
-precisam reproduzir o contrato completo da Central.
+O ensaio usou dados e tokens sintéticos. Em um segundo ensaio SQL, a
+view preservou o histórico de dois destinatários durante a cópia e
+depois de mover três notificações e seus vínculos para as tabelas de
+arquivo. A lista preferiu o vínculo ativo durante a sobreposição,
+manteve o filtro por loja e a contagem de não lidas, e o rollback
+recolocou as quatro notificações na tabela ativa. A migração e o cliente
+web ainda precisam reproduzir o contrato completo da Central.
 [Relacionamentos em views do PostgREST](https://docs.postgrest.org/en/v14/references/api/resource_embedding.html#foreign-key-joins-on-views).
 
 Em duas sessões no Postgres 17, `FOR UPDATE NOWAIT` adiou uma execução
