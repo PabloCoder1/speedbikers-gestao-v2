@@ -71,4 +71,20 @@ describe("lerPaginasDaRpc", () => {
 
     await expect(lerPaginasDaRpc(lerPagina, 5_000)).resolves.toEqual({ linhas: [], error: { message: "boom", code: "PGRST202" } });
   });
+
+  it("normaliza teto não finito ou fracionário e respeita o limite mesmo se o servidor devolver além do pedido", async () => {
+    const chamadas: { offset: number; limite: number }[] = [];
+    const lerPagina = (offset: number, limite: number) => {
+      chamadas.push({ offset, limite });
+      return Promise.resolve({ data: [1, 2, 3, 4, 5], error: null });
+    };
+
+    expect(await lerPaginasDaRpc(lerPagina, Number.POSITIVE_INFINITY)).toEqual({ linhas: [], error: null });
+    expect(chamadas).toEqual([]);
+
+    const parcial = await lerPaginasDaRpc(lerPagina, 2.9);
+
+    expect(chamadas).toEqual([{ offset: 0, limite: 2 }]);
+    expect(parcial).toEqual({ linhas: [1, 2], error: null });
+  });
 });

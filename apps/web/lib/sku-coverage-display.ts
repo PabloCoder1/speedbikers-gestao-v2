@@ -71,6 +71,20 @@ const SEM_LINHA: CoberturaDescrita = {
 export function descreverCobertura(entrada: EntradaDeCobertura | null): CoberturaDescrita {
   if (entrada === null) return SEM_LINHA;
 
+  if (
+    !Number.isFinite(entrada.local) ||
+    !Number.isFinite(entrada.full) ||
+    !Number.isFinite(entrada.transito) ||
+    !Number.isFinite(entrada.reservado) ||
+    !Number.isFinite(entrada.units15) ||
+    !Number.isFinite(entrada.units30) ||
+    !Number.isFinite(entrada.units60) ||
+    !Number.isFinite(entrada.units90) ||
+    !Number.isFinite(entrada.historyDays90)
+  ) {
+    return SEM_LINHA;
+  }
+
   const usable = computeUsableStock({
     localQuantity: entrada.local,
     fullQuantity: entrada.full,
@@ -118,7 +132,7 @@ export function descreverCobertura(entrada: EntradaDeCobertura | null): Cobertur
     compilador não sabe disso, e um `!` esconderia justamente o caso em que a
     peça canônica mudar de contrato.
   */
-  if (dias === null) return SEM_LINHA;
+  if (dias === null || !Number.isFinite(dias)) return SEM_LINHA;
 
   const aproveitavel = Math.max(usable.total, 0);
 
@@ -139,7 +153,7 @@ export function descreverCobertura(entrada: EntradaDeCobertura | null): Cobertur
       selo de /reposicao.
     */
     titulo:
-      entrada.units30Shopee !== null && entrada.units30Shopee > 0
+      entrada.units30Shopee !== null && Number.isFinite(entrada.units30Shopee) && entrada.units30Shopee > 0
         ? `${partes}. A venda de 30 dias soma o ML e a Shopee: ${String(entrada.units30Shopee)} un vieram da Shopee`
         : partes,
   };

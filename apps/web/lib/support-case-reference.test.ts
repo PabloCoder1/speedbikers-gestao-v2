@@ -114,4 +114,22 @@ describe("resolveSupportCaseReference", () => {
       ]),
     ).toBeNull();
   });
+
+  it("ignora códigos vazios, pedidos inválidos e codifica segmentos especiais na URL de destino", () => {
+    expect(
+      resolveSupportCaseReference([
+        link({ sku_id: "   ", skus: { sku: "   " } }),
+        link({ listing_id: LISTING_ID, listings: { item_id: "   ", title: "Vazio" } }),
+        link({ external_entity_kind: "LISTING", external_entity_id: "  " }),
+        link({ order_id: 0 }),
+        link({ order_id: Number.NaN }),
+      ]),
+    ).toBeNull();
+
+    const ref = resolveSupportCaseReference([
+      link({ listing_id: LISTING_ID, listings: { item_id: "MLB123/../../admin", title: "Teste" } }),
+    ]);
+
+    expect(ref?.href).toBe("/anuncios/MLB123%2F..%2F..%2Fadmin");
+  });
 });

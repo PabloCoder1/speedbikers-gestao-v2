@@ -111,4 +111,18 @@ describe("campanhas do anúncio (D-420)", () => {
     expect(cupom === undefined ? null : quemPaga(cupom)).toBe("cupom de 10%");
     expect(desconto === undefined ? null : quemPaga(desconto)).toBeNull();
   });
+
+  it("rotuloDoTipo não vaza propriedades de Object.prototype e precoDaCampanha/quemPaga rejeitam não finitos", () => {
+    expect(rotuloDoTipo("toString")).toBe("toString");
+    expect(rotuloDoTipo("constructor")).toBe("constructor");
+
+    const base = lerCampanhas(GRAVADO)?.[0];
+
+    if (base === undefined) throw new Error("fixture ausente");
+
+    expect(precoDaCampanha({ ...base, price: Number.NaN })).toBeNull();
+    expect(precoDaCampanha({ ...base, status: "candidate", price: null, suggested_price: Number.POSITIVE_INFINITY })).toBeNull();
+    expect(quemPaga({ ...base, meli_percentage: Number.NaN, seller_percentage: 10 })).toBeNull();
+    expect(quemPaga({ ...base, meli_percentage: null, seller_percentage: null, fixed_percentage: Number.POSITIVE_INFINITY })).toBeNull();
+  });
 });

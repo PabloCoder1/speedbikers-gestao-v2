@@ -1302,4 +1302,50 @@ describe("computeCancellationMovements — pedido entregue pelo Full (D-352)", (
     expect(soma(gravada, cancelAntes.estornosFull, devolucaoDepois.movements, devolucaoDepois.estornosFull)).toBe(0);
     expect(soma(gravada, devolucaoAntes.estornosFull, cancelDepois.reversals, cancelDepois.estornosFull)).toBe(0);
   });
+
+  it("rejeita datas inválidas (occurredAt, saleAt ou transition.cancelledAt) com RangeError em vez de burlar o corte", () => {
+    expect(() =>
+      computeCancellationReversals(baseOrder({ occurredAt: new Date("invalid") }), SALE_MOVEMENTS, SEM_ESTORNO),
+    ).toThrow(RangeError);
+
+    expect(() =>
+      computeCancellationMovements({
+        order: {
+          id: 9900001001,
+          status: "cancelled",
+          dateCreated: new Date("invalid"),
+          dateClosed: null,
+          logisticType: null,
+          items: [],
+        },
+        occurredAt: OCCURRED_AT,
+        occurredAtKnown: true,
+        transition: null,
+        recordedSales: [],
+        estornadas: new Set(),
+        reversals: [],
+        cutoffFor: () => null,
+      }),
+    ).toThrow(RangeError);
+
+    expect(() =>
+      computeCancellationMovements({
+        order: {
+          id: 9900001001,
+          status: "cancelled",
+          dateCreated: OCCURRED_AT,
+          dateClosed: OCCURRED_AT,
+          logisticType: null,
+          items: [],
+        },
+        occurredAt: OCCURRED_AT,
+        occurredAtKnown: true,
+        transition: { saleStatus: "paid", cancelledAt: new Date("invalid") },
+        recordedSales: [],
+        estornadas: new Set(),
+        reversals: [],
+        cutoffFor: () => null,
+      }),
+    ).toThrow(RangeError);
+  });
 });

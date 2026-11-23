@@ -73,12 +73,19 @@ export function createEnqueuer(
 
       // Com `exactOptionalPropertyTypes`, passar `scheduleTime: undefined` não
       // é o mesmo que omitir. Montar condicionalmente.
+      if (
+        request.delaySeconds !== undefined &&
+        (!Number.isFinite(request.delaySeconds) || request.delaySeconds < 0)
+      ) {
+        throw new RangeError(`delaySeconds inválido: ${String(request.delaySeconds)}`);
+      }
+
       const scheduleTime =
         request.delaySeconds === undefined
           ? {}
           : {
               scheduleTime: {
-                seconds: Math.floor(Date.now() / 1000) + request.delaySeconds,
+                seconds: Math.floor(Date.now() / 1000) + Math.floor(request.delaySeconds),
               },
             };
 

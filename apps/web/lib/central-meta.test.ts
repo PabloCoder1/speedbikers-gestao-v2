@@ -274,4 +274,21 @@ describe("ritmoDaMeta", () => {
     expect(ritmoDaMeta(meta({ dias_completos: 0 }))).toBeNull();
     expect(ritmoDaMeta(meta({ situacao: "encerrado" }))).toBeNull();
   });
+
+  it("valores não finitos não contaminam ritmoDaMeta nem fraseDaDataComercial", () => {
+    expect(ritmoDaMeta(meta({ diferenca_ritmo: Number.NaN }))).toBeNull();
+    expect(ritmoDaMeta(meta({ diferenca_ritmo: -50_000 }), Number.NaN)).toBeNull();
+    expect(ritmoDaMeta(meta({ diferenca_ritmo: -50_000 }), -0.05)).toBeNull();
+
+    const corrompida = fraseDaDataComercial({
+      ...BLACK_FRIDAY,
+      efeito: Number.NaN,
+      efeito_no_mes: Number.POSITIVE_INFINITY,
+      dias: [{ dia: "2022-11-25", fator: Number.NaN }],
+    });
+
+    expect(corrompida).toContain("sem efeito calculado");
+    expect(corrompida).not.toContain("NaN");
+    expect(corrompida).not.toContain("∞");
+  });
 });

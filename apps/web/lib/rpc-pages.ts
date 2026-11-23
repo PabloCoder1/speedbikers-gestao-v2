@@ -28,10 +28,17 @@ export async function lerPaginasDaRpc<T>(
   lerPagina: (offset: number, limite: number) => PromiseLike<PaginaDaRpc<T>>,
   teto: number,
 ): Promise<{ linhas: T[]; error: PaginaDaRpc<T>["error"] }> {
+  const limiteMaximo = Number.isFinite(teto) ? Math.floor(teto) : 0;
+
+  if (limiteMaximo <= 0) {
+    return { linhas: [], error: null };
+  }
+
   const linhas: T[] = [];
 
-  while (linhas.length < teto) {
-    const limite = Math.min(PAGINA_DO_POSTGREST, teto - linhas.length);
+  while (linhas.length < limiteMaximo) {
+    const restante = limiteMaximo - linhas.length;
+    const limite = Math.min(PAGINA_DO_POSTGREST, restante);
     const pagina = await lerPagina(linhas.length, limite);
 
     if (pagina.error !== null) {
@@ -40,7 +47,8 @@ export async function lerPaginasDaRpc<T>(
 
     const lote = pagina.data ?? [];
     const primeiraPaginaCompleta = linhas.length === 0 && pagina.count === lote.length;
-    linhas.push(...lote);
+
+    linhas.push(...(lote.length > restante ? lote.slice(0, restante) : lote));
 
     // Sem total exato, só a página vazia confirma o fim. Uma página curta
     // também pode ser efeito do limite do servidor.
