@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **694** (D-001 a D-795).
+Decisões registradas: **696** (D-001 a D-797).
 
 ## Por domínio
 
@@ -281,7 +281,7 @@ Decisões registradas: **694** (D-001 a D-795).
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
 
-### mercado-livre (136)
+### mercado-livre (138)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -419,6 +419,8 @@ Decisões registradas: **694** (D-001 a D-795).
 - **D-789** — Hardening em `@sb/mercado-livre` e `@sb/shopee` (cifra AES-GCM 128-bit, paginação Ads, mensagens pós-venda, HTTP 200 não-JSON, OAuth retry e parsers Shopee)
 - **D-793** — Isolamento de falhas de enqueue em agendadores/relist, validação de epoch TikTok e hardening OAuth/push na API
 - **D-795** — Worker: telemetria best-effort (`sync_runs`/`domain_events`) e `sync-central-alerts` blindados contra transporte, IDs seguros ML e proteção de janelas/datas Shopee e Ads
+- **D-796** — Marketplaces e worker: limite de TTL OAuth, evento de relist blindado contra transporte, datas/checkpoints de pedidos ML e reconciliação SAC
+- **D-797** — Worker: proteção contra Flate zip bomb em PDF, isolamento de ZodError/transporte em visitas e Full, guardas de backfill e parse NF-e
 
 ### outros (112)
 
