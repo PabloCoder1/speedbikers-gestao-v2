@@ -294,4 +294,21 @@ describe("completeShopeeConnect (D-425)", () => {
       auth_expires_at: null,
     }]);
   });
+
+  it("D-796: expire_in absurdo devolvido pela Shopee é recusado com segurança sem lançar RangeError", async () => {
+    const { deps, gravado } = montar({
+      respostas: {
+        "/api/v2/auth/token/get": { ...TOKEN, expire_in: 9_000_000_000_000 },
+        "/api/v2/shop/get_shop_info": LOJA,
+      },
+    });
+
+    await expect(
+      completeShopeeConnect(deps, { state: "s".repeat(43), code: "abc", shopId: 54804 }),
+    ).resolves.toEqual({
+      status: "rejected",
+      reason: "não foi possível concluir a autorização com a Shopee",
+    });
+    expect(gravado.rpc).toEqual([]);
+  });
 });

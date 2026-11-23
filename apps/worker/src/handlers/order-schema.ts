@@ -42,7 +42,9 @@ export const orderSchema = z.object({
     "invalid",
   ]),
   status_detail: z.string().nullable().optional(),
-  date_created: z.string(),
+  date_created: z
+    .string()
+    .refine((value) => Number.isFinite(Date.parse(value)), "date_created inválida"),
   date_closed: z.string().nullable().optional(),
   // D-048: campo de checkpoint. Ver docs/MERCADO_LIVRE.md secao "Reconciliação".
   // Opcional desde D-101: o `GET /orders/{id}` REAL (fast path do webhook,

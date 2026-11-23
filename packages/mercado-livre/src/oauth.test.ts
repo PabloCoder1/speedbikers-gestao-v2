@@ -222,4 +222,12 @@ describe("refreshAccessToken", () => {
       expect(mensagem).not.toContain(segredo);
     }
   });
+
+  it("D-796: recusa expires_in absurdo que estouraria Date no cálculo de expiração", async () => {
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(jsonResponse(200, { ...TOKEN_RESPONSE_BODY, expires_in: 9_000_000_000_000 })),
+    );
+
+    await expect(refreshAccessToken(CONFIG, "TG-refresh-antigo", { fetchImpl })).rejects.toThrow();
+  });
 });

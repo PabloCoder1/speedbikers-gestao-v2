@@ -54,7 +54,13 @@ export interface SyncSupportQuestionsReconcileDeps {
  */
 async function enqueueStaleQuestionRechecks(
   deps: SyncSupportQuestionsReconcileDeps,
-  params: { organizationId: string; mlAccountId: string; seenQuestionIds: readonly number[]; now: Date },
+  params: {
+    organizationId: string;
+    mlAccountId: string;
+    seenQuestionIds: readonly number[];
+    now: Date;
+    logger: HandlerContext["logger"];
+  },
 ): Promise<{ stale: number; enqueued: number }> {
   const open: string[] = [];
 
@@ -88,24 +94,36 @@ async function enqueueStaleQuestionRechecks(
   let enqueued = 0;
 
   for (const id of stale.slice(0, MAX_QUESTION_RECHECKS)) {
+    if (!/^[1-9][0-9]*$/.test(id)) {
+      continue;
+    }
+
     const questionId = Number(id);
 
     if (!Number.isSafeInteger(questionId) || questionId <= 0) {
       continue;
     }
 
-    await deps.enqueuer.enqueue({
-      jobType: "sync.support.questions",
-      organizationId: params.organizationId,
-      dedupeKey: `support-question-recheck:${params.mlAccountId}:${id}:${day}`,
-      // A fila `backfill`, a de prioridade baixa: o worker só enfileira nela e
-      // em `analytics-recompute` (menor privilégio, `infra/cloud-tasks-queues.sh`).
-      // As `ml-sync-<conta>` são da api — em produção, 21/10, o Cloud Tasks
-      // recusou a releitura nelas com PERMISSION_DENIED.
-      queue: "backfill",
-      payload: { mlAccountId: params.mlAccountId, questionId, source: "RECONCILIATION" },
-    });
-    enqueued += 1;
+    try {
+      await deps.enqueuer.enqueue({
+        jobType: "sync.support.questions",
+        organizationId: params.organizationId,
+        dedupeKey: `support-question-recheck:${params.mlAccountId}:${id}:${day}`,
+        // A fila `backfill`, a de prioridade baixa: o worker só enfileira nela e
+        // em `analytics-recompute` (menor privilégio, `infra/cloud-tasks-queues.sh`).
+        // As `ml-sync-<conta>` são da api — em produção, 21/10, o Cloud Tasks
+        // recusou a releitura nelas com PERMISSION_DENIED.
+        queue: "backfill",
+        payload: { mlAccountId: params.mlAccountId, questionId, source: "RECONCILIATION" },
+      });
+      enqueued += 1;
+    } catch (error) {
+      params.logger.warn("sync_support_questions_recheck_failed", {
+        ml_account_id: params.mlAccountId,
+        question_id: id,
+        reason: error instanceof Error ? error.message : "erro desconhecido",
+      });
+    }
   }
 
   return { stale: stale.length, enqueued };
@@ -192,7 +210,12 @@ export function createSyncSupportQuestionsReconcileHandler(
       });
     } catch (error) {
       const finishedAt = deps.now?.() ?? new Date();
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+      const errorClass =
+        error instanceof MercadoLivreApiError
+          ? error.errorClass
+          : error instanceof z.ZodError
+            ? "not_retryable"
+            : "retryable";
       const reason =
         error instanceof Error ? error.message : "erro desconhecido ao reconciliar perguntas";
 
@@ -255,6 +278,7 @@ export function createSyncSupportQuestionsReconcileHandler(
           mlAccountId,
           seenQuestionIds: result.seenQuestionIds,
           now: finishedAt,
+          logger: context.logger,
         });
       } catch (error) {
         // A varredura já foi gravada; a releitura volta na próxima rodada.
