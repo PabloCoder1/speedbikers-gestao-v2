@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-19, integração local e0bedddf + continuidade Gemini D-770–D-783 (4d2a90e1, PR #343)",
+  "corte": "2026-11-23, integração local e0bedddf + continuidade Gemini D-770–D-786 (01bbf12b, PR #343)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121, D-783/A123, D-784/A124; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/Components fail-closed, ILIKE, teto .in() e zero getSession direto em clientes web (1.575 unit + 401/401 E2E em f3ae0df6)",
+      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121, D-783/A123, D-784/A124, D-785/A125; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/Components fail-closed, mesmaUrl no retry, ILIKE, teto .in() e zero getSession direto em clientes web (1.577 unit + 401/401 E2E em f3ae0df6)",
       "fase": 3
     },
     {
@@ -69,7 +69,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776, D-779 e D-780 testados localmente com paginação, guardas por versão, lotes .in() Full/Shopee, visitas fail-closed, clientes HTTP resilientes, unlock protegido e logger blindado (1.102 worker + 38 observability)",
+      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776, D-779, D-780 e D-786 testados localmente com paginação, guardas por versão, lotes .in() Full/Shopee, visitas fail-closed, checkpoint backfill.orders, sync_runs em order-financials, paginação order_items, retry de alertas, clientes HTTP resilientes, unlock protegido e logger blindado (1.106 worker + 38 observability)",
       "fase": 3
     },
     {
@@ -329,7 +329,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Todos/Sentinel",
-      "evidencia": "check 37/37 tarefas (4.271 unitários), build 10/10, 7 guardas web em 4d2a90e1; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 (sem nova migration)",
+      "evidencia": "check 37/37 tarefas (4.282 unitários), build 10/10, 7 guardas web em 01bbf12b; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 (sem nova migration)",
       "fase": 5
     },
     {
