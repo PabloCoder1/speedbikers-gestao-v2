@@ -125,11 +125,14 @@ interface Pendente {
 export function CurationTable({
   organizationId,
   rows,
+  foraDaPlanilha,
   marcasConhecidas,
   cabecalho,
 }: {
   organizationId: string;
   rows: readonly CurationRow[];
+  /** D-795: SKU inativo por ter saído da planilha de produtos → desde quando. */
+  foraDaPlanilha?: ReadonlyMap<string, string>;
   /** Alimenta o `<datalist>`: as marcas que já existem, vindas do summary. */
   marcasConhecidas: string[];
   /** A linha de contagens do cabeçalho do cartão ("retrato de … · N de M"). */
@@ -515,7 +518,17 @@ export function CurationTable({
                           encerrando
                         </span>
                       )}
-                      {row.situacao === "INATIVO" && <span className="sb-prod-selo">inativo</span>}
+                      {row.situacao === "INATIVO" &&
+                        (foraDaPlanilha?.has(row.sku_id) === true ? (
+                          <span
+                            className="sb-prod-selo"
+                            title={`Não veio na planilha de produtos do UpSeller aplicada em ${formatDay(foraDaPlanilha.get(row.sku_id) ?? null)}`}
+                          >
+                            fora do catálogo
+                          </span>
+                        ) : (
+                          <span className="sb-prod-selo">inativo</span>
+                        ))}
                       {/*
                         O disparo da gaveta "Inspeção Rápida" do frame. No
                         desenho é a célula inteira que abre; aqui o título

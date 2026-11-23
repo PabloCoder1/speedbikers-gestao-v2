@@ -297,6 +297,17 @@ export default async function SkuDashboardPage({
     notFound();
   }
 
+  // D-795: o inativo por ter saído da planilha de produtos diz por quê. Leitura
+  // à parte e tolerante, só para o inativo: antes da migration de produção a
+  // coluna não existe, e a página fica como era.
+  let foraDoCatalogoDesde: string | null = null;
+
+  if (!sku.data.is_active) {
+    const fora = await supabase.from("skus").select("erp_absent_since").eq("id", skuId).maybeSingle();
+
+    foraDoCatalogoDesde = fora.error === null ? (fora.data?.erp_absent_since ?? null) : null;
+  }
+
   const now = new Date();
   const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS, now);
   // A curva ABC tem janela PRÓPRIA de 90 dias (D-140): classificação precisa
@@ -812,7 +823,9 @@ export default async function SkuDashboardPage({
       ? { label: "Descontinuado", tom: "perigo" as const }
       : sku.data.is_active
         ? { label: "Ativo", tom: "ok" as const }
-        : { label: "Inativo", tom: "neutro" as const },
+        : foraDoCatalogoDesde !== null
+          ? { label: "Fora do catálogo", tom: "atencao" as const }
+          : { label: "Inativo", tom: "neutro" as const },
     // Classe ABC, como no frame ("Curva A"), na posição do frame — mas chega
     // DEPOIS do resto da tela (D-505): é a leitura mais cara da página e só
     // alimenta este selo. O esqueleto reserva o lugar com a largura do rótulo.
@@ -915,6 +928,13 @@ export default async function SkuDashboardPage({
         }))}
       >
 
+      {foraDoCatalogoDesde !== null && (
+        <p role="status" className="sb-note sb-note-atencao sb-skud-fora">
+          Este produto não veio na planilha de produtos do UpSeller aplicada em {formatDateTime(foraDoCatalogoDesde)}.
+          Está inativo e fora da Reposição; o saldo mostrado é o último que chegou. Se ele voltar numa planilha, volta
+          ao catálogo sozinho.
+        </p>
+      )}
       {tab === "visao-geral" && (
         <>
           {dashboardResult.error !== null && (

@@ -1044,6 +1044,8 @@ export type Database = {
       }
       erp_import_batches: {
         Row: {
+          absent_cleared: number | null
+          absent_marked: number | null
           applied_at: string | null
           applied_by: string | null
           applied_rows: number | null
@@ -1066,6 +1068,8 @@ export type Database = {
           uploaded_by: string | null
         }
         Insert: {
+          absent_cleared?: number | null
+          absent_marked?: number | null
           applied_at?: string | null
           applied_by?: string | null
           applied_rows?: number | null
@@ -1088,6 +1092,8 @@ export type Database = {
           uploaded_by?: string | null
         }
         Update: {
+          absent_cleared?: number | null
+          absent_marked?: number | null
           applied_at?: string | null
           applied_by?: string | null
           applied_rows?: number | null
@@ -5043,6 +5049,8 @@ export type Database = {
           category_raw: string | null
           cest: string | null
           created_at: string
+          erp_absent_batch_id: string | null
+          erp_absent_since: string | null
           erp_product_code: string | null
           erp_spu: string | null
           height_cm: number | null
@@ -5079,6 +5087,8 @@ export type Database = {
           category_raw?: string | null
           cest?: string | null
           created_at?: string
+          erp_absent_batch_id?: string | null
+          erp_absent_since?: string | null
           erp_product_code?: string | null
           erp_spu?: string | null
           height_cm?: number | null
@@ -5115,6 +5125,8 @@ export type Database = {
           category_raw?: string | null
           cest?: string | null
           created_at?: string
+          erp_absent_batch_id?: string | null
+          erp_absent_since?: string | null
           erp_product_code?: string | null
           erp_spu?: string | null
           height_cm?: number | null
@@ -5146,6 +5158,13 @@ export type Database = {
           width_cm?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "skus_erp_absent_batch_id_fkey"
+            columns: ["erp_absent_batch_id"]
+            isOneToOne: false
+            referencedRelation: "erp_import_batches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "skus_organization_id_fkey"
             columns: ["organization_id"]
@@ -6489,6 +6508,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      apply_products_batch_absences: {
+        Args: { p_batch_id: string; p_mark: boolean }
+        Returns: Json
+      }
       apply_support_remote_transition: {
         Args: {
           p_case_id: string
@@ -6674,6 +6697,10 @@ export type Database = {
       }
       get_open_purchases_for_skus: {
         Args: { p_organization_id: string; p_sku_ids: string[] }
+        Returns: Json
+      }
+      get_products_batch_absences: {
+        Args: { p_batch_id: string; p_sample?: number }
         Returns: Json
       }
       get_purchase_analysis: {
@@ -7327,6 +7354,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      products_batch_absent_sku_ids: {
+        Args: { p_batch_id: string }
+        Returns: string[]
       }
       receive_purchase_order_items: {
         Args: {

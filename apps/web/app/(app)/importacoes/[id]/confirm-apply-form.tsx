@@ -20,16 +20,40 @@ import { createClient } from "../../../../lib/supabase/browser";
  * PRIMEIRO clique. Agora o botão abre a confirmação na própria caixa, com
  * quantas linhas entram, e só o segundo clique chama a `api`. O texto dizia
  * "as linhas OK acima", e a tabela fica ABAIXO desta caixa.
+ *
+ * D-795: na planilha de produtos, a caixa ganha o "marcar fora do catálogo"
+ * dos SKUs que não vieram. O padrão vem da prévia (`sugereMarcar`); sem
+ * prévia (`foraDoCatalogo` nulo) a confirmação sai sem corpo, como antes --
+ * e a api lê isso como "não marcar".
  */
+
+export interface ForaDoCatalogoNaConfirmacao {
+  /** Quantos a marcação mudaria agora (sem os já marcados). */
+  readonly novos: number;
+  readonly sugerido: boolean;
+  readonly parcial: boolean;
+}
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-export function ConfirmApplyForm({ batchId, okRows }: { batchId: string; okRows: number | null }): ReactNode {
+export function ConfirmApplyForm({
+  batchId,
+  okRows,
+  foraDoCatalogo = null,
+}: {
+  batchId: string;
+  okRows: number | null;
+  foraDoCatalogo?: ForaDoCatalogoNaConfirmacao | null;
+}): ReactNode {
   const router = useRouter();
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
+  const [marcarAusentes, setMarcarAusentes] = useState(foraDoCatalogo?.sugerido ?? false);
+
+  const oferecerMarcacao = foraDoCatalogo !== null && foraDoCatalogo.novos > 0;
+  const vaiMarcar = oferecerMarcacao && marcarAusentes;
 
   async function confirm(): Promise<void> {
     setBusy(true);
@@ -51,7 +75,11 @@ export function ConfirmApplyForm({ batchId, okRows }: { batchId: string; okRows:
     try {
       response = await fetch(`${API_URL}/v1/erp-imports/${batchId}/apply`, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}` },
+        headers:
+          foraDoCatalogo === null
+            ? { authorization: `Bearer ${token}` }
+            : { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        ...(foraDoCatalogo === null ? {} : { body: JSON.stringify({ markAbsent: vaiMarcar }) }),
       });
     } catch {
       setError("Não foi possível falar com o servidor. Tente de novo.");
@@ -84,7 +112,17 @@ export function ConfirmApplyForm({ batchId, okRows }: { batchId: string; okRows:
         {confirmando ? (
           <>
             <strong>Confirmar a aplicação?</strong> {linhas} da tabela abaixo entram no catálogo, nos vínculos e no
-            estoque. Não dá para desfazer, nem reenviando o mesmo arquivo.
+            estoque.
+            {vaiMarcar && (
+              <>
+                {" "}
+                {formatCount(foraDoCatalogo.novos)}{" "}
+                {foraDoCatalogo.novos === 1
+                  ? "produto fica fora do catálogo (inativo, sem apagar)."
+                  : "produtos ficam fora do catálogo (inativos, sem apagar)."}
+              </>
+            )}{" "}
+            Não dá para desfazer, nem reenviando o mesmo arquivo.
           </>
         ) : (
           <>
@@ -93,6 +131,32 @@ export function ConfirmApplyForm({ batchId, okRows }: { batchId: string; okRows:
           </>
         )}
       </p>
+
+      {oferecerMarcacao && (
+        <label className="sb-import-apply-ausentes">
+          <input
+            type="checkbox"
+            checked={marcarAusentes}
+            disabled={busy}
+            onChange={(evento) => {
+              setMarcarAusentes(evento.target.checked);
+            }}
+          />
+          <span>
+            Esta planilha é o catálogo completo: marcar{" "}
+            {foraDoCatalogo.novos === 1
+              ? "o produto que não veio"
+              : `os ${formatCount(foraDoCatalogo.novos)} produtos que não vieram`}{" "}
+            como fora do catálogo.
+            {foraDoCatalogo.parcial && (
+              <strong className="sb-import-apply-alerta">
+                {" "}
+                São mais de 10% do catálogo: parece uma exportação parcial. Confira antes de marcar.
+              </strong>
+            )}
+          </span>
+        </label>
+      )}
 
       {confirmando ? (
         <div className="sb-import-apply-actions">

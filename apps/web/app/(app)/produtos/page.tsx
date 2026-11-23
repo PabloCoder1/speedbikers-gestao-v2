@@ -395,6 +395,26 @@ export default async function ProdutosPage({
     );
   }
 
+  // D-795: o inativo POR TER SAÍDO da planilha de produtos ganha selo próprio.
+  // Só os inativos da página, numa leitura tolerante: antes da migration de
+  // produção a coluna não existe, e o selo continua "inativo" como antes.
+  const inativosDaPagina = linhas.filter((l) => l.situacao === "INATIVO").map((l) => l.sku_id);
+  const foraDaPlanilha = new Map<string, string>();
+
+  if (inativosDaPagina.length > 0) {
+    const marcados = await supabase
+      .from("skus")
+      .select("id, erp_absent_since")
+      .in("id", inativosDaPagina)
+      .not("erp_absent_since", "is", null);
+
+    if (marcados.error === null) {
+      for (const m of marcados.data) {
+        foraDaPlanilha.set(m.id, m.erp_absent_since);
+      }
+    }
+  }
+
   const porMarca = ((resumoMarcas.data ?? []) as SummaryRow[]).filter((l) => !l.is_total);
   const marcasConhecidas = porMarca
     .map((l) => l.supplier_brand)
@@ -716,6 +736,7 @@ export default async function ProdutosPage({
           <CurationTable
             organizationId={organizationId}
             rows={linhas}
+            foraDaPlanilha={foraDaPlanilha}
             marcasConhecidas={marcasConhecidas}
             cabecalho={[
               `${formatCount(linhas.length)} de ${formatCount(total)} neste recorte`,
