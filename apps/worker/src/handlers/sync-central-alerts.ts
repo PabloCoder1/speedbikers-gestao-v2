@@ -75,6 +75,7 @@ export function createSyncCentralAlertsHandler(deps: SyncCentralAlertsDeps): Job
     const falhas: string[] = [];
     let processadas = 0;
     let foraDoContrato = false;
+    let erroTransitorio = false;
 
     for (const fonte of FONTES_ALERTAS) {
       const result = await deps.db.rpc("sincronizar_alertas_central", {
@@ -83,6 +84,7 @@ export function createSyncCentralAlertsHandler(deps: SyncCentralAlertsDeps): Job
       });
 
       if (result.error !== null) {
+        erroTransitorio = true;
         falhas.push(`${fonte}: ${result.error.message}`);
 
         continue;
@@ -117,7 +119,7 @@ export function createSyncCentralAlertsHandler(deps: SyncCentralAlertsDeps): Job
     }
 
     if (falhas.length > 0) {
-      return { status: "failed", retryable: !foraDoContrato, reason: falhas.join("; ") };
+      return { status: "failed", retryable: erroTransitorio || !foraDoContrato, reason: falhas.join("; ") };
     }
 
     return { status: "done", processed: processadas };

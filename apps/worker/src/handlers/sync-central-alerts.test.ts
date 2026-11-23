@@ -103,6 +103,16 @@ describe("sync-central-alerts (D-403, D-404)", () => {
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
   });
 
+  it("falha transitória combinada com outra fonte fora do contrato mantém retryable=true para não perder a fonte que deu timeout (D-786)", async () => {
+    const { outcome } = await run({
+      ...TUDO_CERTO,
+      frete_anomalo: { data: null, error: { message: "canceling statement due to statement timeout" } },
+      ads_campanha: { data: { hoje: "2026-09-24" }, error: null },
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+  });
+
   it("payload sem organização não chama o banco", async () => {
     const { outcome, chamadas } = await run(TUDO_CERTO, {});
 

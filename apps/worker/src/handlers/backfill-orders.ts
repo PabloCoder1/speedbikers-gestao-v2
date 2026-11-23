@@ -177,6 +177,32 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
     const finishedAt = deps.now?.() ?? new Date();
     const partial = result.itemsSkipped > 0;
 
+    // Avança o checkpoint ANTES de registrar sucesso ou enfileirar o próximo
+    // pedaço: sem confirmar esta escrita, o pedaço seguinte releria o mesmo
+    // intervalo (ou silenciaria uma falha de banco devolvendo `done`).
+    const checkpointUpdate = await deps.db
+      .from("ml_accounts")
+      .update({ backfill_covered_until: chunkTo.toISOString() })
+      .eq("id", mlAccountId);
+
+    if (checkpointUpdate.error !== null) {
+      const reason = `falha ao avançar backfill_covered_until: ${checkpointUpdate.error.message}`;
+
+      await recordSyncRunFailure(deps.db, {
+        organizationId,
+        mlAccountId,
+        jobId: envelope.jobId,
+        resource: "orders",
+        channel: "backfill",
+        startedAt: started,
+        finishedAt,
+        reason,
+        errorClass: "retryable",
+      }, context.logger);
+
+      return { status: "failed", retryable: true, reason };
+    }
+
     await recordSyncRunSuccess(deps.db, {
       organizationId,
       mlAccountId,
@@ -192,11 +218,6 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
         ? { reason: `${String(result.itemsSkipped)} order(s) com formato inesperado, ignoradas` }
         : {}),
     }, context.logger);
-
-    await deps.db
-      .from("ml_accounts")
-      .update({ backfill_covered_until: chunkTo.toISOString() })
-      .eq("id", mlAccountId);
 
     const hasMore = chunkTo.getTime() < connectedAtDate.getTime();
 
