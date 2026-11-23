@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **698** (D-001 a D-799).
+Decisões registradas: **699** (D-001 a D-800).
 
 ## Por domínio
 
@@ -282,7 +282,7 @@ Decisões registradas: **698** (D-001 a D-799).
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
 
-### mercado-livre (138)
+### mercado-livre (139)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -422,6 +422,7 @@ Decisões registradas: **698** (D-001 a D-799).
 - **D-795** — Worker: telemetria best-effort (`sync_runs`/`domain_events`) e `sync-central-alerts` blindados contra transporte, IDs seguros ML e proteção de janelas/datas Shopee e Ads
 - **D-796** — Marketplaces e worker: limite de TTL OAuth, evento de relist blindado contra transporte, datas/checkpoints de pedidos ML e reconciliação SAC
 - **D-797** — Worker: proteção contra Flate zip bomb em PDF, isolamento de ZodError/transporte em visitas e Full, guardas de backfill e parse NF-e
+- **D-800** — API, Worker e Web: hardening de Copiloto, OAuth Shopee, logística/pacote/anomalias e helpers de métricas
 
 ### outros (112)
 

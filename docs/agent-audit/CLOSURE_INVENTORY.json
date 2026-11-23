@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-23, integração local e0bedddf + continuidade Gemini D-770–D-789 e D-793–D-799 (5b99bc7b, PR #343)",
+  "corte": "2026-11-23, integração local e0bedddf + continuidade Gemini D-770–D-789 e D-793–D-800 (9dfe1fdc, PR #343)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121, D-783/A123, D-784/A124, D-785/A125, D-799/A136; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/Components fail-closed, mesmaUrl no retry, períodos/saúde/CSV blindados, ILIKE, teto .in() e zero getSession direto em clientes web (1.583 unit + 401/401 E2E em f3ae0df6)",
+      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121, D-783/A123, D-784/A124, D-785/A125, D-799/A136, D-800/A137; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/Components fail-closed, mesmaUrl no retry, períodos/saúde/CSV e helpers de faturamento/variação/tempo/geometria blindados, ILIKE, teto .in() e zero getSession direto em clientes web (1.587 unit + 401/401 E2E em f3ae0df6)",
       "fase": 3
     },
     {
@@ -59,7 +59,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "apps/api/src; main dc69d1fb na API; D-770, D-775, D-777, D-782, D-793, D-794, D-796 e D-798 endurecem edição NF-e/upload 23505/rollback, saída manual, auth multi-org/503, OIDC email_verified, 17/17 agendadores/backfills com isolamento de enqueue e 503, relist, erroInterno, OAuth/TTL/push ML/Shopee/TikTok, convites 23505, suspensão, Copiloto (janelas/hasOwn/transporte), webhook ML 503, frete e SAC (602 API + 17 contracts)",
+      "evidencia": "apps/api/src; main dc69d1fb na API; D-770, D-775, D-777, D-782, D-793, D-794, D-796, D-798 e D-800 endurecem edição NF-e/upload 23505/rollback, saída manual, auth multi-org/503, OIDC email_verified, 17/17 agendadores/backfills com isolamento de enqueue e 503, relist, erroInterno, OAuth/TTL/IDs/push ML/Shopee/TikTok, convites 23505, suspensão, Copiloto (janelas/hasOwn/trim/transporte), webhook ML 503, frete e SAC (606 API + 17 contracts)",
       "fase": 3
     },
     {
@@ -69,7 +69,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776, D-779, D-780, D-786, D-787 e D-794 a D-799 testados localmente com paginação, guardas por versão, lotes .in() Full/Shopee, proteção Flate zip bomb PDF (CWE-409), visitas/Full/relist/backfills/pedidos/cauda/claims/SAC/NF-e/documentos/datas/cobertura/attempt endurecidos, telemetria blindada contra transporte, IDs seguros ML, janelas/datas Shopee e Ads, clientes HTTP/OAuth resilientes, unlock protegido e logger blindado (1.154 worker + 753 domain + 30 db + 38 observability)",
+      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776, D-779, D-780, D-786, D-787 e D-794 a D-800 testados localmente com paginação, guardas por versão, lotes .in() Full/Shopee, proteção Flate zip bomb PDF (CWE-409), visitas/Full/relist/backfills/pedidos/cauda/logística/pacote/anomalias/claims/SAC/NF-e/documentos/datas/cobertura/attempt endurecidos, telemetria blindada contra transporte, IDs seguros ML, janelas/datas Shopee e Ads, clientes HTTP/OAuth resilientes, unlock protegido e logger blindado (1.157 worker + 753 domain + 30 db + 38 observability)",
       "fase": 3
     },
     {
