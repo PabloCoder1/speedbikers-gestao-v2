@@ -11,7 +11,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * PRODUTO que já veio numa planilha aplicada; nem o criado fora dela, nem o
  * KIT), que a prévia da conferência e a marcação contam o MESMO conjunto, a
  * idempotência da marcação, a volta de quem reaparece, os grants (a marcação é
- * só do worker) e o recorte da Reposição em `get_purchase_suggestions`.
+ * só do worker) e o recorte da Reposição em `get_purchase_suggestions`. E a
+ * marca MANUAL (`set_skus_out_of_catalog`): quem pode, o desfecho por linha,
+ * que ela sobrevive à planilha e que tirá-la devolve o `is_active` de antes.
  *
  * Exige o Supabase local no ar (`pnpm exec supabase start`).
  */
@@ -87,14 +89,19 @@ async function linhas(loteId: string, chaves: readonly string[], applyStatus: st
   }
 }
 
-async function comoPapel<T>(papel: "authenticated" | "service_role", sql: string, params: unknown[] = []): Promise<T[]> {
+async function comoPapel<T>(
+  papel: "authenticated" | "service_role",
+  sql: string,
+  params: unknown[] = [],
+  sub: string = ADMIN,
+): Promise<T[]> {
   await client.query("begin");
 
   try {
     await client.query(`set local role ${papel}`);
 
     if (papel === "authenticated") {
-      await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: ADMIN })]);
+      await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub })]);
     }
 
     const result = await client.query(sql, params);
@@ -118,8 +125,14 @@ async function previa(loteId: string): Promise<Previa | null> {
   return rows[0]?.previa ?? null;
 }
 
-async function marcar(loteId: string, marcar: boolean): Promise<{ marked: number; cleared: number }> {
-  const rows = await comoPapel<{ r: { marked: number; cleared: number } }>(
+interface Marcacao {
+  marked: number;
+  cleared: number;
+  manualKept: number;
+}
+
+async function marcar(loteId: string, marcar: boolean): Promise<Marcacao> {
+  const rows = await comoPapel<{ r: Marcacao }>(
     "service_role",
     "select public.apply_products_batch_absences($1, $2) as r",
     [loteId, marcar],
@@ -131,9 +144,18 @@ async function marcar(loteId: string, marcar: boolean): Promise<{ marked: number
   return r;
 }
 
-async function estado(skuId: string): Promise<{ is_active: boolean; erp_absent_since: Date | null; erp_absent_batch_id: string | null }> {
-  const result = await client.query<{ is_active: boolean; erp_absent_since: Date | null; erp_absent_batch_id: string | null }>(
-    "select is_active, erp_absent_since, erp_absent_batch_id from public.skus where id = $1",
+interface Estado {
+  is_active: boolean;
+  erp_absent_since: Date | null;
+  erp_absent_batch_id: string | null;
+  erp_absent_source: string | null;
+  erp_absent_was_active: boolean | null;
+}
+
+async function estado(skuId: string): Promise<Estado> {
+  const result = await client.query<Estado>(
+    `select is_active, erp_absent_since, erp_absent_batch_id, erp_absent_source, erp_absent_was_active
+       from public.skus where id = $1`,
     [skuId],
   );
   const row = result.rows[0];
@@ -234,13 +256,13 @@ describe("marcação", () => {
   });
 
   it("sem p_mark, nada é marcado e o lote registra que não pediu", async () => {
-    expect(await marcar(loteNovo, false)).toEqual({ marked: 0, cleared: 0 });
+    expect(await marcar(loteNovo, false)).toEqual({ marked: 0, cleared: 0, manualKept: 0 });
     expect(await estado(sku.b)).toMatchObject({ is_active: true, erp_absent_since: null });
     expect(await contagens(loteNovo)).toEqual({ absent_marked: null, absent_cleared: 0 });
   });
 
   it("com p_mark, marca exatamente o conjunto da prévia: inativo, com a data e o lote", async () => {
-    expect(await marcar(loteNovo, true)).toEqual({ marked: 2, cleared: 0 });
+    expect(await marcar(loteNovo, true)).toEqual({ marked: 2, cleared: 0, manualKept: 0 });
 
     for (const id of [sku.b, sku.c]) {
       const e = await estado(id);
@@ -248,6 +270,7 @@ describe("marcação", () => {
       expect(e.is_active).toBe(false);
       expect(e.erp_absent_since).not.toBeNull();
       expect(e.erp_absent_batch_id).toBe(loteNovo);
+      expect(e).toMatchObject({ erp_absent_source: "PLANILHA", erp_absent_was_active: true });
     }
 
     // Presente, criado fora da planilha e kit: intocados.
@@ -261,7 +284,7 @@ describe("marcação", () => {
   it("rodar de novo (reentrega do job) não marca nem conta duas vezes", async () => {
     const antes = await estado(sku.b);
 
-    expect(await marcar(loteNovo, true)).toEqual({ marked: 0, cleared: 0 });
+    expect(await marcar(loteNovo, true)).toEqual({ marked: 0, cleared: 0, manualKept: 0 });
     expect((await estado(sku.b)).erp_absent_since).toEqual(antes.erp_absent_since);
     expect(await contagens(loteNovo)).toEqual({ absent_marked: 2, absent_cleared: 0 });
   });
@@ -298,9 +321,108 @@ describe("quem volta", () => {
     // A aplicação grava o is_active que o UpSeller manda antes da marcação rodar.
     await client.query("update public.skus set is_active = true where id = $1", [sku.b]);
 
-    expect(await marcar(loteDeVolta, false)).toEqual({ marked: 0, cleared: 1 });
-    expect(await estado(sku.b)).toMatchObject({ is_active: true, erp_absent_since: null, erp_absent_batch_id: null });
+    expect(await marcar(loteDeVolta, false)).toEqual({ marked: 0, cleared: 1, manualKept: 0 });
+    expect(await estado(sku.b)).toMatchObject({
+      is_active: true,
+      erp_absent_since: null,
+      erp_absent_batch_id: null,
+      erp_absent_source: null,
+      erp_absent_was_active: null,
+    });
     expect(await estado(sku.c)).toMatchObject({ is_active: false, erp_absent_batch_id: loteNovo });
     expect(await contagens(loteDeVolta)).toEqual({ absent_marked: null, absent_cleared: 1 });
+  });
+});
+
+async function manual(ids: readonly string[], fora: boolean, sub: string = ADMIN): Promise<Record<string, string>> {
+  const rows = await comoPapel<{ sku_id: string; status: string }>(
+    "authenticated",
+    "select sku_id, status from public.set_skus_out_of_catalog($1, $2::uuid[], $3)",
+    [ORG, ids, fora],
+    sub,
+  );
+
+  return Object.fromEntries(rows.map((r) => [r.sku_id, r.status]));
+}
+
+describe("marca manual", () => {
+  it("quem não é da organização não marca", async () => {
+    await expect(manual([sku.a], true, randomUUID())).rejects.toThrow(/sem permissao/);
+    expect((await estado(sku.a)).erp_absent_since).toBeNull();
+  });
+
+  it("marca com origem MANUAL e guarda o is_active; o já marcado pela planilha fica como está", async () => {
+    // D já estava inativo: tirar a marca depois tem de devolver o inativo.
+    await client.query("update public.skus set is_active = false where id = $1", [sku.d]);
+
+    const fantasma = randomUUID();
+    const r = await manual([sku.a, sku.d, sku.c, fantasma], true);
+
+    expect(r).toEqual({ [sku.a]: "APLICADO", [sku.d]: "APLICADO", [sku.c]: "JA_DECIDIDO", [fantasma]: "NAO_ENCONTRADO" });
+    expect(await estado(sku.a)).toMatchObject({
+      is_active: false,
+      erp_absent_source: "MANUAL",
+      erp_absent_was_active: true,
+      erp_absent_batch_id: null,
+    });
+    expect((await estado(sku.a)).erp_absent_since).not.toBeNull();
+    expect(await estado(sku.d)).toMatchObject({ is_active: false, erp_absent_source: "MANUAL", erp_absent_was_active: false });
+    expect(await estado(sku.c)).toMatchObject({ erp_absent_source: "PLANILHA", erp_absent_batch_id: loteNovo });
+  });
+
+  it("sai da Reposição como a marca da planilha", async () => {
+    const result = await client.query<{ sku_id: string }>(
+      "select sku_id from public.get_purchase_suggestions($1, current_date, null, null, 1000, 0, null)",
+      [ORG],
+    );
+
+    expect(result.rows.map((row) => row.sku_id)).not.toContain(sku.a);
+  });
+
+  it("sobrevive à planilha que ainda traz o produto: não volta e o is_active falso é reafirmado", async () => {
+    const lote = await novoLote("ainda-traz.xlsx");
+
+    await linhas(lote, ["a", "b", "c"], null);
+
+    // A vem na planilha, mas a marca é manual: não é anunciado como volta. C é da planilha e volta.
+    expect(await previa(lote)).toMatchObject({ voltam: 1 });
+
+    // A aplicação grava o is_active da planilha antes da marcação rodar.
+    await client.query("update public.skus set is_active = true where id = any($1::uuid[])", [[sku.a, sku.c]]);
+
+    expect(await marcar(lote, true)).toEqual({ marked: 0, cleared: 1, manualKept: 1 });
+    expect(await estado(sku.a)).toMatchObject({ is_active: false, erp_absent_source: "MANUAL", erp_absent_was_active: true });
+    expect(await estado(sku.c)).toMatchObject({ is_active: true, erp_absent_source: null });
+  });
+
+  it("tirar a marca devolve o is_active de antes; quem não tem marca fica JA_DECIDIDO", async () => {
+    expect(await manual([sku.a, sku.d, sku.b], false)).toEqual({
+      [sku.a]: "APLICADO",
+      [sku.d]: "APLICADO",
+      [sku.b]: "JA_DECIDIDO",
+    });
+    expect(await estado(sku.a)).toMatchObject({
+      is_active: true,
+      erp_absent_since: null,
+      erp_absent_source: null,
+      erp_absent_was_active: null,
+    });
+    expect(await estado(sku.d)).toMatchObject({ is_active: false, erp_absent_since: null, erp_absent_source: null });
+  });
+
+  it("recusa seleção vazia e decisão nula", async () => {
+    await expect(manual([], true)).rejects.toThrow(/selecao vazia/);
+    await expect(
+      comoPapel("authenticated", "select * from public.set_skus_out_of_catalog($1, $2::uuid[], null)", [ORG, [sku.a]]),
+    ).rejects.toThrow(/decisao invalida/);
+  });
+
+  it("o banco recusa marca MANUAL com lote", async () => {
+    await expect(
+      client.query(
+        "update public.skus set erp_absent_since = now(), erp_absent_source = 'MANUAL', erp_absent_batch_id = $2 where id = $1",
+        [sku.b, loteNovo],
+      ),
+    ).rejects.toThrow(/skus_erp_absent_source_coherent/);
   });
 });

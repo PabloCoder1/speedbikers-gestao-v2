@@ -134,3 +134,38 @@ export async function setSupplierBrand(
 
   return { ok: true, message: null, outcome };
 }
+
+/**
+ * D-795: marca (`fora` verdadeiro) ou tira à mão a marca de FORA DO CATÁLOGO.
+ * Nada é apagado: o SKU fica inativo, sai da Reposição e das sugestões de
+ * compra, e o histórico continua. A marca manual não sai com a planilha.
+ */
+export async function setForaDoCatalogo(
+  organizationId: string,
+  skuIds: readonly string[],
+  fora: boolean,
+): Promise<CurationResult> {
+  const selecao = parseSelecao(skuIds);
+
+  if (!selecao.ok) return falha(selecao.message);
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("set_skus_out_of_catalog", {
+    p_organization_id: organizationId,
+    p_sku_ids: selecao.value,
+    p_out: fora,
+  });
+
+  const message = describeCuracaoError(error);
+
+  if (message !== null) return falha(message);
+
+  const outcome = summarizeCuration(data ?? []);
+
+  revalidatePath("/produtos");
+  // A Reposição deixa de fora o SKU marcado (D-795): é onde a marca pesa.
+  revalidatePath("/reposicao");
+
+  return { ok: true, message: null, outcome };
+}

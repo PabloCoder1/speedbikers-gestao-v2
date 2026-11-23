@@ -8,7 +8,7 @@ import { TOM } from "../../../components/tone";
 import { formatCount, formatCurrency, formatDateTime, formatDay } from "../../../lib/format";
 import type { LinhaProduto } from "../../../lib/products-overview";
 import { describeOutcome, MAX_SELECAO, type CurationOutcome } from "../../../lib/sku-curation";
-import { classifySkus, setSupplierBrand } from "./actions";
+import { classifySkus, setForaDoCatalogo, setSupplierBrand } from "./actions";
 import { InspecaoRapida } from "./inspecao-rapida";
 
 /**
@@ -114,25 +114,43 @@ function Classificacao({ row }: { row: CurationRow }): ReactNode {
   );
 }
 
+/** A dica da etiqueta: de onde veio a marca e desde quando. */
+function tituloFora(marca: ForaDoCatalogo | undefined): string {
+  if (marca === undefined) return "Fora do catálogo";
+
+  return marca.manual
+    ? `Marcado fora do catálogo nesta tela em ${formatDay(marca.desde)}`
+    : `Não veio na planilha de produtos do UpSeller aplicada em ${formatDay(marca.desde)}`;
+}
+
 interface Pendente {
-  readonly tipo: "classificar" | "marca";
+  readonly tipo: "classificar" | "marca" | "catalogo";
   readonly decisao?: string;
   readonly marca?: string;
+  /** Só em `catalogo`: verdadeiro marca fora do catálogo, falso devolve. */
+  readonly fora?: boolean;
   readonly rotulo: string;
   readonly consequencia: string;
+}
+
+/** D-795: a marca de fora do catálogo de um SKU inativo da página. */
+export interface ForaDoCatalogo {
+  readonly desde: string;
+  /** Posta à mão nesta tela (não sai com a planilha), ou pela planilha. */
+  readonly manual: boolean;
 }
 
 export function CurationTable({
   organizationId,
   rows,
-  foraDaPlanilha,
+  foraDoCatalogo,
   marcasConhecidas,
   cabecalho,
 }: {
   organizationId: string;
   rows: readonly CurationRow[];
-  /** D-795: SKU inativo por ter saído da planilha de produtos → desde quando. */
-  foraDaPlanilha?: ReadonlyMap<string, string>;
+  /** D-795: SKU inativo marcado fora do catálogo → desde quando e por quem. */
+  foraDoCatalogo?: ReadonlyMap<string, ForaDoCatalogo>;
   /** Alimenta o `<datalist>`: as marcas que já existem, vindas do summary. */
   marcasConhecidas: string[];
   /** A linha de contagens do cabeçalho do cartão ("retrato de … · N de M"). */
@@ -141,7 +159,13 @@ export function CurationTable({
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [marca, setMarca] = useState("");
   const [pendente, setPendente] = useState<Pendente | null>(null);
-  const [resultado, setResultado] = useState<{ texto: string; erro: boolean; desfazer: string[] } | null>(null);
+  const [resultado, setResultado] = useState<{
+    texto: string;
+    erro: boolean;
+    desfazer: string[];
+    /** O que o Desfazer manda de volta para `desfazer`. */
+    desfazerCom: Pendente | null;
+  } | null>(null);
   const [emCurso, startTransition] = useTransition();
   // D-454: a leitura garante que as linhas têm os números da Shopee todas ou
   // nenhuma (loja live ou não, `lib/products-overview.ts`).
@@ -172,24 +196,42 @@ export function CurationTable({
         const r =
           acao.tipo === "classificar"
             ? await classifySkus(organizationId, alvos, acao.decisao ?? "")
-            : await setSupplierBrand(organizationId, alvos, acao.marca ?? "");
+            : acao.tipo === "catalogo"
+              ? await setForaDoCatalogo(organizationId, alvos, acao.fora === true)
+              : await setSupplierBrand(organizationId, alvos, acao.marca ?? "");
 
         setPendente(null);
 
         if (!r.ok || r.outcome === null) {
-          setResultado({ texto: r.message ?? "Não foi possível concluir a ação.", erro: true, desfazer: [] });
+          setResultado({
+            texto: r.message ?? "Não foi possível concluir a ação.",
+            erro: true,
+            desfazer: [],
+            desfazerCom: null,
+          });
 
           return;
         }
 
         const outcome: CurationOutcome = r.outcome;
 
+        // Desfazer manda de volta APENAS o que MUDOU — nunca os enviados.
+        // Mandar os enviados reverteria decisão que já era de outra pessoa.
+        // Só marcar fora do catálogo tem desfazer exato (tirar a marca devolve
+        // o `is_active` de antes); devolver ao catálogo não tem: marcar de novo
+        // trocaria a origem de uma marca da planilha para manual.
+        const desfazerCom: Pendente | null =
+          acao.tipo === "classificar"
+            ? { tipo: "classificar", decisao: "INDEFINIDO", rotulo: "", consequencia: "" }
+            : acao.tipo === "catalogo" && acao.fora === true
+              ? { tipo: "catalogo", fora: false, rotulo: "", consequencia: "" }
+              : null;
+
         setResultado({
           texto: describeOutcome(outcome),
           erro: false,
-          // Desfazer manda de volta APENAS o que MUDOU — nunca os enviados.
-          // Mandar os enviados reverteria decisão que já era de outra pessoa.
-          desfazer: acao.tipo === "classificar" ? outcome.changedIds : [],
+          desfazer: desfazerCom === null ? [] : outcome.changedIds,
+          desfazerCom,
         });
 
         if (limpaSelecao) setSelecionados(new Set());
@@ -222,6 +264,26 @@ export function CurationTable({
       decisao: "INDEFINIDO",
       titulo: (n: number) => `Devolver ${formatCount(n)} SKU(s) para "não classificado"`,
       consequencia: "Eles voltam para a fila como se ninguém tivesse olhado. Nada é apagado além da decisão.",
+    },
+  ] as const;
+
+  /** D-795: marcar e devolver, com a consequência de cada um. */
+  const catalogo = [
+    {
+      rotulo: "Marcar fora do catálogo",
+      fora: true,
+      titulo: (n: number) =>
+        n === 1 ? "Marcar 1 produto como fora do catálogo" : `Marcar ${formatCount(n)} produtos como fora do catálogo`,
+      consequencia:
+        "Eles ficam inativos, com a etiqueta fora do catálogo, e saem da Reposição e das sugestões de compra. Nada é apagado: vendas, estoque e anúncios continuam no histórico. Uma planilha nova do UpSeller não os traz de volta; para isso, use Voltar ao catálogo.",
+    },
+    {
+      rotulo: "Voltar ao catálogo",
+      fora: false,
+      titulo: (n: number) =>
+        n === 1 ? "Devolver 1 produto ao catálogo" : `Devolver ${formatCount(n)} produtos ao catálogo`,
+      consequencia:
+        "A etiqueta sai e eles voltam à situação que tinham antes da marca, entrando de novo na Reposição. Quem não vier na próxima planilha de produtos pode ser marcado de novo por ela.",
     },
   ] as const;
 
@@ -285,6 +347,40 @@ export function CurationTable({
                   }}
                 >
                   {d.rotulo}
+                </button>
+              ))}
+            </div>
+          </details>
+
+          {/*
+            D-795: a marca de fora do catálogo, à mão. Nunca apaga: o SKU é
+            referenciado por pedidos e pelo ledger de estoque.
+          */}
+          <details className="sb-menu">
+            <summary className="sb-button sb-button-sm" aria-disabled={nada || emCurso}>
+              Catálogo
+              <span aria-hidden="true" className="sb-menu-chevron">
+                ⌄
+              </span>
+            </summary>
+            <div className="sb-menu-panel">
+              {catalogo.map((c) => (
+                <button
+                  key={c.rotulo}
+                  type="button"
+                  className="sb-menu-item"
+                  disabled={nada || emCurso}
+                  onClick={(e) => {
+                    e.currentTarget.closest("details")?.removeAttribute("open");
+                    setPendente({
+                      tipo: "catalogo",
+                      fora: c.fora,
+                      rotulo: c.titulo(ids.length),
+                      consequencia: c.consequencia,
+                    });
+                  }}
+                >
+                  {c.rotulo}
                 </button>
               ))}
             </div>
@@ -405,17 +501,13 @@ export function CurationTable({
         >
           <span>{resultado.texto}</span>
 
-          {resultado.desfazer.length > 0 && (
+          {resultado.desfazer.length > 0 && resultado.desfazerCom !== null && (
             <button
               type="button"
               className="sb-button sb-button-sm"
               disabled={emCurso}
               onClick={() => {
-                aplicar(
-                  { tipo: "classificar", decisao: "INDEFINIDO", rotulo: "", consequencia: "" },
-                  resultado.desfazer,
-                  false,
-                );
+                if (resultado.desfazerCom !== null) aplicar(resultado.desfazerCom, resultado.desfazer, false);
               }}
             >
               Desfazer
@@ -519,11 +611,8 @@ export function CurationTable({
                         </span>
                       )}
                       {row.situacao === "INATIVO" &&
-                        (foraDaPlanilha?.has(row.sku_id) === true ? (
-                          <span
-                            className="sb-prod-selo"
-                            title={`Não veio na planilha de produtos do UpSeller aplicada em ${formatDay(foraDaPlanilha.get(row.sku_id) ?? null)}`}
-                          >
+                        (foraDoCatalogo?.has(row.sku_id) === true ? (
+                          <span className="sb-prod-selo" title={tituloFora(foraDoCatalogo.get(row.sku_id))}>
                             fora do catálogo
                           </span>
                         ) : (

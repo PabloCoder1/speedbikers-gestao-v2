@@ -5051,6 +5051,8 @@ export type Database = {
           created_at: string
           erp_absent_batch_id: string | null
           erp_absent_since: string | null
+          erp_absent_source: string | null
+          erp_absent_was_active: boolean | null
           erp_product_code: string | null
           erp_spu: string | null
           height_cm: number | null
@@ -5089,6 +5091,8 @@ export type Database = {
           created_at?: string
           erp_absent_batch_id?: string | null
           erp_absent_since?: string | null
+          erp_absent_source?: string | null
+          erp_absent_was_active?: boolean | null
           erp_product_code?: string | null
           erp_spu?: string | null
           height_cm?: number | null
@@ -5127,6 +5131,8 @@ export type Database = {
           created_at?: string
           erp_absent_batch_id?: string | null
           erp_absent_since?: string | null
+          erp_absent_source?: string | null
+          erp_absent_was_active?: boolean | null
           erp_product_code?: string | null
           erp_spu?: string | null
           height_cm?: number | null
@@ -9754,6 +9760,17 @@ export type Database = {
         Args: { p_id: string; p_logo_path?: string }
         // D-370: devolve o caminho ANTERIOR, NULL quando nao havia logo (o gerador nao marcaria o nulo).
         Returns: string | null
+      }
+      set_skus_out_of_catalog: {
+        Args: {
+          p_organization_id: string
+          p_out: boolean
+          p_sku_ids: string[]
+        }
+        Returns: {
+          sku_id: string
+          status: string
+        }[]
       }
       set_skus_stock_virtual: {
         Args: {

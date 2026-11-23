@@ -301,11 +301,14 @@ export default async function SkuDashboardPage({
   // à parte e tolerante, só para o inativo: antes da migration de produção a
   // coluna não existe, e a página fica como era.
   let foraDoCatalogoDesde: string | null = null;
+  // D-795: a marca posta à mão em Produtos não sai com a planilha.
+  let foraDoCatalogoManual = false;
 
   if (!sku.data.is_active) {
-    const fora = await supabase.from("skus").select("erp_absent_since").eq("id", skuId).maybeSingle();
+    const fora = await supabase.from("skus").select("erp_absent_since, erp_absent_source").eq("id", skuId).maybeSingle();
 
     foraDoCatalogoDesde = fora.error === null ? (fora.data?.erp_absent_since ?? null) : null;
+    foraDoCatalogoManual = fora.error === null && fora.data?.erp_absent_source === "MANUAL";
   }
 
   const now = new Date();
@@ -930,9 +933,19 @@ export default async function SkuDashboardPage({
 
       {foraDoCatalogoDesde !== null && (
         <p role="status" className="sb-note sb-note-atencao sb-skud-fora">
-          Este produto não veio na planilha de produtos do UpSeller aplicada em {formatDateTime(foraDoCatalogoDesde)}.
-          Está inativo e fora da Reposição; o saldo mostrado é o último que chegou. Se ele voltar numa planilha, volta
-          ao catálogo sozinho.
+          {foraDoCatalogoManual ? (
+            <>
+              Este produto foi marcado fora do catálogo em Produtos em {formatDateTime(foraDoCatalogoDesde)}. Está
+              inativo e fora da Reposição; o histórico continua. Uma planilha nova do UpSeller não o traz de volta: para
+              isso, use Voltar ao catálogo em Produtos.
+            </>
+          ) : (
+            <>
+              Este produto não veio na planilha de produtos do UpSeller aplicada em{" "}
+              {formatDateTime(foraDoCatalogoDesde)}. Está inativo e fora da Reposição; o saldo mostrado é o último que
+              chegou. Se ele voltar numa planilha, volta ao catálogo sozinho.
+            </>
+          )}
         </p>
       )}
       {tab === "visao-geral" && (
