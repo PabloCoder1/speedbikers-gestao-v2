@@ -475,6 +475,7 @@ jobs:
           bash infra/cloud-scheduler.test.sh
           bash infra/cloud-tasks-queues.test.sh
           bash infra/storage-buckets.test.sh
+          bash infra/cloud-nat.test.sh
           bash infra/deploy-cloud-run.test.sh
 
       # Os scripts de infra/ rodam em bash e são versionados. Erro de sintaxe

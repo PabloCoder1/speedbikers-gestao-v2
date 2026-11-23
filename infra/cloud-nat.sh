@@ -21,7 +21,10 @@ require_project
 [ "${AMBIENTE}" = "prod" ] || fail "o IP fixo é de produção (AMBIENTE=prod); o Dev segue saindo pelo pool dinâmico."
 
 step "API do Compute Engine"
-if gc services list --enabled --filter=config.name=compute.googleapis.com --format="value(config.name)" | grep -q compute; then
+if ! compute_services="$(gc services list --enabled --filter=config.name=compute.googleapis.com --format='value(config.name)' | tr -d '\r')"; then
+  fail "Não foi possível verificar se compute.googleapis.com está habilitada em ${PROJECT_ID}."
+fi
+if grep -Fxq -- compute.googleapis.com <<< "${compute_services}"; then
   skip compute.googleapis.com
 else
   gc services enable compute.googleapis.com
