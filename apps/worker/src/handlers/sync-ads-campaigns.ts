@@ -260,7 +260,12 @@ export function createSyncAdsCampaignsHandler(deps: SyncAdsCampaignsDeps): JobHa
         diasGravados += dias.length;
       }
     } catch (error) {
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+      const errorClass =
+        error instanceof MercadoLivreApiError
+          ? error.errorClass
+          : error instanceof ProductAdsFormatoInesperado || error instanceof z.ZodError
+            ? "not_retryable"
+            : "retryable";
       const reason = error instanceof Error ? error.message : "erro desconhecido ao sincronizar Mercado Ads";
 
       return await falhar(reason, errorClass);

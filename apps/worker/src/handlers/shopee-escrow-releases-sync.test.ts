@@ -213,4 +213,21 @@ describe("shopee.escrow-releases.sync (D-451)", () => {
     expect(gravacao.outcome).toMatchObject({ status: "failed", retryable: true });
     expect(gravacao.enfileirados).toEqual([]);
   });
+
+  it("D-795: marco no futuro (desvio de relógio) ou inválido nunca produz janela invertida nem RangeError", async () => {
+    const futuro = new Date((AGORA_S + 3600) * 1000).toISOString();
+    const shopeeFuturo = fakeShopee([pagina(false, [])]);
+    const resFuturo = await rodar({ ...LOJA, escrow_releases_synced_until: futuro }, shopeeFuturo);
+
+    expect(resFuturo.outcome).toEqual({ status: "done", processed: 0 });
+    expect(shopeeFuturo.pedidos[0]?.get("release_time_from")).toBe(String(AGORA_S - 600));
+    expect(shopeeFuturo.pedidos[0]?.get("release_time_to")).toBe(String(AGORA_S));
+
+    const shopeeInvalido = fakeShopee([pagina(false, [])]);
+    const resInvalido = await rodar({ ...LOJA, escrow_releases_synced_until: "data-invalida" }, shopeeInvalido);
+
+    expect(resInvalido.outcome).toEqual({ status: "done", processed: 0 });
+    expect(shopeeInvalido.pedidos[0]?.get("release_time_from")).toBe(String(AGORA_S - 90 * DIA_S));
+    expect(shopeeInvalido.pedidos[0]?.get("release_time_to")).toBe(String(AGORA_S - 90 * DIA_S + 15 * DIA_S));
+  });
 });

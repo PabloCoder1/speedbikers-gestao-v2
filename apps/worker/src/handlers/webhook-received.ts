@@ -84,6 +84,20 @@ const ORDER_RESOURCE_PATTERN = /^\/orders\/(\d+)$/;
  */
 const CLAIM_RESOURCE_PATTERN = /^\/post-purchase\/v1\/claims\/(\d+)(?:\/[a-z0-9-]+)*$/;
 
+function parsePositiveSafeId(raw: string | undefined): string | null {
+  if (raw === undefined) {
+    return null;
+  }
+
+  const normalized = raw.replace(/^0+(?=\d)/, "");
+
+  if (!/^[1-9]\d*$/.test(normalized)) {
+    return null;
+  }
+
+  return Number.isSafeInteger(Number(normalized)) ? normalized : null;
+}
+
 export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHandler {
   return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
@@ -105,14 +119,13 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
 
     const resourcePattern = topic === "orders_v2" ? ORDER_RESOURCE_PATTERN : CLAIM_RESOURCE_PATTERN;
     const match = resourcePattern.exec(resource);
+    const resourceId = match === null ? null : parsePositiveSafeId(match[1]);
 
-    if (match === null) {
+    if (resourceId === null) {
       // Cada tópico tem um formato fixo de `resource` — um formato diferente
-      // é inesperado o bastante para não valer retry.
+      // ou ID fora do inteiro positivo seguro é inesperado o bastante para não valer retry.
       return { status: "failed", retryable: false, reason: `resource fora do formato esperado: ${resource}` };
     }
-
-    const resourceId = match[1] ?? "";
 
     const accountRead = await deps.db
       .from("ml_accounts")

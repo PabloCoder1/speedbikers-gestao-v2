@@ -18,13 +18,28 @@ const BASE = {
 function fakeDb(options: {
   syncRunsError?: boolean;
   syncErrorsError?: boolean;
+  syncRunsThrow?: Error;
+  syncErrorsThrow?: Error;
   syncRunId?: string | null;
+  syncErrorsInserted?: unknown[];
 }): AdminClient {
   return {
     from: (table: string) => {
       if (table === "sync_runs") {
         return {
           insert: () => {
+            if (options.syncRunsThrow !== undefined) {
+              const failure = options.syncRunsThrow;
+
+              return {
+                then: <T, R>(onFulfilled?: (value: never) => T, onRejected?: (reason: unknown) => R) =>
+                  Promise.reject(failure).then(onFulfilled, onRejected),
+                select: () => ({
+                  maybeSingle: () => Promise.reject(failure),
+                }),
+              };
+            }
+
             const plainResult = { error: options.syncRunsError === true ? { message: "boom" } : null };
 
             return {
@@ -48,8 +63,15 @@ function fakeDb(options: {
 
       if (table === "sync_errors") {
         return {
-          insert: () =>
-            Promise.resolve({ error: options.syncErrorsError === true ? { message: "boom" } : null }),
+          insert: (row: unknown) => {
+            options.syncErrorsInserted?.push(row);
+
+            if (options.syncErrorsThrow !== undefined) {
+              return Promise.reject(options.syncErrorsThrow);
+            }
+
+            return Promise.resolve({ error: options.syncErrorsError === true ? { message: "boom" } : null });
+          },
         };
       }
 
@@ -85,6 +107,22 @@ describe("recordSyncRunSuccess", () => {
     ).resolves.toBeUndefined();
 
     expect(lines.join()).toContain("sync_run_not_recorded");
+  });
+
+  it("erro de transporte ao gravar sync_runs é logado, nunca lançado (D-795)", async () => {
+    const lines: string[] = [];
+    const logger = createLogger({}, { sink: (line) => lines.push(line) });
+
+    await expect(
+      recordSyncRunSuccess(
+        fakeDb({ syncRunsThrow: new TypeError("fetch failed") }),
+        { ...BASE, itemsProcessed: 10, latestRecordAt: null },
+        logger,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(lines.join()).toContain("sync_run_not_recorded");
+    expect(lines.join()).toContain("fetch failed");
   });
 });
 
@@ -127,5 +165,38 @@ describe("recordSyncRunFailure", () => {
     ).resolves.toBeUndefined();
 
     expect(lines.join()).toContain("sync_error_not_recorded");
+  });
+
+  it("erro de transporte em sync_runs é logado e ainda tenta gravar sync_errors com sync_run_id nulo (D-795)", async () => {
+    const lines: string[] = [];
+    const logger = createLogger({}, { sink: (line) => lines.push(line) });
+    const syncErrorsInserted: unknown[] = [];
+
+    await expect(
+      recordSyncRunFailure(
+        fakeDb({ syncRunsThrow: new TypeError("fetch failed"), syncErrorsInserted }),
+        { ...BASE, reason: "boom", errorClass: "not_retryable" },
+        logger,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(lines.join()).toContain("sync_run_failure_not_recorded");
+    expect(syncErrorsInserted).toEqual([expect.objectContaining({ sync_run_id: null, error_class: "not_retryable" })]);
+  });
+
+  it("erro de transporte em sync_errors é logado, nunca lançado (D-795)", async () => {
+    const lines: string[] = [];
+    const logger = createLogger({}, { sink: (line) => lines.push(line) });
+
+    await expect(
+      recordSyncRunFailure(
+        fakeDb({ syncErrorsThrow: new TypeError("fetch failed") }),
+        { ...BASE, reason: "boom", errorClass: "not_retryable" },
+        logger,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(lines.join()).toContain("sync_error_not_recorded");
+    expect(lines.join()).toContain("fetch failed");
   });
 });

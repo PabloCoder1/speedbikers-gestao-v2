@@ -381,4 +381,22 @@ describe("sync.support.messages", () => {
     expect(ctx.requests).toHaveLength(1);
     expect(persistMock.mock.calls[0]?.[2].messages).toHaveLength(0);
   });
+
+  it("D-795: recusa packOrOrderId zero ou fora do inteiro seguro sem retry e normaliza zeros à esquerda", async () => {
+    for (const packOrOrderId of ["0", "000", "9007199254740992"]) {
+      const ctx = setup();
+
+      await expect(
+        run(ctx.deps, ctx.lines, { mlAccountId: ML_ACCOUNT_ID, packOrOrderId, kind: "PACK" }),
+      ).resolves.toMatchObject({ status: "failed", retryable: false });
+      expect(ctx.requests).toHaveLength(0);
+    }
+
+    const ctx = setup();
+
+    await expect(
+      run(ctx.deps, ctx.lines, { mlAccountId: ML_ACCOUNT_ID, packOrOrderId: `000${PACK_ID}`, kind: "PACK" }),
+    ).resolves.toMatchObject({ status: "done" });
+    expect(ctx.requests[0]?.path).toBe(`/messages/packs/${PACK_ID}/sellers/${String(SELLER_ID)}`);
+  });
 });

@@ -205,4 +205,13 @@ describe("shopee.ads.sync (D-449)", () => {
 
     expect(indisponivel.outcome.status === "failed" ? indisponivel.outcome.reason : "").toMatch(/^Shopee respondeu 503 para GET \/api\/v2\/ads\//);
   });
+
+  it("D-795: data malformada vinda da Shopee falha sem retry no próximo ciclo, sem lançar RangeError nem gravar cobertura", async () => {
+    const shopee = fakeShopee({ dias: [{ date: "31-02-2026", impression: 10, clicks: 1, expense: 1 }] });
+    const { outcome, chamadas } = await rodar(LOJA, shopee);
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(outcome.status === "failed" ? outcome.reason : "").toMatch(/próximo ciclo da loja/);
+    expect(chamadas).toEqual([]);
+  });
 });
