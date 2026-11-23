@@ -2491,3 +2491,20 @@ espaço. A alternativa fica fora do candidato. A revisão de retenção
 pode avançar na leitura do histórico de notificações e manter o
 histórico append-only de sincronização enquanto se mede o benefício
 de um recorte maior.
+
+### Custo da ordenação da Central de Notificações (D-851)
+
+Ensaio em PostgreSQL 17 descartável com 141.500 vínculos sintéticos
+distribuídos por quatro destinatários, horários agrupados em lotes de 30,
+e o índice `user_id, created_at DESC`. Uma execução de cada variante em
+`EXPLAIN ANALYZE`, sem joins e com páginas de 100 itens. A consulta usou
+35.375 linhas do mesmo destinatário.
+
+| Página | Só horário | Horário e ID |
+| --- | ---: | ---: |
+| Primeira | 0,063 ms | 0,119 ms |
+| Deslocamento de 20.000 linhas | 2,952 ms | 4,197 ms |
+
+O novo critério manteve o índice e acrescentou ordenação incremental,
+com pico observado de 27 kB. A página profunda continua lendo o
+deslocamento inteiro. A amostra mede a ordenação e o acesso ao índice. Os tempos da rota com joins e RLS não foram medidos aqui.
