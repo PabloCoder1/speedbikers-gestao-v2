@@ -52,6 +52,7 @@ export async function triggerSalesAnomalyActionsDetection(
 
   let enqueued = 0;
   let deduplicated = 0;
+  let enqueueFailed = false;
 
   // D-116: o MESMO gatilho diário enfileira as duas detecções por
   // organização — handlers separados (falha e retry independentes), zero
@@ -69,18 +70,27 @@ export async function triggerSalesAnomalyActionsDetection(
 
   for (const organization of organizations.data) {
     for (const jobType of jobs) {
-      const result = await deps.enqueuer.enqueue({
-        jobType,
-        organizationId: organization.id,
-        dedupeKey: `${jobType.replace("diagnostics.", "")}:${organization.id}:${businessDate}`,
-        queue: "maintenance",
-        payload: { organizationId: organization.id },
-      });
+      try {
+        const result = await deps.enqueuer.enqueue({
+          jobType,
+          organizationId: organization.id,
+          dedupeKey: `${jobType.replace("diagnostics.", "")}:${organization.id}:${businessDate}`,
+          queue: "maintenance",
+          payload: { organizationId: organization.id },
+        });
 
-      if (result.deduplicated) {
-        deduplicated += 1;
-      } else {
-        enqueued += 1;
+        if (result.deduplicated) {
+          deduplicated += 1;
+        } else {
+          enqueued += 1;
+        }
+      } catch (error) {
+        enqueueFailed = true;
+        deps.logger.error("sales_anomaly_actions_schedule_enqueue_failed", {
+          organization_id: organization.id,
+          job_type: jobType,
+          reason: error instanceof Error ? error.message : "falha ao enfileirar diagnóstico diário",
+        });
       }
     }
   }
@@ -89,7 +99,13 @@ export async function triggerSalesAnomalyActionsDetection(
     organizations_scanned: organizations.data.length,
     enqueued,
     deduplicated,
+    ...(enqueueFailed ? { failed: true } : {}),
   });
 
-  return { organizationsScanned: organizations.data.length, enqueued, deduplicated };
+  return {
+    organizationsScanned: organizations.data.length,
+    enqueued,
+    deduplicated,
+    ...(enqueueFailed ? { failed: true as const } : {}),
+  };
 }

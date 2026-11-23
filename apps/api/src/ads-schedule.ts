@@ -53,25 +53,35 @@ export async function triggerAdsCampaignsSync(deps: AdsScheduleDeps): Promise<Ad
 
   let enqueued = 0;
   let deduplicated = 0;
+  let enqueueFailed = false;
 
   const ordered = [...accounts.data].sort((a, b) => a.slug.localeCompare(b.slug));
 
   for (const [index, account] of ordered.entries()) {
     const delaySeconds = index * ACCOUNT_STAGGER_SECONDS;
 
-    const result = await deps.enqueuer.enqueue({
-      jobType: "sync.ads.campaigns",
-      organizationId: account.organization_id,
-      dedupeKey: `ads:${account.slug}:${businessDate}`,
-      queue: `ml-sync-${account.slug}`,
-      payload: { mlAccountId: account.id },
-      ...(delaySeconds > 0 ? { delaySeconds } : {}),
-    });
+    try {
+      const result = await deps.enqueuer.enqueue({
+        jobType: "sync.ads.campaigns",
+        organizationId: account.organization_id,
+        dedupeKey: `ads:${account.slug}:${businessDate}`,
+        queue: `ml-sync-${account.slug}`,
+        payload: { mlAccountId: account.id },
+        ...(delaySeconds > 0 ? { delaySeconds } : {}),
+      });
 
-    if (result.deduplicated) {
-      deduplicated += 1;
-    } else {
-      enqueued += 1;
+      if (result.deduplicated) {
+        deduplicated += 1;
+      } else {
+        enqueued += 1;
+      }
+    } catch (error) {
+      enqueueFailed = true;
+      deps.logger.error("ads_schedule_enqueue_failed", {
+        ml_account_id: account.id,
+        slug: account.slug,
+        reason: error instanceof Error ? error.message : "falha ao enfileirar Mercado Ads",
+      });
     }
   }
 
@@ -79,7 +89,13 @@ export async function triggerAdsCampaignsSync(deps: AdsScheduleDeps): Promise<Ad
     accounts_scanned: accounts.data.length,
     enqueued,
     deduplicated,
+    ...(enqueueFailed ? { failed: true } : {}),
   });
 
-  return { accountsScanned: accounts.data.length, enqueued, deduplicated };
+  return {
+    accountsScanned: accounts.data.length,
+    enqueued,
+    deduplicated,
+    ...(enqueueFailed ? { failed: true as const } : {}),
+  };
 }

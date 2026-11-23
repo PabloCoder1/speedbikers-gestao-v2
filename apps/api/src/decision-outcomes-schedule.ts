@@ -53,20 +53,29 @@ export async function triggerDecisionOutcomesMeasurement(
 
   let enqueued = 0;
   let deduplicated = 0;
+  let enqueueFailed = false;
 
   for (const organization of organizations.data) {
-    const result = await deps.enqueuer.enqueue({
-      jobType: "diagnostics.measure-decision-outcomes",
-      organizationId: organization.id,
-      dedupeKey: `measure-decision-outcomes:${organization.id}:${businessDate}`,
-      queue: "maintenance",
-      payload: { organizationId: organization.id },
-    });
+    try {
+      const result = await deps.enqueuer.enqueue({
+        jobType: "diagnostics.measure-decision-outcomes",
+        organizationId: organization.id,
+        dedupeKey: `measure-decision-outcomes:${organization.id}:${businessDate}`,
+        queue: "maintenance",
+        payload: { organizationId: organization.id },
+      });
 
-    if (result.deduplicated) {
-      deduplicated += 1;
-    } else {
-      enqueued += 1;
+      if (result.deduplicated) {
+        deduplicated += 1;
+      } else {
+        enqueued += 1;
+      }
+    } catch (error) {
+      enqueueFailed = true;
+      deps.logger.error("decision_outcomes_schedule_enqueue_failed", {
+        organization_id: organization.id,
+        reason: error instanceof Error ? error.message : "falha ao enfileirar medição de decisões",
+      });
     }
   }
 
@@ -74,7 +83,13 @@ export async function triggerDecisionOutcomesMeasurement(
     organizations_scanned: organizations.data.length,
     enqueued,
     deduplicated,
+    ...(enqueueFailed ? { failed: true } : {}),
   });
 
-  return { organizationsScanned: organizations.data.length, enqueued, deduplicated };
+  return {
+    organizationsScanned: organizations.data.length,
+    enqueued,
+    deduplicated,
+    ...(enqueueFailed ? { failed: true as const } : {}),
+  };
 }

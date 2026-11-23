@@ -105,4 +105,21 @@ describe("triggerDecisionOutcomesMeasurement", () => {
     expect(outcome).toEqual({ organizationsScanned: 0, enqueued: 0, deduplicated: 0 });
     expect(enqueued).toHaveLength(0);
   });
+
+  it("D-794: falha ao enfileirar uma organização não impede as demais e sinaliza failed para 503", async () => {
+    const { deps: d, enqueued } = deps();
+    const base = d.enqueuer.enqueue;
+    d.enqueuer = {
+      enqueue: (request) =>
+        request.organizationId === "org-1" ? Promise.reject(new Error("fila indisponível")) : base(request),
+    };
+
+    await expect(triggerDecisionOutcomesMeasurement(d)).resolves.toEqual({
+      organizationsScanned: 2,
+      enqueued: 1,
+      deduplicated: 0,
+      failed: true,
+    });
+    expect(enqueued.map((e) => e.organizationId)).toEqual(["org-2"]);
+  });
 });
