@@ -100,6 +100,10 @@ export function reversedQuantity(
     if (reversal.idempotencyKey === exceptKey) continue;
 
     if (revertedSaleKeyOf(reversal.idempotencyKey) === saleKey) {
+      if (!Number.isFinite(reversal.quantity) || reversal.quantity < 0) {
+        throw new RangeError(`reversedQuantity: quantidade inválida na reversão ${reversal.idempotencyKey}: ${String(reversal.quantity)}`);
+      }
+
       total += reversal.quantity;
     }
   }
@@ -117,6 +121,10 @@ export function remainingToReverse(
   reversals: readonly RecordedReversal[],
   ownKey: string,
 ): number {
+  if (!Number.isFinite(sale.qtyDelta)) {
+    throw new RangeError(`remainingToReverse: qtyDelta inválido na venda ${sale.idempotencyKey}: ${String(sale.qtyDelta)}`);
+  }
+
   return Math.max(0, arredonda(Math.abs(sale.qtyDelta) - reversedQuantity(sale.idempotencyKey, reversals, ownKey)));
 }
 
@@ -130,6 +138,10 @@ export function excessReversed(
   sale: { readonly idempotencyKey: string; readonly qtyDelta: number },
   reversals: readonly RecordedReversal[],
 ): number {
+  if (!Number.isFinite(sale.qtyDelta)) {
+    throw new RangeError(`excessReversed: qtyDelta inválido na venda ${sale.idempotencyKey}: ${String(sale.qtyDelta)}`);
+  }
+
   return Math.max(0, arredonda(reversedQuantity(sale.idempotencyKey, reversals) - Math.abs(sale.qtyDelta)));
 }
 
@@ -179,6 +191,13 @@ export function excessReversalShares(
   reversals: readonly TimedRecordedReversal[],
 ): ExcessReversalShare[] {
   const daVenda = reversals.filter((reversal) => revertedSaleKeyOf(reversal.idempotencyKey) === sale.idempotencyKey);
+
+  for (const reversal of daVenda) {
+    if (!Number.isFinite(reversal.occurredAt.getTime())) {
+      throw new RangeError(`excessReversalShares: occurredAt inválido na reversão ${reversal.idempotencyKey}`);
+    }
+  }
+
   let restante = excessReversed(sale, daVenda);
   const partes: ExcessReversalShare[] = [];
 

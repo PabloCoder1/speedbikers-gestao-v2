@@ -189,6 +189,17 @@ describe("createAccountDirectory (D-346)", () => {
     await expect(diretorio.resolve(SELLER_1)).rejects.toThrow("banco fora do ar");
     expect(chamadas).toBe(3);
   });
+
+  it("seller_id inválido (zero, negativo, NaN ou decimal) devolve null sem consultar o banco", async () => {
+    const carga = cargas(new Map([[SELLER_1, LOJA_1]]));
+    const diretorio = createAccountDirectory({ load: carga.load });
+
+    for (const invalido of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 12.5]) {
+      await expect(diretorio.resolve(invalido)).resolves.toBeNull();
+    }
+
+    expect(carga.chamadas()).toBe(0);
+  });
 });
 
 describe("loadAccountsFromDb (D-346)", () => {

@@ -249,4 +249,32 @@ describe("estimativa pela margem média", () => {
     expect(roasDeEquilibrio(null)).toBeNull();
     expect(roasDeEquilibrio(-0.1)).toBeNull();
   });
+
+  it("rejeita roas_piso vazio/não positivo, margens não finitas e denominadores zerados sem gerar ∞% ou NaN", () => {
+    expect(lerSinaisAds({ ...RESPOSTA, referencias: { ...RESPOSTA.referencias, roas_piso: "" } })?.referencias.roas_piso).toBe(0.8);
+    expect(lerSinaisAds({ ...RESPOSTA, referencias: { ...RESPOSTA.referencias, roas_piso: "   " } })?.referencias.roas_piso).toBe(0.8);
+    expect(lerSinaisAds({ ...RESPOSTA, referencias: { ...RESPOSTA.referencias, roas_piso: 0 } })?.referencias.roas_piso).toBe(0.8);
+    expect(estimar({ receita_ads: 10_000, investimento: 500, acos: 0.05 }, Number.NaN)).toEqual({
+      lucro: null,
+      margemAposAds: null,
+    });
+    expect(roasDeEquilibrio(Number.NaN)).toBeNull();
+    expect(roasDeEquilibrio(Number.POSITIVE_INFINITY)).toBeNull();
+
+    const leitura = lerCampanhaSinal(
+      campanha({
+        nivel: "atencao",
+        roas_alvo: 0,
+        investimento_anterior: 0,
+        roas_anterior: 0,
+        cpc_anterior: 0,
+        conversao_anterior: 0,
+        sinais: { abaixo_da_meta: true, cpc_sobe_conversao_cai: true, gasto_sobe_roas_cai: true },
+      }),
+      sinais().referencias,
+      null,
+    );
+
+    expect(leitura.motivos).toEqual([]);
+  });
 });

@@ -830,4 +830,42 @@ describe("computeSaleDeductions — venda entregue pelo Full (D-352)", () => {
     expect(result.excessReversalEstornos).toEqual([]);
     expect(result.preCaptureReversals).toHaveLength(1);
   });
+
+  it("rejeita data da venda inválida ou quantidade não positiva/não finita em item ou componente vinculado", () => {
+    expect(() =>
+      computeSaleDeductions(
+        baseOrder({
+          dateClosed: new Date("invalid"),
+          items: [{ position: 0, quantity: 1, skuId: "sku-a", skuKind: "PRODUTO", components: [] }],
+        }),
+        cortes({ "sku-a": CLOSED_AT }),
+      ),
+    ).toThrow(RangeError);
+
+    for (const quantity of [0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() =>
+        computeSaleDeductions(
+          baseOrder({ items: [{ position: 0, quantity, skuId: "sku-a", skuKind: "PRODUTO", components: [] }] }),
+          SEM_CORTE,
+        ),
+      ).toThrow(RangeError);
+
+      expect(() =>
+        computeSaleDeductions(
+          baseOrder({
+            items: [
+              {
+                position: 0,
+                quantity: 1,
+                skuId: "sku-kit",
+                skuKind: "KIT",
+                components: [{ componentSkuId: "sku-comp", quantity }],
+              },
+            ],
+          }),
+          SEM_CORTE,
+        ),
+      ).toThrow(RangeError);
+    }
+  });
 });

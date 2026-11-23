@@ -167,4 +167,36 @@ describe("computeShopeeStockMovements (D-495)", () => {
       { skuId: SKU, qtyDelta: 2, idempotencyKey: `cancelamento:${CHAVE}`, occurredAt: CANCELADO_EM },
     ]);
   });
+
+  it("ignora quantidade não finita ou componente não positivo e rejeita datas inválidas", () => {
+    const comInvalidos = computeShopeeStockMovements(
+      pedido({
+        items: [
+          { position: 0, quantity: Number.NaN, skuId: SKU, skuKind: "PRODUTO", components: [] },
+          { position: 1, quantity: Number.POSITIVE_INFINITY, skuId: SKU, skuKind: "PRODUTO", components: [] },
+          {
+            position: 2,
+            quantity: 2,
+            skuId: "kit-1",
+            skuKind: "KIT",
+            components: [
+              { componentSkuId: "c-invalido-0", quantity: 0 },
+              { componentSkuId: "c-invalido-nan", quantity: Number.NaN },
+              { componentSkuId: "c-valido", quantity: 3 },
+            ],
+          },
+        ],
+      }),
+      corte(ANTES),
+    );
+
+    expect(comInvalidos.vendas).toEqual([
+      { skuId: "c-valido", qtyDelta: -6, idempotencyKey: shopeeSaleKeyOf(LOJA, "251020ABC", 2, "c-valido"), occurredAt: PAGO },
+    ]);
+
+    expect(() => computeShopeeStockMovements(pedido({ paidAt: new Date("invalid") }), corte(ANTES))).toThrow(RangeError);
+    expect(() =>
+      computeShopeeStockMovements(pedido({ status: "CANCELLED", updatedAt: new Date("invalid") }), corte(ANTES)),
+    ).toThrow(RangeError);
+  });
 });
