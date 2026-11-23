@@ -169,3 +169,18 @@ Complementa `docs/PROMPT_MASTER.md` §33. Uma feature só está pronta quando, c
 - Cobertura mínima percentual como métrica de qualidade — cobre-se o que tem risco, não o que sobe o número.
 - Testes de snapshot de interface, frágeis e de baixo sinal.
 - Mock do Postgres. Integração usa banco real local.
+
+### Observação da fila gerenciada em operação normal (Q03)
+
+Em 23/11, uma leitura do Cloud Logging nas últimas 24 horas encontrou 24
+eventos `job_enqueued` da API e 24 `ping_received` do worker para
+`system.ping`. Os 24 pares coincidiram pelo identificador do job. A amostra
+vai de 22/11 13:00 UTC a 23/11 12:00 UTC. A diferença entre os dois eventos
+teve p95 de 5,934 s e máximo de 17,853 s. A medição cobre a chegada ao
+handler, incluindo espera até a execução do worker.
+Uma transação somente leitura na VM encontrou 24 execuções com IDs distintos,
+todas `done`, em `job_runs` no mesmo recorte horário.
+
+A consulta usou apenas heartbeats agendados e nenhum job adicional foi
+disparado. Q03 segue aberto até validar carga e recuperação sob falha em
+fila gerenciada. O ensaio isolado de carga continua no PR #382.

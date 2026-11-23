@@ -349,7 +349,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "QA/Infra",
-      "evidencia": "Duas rodadas de 1.088 requisições com API, PostgREST e SDK Cloud Tasks contra gRPC local. Recuperação criou 80 tarefas únicas e deduplicou 240. Falta validar fila gerenciada e entrega ao worker (#382).",
+      "evidencia": "Duas rodadas de 1.088 requisições com API, PostgREST e SDK Cloud Tasks contra gRPC local. Recuperação criou 80 tarefas únicas e deduplicou 240. Fila gerenciada em operação normal: 24/24 pings chegaram ao worker em 24 h (TESTING.md). Falta carga e recuperação sob falha na fila gerenciada (#382).",
       "fase": 5
     },
     {
