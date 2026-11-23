@@ -181,14 +181,7 @@ YAML
       shopee_secret=",SHOPEE_PARTNER_KEY=${SECRET_SHOPEE_PARTNER_KEY}:latest"
       info "Shopee ligada: ${SHOPEE_ENVIRONMENT}, partner_id ${SHOPEE_PARTNER_ID}"
 
-      # D-453: o push é assinado com uma chave própria (a "Test Push Partner
-      # Key" do Console), não com a Partner Key. Só a api recebe push; o
-      # segredo só é montado se existir (a conta da api precisa de
-      # secretAccessor nele antes, pelo mesmo motivo de cima).
-      if gc secrets describe "${SECRET_SHOPEE_PUSH_PARTNER_KEY}" >/dev/null 2>&1; then
-        shopee_secret="${shopee_secret},SHOPEE_PUSH_PARTNER_KEY=${SECRET_SHOPEE_PUSH_PARTNER_KEY}:latest"
-        info "push da Shopee com chave própria: ${SECRET_SHOPEE_PUSH_PARTNER_KEY}"
-      fi
+      shopee_secret="${shopee_secret}${shopee_push_secret}"
     fi
 
     # D-645: o TikTok Shop só entra com TIKTOK_SHOP_SERVICE_ID definido, o mesmo
@@ -309,6 +302,19 @@ if [ "${AMBIENTE}" = "prod" ]; then
     fail "produção sem a sub-rede ${VPC_SUBNET}: rode infra/cloud-nat.sh antes (D-457)."
   info "saída: ${VPC_NETWORK}/${VPC_SUBNET}, todo o tráfego pelo Cloud NAT ${NAT_GATEWAY}"
 fi
+shopee_push_secret=""
+if [[ -n "${SHOPEE_PARTNER_ID}" && "${1:-api}" = api ]]; then
+  # D-453: uma falha de leitura pode ocultar a chave dedicada e trocar a
+  # validação da assinatura. Resolva a montagem antes de qualquer build.
+  if ! secret_names="$(gc secrets list --format='value(name.basename())' | tr -d '\r')"; then
+    fail "Não foi possível listar os segredos para confirmar a chave de push da Shopee."
+  fi
+  if grep -Fxq -- "${SECRET_SHOPEE_PUSH_PARTNER_KEY}" <<< "${secret_names}"; then
+    shopee_push_secret=",SHOPEE_PUSH_PARTNER_KEY=${SECRET_SHOPEE_PUSH_PARTNER_KEY}:latest"
+    info "push da Shopee com chave própria: ${SECRET_SHOPEE_PUSH_PARTNER_KEY}"
+  fi
+fi
+
 info "registry: ${REGISTRY}"
 info "tag: ${TAG}"
 

@@ -212,6 +212,8 @@ No Console da Shopee (`open.shopee.com` → Console → **Push Mechanism** → o
 | Pushes | `order_status_push` (3) e `return_updates_push` (29) | Os dois com ação; os outros só iriam para o log |
 | Chave do push | O campo **Test Push Partner Key** da mesma tela (no Go Live, a de produção) → segredo `SHOPEE_TEST_PUSH_PARTNER_KEY` no Secret Manager de `speedbikers-prod`, criado pelo dono (a chave nunca passa pelo chat); a conta `v3-api-runtime` recebe `secretAccessor` e o deploy da api o monta como `SHOPEE_PUSH_PARTNER_KEY` só se ele existir | A Shopee assina o push com ESTA chave, não com a Partner Key: 18 combinações com a Partner Key não conferiram com as amostras de 15/10 (D-453) |
 
+Antes do build da API com a Shopee habilitada, o provisionador confirma o nome completo da chave de push em uma listagem do Secret Manager. Um erro na listagem interrompe o build. Se o nome estiver ausente em uma listagem bem-sucedida, a chave dedicada fica fora da revisão. O worker isolado dispensa essa consulta.
+
 **Como verificar:** a verificação do endereço passa no Console; no log da api, `shopee_push_enqueued` depois de um pedido do sandbox mudar; `shopee_push_signature_rejected` repetido quer dizer endereço diferente do cadastrado. O push é só aviso: sem ele, o gatilho de hora em hora segue lendo.
 
 ## 6.3 IP fixo de saída — Cloud NAT (D-457)
