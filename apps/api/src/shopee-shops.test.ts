@@ -311,4 +311,23 @@ describe("completeShopeeConnect (D-425)", () => {
     });
     expect(gravado.rpc).toEqual([]);
   });
+
+  it("D-800: recusa code em branco ou shopId/mainAccountId inválidos (zero, negativo, fracionário ou acima de MAX_SAFE_INTEGER)", async () => {
+    for (const params of [
+      { state: "s".repeat(43), code: "abc", shopId: 0 },
+      { state: "s".repeat(43), code: "abc", shopId: 1.5 },
+      { state: "s".repeat(43), code: "abc", shopId: Number.MAX_SAFE_INTEGER + 2 },
+      { state: "s".repeat(43), code: "abc", mainAccountId: -10 },
+      { state: "s".repeat(43), code: "   ", shopId: 54804 },
+    ]) {
+      const caso = montar();
+
+      expect(await completeShopeeConnect(caso.deps, params)).toEqual({
+        status: "rejected",
+        reason: "autorização não concluída na Shopee",
+      });
+      expect(caso.chamadas).toEqual([]);
+      expect(caso.gravado.rpc).toEqual([]);
+    }
+  });
 });

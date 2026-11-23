@@ -123,19 +123,27 @@ export async function completeShopeeConnect(
     return { status: "rejected", reason: "autorização iniciada em outro ambiente; inicie a conexão novamente" };
   }
 
-  if (params.code === undefined || (params.shopId === undefined && params.mainAccountId === undefined)) {
+  const isPositiveShopeeId = (value: number | undefined): value is number =>
+    value !== undefined && Number.isSafeInteger(value) && value > 0;
+  const invalidShopId = params.shopId !== undefined && !isPositiveShopeeId(params.shopId);
+  const invalidMainAccountId = params.mainAccountId !== undefined && !isPositiveShopeeId(params.mainAccountId);
+  const tokenRequest =
+    params.code === undefined || params.code.trim() === "" || invalidShopId || invalidMainAccountId
+      ? null
+      : isPositiveShopeeId(params.shopId)
+        ? { code: params.code, shopId: params.shopId }
+        : isPositiveShopeeId(params.mainAccountId)
+          ? { code: params.code, mainAccountId: params.mainAccountId }
+          : null;
+
+  if (tokenRequest === null) {
     return { status: "rejected", reason: "autorização não concluída na Shopee" };
   }
 
   let token;
 
   try {
-    token = await getAccessToken(
-      deps.client,
-      params.shopId === undefined
-        ? { code: params.code, mainAccountId: params.mainAccountId ?? 0 }
-        : { code: params.code, shopId: params.shopId },
-    );
+    token = await getAccessToken(deps.client, tokenRequest);
   } catch (error) {
     deps.logger.error("shopee_oauth_exchange_failed", {
       reason: error instanceof Error ? error.message : "erro desconhecido",
@@ -144,7 +152,9 @@ export async function completeShopeeConnect(
     return { status: "rejected", reason: "não foi possível concluir a autorização com a Shopee" };
   }
 
-  const shopIds = params.shopId === undefined ? [...new Set(token.shop_id_list ?? [])] : [params.shopId];
+  const shopIds = isPositiveShopeeId(params.shopId)
+    ? [params.shopId]
+    : [...new Set((token.shop_id_list ?? []).filter((id) => isPositiveShopeeId(id)))];
 
   if (shopIds.length === 0) {
     return { status: "rejected", reason: "a Shopee não devolveu nenhuma loja autorizada" };

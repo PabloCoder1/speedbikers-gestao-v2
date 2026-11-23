@@ -296,4 +296,22 @@ describe("escala da margem", () => {
     expect(escala.total).toBeCloseTo(1.2, 6);
     expect(barraDaMargem(-4, escala).base).toBeCloseTo(0, 6);
   });
+
+  it("D-800: margem_minima vazia/não positiva quebra contrato; tom, participação e escala ignoram não finitos", () => {
+    expect(lerFaturamento({ ...COMPLETO, margem_minima: "" })).toBeNull();
+    expect(lerFaturamento({ ...COMPLETO, margem_minima: "   " })).toBeNull();
+    expect(lerFaturamento({ ...COMPLETO, margem_minima: 0 })).toBeNull();
+    expect(lerFaturamento({ ...COMPLETO, margem_minima: -0.1 })).toBeNull();
+
+    expect(tomDaMargem(Number.NaN)).toBe("neutro");
+    expect(tomDaMargem(Number.POSITIVE_INFINITY)).toBe("neutro");
+
+    expect(participacao(Number.NaN, 100)).toBeNull();
+    expect(participacao(10, Number.POSITIVE_INFINITY)).toBeNull();
+
+    const escala = escalaDasMargens([Number.NaN, 0.2], 0);
+    expect(Number.isFinite(escala.zero)).toBe(true);
+    expect(escala.total).toBeCloseTo(0.2, 6);
+    expect(barraDaMargem(Number.NaN, escala)).toEqual({ base: escala.zero, altura: 0 });
+  });
 });

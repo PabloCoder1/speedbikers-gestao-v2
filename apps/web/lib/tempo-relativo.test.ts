@@ -26,4 +26,8 @@ describe("tempoRelativo", () => {
     expect(tempoRelativo(antes(62 * 86400), AGORA)).toBe("há 2 meses");
     expect(tempoRelativo(antes(800 * 86400), AGORA)).toBe("há 2 anos");
   });
+
+  it("D-800: data de referência inválida devolve null sem lançar RangeError", () => {
+    expect(tempoRelativo("2026-09-15T11:00:00Z", new Date("invalid"))).toBeNull();
+  });
 });
