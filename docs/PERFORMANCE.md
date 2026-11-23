@@ -2429,3 +2429,37 @@ só em `id` (`0A000`) e, com a chave composta, recusou a referência só em
 `id` de `sync_errors` (`42830`). A próxima alternativa a ensaiar é uma
 manutenção restrita que preserve a chave e os vínculos atuais. [Limites do
 particionamento no PostgreSQL 17](https://www.postgresql.org/docs/17/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE-LIMITATIONS).
+
+#### Leitura do histórico e concorrência (D04)
+
+No ensaio SQL com dados sintéticos, uma view `security_invoker` uniu os
+destinatários atuais e arquivados. As regras de RLS ficaram nas tabelas
+base. A cópia atual prevaleceu quando a mesma combinação de notificação
+e destinatário estava nos dois lados. Para dois usuários foi comparada a
+lista inteira, a segunda página com filtro de severidade e desempate
+pelo ID, e a contagem de não lidas por conta. Os resultados coincidiram.
+A revogação de acesso à conta ocultou os eventos correspondentes, e a
+remoção de perfil retirou os vínculos nos dois lados. O ensaio também
+confirmou que a role anônima não lia a view e o destinatário não abria o
+schema do arquivo diretamente. [Views com security_invoker no PostgreSQL
+17](https://www.postgresql.org/docs/17/sql-createview.html).
+
+No PostgREST 14.18 isolado, o embed automático sobre a view com `UNION`
+respondeu `400/PGRST200`. Uma segunda view trouxe as colunas do evento
+pelo join em SQL e retornou a página filtrada com `Content-Range: 1-1/2`,
+isolou o segundo destinatário e recusou a leitura anônima com `401`.
+O ensaio usou dados e tokens sintéticos. A migração e o cliente web ainda
+precisam reproduzir o contrato completo da Central.
+[Relacionamentos em views do PostgREST](https://docs.postgrest.org/en/v14/references/api/resource_embedding.html#foreign-key-joins-on-views).
+
+Em duas sessões no Postgres 17, `FOR UPDATE NOWAIT` adiou uma execução
+enquanto outra sessão gravava a FK de um erro. Após o commit do escritor,
+uma nova leitura em `READ COMMITTED` encontrou o vínculo. Na ordem
+inversa, a gravação para a execução selecionada aguardou, uma gravação
+para outra execução passou e o rollback deixou a primeira gravar a
+referência. As proteções append-only atuais foram mantidas. Em tabelas
+sintéticas separadas, mover e confirmar a execução em arquivo fez a FK
+recusar o erro tardio com `23503`. O bloqueio de linha sozinho resolve
+a disputa antes do commit. O corte ainda exige preservar a referência
+depois do commit e medir o tempo de bloqueio por lote. [Bloqueios de linha no PostgreSQL
+17](https://www.postgresql.org/docs/17/explicit-locking.html#LOCKING-ROWS).
