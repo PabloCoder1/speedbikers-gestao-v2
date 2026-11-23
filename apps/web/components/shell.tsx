@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { iniciais } from "../lib/initials";
 import { roleLabel } from "../lib/labels";
@@ -15,6 +15,8 @@ import { Marca } from "./marca";
 import { PularParaConteudo } from "./pular-para-conteudo";
 import { SidebarNav, SidebarRodapeLink } from "./nav";
 import { currentMembership } from "../lib/request-membership";
+
+const MAX_UNREAD_BADGE = 99;
 
 /**
  * Moldura das telas autenticadas — sidebar escura, topbar e área central,
@@ -83,14 +85,18 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   } = await supabase.auth.getSession();
   const userId = session?.user.id ?? null;
 
-  const [{ data: auth }, membership, unread, preferences, contas, atendimentos, perfil] = await Promise.all([
+  // Começa junto das demais leituras, com espera restrita ao emblema.
+  const unreadNotifications = Promise.resolve(
+    supabase
+      .from("notification_recipients")
+      .select("read_at, notifications!inner(domain_events!inner())")
+      .is("read_at", null)
+      .order("created_at", { ascending: false })
+      .limit(MAX_UNREAD_BADGE + 1),
+  );
+  const [{ data: auth }, membership, preferences, contas, atendimentos, perfil] = await Promise.all([
     supabase.auth.getUser(),
     currentMembership(),
-    // Badge de não lidas (Fase 7, item 4) — `notification_recipients_select_own`
-    // já restringe a própria linha, sem precisar filtrar por user_id aqui.
-    // `notification_id`, e não `id`: a chave é composta e não existe coluna
-    // `id` (o defeito que D4 encontrou na Home).
-    supabase.from("notification_recipients").select("notification_id", { count: "exact", head: true }).is("read_at", null),
     // D-197: esta leitura era feita pelo NAVEGADOR, dentro de
     // `NotificationToasts`, em toda página autenticada — uma ida a mais por
     // carregamento, e ela ficava na frente da assinatura de Realtime.
@@ -134,7 +140,6 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
   // Falha na contagem degrada pro emblema simplesmente não aparecer: não é
   // dado de negócio (D-067 mirava corrupção de estoque/pedido, não um
   // contador de UI), então sem `⚠` — só some. Vale para os três contadores.
-  const unreadCount = unread.count ?? 0;
   const contasConectadas = contas.error === null ? contas.count : null;
   const atendimentosAbertos = atendimentos.error === null ? atendimentos.count : null;
 
@@ -189,21 +194,9 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
           <CommandPalette organizationId={organizationId} papel={role} />
 
           <div className="sb-top-actions">
-            <Link
-              href="/notificacoes"
-              className="sb-icon-button"
-              title="Notificações"
-              aria-label={
-                unreadCount > 0 ? `Notificações — ${String(unreadCount)} ${unreadCount === 1 ? "não lida" : "não lidas"}` : "Notificações"
-              }
-            >
-              <span aria-hidden="true">♧</span>
-              {unreadCount > 0 && (
-                <span aria-hidden="true" className="sb-icon-count">
-                  {unreadCount > 99 ? "99+" : unreadCount}
-                </span>
-              )}
-            </Link>
+            <Suspense fallback={<NotificationShortcut unreadCount={0} />}>
+              <NotificationBadge unread={unreadNotifications} />
+            </Suspense>
 
             <span aria-hidden="true" className="sb-top-rule" />
 
@@ -257,5 +250,40 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
       <IndicadorDeNavegacao />
     </div>
     </CopilotContextProvider>
+  );
+}
+
+async function NotificationBadge({
+  unread,
+}: {
+  unread: PromiseLike<{ data: readonly unknown[] | null }>;
+}): Promise<ReactNode> {
+  const { data } = await unread;
+  return <NotificationShortcut unreadCount={data?.length ?? 0} />;
+}
+
+function NotificationShortcut({ unreadCount }: { unreadCount: number }): ReactNode {
+  const unreadOverLimit = unreadCount > MAX_UNREAD_BADGE;
+  let unreadLabel = "Notificações";
+  if (unreadOverLimit) {
+    unreadLabel = "Notificações — mais de " + String(MAX_UNREAD_BADGE) + " não lidas";
+  } else if (unreadCount > 0) {
+    unreadLabel += " — " + String(unreadCount) + (unreadCount === 1 ? " não lida" : " não lidas");
+  }
+
+  return (
+    <Link
+      href="/notificacoes"
+      className="sb-icon-button"
+      title="Notificações"
+      aria-label={unreadLabel}
+    >
+      <span aria-hidden="true">♧</span>
+      {unreadCount > 0 && (
+        <span aria-hidden="true" className="sb-icon-count">
+          {unreadOverLimit ? String(MAX_UNREAD_BADGE) + "+" : unreadCount}
+        </span>
+      )}
+    </Link>
   );
 }

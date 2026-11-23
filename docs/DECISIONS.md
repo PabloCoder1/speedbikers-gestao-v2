@@ -20417,3 +20417,19 @@ No ensaio PostgreSQL com a RPC do repositório, a escrita direta alterou
 três vínculos próprios. A RPC marcou os dois eventos visíveis, preservou
 o terceiro vínculo e o de outro destinatário e retornou zero ao repetir.
 A escrita continua usando a assinatura existente, com a loja opcional.
+
+## D-854 - Emblema de notificações usa visibilidade da Central e consulta limitada a 100
+
+**23/11/2026 · Cabeçalho.** A consulta de não lidas usa o relacionamento
+com `domain_events`, sujeito à RLS dos eventos. Lê até 100 resultados sob
+a sessão do usuário. O emblema mostra a contagem até 99 e depois
+`99+`. O rótulo acessível também usa “mais de 99”. O PostgREST devolve só
+o campo nulo `read_at` para identificar a quantidade de linhas devolvidas.
+A leitura começa em paralelo com as demais. O atalho é renderizado
+antes da resposta, e o emblema chega por Suspense. A Central segue
+responsável pelo total exato.
+
+No backup, a contagem exata com o join teve mediana de 585 ms no
+cenário de acesso simulado. A consulta limitada a 100 usou o índice
+parcial de não lidas no ensaio sintético. O PostgREST devolveu 0, 99 e
+100 linhas conforme a visibilidade. [Medição](PERFORMANCE.md#contagem-visível-no-cabeçalho-d-854).

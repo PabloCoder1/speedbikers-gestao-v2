@@ -2528,3 +2528,37 @@ uma vez, em transação própria, com rollback.
 
 Após os rollbacks, nenhuma linha havia ficado marcada. O ensaio mede o
 custo de banco e não inclui HTTP, latência de produção nem contenção.
+
+### Contagem visível no cabeçalho (D-854)
+
+Restore seletivo da geração 1795328157907250, PostgreSQL 17 e duas vCPU.
+RLS de destinatário reconstruída com os índices primário e parcial de
+não lidas. Foi simulada a revogação da conta com mais notificações do
+destinatário que tinha a maior fila. Em nove execuções aquecidas:
+
+| Contagem exata | Resultado | Mediana | Máximo |
+| --- | ---: | ---: | ---: |
+| Pelo destinatário | 103.964 | 5,387 ms | 8,982 ms |
+| Pelo destinatário e pelo evento visível | 76.281 | 584,714 ms | 753,704 ms |
+
+No mesmo recorte, a leitura limitada teve mediana de 1,679 ms e máximo
+de 3,582 ms quando retornou 100 linhas. Ao simular nenhum evento
+visível para o mesmo destinatário, devolveu zero, com mediana de
+707,135 ms e máximo de 827,624 ms. O cabeçalho inicia a leitura junto
+das demais e aguarda o resultado só na fronteira de Suspense do
+emblema. Um teste de renderização do Shell com a resposta pendente
+confirmou que o HTML inicial já trazia o conteúdo e o atalho. O
+emblema chegou depois da resposta e os totais 0, 1, 99 e 100
+mantiveram o rótulo acessível esperado.
+
+Em uma segunda base, com 141.500 vínculos sintéticos, a consulta
+limitada a 100 e ordenada por data usou o índice parcial e examinou 145
+candidatas para retornar 100. A execução de SQL levou 0,458 ms. Quando
+todos os eventos do ensaio foram ocultados, a consulta varreu os eventos
+e devolveu zero em 5,752 ms. No PostgREST 16.1, as respostas de 0, 99 e
+100 produziram 2, 1.880 e 1.899 bytes de JSON. O ensaio sintético usa
+uma policy de acesso simplificada. Seus tempos não são projeção de
+latência máxima no banco real.
+
+Em uma amostra adicional, o PostgREST 14.18 aceitou a projeção exata do
+cabeçalho e devolveu apenas a linha própria, visível e sem leitura.
