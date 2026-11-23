@@ -147,4 +147,21 @@ describe("triggerListingVisitsSnapshot (D-032)", () => {
     expect(outcome).toEqual({ accountsScanned: 0, enqueued: 0, deduplicated: 0 });
     expect(enqueued).toHaveLength(0);
   });
+
+  it("D-794: falha ao enfileirar uma conta não impede as demais e sinaliza failed para 503", async () => {
+    const { deps: d, enqueued } = deps();
+    const base = d.enqueuer.enqueue;
+    d.enqueuer = {
+      enqueue: (request) =>
+        request.queue === "ml-sync-sbmotos" ? Promise.reject(new Error("fila indisponível")) : base(request),
+    };
+
+    await expect(triggerListingVisitsSnapshot(d)).resolves.toEqual({
+      accountsScanned: 2,
+      enqueued: 1,
+      deduplicated: 0,
+      failed: true,
+    });
+    expect(enqueued.map((e) => e.queue)).toEqual(["ml-sync-speedbikers-loja-1"]);
+  });
 });

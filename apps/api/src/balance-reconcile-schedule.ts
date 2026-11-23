@@ -54,20 +54,29 @@ export async function triggerBalanceReconciliation(
 
   let enqueued = 0;
   let deduplicated = 0;
+  let enqueueFailed = false;
 
   for (const organization of organizations.data) {
-    const result = await deps.enqueuer.enqueue({
-      jobType: "maintenance.reconcile-balances",
-      organizationId: organization.id,
-      dedupeKey: `reconcile-balances:${organization.id}:${businessDate}`,
-      queue: "maintenance",
-      payload: { organizationId: organization.id },
-    });
+    try {
+      const result = await deps.enqueuer.enqueue({
+        jobType: "maintenance.reconcile-balances",
+        organizationId: organization.id,
+        dedupeKey: `reconcile-balances:${organization.id}:${businessDate}`,
+        queue: "maintenance",
+        payload: { organizationId: organization.id },
+      });
 
-    if (result.deduplicated) {
-      deduplicated += 1;
-    } else {
-      enqueued += 1;
+      if (result.deduplicated) {
+        deduplicated += 1;
+      } else {
+        enqueued += 1;
+      }
+    } catch (error) {
+      enqueueFailed = true;
+      deps.logger.error("balance_reconcile_schedule_enqueue_failed", {
+        organization_id: organization.id,
+        reason: error instanceof Error ? error.message : "falha ao enfileirar reconciliação de saldos",
+      });
     }
   }
 
@@ -75,7 +84,13 @@ export async function triggerBalanceReconciliation(
     organizations_scanned: organizations.data.length,
     enqueued,
     deduplicated,
+    ...(enqueueFailed ? { failed: true } : {}),
   });
 
-  return { organizationsScanned: organizations.data.length, enqueued, deduplicated };
+  return {
+    organizationsScanned: organizations.data.length,
+    enqueued,
+    deduplicated,
+    ...(enqueueFailed ? { failed: true as const } : {}),
+  };
 }

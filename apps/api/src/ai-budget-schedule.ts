@@ -52,20 +52,29 @@ export async function triggerAiBudgetCheck(deps: AiBudgetScheduleDeps): Promise<
 
   let enqueued = 0;
   let deduplicated = 0;
+  let enqueueFailed = false;
 
   for (const organization of organizations.data) {
-    const result = await deps.enqueuer.enqueue({
-      jobType: "maintenance.check-ai-budget",
-      organizationId: organization.id,
-      dedupeKey: `check-ai-budget:${organization.id}:${businessDate}`,
-      queue: "maintenance",
-      payload: { organizationId: organization.id },
-    });
+    try {
+      const result = await deps.enqueuer.enqueue({
+        jobType: "maintenance.check-ai-budget",
+        organizationId: organization.id,
+        dedupeKey: `check-ai-budget:${organization.id}:${businessDate}`,
+        queue: "maintenance",
+        payload: { organizationId: organization.id },
+      });
 
-    if (result.deduplicated) {
-      deduplicated += 1;
-    } else {
-      enqueued += 1;
+      if (result.deduplicated) {
+        deduplicated += 1;
+      } else {
+        enqueued += 1;
+      }
+    } catch (error) {
+      enqueueFailed = true;
+      deps.logger.error("ai_budget_schedule_enqueue_failed", {
+        organization_id: organization.id,
+        reason: error instanceof Error ? error.message : "falha ao enfileirar orçamento de IA",
+      });
     }
   }
 
@@ -73,7 +82,13 @@ export async function triggerAiBudgetCheck(deps: AiBudgetScheduleDeps): Promise<
     organizations_scanned: organizations.data.length,
     enqueued,
     deduplicated,
+    ...(enqueueFailed ? { failed: true } : {}),
   });
 
-  return { organizationsScanned: organizations.data.length, enqueued, deduplicated };
+  return {
+    organizationsScanned: organizations.data.length,
+    enqueued,
+    deduplicated,
+    ...(enqueueFailed ? { failed: true as const } : {}),
+  };
 }
