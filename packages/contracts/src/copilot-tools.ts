@@ -16,6 +16,13 @@ import { z } from "zod";
 
 const dateSchema = z.iso.date();
 
+const VALID_DATE_RANGE_MESSAGE = "dateFrom posterior a dateTo";
+
+/** Valida que a janela civil não está invertida (`dateFrom <= dateTo`). */
+function isValidDateRange(value: { dateFrom: string; dateTo: string }): boolean {
+  return value.dateFrom <= value.dateTo;
+}
+
 export const salesSummarySchema = z.object({
   unitsSold: z.number().int(),
   grossRevenue: z.number(),
@@ -29,12 +36,14 @@ export const salesSummarySchema = z.object({
 export type SalesSummary = z.infer<typeof salesSummarySchema>;
 
 /** Consulta pontual (`docs/COPILOT.md` secao 4, categoria "Série temporal"): vendas de um período, geral ou por conta. */
-export const salesSummaryInputSchema = z.object({
-  dateFrom: dateSchema,
-  dateTo: dateSchema,
-  /** Ausente = grão organização (RLS já limita às contas que o usuário alcança) — mesma semântica de `get_sales_summary`. */
-  mlAccountId: z.uuid().optional(),
-});
+export const salesSummaryInputSchema = z
+  .object({
+    dateFrom: dateSchema,
+    dateTo: dateSchema,
+    /** Ausente = grão organização (RLS já limita às contas que o usuário alcança) — mesma semântica de `get_sales_summary`. */
+    mlAccountId: z.uuid().optional(),
+  })
+  .refine(isValidDateRange, { message: VALID_DATE_RANGE_MESSAGE, path: ["dateFrom"] });
 export type SalesSummaryInput = z.infer<typeof salesSummaryInputSchema>;
 
 export const salesSummaryOutputSchema = salesSummarySchema;
@@ -52,11 +61,13 @@ export const salesPeriodComparisonOutputSchema = z.object({
 export type SalesPeriodComparisonOutput = z.infer<typeof salesPeriodComparisonOutputSchema>;
 
 /** Comparação entre contas — mesmo período, 2 a 10 contas lado a lado. */
-export const salesAccountComparisonInputSchema = z.object({
-  dateFrom: dateSchema,
-  dateTo: dateSchema,
-  mlAccountIds: z.array(z.uuid()).min(2).max(10),
-});
+export const salesAccountComparisonInputSchema = z
+  .object({
+    dateFrom: dateSchema,
+    dateTo: dateSchema,
+    mlAccountIds: z.array(z.uuid()).min(2).max(10),
+  })
+  .refine(isValidDateRange, { message: VALID_DATE_RANGE_MESSAGE, path: ["dateFrom"] });
 export type SalesAccountComparisonInput = z.infer<typeof salesAccountComparisonInputSchema>;
 
 export const salesAccountComparisonOutputSchema = z.object({
@@ -65,13 +76,15 @@ export const salesAccountComparisonOutputSchema = z.object({
 export type SalesAccountComparisonOutput = z.infer<typeof salesAccountComparisonOutputSchema>;
 
 /** Produtos cuja venda caiu contra a janela anterior de mesmo tamanho. */
-export const salesSkuDeclinesInputSchema = z.object({
-  dateFrom: dateSchema,
-  dateTo: dateSchema,
-  mlAccountId: z.uuid().optional(),
-  orderBy: z.enum(["units", "revenue"]).default("units"),
-  limit: z.number().int().min(1).max(50).default(10),
-});
+export const salesSkuDeclinesInputSchema = z
+  .object({
+    dateFrom: dateSchema,
+    dateTo: dateSchema,
+    mlAccountId: z.uuid().optional(),
+    orderBy: z.enum(["units", "revenue"]).default("units"),
+    limit: z.number().int().min(1).max(50).default(10),
+  })
+  .refine(isValidDateRange, { message: VALID_DATE_RANGE_MESSAGE, path: ["dateFrom"] });
 export type SalesSkuDeclinesInput = z.infer<typeof salesSkuDeclinesInputSchema>;
 
 export const salesSkuDeclinesOutputSchema = z.object({
@@ -315,13 +328,15 @@ export const skuReplenishmentOutputSchema = z.object({
 });
 export type SkuReplenishmentOutput = z.infer<typeof skuReplenishmentOutputSchema>;
 
-export const listingPerformanceInputSchema = z.object({
-  /** O MLB do anúncio. */
-  itemId: z.string().min(1).max(40),
-  mlAccountId: z.uuid(),
-  dateFrom: dateSchema,
-  dateTo: dateSchema,
-});
+export const listingPerformanceInputSchema = z
+  .object({
+    /** O MLB do anúncio. */
+    itemId: z.string().min(1).max(40),
+    mlAccountId: z.uuid(),
+    dateFrom: dateSchema,
+    dateTo: dateSchema,
+  })
+  .refine(isValidDateRange, { message: VALID_DATE_RANGE_MESSAGE, path: ["dateFrom"] });
 export type ListingPerformanceInput = z.infer<typeof listingPerformanceInputSchema>;
 
 export const listingPerformanceOutputSchema = z.object({
@@ -370,7 +385,10 @@ const marketplaceScopeSchema = z.object({
   accountIds: z.array(z.uuid()).min(1).max(20).optional(),
 });
 
-export const marketplaceSalesSummaryInputSchema = marketplaceScopeSchema;
+export const marketplaceSalesSummaryInputSchema = marketplaceScopeSchema.refine(isValidDateRange, {
+  message: VALID_DATE_RANGE_MESSAGE,
+  path: ["dateFrom"],
+});
 export type MarketplaceSalesSummaryInput = z.infer<typeof marketplaceSalesSummaryInputSchema>;
 
 const marketplaceSalesLineSchema = z.object({
@@ -404,10 +422,12 @@ export const marketplaceSalesSummaryOutputSchema = z.object({
 });
 export type MarketplaceSalesSummaryOutput = z.infer<typeof marketplaceSalesSummaryOutputSchema>;
 
-export const marketplaceSkuSalesInputSchema = marketplaceScopeSchema.extend({
-  orderBy: z.enum(["revenue", "units"]).default("revenue"),
-  limit: z.number().int().min(1).max(50).default(10),
-});
+export const marketplaceSkuSalesInputSchema = marketplaceScopeSchema
+  .extend({
+    orderBy: z.enum(["revenue", "units"]).default("revenue"),
+    limit: z.number().int().min(1).max(50).default(10),
+  })
+  .refine(isValidDateRange, { message: VALID_DATE_RANGE_MESSAGE, path: ["dateFrom"] });
 export type MarketplaceSkuSalesInput = z.infer<typeof marketplaceSkuSalesInputSchema>;
 
 export const marketplaceSkuSalesOutputSchema = z.object({

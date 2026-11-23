@@ -136,7 +136,9 @@ export async function flushPageWrites(db: AdminClient, writes: PageWrites): Prom
   // uma chamada por pedido sem precisar supor que a contagem é sempre igual.
   const porCorte = new Map<number, number[]>();
 
-  for (const tail of writes.tails) {
+  // Deduplica por pedido pela última ocorrência (mesma regra de `orders`/`items`)
+  // para que uma ocorrência anterior com menos itens não apague itens recém-gravados.
+  for (const tail of ultimaPorChave(writes.tails, (entry) => String(entry.orderId))) {
     porCorte.set(tail.fromPosition, [...(porCorte.get(tail.fromPosition) ?? []), tail.orderId]);
   }
 

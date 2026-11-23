@@ -197,19 +197,26 @@ export async function receiveNfeUpload(
 
         // D-744: devolve de UPLOADED para FAILED se o enfileiramento falhar,
         // preservando a possibilidade de reenvio sem travar em `duplicate`.
-        const reverted = await deps.db
-          .from("documents")
-          .update({
-            status: "FAILED",
-            last_error: existing.data.last_error ?? "Falha ao reenfileirar leitura do documento.",
-          })
-          .eq("id", existing.data.id)
-          .eq("status", "UPLOADED");
+        try {
+          const reverted = await deps.db
+            .from("documents")
+            .update({
+              status: "FAILED",
+              last_error: existing.data.last_error ?? "Falha ao reenfileirar leitura do documento.",
+            })
+            .eq("id", existing.data.id)
+            .eq("status", "UPLOADED");
 
-        if (reverted.error !== null) {
+          if (reverted.error !== null) {
+            deps.logger.error("nfe_import_retry_rollback_failed", {
+              document_id: existing.data.id,
+              reason: reverted.error.message,
+            });
+          }
+        } catch (rollbackError) {
           deps.logger.error("nfe_import_retry_rollback_failed", {
             document_id: existing.data.id,
-            reason: reverted.error.message,
+            reason: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
           });
         }
 
@@ -251,6 +258,26 @@ export async function receiveNfeUpload(
     .single();
 
   if (inserted.error !== null) {
+    // Corrida de dois envios simultâneos do mesmo arquivo: o vencedor já
+    // gravou o hash, então relê e responde `duplicate` em vez de falhar 400.
+    if (inserted.error.code === "23505") {
+      const raced = await deps.db
+        .from("documents")
+        .select("id")
+        .eq("organization_id", caller.organizationId)
+        .eq("content_hash", contentHash)
+        .maybeSingle();
+
+      if (raced.error === null && raced.data !== null) {
+        deps.logger.info("nfe_import_duplicate", {
+          content_hash: contentHash,
+          document_id: raced.data.id,
+        });
+
+        return { status: "duplicate", documentId: raced.data.id, contentHash };
+      }
+    }
+
     // O arquivo já está no bucket, mas o caminho é derivado do hash — uma
     // nova tentativa reaproveita o mesmo objeto, não cria lixo.
     deps.logger.error("nfe_import_document_not_created", {
@@ -283,16 +310,23 @@ export async function receiveNfeUpload(
 
     // D-744: remove o documento recém-criado se ainda estiver em UPLOADED para
     // que o reenvio não caia em `duplicate` permanente sem parse.
-    const rolledBack = await deps.db
-      .from("documents")
-      .delete()
-      .eq("id", documentId)
-      .eq("status", "UPLOADED");
+    try {
+      const rolledBack = await deps.db
+        .from("documents")
+        .delete()
+        .eq("id", documentId)
+        .eq("status", "UPLOADED");
 
-    if (rolledBack.error !== null) {
+      if (rolledBack.error !== null) {
+        deps.logger.error("nfe_import_rollback_failed", {
+          document_id: documentId,
+          reason: rolledBack.error.message,
+        });
+      }
+    } catch (rollbackError) {
       deps.logger.error("nfe_import_rollback_failed", {
         document_id: documentId,
-        reason: rolledBack.error.message,
+        reason: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
       });
     }
 
@@ -340,7 +374,16 @@ export async function confirmNfeApply(
     .eq("organization_id", caller.organizationId)
     .maybeSingle();
 
-  if (document.error !== null || document.data === null) {
+  if (document.error !== null) {
+    deps.logger.error("nfe_apply_lookup_failed", {
+      document_id: documentId,
+      reason: document.error.message,
+    });
+
+    return { status: "rejected", reason: "não foi possível conferir o documento" };
+  }
+
+  if (document.data === null) {
     return { status: "not_found" };
   }
 

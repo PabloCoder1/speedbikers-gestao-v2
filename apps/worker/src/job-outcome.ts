@@ -107,13 +107,13 @@ export function toOutcome(error: unknown): JobOutcome {
  * que é o melhor palpite disponível, e não zero.
  */
 export function resolveAttempt(header: string | undefined, envelopeAttempt: number): number {
-  if (header === undefined) {
+  if (header === undefined || !/^\d+$/u.test(header)) {
     return envelopeAttempt;
   }
 
   const retries = Number(header);
 
-  if (!Number.isInteger(retries) || retries < 0) {
+  if (!Number.isSafeInteger(retries) || retries < 0) {
     return envelopeAttempt;
   }
 

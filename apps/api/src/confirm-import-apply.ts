@@ -56,12 +56,19 @@ export async function confirmAndEnqueueApply(options: {
       reason,
     });
 
-    const reverted = await options.rollbackApplying();
+    try {
+      const reverted = await options.rollbackApplying();
 
-    if (reverted.error !== null) {
+      if (reverted.error !== null) {
+        options.logger.error(`${options.logPrefix}_rollback_failed`, {
+          [options.targetKey]: options.targetId,
+          reason: reverted.error.message,
+        });
+      }
+    } catch (rollbackError) {
       options.logger.error(`${options.logPrefix}_rollback_failed`, {
         [options.targetKey]: options.targetId,
-        reason: reverted.error.message,
+        reason: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
       });
     }
 

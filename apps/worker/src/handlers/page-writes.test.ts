@@ -182,6 +182,23 @@ describe("escritas em lote por página (D-190)", () => {
     expect(exclusoes[1]?.filtros).toEqual({ order_id: [3], "position>=": 2 });
   });
 
+  it("pedido repetido na página deduplica tails pela última ocorrência sem apagar itens recém-gravados (D-798)", async () => {
+    const writes = novaPagina(ORG);
+
+    writes.orders.push({ id: 7, organization_id: ORG } as never, { id: 7, organization_id: ORG } as never);
+    writes.items.push(itemDe(7, 0) as never, itemDe(7, 0) as never, itemDe(7, 1) as never);
+    writes.tails.push({ orderId: 7, fromPosition: 1 }, { orderId: 7, fromPosition: 2 });
+
+    const { db, chamadas } = dbFalso();
+
+    await flushPageWrites(db, writes);
+
+    const exclusoes = chamadas.filter((c) => c.verbo === "delete");
+
+    expect(exclusoes).toHaveLength(1);
+    expect(exclusoes[0]?.filtros).toEqual({ order_id: [7], "position>=": 2 });
+  });
+
   it("falha na gravação dos pedidos ABORTA antes de tocar nos itens", async () => {
     const writes = novaPagina(ORG);
 

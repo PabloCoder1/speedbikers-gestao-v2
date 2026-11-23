@@ -44,22 +44,26 @@ const KNOWLEDGE_LIMIT = 12;
 async function fetchValidatedKnowledge(userClient: UserClient, skuIds: string[]): Promise<string[]> {
   const filter = skuIds.length > 0 ? `sku_id.is.null,sku_id.in.(${skuIds.join(",")})` : "sku_id.is.null";
 
-  const result = await userClient
-    .from("knowledge_entries")
-    .select("kind, content")
-    .eq("status", "VALIDADO")
-    .or(filter)
-    .order("created_at", { ascending: false })
-    .limit(KNOWLEDGE_LIMIT);
+  try {
+    const result = await userClient
+      .from("knowledge_entries")
+      .select("kind, content")
+      .eq("status", "VALIDADO")
+      .or(filter)
+      .order("created_at", { ascending: false })
+      .limit(KNOWLEDGE_LIMIT);
 
-  if (result.error !== null) {
-    // Conhecimento é evidência EXTRA: falhar aqui degrada para "sem
-    // conhecimento" (o prompt manda dizer "será confirmado"), nunca derruba
-    // a sugestão inteira.
+    if (result.error !== null) {
+      // Conhecimento é evidência EXTRA: falhar aqui degrada para "sem
+      // conhecimento" (o prompt manda dizer "será confirmado"), nunca derruba
+      // a sugestão inteira.
+      return [];
+    }
+
+    return result.data.map((entry) => `[${entry.kind}] ${entry.content}`);
+  } catch {
     return [];
   }
-
-  return result.data.map((entry) => `[${entry.kind}] ${entry.content}`);
 }
 
 const TRANSCRIPT_LIMIT = 40;

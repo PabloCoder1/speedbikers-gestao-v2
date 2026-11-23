@@ -262,6 +262,44 @@ describe("runSuggestSupportReply", () => {
     );
     expect(knowledgeOrs).toEqual(["sku_id.is.null,sku_id.in.(sku-1)"]);
   });
+
+  it("falha de transporte ao ler knowledge_entries degrada sem derrubar a sugestão (D-798)", async () => {
+    const baseClient = fakeSupportClient({
+      supportCase: OPEN_CASE,
+      messages: [
+        {
+          direction: "INBOUND",
+          sender_kind: "CUSTOMER",
+          body: "Qual a garantia?",
+          body_state: "AVAILABLE",
+          occurred_at: "2026-08-28T10:00:00Z",
+        },
+      ],
+    });
+    const userClient = {
+      from: (table: string) => {
+        if (table === "knowledge_entries") {
+          const chain = {
+            select: () => chain,
+            eq: () => chain,
+            or: () => chain,
+            order: () => chain,
+            limit: () => Promise.reject(new TypeError("fetch failed")),
+          };
+
+          return chain;
+        }
+
+        return baseClient.from(table as never);
+      },
+    } as unknown as UserClient;
+    const { anthropic, narrate } = narrateReturning("Vamos verificar a garantia e retornamos.");
+
+    const outcome = await runSuggestSupportReply(userClient, { supportCaseId: CASE_ID }, anthropic);
+
+    expect(outcome.data.suggestedText).toBe("Vamos verificar a garantia e retornamos.");
+    expect(narrate.mock.calls[0]?.[0]?.prompt).toContain("(nenhum registro para este produto)");
+  });
 });
 
 interface SuggestionFakes {
