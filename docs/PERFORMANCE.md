@@ -2387,5 +2387,15 @@ a última execução bem-sucedida.
 Entre as execuções com mais de 60 dias, 601 são falhas ou resultados
 parciais. Um corte apenas por idade afetaria notificações ainda pendentes
 e poderia retirar a última execução bem-sucedida de quatro grupos.
-Medir em cópia um recorte que preserve esses registros antes de definir
-a política. Nenhuma retenção de notificações ou sync foi aplicada.
+
+Em restore seletivo da geração 1795328157907250, com corte simulado de
+60 dias em 23/11 às 00:00 BRT, **37.325 de 141.500 notificações** ficaram
+candidatas ao arquivo. Nenhuma tinha destinatário sem leitura.
+**12.782 de 57.853 execuções** ficaram candidatas, preservando falhas e
+parciais, a última execução, o último sucesso usado pela tela e o maior
+marco importado por organização, conta, recurso e canal. Os agregados
+de saúde dos **44 grupos** ficaram iguais com e sem o recorte, incluindo
+o ID da última execução e os contadores de 24 h. A conferência usa as
+mesmas projeções do SQL da tela na cópia seletiva. A política de acesso
+ao histórico e a restauração do arquivo ainda dependem de definição e
+ensaio. As tabelas ativas não receberam alterações.

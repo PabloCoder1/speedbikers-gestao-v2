@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "Full em P03/D-850. Medição na VM: 24.242 notificações com destinatário sem leitura e quatro grupos cujo último sucesso têm mais de 60 dias. Falta ensaio em cópia e política para notificações e sync_runs (PERFORMANCE.md).",
+      "evidencia": "Full em P03/D-850. Cópia simulou 60 dias: 37.325 notificações e 12.782 execuções candidatas a arquivo, zero destinatários sem leitura afetados e 44 grupos de saúde iguais. Faltam política e restore (PERFORMANCE.md).",
       "fase": 3
     },
     {
