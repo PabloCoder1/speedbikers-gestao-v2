@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **692** (D-001 a D-793).
+Decisões registradas: **694** (D-001 a D-795).
 
 ## Por domínio
 
@@ -281,7 +281,7 @@ Decisões registradas: **692** (D-001 a D-793).
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
 
-### mercado-livre (135)
+### mercado-livre (136)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -418,6 +418,7 @@ Decisões registradas: **692** (D-001 a D-793).
 - **D-782** — Endurecimento da API em convites (corrida 23505), webhook ML (`user_id`/`questionId`/enqueue), cotação de frete e resposta do SAC
 - **D-789** — Hardening em `@sb/mercado-livre` e `@sb/shopee` (cifra AES-GCM 128-bit, paginação Ads, mensagens pós-venda, HTTP 200 não-JSON, OAuth retry e parsers Shopee)
 - **D-793** — Isolamento de falhas de enqueue em agendadores/relist, validação de epoch TikTok e hardening OAuth/push na API
+- **D-795** — Worker: telemetria best-effort (`sync_runs`/`domain_events`) e `sync-central-alerts` blindados contra transporte, IDs seguros ML e proteção de janelas/datas Shopee e Ads
 
 ### outros (112)
 
@@ -611,7 +612,7 @@ Decisões registradas: **692** (D-001 a D-793).
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
 
-### worker/infra (121)
+### worker/infra (122)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -734,4 +735,5 @@ Decisões registradas: **692** (D-001 a D-793).
 - **D-785** — Tentar de novo preserva o recorte da URL via `mesmaUrl` e as 10 telas operacionais restantes separam `membership.error`
 - **D-786** — Worker verifica erro ao avançar checkpoint de `backfill.orders`, registra `sync_runs` em `sync.order-financials`, pagina `order_items` em `backfill.order-user-products` e preserva retry em `sync-central-alerts`
 - **D-787** — Hardening do worker em persistência/varredura do SAC (`claims`, `messages`, `reply`) e erro transitório na recusa de `nfe.import.apply`
+- **D-794** — Telemetria `@sb/db` (`recordJobRun`/`recordAiRun`) blindada contra transporte e isolamento de enqueue nos 13 agendadores/backfills restantes da API
 
