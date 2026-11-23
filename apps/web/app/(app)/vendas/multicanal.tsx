@@ -27,6 +27,7 @@ import {
 } from "../../../lib/cancelamento-e-hoje-multicanal";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { MARKETPLACE_ROTULO } from "../../../lib/marketplace";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange } from "../../../lib/period";
 import { resolverContasSolicitadas } from "../../../lib/postgrest-search";
 import { currentMembership } from "../../../lib/request-membership";
@@ -132,7 +133,7 @@ export async function VendasMulticanal({
           descricao="Tente novamente em instantes."
           detalhe={membershipError.message}
           acao={{
-            href: hrefDeVendas({ escopo, periodo, contas: null, metrica: "faturamento" }),
+            href: mesmaUrl("/vendas", query),
             rotulo: TENTAR_DE_NOVO,
             mesmaTela: true,
           }}
@@ -169,7 +170,7 @@ export async function VendasMulticanal({
           descricao="A seleção de contas pedida na URL não pôde ser confirmada."
           detalhe={erroContas.message}
           acao={{
-            href: hrefDeVendas({ escopo, periodo, contas: null, metrica: "faturamento" }),
+            href: mesmaUrl("/vendas", query),
             rotulo: TENTAR_DE_NOVO,
             mesmaTela: true,
           }}

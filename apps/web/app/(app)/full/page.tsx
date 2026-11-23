@@ -35,6 +35,7 @@ import {
 } from "../../../lib/full-filters";
 import { monogramaDeProduto } from "../../../lib/initials";
 import { resolverContaSolicitada } from "../../../lib/postgrest-search";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { formatAge } from "../../../lib/relative-time";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
@@ -106,7 +107,8 @@ export default async function FullPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
-  const filters = resolveFullFilters(await searchParams);
+  const query = await searchParams;
+  const filters = resolveFullFilters(query);
   const supabase = await createClient();
 
   const membershipPromise = currentMembership();
@@ -128,7 +130,7 @@ export default async function FullPage({
             titulo="Não foi possível verificar sua organização."
             descricao="Tente recarregar a página; nenhum registro foi alterado."
             detalhe={membershipError.message}
-            acao={{ href: "/full", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+            acao={{ href: mesmaUrl("/full", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
           />
         ) : (
           <EstadoDaTela tipo="permissao" titulo="Sua conta não está associada a nenhuma organização." />

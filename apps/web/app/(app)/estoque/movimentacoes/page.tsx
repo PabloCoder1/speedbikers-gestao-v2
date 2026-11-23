@@ -10,6 +10,7 @@ import { Panel } from "../../../../components/panel";
 import { FormularioFiltro } from "../../../../components/formulario-filtro";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { formatCount, formatDateTime } from "../../../../lib/format";
+import { mesmaUrl } from "../../../../lib/mesma-url";
 import {
   LOCATION_KINDS,
   MOVEMENT_TYPES,
@@ -78,6 +79,27 @@ export default async function MovimentacoesPage({
   const filters = resolveMovementFilters(query);
   const [supabase, membership] = await Promise.all([createClient(), currentMembership()]);
   const organizationId = membership.organizationId;
+
+  if (membership.error !== null) {
+    return (
+      <>
+        <PageTitle
+          eyebrow="ESTOQUE / OPERAÇÃO"
+          title="Movimentações"
+          subtitle="Histórico auditável de entradas, saídas e ajustes de estoque."
+        />
+        <Panel title="Erro ao carregar">
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível confirmar sua organização."
+            descricao="Tente novamente em instantes."
+            detalhe={membership.error.message}
+            acao={{ href: mesmaUrl("/estoque/movimentacoes", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          />
+        </Panel>
+      </>
+    );
+  }
 
   if (organizationId === null) {
     return (

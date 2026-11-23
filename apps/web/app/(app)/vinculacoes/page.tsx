@@ -20,6 +20,7 @@ import {
   type SoldKey,
 } from "../../../lib/link-integrity-filters";
 import { resolverContaSolicitada } from "../../../lib/postgrest-search";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import {
@@ -196,7 +197,7 @@ export default async function VinculacoesPage({
           titulo="Não foi possível confirmar sua organização."
           descricao="Tente novamente em instantes."
           detalhe={membershipError.message}
-          acao={{ href: "/vinculacoes", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          acao={{ href: mesmaUrl("/vinculacoes", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       </>
     );

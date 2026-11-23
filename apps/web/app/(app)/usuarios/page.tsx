@@ -106,6 +106,21 @@ export default async function UsuariosPage({
   const organizationId = membership.organizationId;
   const myRole = membership.role;
 
+  if (membership.error !== null) {
+    return (
+      <>
+        <PageTitle eyebrow="ADMINISTRAÇÃO / EQUIPE" title="Usuários" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membership.error.message}
+          acao={{ href: mesmaUrl("/usuarios", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
+
   if (organizationId === null) {
     return (
       <>

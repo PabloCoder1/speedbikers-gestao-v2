@@ -31,6 +31,7 @@ import {
 } from "../../../lib/faturamento-multicanal";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../lib/format";
 import { carregarLimites } from "../../../lib/limites-central";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange } from "../../../lib/period";
 import { resolverContasSolicitadas } from "../../../lib/postgrest-search";
 import { currentMembership } from "../../../lib/request-membership";
@@ -124,7 +125,7 @@ export async function FaturamentoMulticanal({
           titulo="Não foi possível confirmar sua organização."
           descricao="Tente novamente em instantes."
           detalhe={membershipError.message}
-          acao={{ href: hrefDeFaturamento({ escopo, periodo, contas: null }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          acao={{ href: mesmaUrl("/faturamento", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       </>
     );
@@ -158,7 +159,7 @@ export async function FaturamentoMulticanal({
           titulo="Não foi possível carregar as lojas do recorte"
           descricao="O filtro de lojas pedido na URL não pôde ser confirmado."
           detalhe={erroContas.message}
-          acao={{ href: hrefDeFaturamento({ escopo, periodo, contas: null }), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          acao={{ href: mesmaUrl("/faturamento", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       </>
     );

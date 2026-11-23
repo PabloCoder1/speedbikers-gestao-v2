@@ -11,6 +11,7 @@ import { StatusPill } from "../../../components/status-pill";
 import { TOM } from "../../../components/tone";
 import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import {
   DOCUMENT_STATUSES,
   DOCUMENT_TYPES,
@@ -31,6 +32,7 @@ import {
 } from "../../../lib/documents-overview";
 import { recusaLegivel } from "../../../lib/document-error";
 import { formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { batchStatusLabel, operationTypeLabel } from "../../../lib/labels";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
@@ -133,6 +135,25 @@ export default async function NotasFiscaisPage({
   const supabase = await createClient();
   const membership = await currentMembership();
   const organizationId = membership.organizationId;
+
+  if (membership.error !== null) {
+    return (
+      <>
+        <PageTitle
+          eyebrow="ESTOQUE / OPERAÇÃO"
+          title="Notas e Documentos"
+          subtitle="Entrada e saída de mercadoria por XML ou PDF."
+        />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membership.error.message}
+          acao={{ href: mesmaUrl("/notas-fiscais", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
 
   if (organizationId === null) {
     return (

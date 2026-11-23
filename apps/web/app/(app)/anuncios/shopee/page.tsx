@@ -29,6 +29,7 @@ import { monogramaDeProduto } from "../../../../lib/initials";
 import { pageNumbers } from "../../../../lib/listings-dashboard";
 import { revenueShare } from "../../../../lib/listings-view";
 import { contarContasMl, hrefDosAnuncios } from "../../../../lib/marketplace";
+import { mesmaUrl } from "../../../../lib/mesma-url";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS } from "../../../../lib/period";
 import { formatAge } from "../../../../lib/relative-time";
 import { currentMembership } from "../../../../lib/request-membership";
@@ -187,7 +188,7 @@ export default async function AnunciosShopeePage({
           titulo="Não foi possível confirmar sua organização."
           descricao="Tente novamente em instantes."
           detalhe={membership.error.message}
-          acao={{ href: "/anuncios/shopee", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          acao={{ href: mesmaUrl("/anuncios/shopee", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       </SemCatalogo>
     );

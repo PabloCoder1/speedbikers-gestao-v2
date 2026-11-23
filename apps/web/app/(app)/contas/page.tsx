@@ -64,6 +64,23 @@ export default async function ContasPage(): Promise<ReactNode> {
   // e cadastrar conta é só ADMIN na RLS: os outros papéis não veem os botões.
   const ehAdmin = membership.role === "ADMIN";
 
+  if (membership.error !== null) {
+    return (
+      <>
+        <PageTitle eyebrow="ADMINISTRAÇÃO / CANAIS E PARCEIROS" title="Contas e lojas" compacto />
+        <Panel title="Erro ao carregar">
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível confirmar sua organização."
+            descricao="Tente novamente em instantes."
+            detalhe={membership.error.message}
+            acao={{ href: "/contas", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          />
+        </Panel>
+      </>
+    );
+  }
+
   if (organizationId === null) {
     return (
       <>
