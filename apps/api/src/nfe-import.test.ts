@@ -34,6 +34,8 @@ function fakeDb(options: {
   existing?: ExistingDocument;
   lookupFails?: boolean;
   insertFails?: boolean;
+  insertRaces23505WithId?: string;
+  deleteThrows?: boolean;
   /** O `update ... where status = 'FAILED'` não acha a linha: outro reenvio chegou antes. */
   retryLosesRace?: boolean;
 }): {
@@ -45,6 +47,7 @@ function fakeDb(options: {
   const inserted = vi.fn();
   const updated = vi.fn();
   const deleted = vi.fn();
+  let lookupCount = 0;
 
   // `existingDocumentId` sozinho é o duplicado de sempre: um documento que foi lido.
   const existing: ExistingDocument | null =
@@ -58,12 +61,22 @@ function fakeDb(options: {
       select: () => ({
         eq: () => ({
           eq: () => ({
-            maybeSingle: () =>
-              Promise.resolve(
+            maybeSingle: () => {
+              lookupCount += 1;
+
+              if (options.insertRaces23505WithId !== undefined && lookupCount > 1) {
+                return Promise.resolve({
+                  data: { id: options.insertRaces23505WithId },
+                  error: null,
+                });
+              }
+
+              return Promise.resolve(
                 options.lookupFails === true
                   ? { data: null, error: { message: "connection timeout" } }
                   : { data: existing, error: null },
-              ),
+              );
+            },
           }),
         }),
       }),
@@ -89,9 +102,11 @@ function fakeDb(options: {
           select: () => ({
             single: () =>
               Promise.resolve(
-                options.insertFails === true
-                  ? { data: null, error: { message: "boom" } }
-                  : { data: { id: "d1000000-0000-4000-8000-00000000000d" }, error: null },
+                options.insertRaces23505WithId !== undefined
+                  ? { data: null, error: { code: "23505", message: "duplicate key value violates unique constraint" } }
+                  : options.insertFails === true
+                    ? { data: null, error: { message: "boom" } }
+                    : { data: { id: "d1000000-0000-4000-8000-00000000000d" }, error: null },
               ),
           }),
         };
@@ -104,10 +119,14 @@ function fakeDb(options: {
 
             return chain;
           },
-          then: <R>(resolve: (value: { error: null }) => R) => {
+          then: <R>(resolve: (value: { error: null }) => R, reject?: (reason: unknown) => R) => {
             deleted(filters);
 
-            return Promise.resolve({ error: null }).then(resolve);
+            if (options.deleteThrows === true) {
+              return Promise.reject(new TypeError("fetch failed")).then(resolve, reject);
+            }
+
+            return Promise.resolve({ error: null }).then(resolve, reject);
           },
         };
 
@@ -362,9 +381,11 @@ describe("receiveNfeUpload", () => {
 function applyDb(options: {
   status?: string;
   missing?: boolean;
+  lookupFails?: boolean;
   updateFails?: boolean;
   updateRaced?: boolean;
   rollbackFails?: boolean;
+  rollbackThrows?: boolean;
   totalItems?: number | null;
   resolvedItems?: number | null;
   documentType?: string;
@@ -391,21 +412,25 @@ function applyDb(options: {
           },
           eq: () => ({
             maybeSingle: () =>
-              Promise.resolve({
-                data:
-                  options.missing === true
-                    ? null
-                    : {
-                        id: "doc-1",
-                        status: options.status ?? "PARSED",
-                        total_items: "totalItems" in options ? options.totalItems : 19,
-                        resolved_items: "resolvedItems" in options ? options.resolvedItems : 19,
-                        document_type: options.documentType ?? "NFE",
-                        operation_type: options.operationType ?? "ENTRADA",
-                        intermediary_cnpj: options.intermediaryCnpj ?? null,
-                      },
-                error: null,
-              }),
+              Promise.resolve(
+                options.lookupFails === true
+                  ? { data: null, error: { message: "db timeout" } }
+                  : {
+                      data:
+                        options.missing === true
+                          ? null
+                          : {
+                              id: "doc-1",
+                              status: options.status ?? "PARSED",
+                              total_items: "totalItems" in options ? options.totalItems : 19,
+                              resolved_items: "resolvedItems" in options ? options.resolvedItems : 19,
+                              document_type: options.documentType ?? "NFE",
+                              operation_type: options.operationType ?? "ENTRADA",
+                              intermediary_cnpj: options.intermediaryCnpj ?? null,
+                            },
+                      error: null,
+                    },
+              ),
           }),
         }),
       }),
@@ -424,7 +449,13 @@ function applyDb(options: {
         const chain = {
           eq: () => chain,
           select: () => ({ maybeSingle: () => Promise.resolve(result) }),
-          then: <R>(resolve: (value: typeof result) => R) => Promise.resolve(result).then(resolve),
+          then: <R>(resolve: (value: typeof result) => R, reject?: (reason: unknown) => R) => {
+            if (values.status === "PARSED" && options.rollbackThrows === true) {
+              return Promise.reject(new TypeError("rollback socket reset")).then(resolve, reject);
+            }
+
+            return Promise.resolve(result).then(resolve, reject);
+          },
         };
 
         return chain;
@@ -439,10 +470,12 @@ function applyDeps(
   options: {
     status?: string;
     missing?: boolean;
+    lookupFails?: boolean;
     updateFails?: boolean;
     updateRaced?: boolean;
     enqueueFails?: boolean;
     rollbackFails?: boolean;
+    rollbackThrows?: boolean;
     totalItems?: number | null;
     resolvedItems?: number | null;
     documentType?: string;
@@ -450,16 +483,23 @@ function applyDeps(
     intermediaryCnpj?: string | null;
     cfops?: (string | null)[];
   } = {},
-): { deps: NfeImportDeps; enqueued: { dedupeKey: string; jobType: string }[]; updates: Record<string, unknown>[] } {
+): {
+  deps: NfeImportDeps;
+  enqueued: { dedupeKey: string; jobType: string }[];
+  updates: Record<string, unknown>[];
+  lines: string[];
+} {
   const { db, updates } = applyDb(options);
   const enqueued: { dedupeKey: string; jobType: string }[] = [];
+  const lines: string[] = [];
 
   return {
     updates,
     enqueued,
+    lines,
     deps: {
       db,
-      logger: createLogger({}, { sink: () => undefined }),
+      logger: createLogger({}, { sink: (line) => lines.push(line) }),
       store: { upload: () => Promise.resolve() },
       enqueuer: {
         enqueue: (request) => {
@@ -664,5 +704,37 @@ describe("XML e PDF (D-375)", () => {
 
     expect(result).toMatchObject({ status: "queued" });
     expect(ctx.enqueued).toHaveLength(1);
+  });
+
+  it("corrida 23505 no upload simultâneo do mesmo arquivo devolve duplicate em vez de rejected (D-798)", async () => {
+    const ctx = deps({ insertRaces23505WithId: "doc-vencedor" });
+
+    const result = await receiveNfeUpload(ctx.deps, CALLER, FILE);
+
+    expect(result).toMatchObject({ status: "duplicate", documentId: "doc-vencedor" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("rejeição de transporte no rollback do upload registra log e preserva o erro original do enqueue (D-798)", async () => {
+    const ctx = deps({ enqueueFails: true, deleteThrows: true });
+
+    await expect(receiveNfeUpload(ctx.deps, CALLER, FILE)).rejects.toThrow("cloud tasks down");
+    expect(ctx.lines.join("\n")).toContain("nfe_import_rollback_failed");
+  });
+
+  it("erro do banco ao ler o documento em confirmNfeApply não mente not_found (D-798)", async () => {
+    const ctx = applyDeps({ lookupFails: true });
+
+    const outcome = await confirmNfeApply(ctx.deps, CALLER, "doc-1");
+
+    expect(outcome).toEqual({ status: "rejected", reason: "não foi possível conferir o documento" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  it("rejeição de transporte no rollback de confirmNfeApply registra log e preserva erro original do enqueue (D-798)", async () => {
+    const ctx = applyDeps({ enqueueFails: true, rollbackThrows: true });
+
+    await expect(confirmNfeApply(ctx.deps, CALLER, "doc-1")).rejects.toThrow("cloud tasks down");
+    expect(ctx.lines.join("\n")).toContain("nfe_apply_rollback_failed");
   });
 });

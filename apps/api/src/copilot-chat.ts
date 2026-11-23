@@ -428,7 +428,7 @@ export async function runCopilotChat(
         toolsUsed.push(toolUse.name);
         await emit({ type: "tool", name: toolUse.name });
 
-        const runner = RUNNERS[toolUse.name];
+        const runner = Object.hasOwn(RUNNERS, toolUse.name) ? RUNNERS[toolUse.name] : undefined;
 
         if (runner === undefined) {
           toolResults.push({

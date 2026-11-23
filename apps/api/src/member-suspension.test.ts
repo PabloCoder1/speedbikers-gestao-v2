@@ -22,6 +22,7 @@ interface FakeOptions {
   /** `banned_until` atual do alvo no Auth. */
   banidoAte?: string | null;
   falhaNoEvento?: boolean;
+  eventoLancaTransporte?: boolean;
 }
 
 interface Registro {
@@ -41,6 +42,9 @@ function fakeDeps(options: FakeOptions = {}): { deps: InviteDeps; registro: Regi
       }),
       insert: (linha: unknown) => {
         if (tabela === "organization_access_events") registro.eventos.push(linha);
+        if (options.eventoLancaTransporte === true) {
+          return Promise.reject(new TypeError("fetch failed"));
+        }
 
         return Promise.resolve({ error: options.falhaNoEvento === true ? { message: "check violado" } : null });
       },
@@ -145,5 +149,17 @@ describe("setMemberSuspension (D-354)", () => {
     expect(registro.bans).toHaveLength(1);
     expect(outcome.status).toBe("error");
     expect(outcome).toHaveProperty("reason", expect.stringContaining("acesso suspenso, mas o histórico não registrou"));
+  });
+
+  it("falha de transporte ao gravar o evento devolve erro honesto sem exceção não tratada (D-798)", async () => {
+    const { deps, registro } = fakeDeps({ eventoLancaTransporte: true });
+
+    const outcome = await setMemberSuspension(deps, ADMIN, "u-alvo", true);
+
+    expect(registro.bans).toHaveLength(1);
+    expect(outcome).toEqual({
+      status: "error",
+      reason: "acesso suspenso, mas o histórico não registrou: fetch failed",
+    });
   });
 });

@@ -122,25 +122,35 @@ export async function setMemberSuspension(
     quem chamou — `service_role` não tem `auth.uid()`, e sem isto o histórico
     diria "sistema" sobre um ato de uma pessoa.
   */
-  const evento = await deps.db.from("organization_access_events").insert({
-    organization_id: caller.organizationId,
-    event_type: suspended ? "MEMBER_SUSPENDED" : "MEMBER_REACTIVATED",
-    target_user_id: userId,
-    actor_user_id: caller.userId,
-  });
+  let eventoErro: string | null = null;
 
-  if (evento.error !== null) {
+  try {
+    const evento = await deps.db.from("organization_access_events").insert({
+      organization_id: caller.organizationId,
+      event_type: suspended ? "MEMBER_SUSPENDED" : "MEMBER_REACTIVATED",
+      target_user_id: userId,
+      actor_user_id: caller.userId,
+    });
+
+    if (evento.error !== null) {
+      eventoErro = evento.error.message;
+    }
+  } catch (error) {
+    eventoErro = error instanceof Error ? error.message : String(error);
+  }
+
+  if (eventoErro !== null) {
     // A suspensão JÁ valeu. Dizer "falhou" mandaria tentar de novo algo que
     // deu certo; dizer "deu certo" esconderia o buraco no histórico.
     deps.logger.error("member_suspension_event_failed", {
       organization_id: caller.organizationId,
       suspended,
-      error: evento.error.message,
+      error: eventoErro,
     });
 
     return {
       status: "error",
-      reason: `acesso ${suspended ? "suspenso" : "reativado"}, mas o histórico não registrou: ${evento.error.message}`,
+      reason: `acesso ${suspended ? "suspenso" : "reativado"}, mas o histórico não registrou: ${eventoErro}`,
     };
   }
 

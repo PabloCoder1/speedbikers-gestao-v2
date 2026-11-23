@@ -218,6 +218,40 @@ describe("mapClaimToSupportProjection", () => {
     expect(comAcao?.case.remoteReplyState).toBe("ALLOWED");
   });
 
+  it("em papéis invertidos (cancel_sale), remoteReplyState lê available_actions do VENDEDOR, não do comprador (D-798)", () => {
+    const vendedorPodeResponder = mapClaimToSupportProjection(
+      parse({
+        players: [
+          {
+            role: "complainant",
+            type: "seller",
+            user_id: 1330467461,
+            available_actions: [{ action: "send_message_to_complainant", mandatory: false, due_date: null }],
+          },
+          { role: "respondent", type: "buyer", user_id: 1325224382, available_actions: [] },
+        ],
+      }),
+    );
+
+    expect(vendedorPodeResponder?.case.remoteReplyState).toBe("ALLOWED");
+
+    const soCompradorPode = mapClaimToSupportProjection(
+      parse({
+        players: [
+          { role: "complainant", type: "seller", user_id: 1330467461, available_actions: [] },
+          {
+            role: "respondent",
+            type: "buyer",
+            user_id: 1325224382,
+            available_actions: [{ action: "send_message_to_complainant", mandatory: false, due_date: null }],
+          },
+        ],
+      }),
+    );
+
+    expect(soCompradorPode?.case.remoteReplyState).toBe("BLOCKED");
+  });
+
   it("vincula o pedido só quando o claim é sobre uma order", () => {
     expect(mapClaimToSupportProjection(parse())?.orderId).toBe(2000007819609432);
     // `resource_id` de um claim de envio é um shipment, não um pedido —
@@ -394,6 +428,16 @@ describe("mapClaimMessagesToProjection", () => {
 
   it("transcript vazio não quebra", () => {
     expect(mapMessages([])).toEqual([]);
+  });
+
+  it("mensagens do mesmo remetente no mesmo segundo são deduplicadas por externalMessageKey para evitar erro Postgres 21000 (D-798)", () => {
+    const duplicadas = mapMessages([
+      { ...OFFICIAL_MESSAGES[0], message: "Primeira no mesmo segundo" },
+      { ...OFFICIAL_MESSAGES[0], message: "Segunda no mesmo segundo" },
+    ]);
+
+    expect(duplicadas).toHaveLength(1);
+    expect(duplicadas[0]?.externalMessageKey).toBe("claim-msg:respondent:2023-07-17T12:52:54.000-04:00");
   });
 });
 

@@ -392,4 +392,21 @@ describe("contexto de tela (D-293)", () => {
     expect(escopo.context_kind).toBe("sku");
     expect(JSON.stringify(escopo)).not.toContain("SB-001");
   });
+
+  it("não resolve ferramenta herdada de Object.prototype como toString ou constructor (D-798)", async () => {
+    const { events, plan } = await run([
+      {
+        blocks: [{ type: "tool_use", id: "tu-proto", name: "toString", input: {} }],
+        stopReason: "tool_use",
+        costUsd: 0.001,
+      },
+      finalText("Desculpe, ferramenta desconhecida."),
+    ]);
+
+    expect(events).not.toContainEqual(expect.objectContaining({ type: "error" }));
+    expect(events).toContainEqual({ type: "done", toolsUsed: ["toString"] });
+    const segunda = plan.mock.calls[1]?.[0]?.messages ?? [];
+    const resultado = JSON.stringify(segunda[segunda.length - 1]);
+    expect(resultado).toContain("ferramenta desconhecida");
+  });
 });
