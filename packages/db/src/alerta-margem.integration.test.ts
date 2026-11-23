@@ -202,11 +202,16 @@ beforeAll(async () => {
   }
 
   // Custo histórico dos componentes a partir de 10/08 15:55: só o kit (16:00) o vê.
+  // O gatilho do insert de skus já grava um registro com a data de HOJE: a
+  // guarda olha só ESTE instante, senão o banco novo da CI nunca o recebe.
   await client.query(
     `insert into public.sku_cost_history (organization_id, sku_id, previous_cost, new_cost, changed_by_role, changed_at)
      select $1, x.sku_id, 60, 25, 'postgres', '2026-08-10 15:55:00+00'
      from unnest(array[$2, $3]::uuid[]) as x (sku_id)
-     where not exists (select 1 from public.sku_cost_history h where h.sku_id = x.sku_id)`,
+     where not exists (
+       select 1 from public.sku_cost_history h
+       where h.sku_id = x.sku_id and h.changed_at = '2026-08-10 15:55:00+00'
+     )`,
     [ORG, sku.NAV, sku.GEN],
   );
 
