@@ -36,12 +36,22 @@ export interface NfeApplicationDocument {
 }
 
 export function computeNfeApplicationMovements(document: NfeApplicationDocument): StockMovementDraft[] {
+  if (!Number.isFinite(document.occurredAt.getTime())) {
+    throw new RangeError("computeNfeApplicationMovements: occurredAt inválido");
+  }
+
   const sign = document.operationType === "ENTRADA" ? 1 : -1;
   const drafts: StockMovementDraft[] = [];
 
   for (const item of document.items) {
     if (item.skuId === null) {
       continue;
+    }
+
+    if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+      throw new RangeError(
+        `computeNfeApplicationMovements: quantidade inválida no item ${String(item.position)}: ${String(item.quantity)}`,
+      );
     }
 
     drafts.push({

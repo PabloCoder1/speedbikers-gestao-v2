@@ -23,7 +23,7 @@ export function cell(value: unknown): string | null {
   } else if (typeof value === "boolean") {
     text = value ? "Y" : "N";
   } else if (value instanceof Date) {
-    text = value.toISOString();
+    text = Number.isFinite(value.getTime()) ? value.toISOString() : "";
   } else {
     return null;
   }
@@ -83,7 +83,7 @@ export function normalizeUnit(raw: unknown): string | null {
 
   const upper = value.toUpperCase();
 
-  return UNIT_ALIASES[upper] ?? upper;
+  return Object.hasOwn(UNIT_ALIASES, upper) ? (UNIT_ALIASES[upper] ?? upper) : upper;
 }
 
 /**
@@ -141,13 +141,11 @@ export function parseCategory(raw: unknown): CategoryParse {
 export function parseOriginCode(raw: unknown): number | null {
   const value = cell(raw);
 
-  if (value === null) {
+  if (value === null || !/^[0-8]$/.test(value)) {
     return null;
   }
 
-  const parsed = Number.parseInt(value, 10);
-
-  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 8 ? parsed : null;
+  return Number(value);
 }
 
 /**
@@ -156,6 +154,9 @@ export function parseOriginCode(raw: unknown): number | null {
  * Aceita tanto `174.90` quanto `174,90`: a exportação varia conforme a
  * configuração regional de quem exporta.
  */
+const COMMA_DECIMAL = /^[+-]?(?:\d+(?:\.\d{3})*,\d+|\d+,\d+|,\d+)$/;
+const DOT_DECIMAL = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
+
 export function parseDecimal(raw: unknown): number | null {
   if (typeof raw === "number") {
     return Number.isFinite(raw) ? raw : null;
@@ -173,11 +174,21 @@ export function parseDecimal(raw: unknown): number | null {
   //
   // Remover ponto sempre transformaria 174.90 em 17490 — multiplicando por cem
   // todo preço e custo da importação, em silêncio.
-  const normalized = value.includes(",")
-    ? value.replace(/\./g, "").replace(",", ".")
-    : value;
+  let normalized: string;
 
-  const parsed = Number.parseFloat(normalized);
+  if (value.includes(",")) {
+    if (!COMMA_DECIMAL.test(value)) {
+      return null;
+    }
+    normalized = value.replace(/\./g, "").replace(",", ".");
+  } else {
+    if (!DOT_DECIMAL.test(value)) {
+      return null;
+    }
+    normalized = value;
+  }
+
+  const parsed = Number(normalized);
 
   return Number.isFinite(parsed) ? parsed : null;
 }

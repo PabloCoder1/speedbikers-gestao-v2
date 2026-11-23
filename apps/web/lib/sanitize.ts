@@ -28,11 +28,15 @@ const QUERY_STRING = /\?[^\s"'<>]+/g;
 export function sanitizeErrorText(text: string | null | undefined, max = 200): string | null {
   if (text === null || text === undefined) return null;
 
+  const limite = Math.floor(max);
+
+  if (!Number.isFinite(limite) || limite < 1) return null;
+
   let limpo = redactSecretText(text, "[oculto]");
 
   limpo = limpo.replace(QUERY_STRING, "?[oculto]").replace(/\s+/g, " ").trim();
 
   if (limpo === "") return null;
 
-  return limpo.length > max ? `${limpo.slice(0, max - 1)}…` : limpo;
+  return limpo.length > limite ? `${limpo.slice(0, limite - 1)}…` : limpo;
 }

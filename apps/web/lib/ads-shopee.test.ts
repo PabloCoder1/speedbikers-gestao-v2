@@ -148,4 +148,21 @@ describe("diasDasBarras (D-456)", () => {
   it("série nula (erro de leitura) não inventa dias", () => {
     expect(diasDasBarras(null)).toEqual({ barras: [], semGasto: 0, semVenda: 0 });
   });
+
+  it("valores não finitos são tratados como ausentes em estadoAdsLoja, diasForaDaRazao e diasDasBarras", () => {
+    expect(estadoAdsLoja(linha({ investimento: Number.NaN }))).toBe("nao_lido");
+    expect(diasForaDaRazao({ dias_sem_gasto: Number.POSITIVE_INFINITY, dias_sem_venda: Number.NaN })).toBeNull();
+
+    const r = diasDasBarras([
+      dia("2026-10-11", Number.NaN, 30),
+      dia("2026-10-12", 5, Number.POSITIVE_INFINITY),
+      dia("2026-10-13", 10, 40),
+    ]);
+
+    expect(r).toEqual({
+      barras: [{ dia: "2026-10-13", investimento: 10, receita_ads: 40 }],
+      semGasto: 1,
+      semVenda: 1,
+    });
+  });
 });

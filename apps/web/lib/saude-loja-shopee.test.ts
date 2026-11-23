@@ -56,6 +56,21 @@ describe("vereditoDaLoja — os limiares do vigia (D-435)", () => {
       rotulo: "Nunca lida",
     });
   });
+
+  it("timestamp corrompido ou data de referência inválida falha fechado em 'Nunca lida', nunca 'Pedidos em dia'", () => {
+    expect(vereditoDaLoja({ ...LOJA, orders_synced_at: "data-invalida" }, AGORA)).toMatchObject({
+      tom: "neutro",
+      rotulo: "Nunca lida",
+    });
+    expect(vereditoDaLoja({ ...LOJA, orders_synced_at: null, connected_at: "data-invalida" }, AGORA)).toMatchObject({
+      tom: "neutro",
+      rotulo: "Nunca lida",
+    });
+    expect(vereditoDaLoja(LOJA, new Date("invalid"))).toMatchObject({
+      tom: "neutro",
+      rotulo: "Nunca lida",
+    });
+  });
 });
 
 describe("avisoDaAutorizacao", () => {

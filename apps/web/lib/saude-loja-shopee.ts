@@ -58,12 +58,25 @@ export function vereditoDaLoja(loja: LojaNaSaude, agora: Date): Veredito {
     };
   }
 
+  const nuncaLida: Veredito = {
+    tom: "neutro",
+    rotulo: "Nunca lida",
+    orientacao: "Nenhuma leitura de pedidos registrada.",
+  };
+  const agoraMs = agora.getTime();
+
+  if (!Number.isFinite(agoraMs)) return nuncaLida;
+
   if (loja.orders_synced_at === null) {
     if (loja.connected_at === null) {
-      return { tom: "neutro", rotulo: "Nunca lida", orientacao: "Nenhuma leitura de pedidos registrada." };
+      return nuncaLida;
     }
 
-    const desdeConexao = (agora.getTime() - new Date(loja.connected_at).getTime()) / HORA_MS;
+    const connectedMs = new Date(loja.connected_at).getTime();
+
+    if (!Number.isFinite(connectedMs)) return nuncaLida;
+
+    const desdeConexao = (agoraMs - connectedMs) / HORA_MS;
 
     if (desdeConexao < LIMIAR_ATRASO_H) {
       return {
@@ -75,7 +88,14 @@ export function vereditoDaLoja(loja: LojaNaSaude, agora: Date): Veredito {
   }
 
   const referencia = loja.orders_synced_at ?? loja.connected_at;
-  const horas = referencia === null ? 0 : (agora.getTime() - new Date(referencia).getTime()) / HORA_MS;
+
+  if (referencia === null) return nuncaLida;
+
+  const referenciaMs = new Date(referencia).getTime();
+
+  if (!Number.isFinite(referenciaMs)) return nuncaLida;
+
+  const horas = (agoraMs - referenciaMs) / HORA_MS;
   const inteiras = Math.floor(horas);
 
   if (horas >= LIMIAR_PARADA_H) {
@@ -105,7 +125,12 @@ export function vereditoDaLoja(loja: LojaNaSaude, agora: Date): Veredito {
 export function avisoDaAutorizacao(loja: LojaNaSaude, agora: Date): Veredito | null {
   if (loja.authorization_expires_at === null) return null;
 
-  const dias = Math.floor((new Date(loja.authorization_expires_at).getTime() - agora.getTime()) / DIA_MS);
+  const agoraMs = agora.getTime();
+  const expiraMs = new Date(loja.authorization_expires_at).getTime();
+
+  if (!Number.isFinite(agoraMs) || !Number.isFinite(expiraMs)) return null;
+
+  const dias = Math.floor((expiraMs - agoraMs) / DIA_MS);
 
   if (dias < 0) {
     return {
