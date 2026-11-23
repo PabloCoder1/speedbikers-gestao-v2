@@ -62,6 +62,8 @@ bash infra/cloud-tasks-queues.sh
 bash infra/storage-buckets.sh
 ```
 
+O provisionador de Storage usa Node para validar a configuração JSON do lifecycle. A regra D-030 entra na criação de `raw-ml`. Se o bucket já existe, o script exige que a regra esteja presente e preserva as demais regras. Erros de leitura ou divergências interrompem o provisionamento antes de criar buckets ou conceder IAM.
+
 ## O que cada um cria
 
 | Script | Recursos | Custo parado |

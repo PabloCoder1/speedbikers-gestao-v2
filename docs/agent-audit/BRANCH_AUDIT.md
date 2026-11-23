@@ -208,3 +208,22 @@ As sete refs integradas foram cruzadas com os upstreams e caminhos de worktree. 
 | `test/tela-estreita-multicanal` | `47dfcdf13eef31db2945f766b21601daa6b27321` | 2026-10-19 | 0 / 231 | integrados #249 | REMOVIDA EM 12/11 | merge confirmado, preview cancelado, sem dependência ativa |
 | `v2-legacy` | `f877193d17b827a2e7840949d4761e39e435da44` | 2026-08-19 | 1 / 1834 | — | PRESERVAR | tag `v2-final` · 2 deploy(s) GitHub por ref ou SHA |
 | `v3` | `a9a91d091ad9d2f61cb2f1084f532a9a52ecffa3` | 2026-09-23 | 0 / 853 | abertos #76 | PRESERVAR | ambiente producao, exclusão vedada · protegida · PR aberto #76 · worktree `v3` · trabalho local `perf/auditoria-v3` (+1), `v3` (+1) · alias Git Vercel (READY) · 9 deploy(s) Vercel READY · 44 deploy(s) GitHub por ref ou SHA |
+
+## Reconciliação de PRs abertos · 23/11/2026
+
+Corte de comparação: `main` em `a81f5235` e candidato #378 em
+`18a67851`, com CI integral verde. Para 26 PRs abertos, verifiquei a
+ancestralidade do head e, quando necessário, comparei os arquivos da
+mudança entre o head e o candidato.
+
+| Evidência | PRs e destino |
+| --- | --- |
+| Head ancestral do candidato | #342, #343, #345, #357, #364, #366, #368, #369, #370, #371, #372, #373, #374, #376, #377, #379 e #380 |
+| Arquivos da mudança idênticos | #353, #359, #361 e #363 |
+| Código equivalente com documentação distinta | #338 tem o mesmo `turbo.json`. #340 mantém a exclusão de portas Docker e o candidato acrescenta proteção para portas efêmeras Linux |
+| Evidência independente | #375 reúne o ensaio de rollback. #381 traz o benchmark restaurado. #382 documenta a carga, com o commit da fixture Shopee já presente no candidato |
+
+Os heads #338, #342 e #343 aparecem com conflito contra a `main`. A
+integração pelo candidato preserva o trabalho correspondente e tem CI do
+conjunto. Mantenha os PRs e as worktrees até concluir a revisão e a
+integração do candidato. Nenhuma ref ou PR foi removido nesta rodada.

@@ -389,7 +389,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Sentinel/Outros",
-      "evidencia": "A integração com #337 preserva D-767 de Compras e atribui D-790 ao índice Full. PRs e worktrees seguem em revisão",
+      "evidencia": "26 PRs comparados com #378: 17 heads ancestrais, 6 mudanças equivalentes ou ampliadas e 3 evidências independentes. Preservar refs e worktrees até revisão (BRANCH_AUDIT.md).",
       "fase": 4
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "CI verde no #364 em 2e25fb72 e no recorte de infraestrutura #374 em 4c678480. PG17 isolado aplicou upgrade de 324 para 328 migrations com versões temporárias. Faltam CI da composição e registro oficial de migrations no Dev.",
+      "evidencia": "CI integral do #378 em 18a67851 (45164388827) e do #382 em 20e5aef1 (45164397505). Upgrade isolado de 324 para 328 migrations com versões temporárias. Falta ordem definitiva e registro oficial no Dev.",
       "fase": 5
     },
     {

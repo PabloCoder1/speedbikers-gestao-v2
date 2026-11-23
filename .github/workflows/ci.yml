@@ -474,6 +474,7 @@ jobs:
           bash infra/alertas.test.sh
           bash infra/cloud-scheduler.test.sh
           bash infra/cloud-tasks-queues.test.sh
+          bash infra/storage-buckets.test.sh
           bash infra/deploy-cloud-run.test.sh
 
       # Os scripts de infra/ rodam em bash e são versionados. Erro de sintaxe
@@ -512,9 +513,6 @@ jobs:
       # impede que ela seja desfeita numa manutenção sem ninguém ver.
       - name: Guarda de ambiente (dev x prod)
         run: bash infra/ambiente.test.sh
-
-      - name: Paginação e falhas no provisionamento de alertas
-        run: bash infra/alertas.test.sh
 
       - name: Política de alerta de disco da VM
         run: node --test infra/vm/disk-alert-policy.test.mjs
