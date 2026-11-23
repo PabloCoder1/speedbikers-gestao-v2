@@ -12,6 +12,9 @@ import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { voltarAosPadroes } from "./actions";
 import { FormularioLimites } from "./formulario";
+import { FormularioAlertaDeMargem } from "./alerta-margem";
+import { lerAlerta, metaComoTexto } from "../../../../lib/alerta-margem";
+import { formatCurrency } from "../../../../lib/format";
 
 export const metadata = { title: "Limites da central — Speed Bikers Gestão" };
 
@@ -172,6 +175,148 @@ async function LimitesContent({ searchParams }: { searchParams: Promise<Consulta
           </div>
         </div>
       </Panel>
+
+      {membership.organizationId !== null && (
+        <AlertaDeMargem organizationId={membership.organizationId} podeEditar={podeEditar} />
+      )}
     </>
+  );
+}
+
+const STATUS_DO_EMAIL: Record<string, string> = {
+  pending: "na fila",
+  sent: "enviado",
+  failed: "falhou",
+  skipped: "não enviado",
+};
+
+/**
+ * D-858 — o alerta de venda abaixo da margem: a meta por marca, os e-mails e as
+ * últimas vendas que dispararam. A margem é a da Curva ABC (5X), pedido a
+ * pedido; o julgamento é do banco, de hora em hora.
+ */
+async function AlertaDeMargem({ organizationId, podeEditar }: { organizationId: string; podeEditar: boolean }): Promise<ReactNode> {
+  const supabase = await createClient();
+  const [config, ultimos] = await Promise.all([
+    supabase
+      .from("margin_alert_settings")
+      .select("enabled, default_min_margin, imported_min_margin, imported_brands, email_recipients, updated_at")
+      .eq("organization_id", organizationId)
+      .maybeSingle(),
+    supabase
+      .from("sale_margin_alerts")
+      .select("id, marketplace, order_ref, sku, title, sold_at, sale_value, margin, min_margin, email_status")
+      .eq("organization_id", organizationId)
+      .order("detected_at", { ascending: false })
+      .limit(10),
+  ]);
+
+  // Tabela ausente: a web vai ao ar antes da migration (o precedente dos limites).
+  if (config.error !== null && (config.error.code === "PGRST205" || config.error.code === "42P01")) {
+    return (
+      <Panel title="Alerta de venda abaixo da margem" subtitle="Sendo ativado neste ambiente.">
+        <div className="sb-panel-body">
+          <SendoAtivado>O banco ainda não recebeu a tabela do alerta de margem (D-858).</SendoAtivado>
+        </div>
+      </Panel>
+    );
+  }
+
+  const atual = lerAlerta(config.data ?? null);
+  // Sem linha, o agendador não acha a empresa: os padrões aparecem no formulário, mas nada roda até salvar.
+  const configurado = config.error === null && config.data !== null;
+  const situacao = !configurado ? "não configurado" : atual.enabled ? "ligado" : "desligado";
+  const pct = (fracao: number): string => `${metaComoTexto(fracao)}%`;
+
+  return (
+    <Panel
+      title="Alerta de venda abaixo da margem"
+      subtitle={`Cada venda com margem abaixo da meta avisa no sino e por e-mail: ${pct(atual.imported_min_margin)} para as marcas importadas, ${pct(atual.default_min_margin)} para os demais.`}
+      aside={<StatePill tone={situacao === "ligado" ? { tom: "info", label: situacao } : { tom: "neutro", label: situacao }} />}
+    >
+      <div className="sb-panel-body">
+        {config.error !== null && (
+          <EstadoDaTela
+            tipo="erro"
+            titulo="Não foi possível carregar o alerta de margem"
+            descricao="Os valores abaixo são os padrões, não os da empresa."
+            detalhe={config.error.message}
+            acao={{ href: "/central/limites", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+          />
+        )}
+
+        {podeEditar ? (
+          <FormularioAlertaDeMargem atual={atual} />
+        ) : (
+          <dl className="sb-limites-lista">
+            <div>
+              <dt>Situação</dt>
+              <dd>{situacao[0]?.toUpperCase()}{situacao.slice(1)}</dd>
+            </div>
+            <div>
+              <dt>Marcas importadas ({pct(atual.imported_min_margin)})</dt>
+              <dd>{atual.imported_brands.length === 0 ? "Nenhuma" : atual.imported_brands.join(", ")}</dd>
+            </div>
+            <div>
+              <dt>Demais produtos</dt>
+              <dd>{pct(atual.default_min_margin)}</dd>
+            </div>
+            <div>
+              <dt>E-mails</dt>
+              <dd>{atual.email_recipients.length === 0 ? "Nenhum: o aviso cai só no sino" : `${String(atual.email_recipients.length)} cadastrado(s)`}</dd>
+            </div>
+          </dl>
+        )}
+
+        <div className="sb-note sb-central-bloco">
+          <span>COMO A MARGEM É CALCULADA</span>
+          <p>
+            (Valor líquido recebido − custo do produto) ÷ valor de venda, a mesma da Curva ABC. No Mercado Livre, o recebido é o
+            preço menos a comissão e o frete pago pelo vendedor; na Shopee, o repasse da Shopee. Só entra a venda com frete,
+            comissão e custo conhecidos e um produto só no pedido: a que ainda não tem frete é julgada quando ele chegar, até 7
+            dias depois. Imposto, Ads e custos fixos ficam fora. A margem mínima da central (nos limites acima) é outra régua.
+          </p>
+        </div>
+
+        {ultimos.error === null && ultimos.data.length > 0 && (
+          <div className="sb-central-tabela">
+            <p className="sb-texto-suave">As últimas vendas que dispararam o alerta.</p>
+            <table className="sb-table">
+              <thead>
+                <tr>
+                  <th className="sb-col-fixa">Produto</th>
+                  <th>Venda</th>
+                  <th className="sb-num">Valor</th>
+                  <th className="sb-num">Margem</th>
+                  <th>E-mail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ultimos.data.map((a) => (
+                  <tr key={a.id}>
+                    <td className="sb-col-fixa">
+                      {a.sku ?? "—"}
+                      {a.title === null ? null : <span className="sb-texto-suave"> · {a.title}</span>}
+                    </td>
+                    <td>
+                      {a.marketplace === "SHOPEE" ? "Shopee" : "Mercado Livre"} · {a.order_ref}
+                      <br />
+                      <span className="sb-texto-suave">
+                        {new Date(a.sold_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}
+                      </span>
+                    </td>
+                    <td className="sb-num">{formatCurrency(a.sale_value)}</td>
+                    <td className="sb-num">
+                      {pct(a.margin)} <span className="sb-texto-suave">(meta {pct(a.min_margin)})</span>
+                    </td>
+                    <td>{STATUS_DO_EMAIL[a.email_status] ?? a.email_status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Panel>
   );
 }

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { lerFormularioDoAlerta } from "../../../../lib/alerta-margem";
 import { lerFormularioDosLimites } from "../../../../lib/limites-central";
 import { currentMembership } from "../../../../lib/membership";
 import { createClient } from "../../../../lib/supabase/server";
@@ -65,4 +66,60 @@ export async function voltarAosPadroes(): Promise<void> {
   await supabase.from("central_thresholds").delete().eq("organization_id", membership.organizationId);
 
   revalidar();
+}
+
+/**
+ * D-858 — o alerta de venda abaixo da margem: liga/desliga, as duas metas, as
+ * marcas importadas e os e-mails. Direto sob RLS, como os limites: as policies
+ * de `margin_alert_settings` exigem ADMIN/GESTOR.
+ */
+export async function salvarAlertaDeMargem(_anterior: ResultadoDoCadastro, formData: FormData): Promise<ResultadoDoCadastro> {
+  const supabase = await createClient();
+  const membership = await currentMembership(supabase);
+
+  if (membership.organizationId === null) return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
+
+  const lido = lerFormularioDoAlerta((nome) => {
+    const valor = formData.get(nome);
+
+    return typeof valor === "string" ? valor : "";
+  });
+
+  if (!lido.ok) return { ...SEM_ERRO, erros: lido.erros };
+
+  const { data: usuario } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from("margin_alert_settings")
+    .upsert(
+      {
+        organization_id: membership.organizationId,
+        enabled: lido.valores.enabled,
+        default_min_margin: lido.valores.default_min_margin,
+        imported_min_margin: lido.valores.imported_min_margin,
+        imported_brands: [...lido.valores.imported_brands],
+        email_recipients: [...lido.valores.email_recipients],
+        updated_by: usuario.user?.id ?? null,
+      },
+      { onConflict: "organization_id" },
+    )
+    .select("organization_id");
+
+  if (error !== null) {
+    if (error.code === "42501") return { ...SEM_ERRO, mensagem: "Sem permissão: só ADMIN e GESTOR mudam o alerta de margem." };
+    if (error.code === "23514") return { ...SEM_ERRO, mensagem: "O banco recusou os valores: confira as metas e os e-mails." };
+
+    return { ...SEM_ERRO, mensagem: `Não foi possível salvar: ${error.message}` };
+  }
+
+  if (data.length === 0) return { ...SEM_ERRO, mensagem: "O alerta não foi gravado: você não tem permissão." };
+
+  revalidatePath("/central/limites");
+
+  return {
+    ok: true,
+    mensagem: lido.valores.enabled
+      ? `Alerta salvo. ${lido.valores.email_recipients.length === 0 ? "Sem e-mail cadastrado, o aviso cai só no sino." : `O aviso vai ao sino e a ${String(lido.valores.email_recipients.length)} e-mail(s).`}`
+      : "Alerta desligado: nenhuma venda nova será julgada.",
+    erros: {},
+  };
 }

@@ -214,3 +214,20 @@ describe("a mudança de preço do anúncio da Shopee (C-81, D-638)", () => {
     expect(eventOriginLabel(null, { ...DEPOIS, shop_name: null }, LOJA)).toBe("Loja Shopee");
   });
 });
+
+describe("sale.margin.below (D-858)", () => {
+  const VENDA = { marketplace: "MERCADO_LIVRE", pedido: "2000012345", margem: 0.224, meta: 0.4, valor_venda: 150, sku: "NAV-001", titulo: "Manete" };
+
+  it("diz a margem, a meta, o canal, o pedido e o valor", () => {
+    expect(formatEventDiff("sale.margin.below", null, VENDA)?.replace(/\s/g, " ")).toBe(
+      "Margem 22,4% (meta 40%) · Mercado Livre · pedido 2000012345 · venda de R$ 150,00",
+    );
+    expect(formatEventDiff("sale.margin.below", null, { ...VENDA, marketplace: "SHOPEE" })).toContain("Shopee");
+    expect(formatEventDiff("sale.margin.below", null, null)).toBeNull();
+  });
+
+  it("o alvo é o produto pelo código e título, com link para o SKU", () => {
+    expect(entityText("sku", "uuid-1", VENDA)).toBe("Produto NAV-001 · Manete");
+    expect(entityHref("sku", "uuid-1", VENDA)).toBe("/skus/uuid-1");
+  });
+});

@@ -171,6 +171,7 @@ export const JOB_CADENCE_MIN: Readonly<Record<string, number>> = {
   "diagnostics.detect-support-patterns": 1440,
   "diagnostics.sync-central-alerts": 1440, // D-403
   "diagnostics.listing-sales-drop": 1440, // D-629 (C-79), do mesmo agendador
+  "diagnostics.detect-low-margin-sales": 60, // D-858: v3-refresh-sales-metrics ("35 * * * *") a enfileira
   "diagnostics.measure-decision-outcomes": 1440, // v3-measure-decision-outcomes: "30 8 * * *"
   /*
     SHOPEE (D-431), todos de hora em hora por loja CONECTADA. Um agendador só,

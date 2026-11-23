@@ -191,6 +191,7 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
+13. **Alerta de margem (D-858):** segredo `SMTP_PASSWORD` e variáveis do worker, migration `20261123180000` em produção, deploy de worker, api e web, e-mails em `/central/limites`.
 
 ---
 
