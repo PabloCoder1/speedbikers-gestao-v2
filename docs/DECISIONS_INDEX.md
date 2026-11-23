@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **687** (D-001 a D-785).
+Decisões registradas: **688** (D-001 a D-786).
 
 ## Por domínio
 
@@ -608,7 +608,7 @@ Decisões registradas: **687** (D-001 a D-785).
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
 
-### worker/infra (119)
+### worker/infra (120)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -729,4 +729,5 @@ Decisões registradas: **687** (D-001 a D-785).
 - **D-761** — "Já fiz o pedido" passa pelo caminho canônico e devolve os candidatos a duplicidade em vez de criar
 - **D-779** — Logger estruturado redige `message`, protege referências circulares e serializa `Error` em qualquer profundidade
 - **D-785** — Tentar de novo preserva o recorte da URL via `mesmaUrl` e as 10 telas operacionais restantes separam `membership.error`
+- **D-786** — Worker verifica erro ao avançar checkpoint de `backfill.orders`, registra `sync_runs` em `sync.order-financials`, pagina `order_items` em `backfill.order-user-products` e preserva retry em `sync-central-alerts`
 

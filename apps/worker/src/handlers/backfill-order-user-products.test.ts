@@ -161,22 +161,30 @@ function fakeDb(options: { orders?: OrderRow[]; items?: ItemRow[]; links?: LinkR
 
           if (table === "order_items") {
             return {
-              in: (_coluna: string, ids: number[]) => ({
-                is: () =>
-                  Promise.resolve({
-                    data: items
-                      .filter((item) => ids.includes(item.order_id) && item.sku_id === null)
-                      .map(({ id, order_id, position, item_id, variation_id, user_product_id }) => ({
-                        id,
-                        order_id,
-                        position,
-                        item_id,
-                        variation_id,
-                        user_product_id,
-                      })),
-                    error: null,
-                  }),
-              }),
+              in: (_coluna: string, ids: number[]) => {
+                const filtrados = () =>
+                  items
+                    .filter((item) => ids.includes(item.order_id) && item.sku_id === null)
+                    .sort((a, b) => a.id.localeCompare(b.id))
+                    .map(({ id, order_id, position, item_id, variation_id, user_product_id }) => ({
+                      id,
+                      order_id,
+                      position,
+                      item_id,
+                      variation_id,
+                      user_product_id,
+                    }));
+
+                const cadeia = {
+                  order: () => cadeia,
+                  range: (from: number, to: number) =>
+                    Promise.resolve({ data: filtrados().slice(from, to + 1), error: null }),
+                  then: (resolve: (value: unknown) => unknown) =>
+                    Promise.resolve({ data: filtrados().slice(0, 1000), error: null }).then(resolve),
+                };
+
+                return { is: () => cadeia };
+              },
             };
           }
 
@@ -508,6 +516,34 @@ describe("backfill.order-user-products (D-362, 3ª parte)", () => {
     expect(desconectada.outcome).toEqual({ status: "done", processed: 0 });
     expect(desconectada.enfileirados).toEqual([]);
     expect(invalido.outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(calls).toEqual([]);
+  });
+
+  it("pagina order_items além de 1.000 linhas num lote de pedidos sem estourar o teto do PostgREST (D-786)", async () => {
+    const muitosItens: ItemRow[] = Array.from({ length: 1_005 }, (_, i) => ({
+      id: `item-${String(i).padStart(4, "0")}`,
+      order_id: 9500 + (i % 5),
+      position: Math.floor(i / 5),
+      item_id: "MLB-BULK",
+      variation_id: null,
+      user_product_id: "MLBU-BULK",
+      sku_id: null,
+    }));
+    const pedidosLote: OrderRow[] = [0, 1, 2, 3, 4].map((offset) => ({
+      id: 9500 + offset,
+      date_created: "2026-09-16T10:00:00.000Z",
+    }));
+    const { db, items } = fakeDb({
+      orders: pedidosLote,
+      items: muitosItens,
+      links: [link("link-bulk", "sku-bulk", { userProduct: "MLBU-BULK" })],
+    });
+    const { client, calls } = fakeClient({});
+
+    const { outcome } = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1_005 });
+    expect(items.every((i) => i.sku_id === "sku-bulk")).toBe(true);
     expect(calls).toEqual([]);
   });
 });

@@ -63,9 +63,6 @@ const PEDACO_MS = 24 * 3_600_000;
 /** `order_items` é consultada pelos ids do pedaço em lotes: a URL do PostgREST tem teto. */
 const LOTE_DE_IDS = 200;
 
-/** Teto do PostgREST (D-131): a leitura em lote que chega nele pode ter sido cortada. */
-const TETO_POSTGREST = 1000;
-
 /** A mesma pausa entre pedidos da varredura de frete. */
 const PAUSA_ENTRE_PEDIDOS_MS = 150;
 
@@ -205,21 +202,19 @@ export function createBackfillOrderUserProductsHandler(deps: BackfillOrderUserPr
 
       for (let i = 0; i < orders.length; i += LOTE_DE_IDS) {
         const ids = orders.slice(i, i + LOTE_DE_IDS).map((order) => order.id);
-        const lidos = await deps.db
-          .from("order_items")
-          .select("id, order_id, position, item_id, variation_id, user_product_id")
-          .in("order_id", ids)
-          .is("sku_id", null);
+        const lidos = await readAllPages<ItemSemSku>(
+          (from, to) =>
+            deps.db
+              .from("order_items")
+              .select("id, order_id, position, item_id, variation_id, user_product_id")
+              .in("order_id", ids)
+              .is("sku_id", null)
+              .order("id")
+              .range(from, to),
+          { label: "falha ao ler os itens sem SKU" },
+        );
 
-        if (lidos.error !== null) {
-          throw new Error(`falha ao ler os itens sem SKU: ${lidos.error.message}`);
-        }
-
-        if (lidos.data.length >= TETO_POSTGREST) {
-          throw new Error(`a leitura dos itens sem SKU chegou ao teto do PostgREST (D-131): reduza o lote`);
-        }
-
-        for (const item of lidos.data) {
+        for (const item of lidos) {
           const doPedido = itensPorPedido.get(item.order_id) ?? [];
           doPedido.push(item);
           itensPorPedido.set(item.order_id, doPedido);
