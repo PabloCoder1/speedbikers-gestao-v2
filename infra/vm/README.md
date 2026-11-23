@@ -183,3 +183,24 @@ node infra/vm/check-migration-catalog.mjs --expect-plan "$PLAN_ID" < catalogo-at
 aplicadas ou no conteúdo ou nome de um SQL pendente reprova a verificação.
 O ID cobre o catálogo e os SQLs pendentes. Registre também o SHA do commit e
 o ambiente de origem do catálogo na revisão.
+
+
+### Publicação do candidato #378 e aceite
+
+O plano de publicação na VM foi aprovado em 23/11. O catálogo consultado
+em leitura tinha 324 versões até `20261119180000`. O preflight do candidato
+retornou `blocked` porque as quatro versões temporárias aparecem antes
+da última aplicada na VM. O fluxo oficial ainda aponta ao hosted.
+
+1. Registrar no Dev as versões definitivas dos quatro SQLs, regenerar os
+   tipos e repetir a CI no SHA candidato. Conferir o destino da esteira
+   e testar o upgrade de um backup recente da VM em cópia descartável.
+2. Gerar e registrar um novo plano da VM com catálogo, SHA e ID. Antes
+   de qualquer escrita, conferir novamente os três, o backup
+   recuperável e a revisão anterior de cada serviço.
+3. Depois da publicação, registrar as revisões esperadas com o tráfego
+   efetivo de API e worker, o deploy web e o catálogo aplicado. Conferir
+   uma jornada autenticada de pedidos, estoque e faturamento, o fluxo
+   de convite ou recuperação Auth e os agendamentos no banco. Comparar
+   backlog e falhas com a leitura anterior ao deploy. O dono ou gestor
+   registra o aceite com as evidências dessa observação.

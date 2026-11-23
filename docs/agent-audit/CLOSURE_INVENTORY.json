@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-23, candidato #378 com evidências operacionais de #374 e locais de #381 e #382",
+  "corte": "2026-11-23, candidato #378, ensaios de Full e Cloud Tasks e preflight da VM",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -167,9 +167,9 @@
       "area": "Banco de dados",
       "entrega": "R1/R2/R4: compactação e retenções com política aprovada",
       "peso": 3,
-      "status": "Não iniciado",
+      "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "OPTIMIZATION_PLAN; não apagar negócio",
+      "evidencia": "Full em P03/D-850. Medição na VM: 24.242 notificações com destinatário sem leitura e quatro grupos cujo último sucesso têm mais de 60 dias. Falta ensaio em cópia e política para notificações e sync_runs (PERFORMANCE.md).",
       "fase": 3
     },
     {
@@ -317,9 +317,9 @@
       "area": "Performance",
       "entrega": "Reduzir crescimento Full/telemetria sem perder auditoria",
       "peso": 3,
-      "status": "Em andamento",
+      "status": "Testado localmente",
       "responsavel": "Database",
-      "evidencia": "Cópia isolada: -61,21% com últimos 30 dias, transições e fechamento diário, zero divergências nas projeções comparadas. Treze RPCs sob RLS: 60 pares iguais. Falta política de histórico bruto e ensaio físico (PERFORMANCE.md, P03).",
+      "evidencia": "Política Full aprovada (D-850). Cópia: -61,21%, 60 pares de RPCs sob RLS iguais, 234.481 linhas arquivadas e restauradas com SHA-256 igual, bloqueio concorrente e rollback ensaiados. Aplicação e telemetria complementar pendentes (PERFORMANCE.md / D04).",
       "fase": 3
     },
     {
@@ -347,9 +347,9 @@
       "area": "Testes e qualidade",
       "entrega": "Carga e falhas representativas em stack equivalente",
       "peso": 5,
-      "status": "Em andamento",
+      "status": "Testado localmente",
       "responsavel": "QA/Infra",
-      "evidencia": "Duas rodadas de 1.088 requisições com API, PostgREST e SDK Cloud Tasks contra gRPC local. Recuperação criou 80 tarefas únicas e deduplicou 240. Fila gerenciada em operação normal: 24/24 pings chegaram ao worker em 24 h (TESTING.md). Falta carga e recuperação sob falha na fila gerenciada (#382).",
+      "evidencia": "Stack local com duas rodadas de 1.088 requisições, 80 tarefas únicas e 240 duplicatas (#382). Cloud Tasks gerenciado isolado: 48/48 entregues, 16/16 recuperadas após 503, duplicata 409 e fila vazia. Em operação, 24/24 heartbeats chegaram ao worker (TESTING.md).",
       "fase": 5
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "CI integral do #378 em 18a67851 (45164388827) e do #382 em 20e5aef1 (45164397505). Upgrade isolado de 324 para 328 migrations com versões temporárias. Falta ordem definitiva e registro oficial no Dev.",
+      "evidencia": "CI integral do #378 em 35cbb00f (45177870113) e do #382 em 20e5aef1 (45164397505). Upgrade isolado 324→328 com versões temporárias. Falta ordem definitiva e registro oficial no Dev.",
       "fase": 5
     },
     {
@@ -419,7 +419,7 @@
       "peso": 8,
       "status": "Bloqueado",
       "responsavel": "Dono/Infra",
-      "evidencia": "#333 registra 17 versões da main na VM até 20261118211000. Workflow ainda no hosted. Revisões API/worker mantidas. Faltam revisão e autorização para publicar Gemini/Codex e #331",
+      "evidencia": "Plano de publicação na VM aprovado. Preflight de 23/11: 324 versões até 20261119180000 e quatro temporárias anteriores no candidato sem correspondência no catálogo. Faltam ordem definitiva, adequação do workflow e publicação do SHA aprovado.",
       "fase": 5
     },
     {
@@ -429,7 +429,7 @@
       "peso": 8,
       "status": "Não iniciado",
       "responsavel": "Dono/QA",
-      "evidencia": "janela e limites de erro/atraso acordar; não basta /health",
+      "evidencia": "Aceitantes definidos: dono ou gestor. Faltam execução das jornadas operacionais e observação da estabilidade após publicação.",
       "fase": 5
     }
   ]

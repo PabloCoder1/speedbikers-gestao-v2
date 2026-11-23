@@ -20365,3 +20365,17 @@ Três falhas confirmadas nos demais Server Components operacionais/comerciais de
 3. **Spinner travado em rejeição de transporte em `BuscaSku` (`apps/web/app/(app)/vinculacoes/busca-sku.tsx`):** `buscar()` chamava `createClient().from("skus")...` sem `try/catch/finally`, deixando `buscando = true` travado e lançando rejeição não tratada se a requisição falhasse na rede. Agora trata erro de transporte em `try/catch/finally` preservando a guarda contra resposta fora de ordem (`este === pedido.current`).
 
 Reprodução pré-correção em `apps/web/lib/server-pages-seguranca.test.ts` registrou 5 falhas (`5 failed | 5 passed (10)`); após a correção, `@sb/web` passou integralmente em `typecheck`, `eslint`, `vitest` (`150` arquivos / `1.575` testes) e nas 7 guardas estáticas (incluindo `check:waterfalls` em 115 arquivos).
+
+## D-850 - Full mantém 30 dias de capturas brutas online e permite recuperar o arquivo
+
+**23/11/2026 · Full, retenção.** Permanecem online todas as capturas dos
+últimos 30 dias, a primeira e a última de cada sequência de estado igual
+e a última por dia comercial, organização, conta, inventário, anúncio,
+variação e SKU. O fechamento usa o fuso America/Sao_Paulo. O complemento
+bruto fica em arquivo restrito com restauração verificável. A política
+aprovada não estabelece expiração automática para esse arquivo.
+
+O [ensaio P03](PERFORMANCE.md#tamanho-de-full-e-telemetria-na-vm-sentinel-p03-23112026)
+conferiu a partição dos dados, a restauração do complemento e o
+comportamento diante de escrita concorrente e rollback. A aplicação na
+VM depende da migration e do procedimento operacional de arquivo e restore.

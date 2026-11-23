@@ -182,5 +182,28 @@ Uma transação somente leitura na VM encontrou 24 execuções com IDs distintos
 todas `done`, em `job_runs` no mesmo recorte horário.
 
 A consulta usou apenas heartbeats agendados e nenhum job adicional foi
-disparado. Q03 segue aberto até validar carga e recuperação sob falha em
-fila gerenciada. O ensaio isolado de carga continua no PR #382.
+disparado. O ensaio local de carga representativa da aplicação está no
+PR #382.
+
+### Retentativa na fila gerenciada isolada (Q03)
+
+Em 23/11, uma fila exclusiva em `southamerica-east1` entregou **48 de 48
+tarefas sintéticas** a um Cloud Run interno descartável. O destino devolveu
+`503` na primeira tentativa de 16 tarefas. As **16** retornaram `204` na
+retentativa, houve 48 respostas bem-sucedidas em 64 tentativas e a fila
+terminou vazia. Reenfileirar um nome conhecido retornou `409`. Entre a
+primeira e a última chamada registrada passaram 112,24 s. A fila tinha
+teto de 10 despachos/s e 4 simultâneos.
+
+A rodada inicial comprovou o `409` e os 16 `503`, mas o prazo de coleta
+de 115 s acabou antes de a fila esvaziar. A nova rodada reduziu a
+concorrência e ampliou o prazo de observação. A desaceleração após `503`
+é compatível com o comportamento descrito pelo
+[Google Cloud](https://docs.cloud.google.com/tasks/docs/manage-cloud-task-scaling).
+
+A carga funcional de 1.088 requisições foi exercitada no stack local
+(#382). No Google Cloud, a sondagem usou apenas a fila e o destino de
+teste, com conta de serviço exclusiva sem papel no projeto. A concessão
+temporária para criar o serviço foi retirada. Fila, serviço, imagem e
+conta de serviço foram removidos. Q04 e V03 cobrem o aceite operacional
+da aplicação.

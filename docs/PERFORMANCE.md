@@ -2307,10 +2307,8 @@ diários**, **2.412 últimas capturas de inventários** e **22.032 inícios de
 sequência**. Todas as comparações tiveram zero divergências.
 
 A segunda regra economizou 80.461.824 bytes (61,21%) na cópia reconstruída.
-Faltam a comparação das RPCs completas sob RLS, a auditoria dos demais
-consumidores e a aprovação da política. A medição não projeta economia em
-disco na VM. Os dois contêineres temporários e arquivos locais foram
-removidos ao fim dos ensaios.
+A medição se refere à reconstrução local. Os contêineres temporários e
+arquivos locais foram removidos ao fim dos ensaios.
 
 #### RPCs e controle de acesso na cópia integral
 
@@ -2339,10 +2337,8 @@ fases. O rollback deixou as 382.574 linhas originais e removeu a política
 de ensaio e o schema auxiliar.
 
 O teste prova equivalência das respostas comparadas no backup com a
-visibilidade simulada. A política em produção precisa definir o acesso ao
-histórico bruto, pois 234.481 capturas deixam de aparecer pela regra.
-Ainda faltam política aprovada, avaliação de impacto sobre a trilha bruta
-e ensaio do mecanismo físico de compactação com concorrência e rollback.
+visibilidade simulada. O ensaio físico abaixo verifica o acesso e a
+recuperação das 234.481 capturas movidas pela regra.
 
 Na VM, a janela de `pg_stat_statements` começou em 18/11 às 13:49 UTC.
 A leitura agregada de 23/11 identificou 48.240 chamadas de inserção e
@@ -2351,3 +2347,45 @@ leitura PostgREST direta autenticada apareceu no recorte. O contador
 cobre os padrões ainda disponíveis em `pg_stat_statements` e a busca
 classifica SQL por referência textual. O resultado não exclui acesso
 eventual, chamadas fora da janela ou consultas não capturadas.
+
+#### Arquivo recuperável e concorrência (D-850)
+
+A política aprovada mantém as capturas brutas dos últimos 30 dias online,
+além das transições e do último registro de cada dia comercial. As demais
+capturas brutas ficam recuperáveis em arquivo restrito, sem expiração
+automática definida.
+
+Em cópia descartável do mesmo dump, o complemento físico de **234.481
+linhas** ficou em schema sem acesso para o papel de aplicação ensaiado. A
+união das **148.093 linhas online** e do arquivo teve zero diferenças da
+origem com `EXCEPT ALL` nos dois sentidos e o arquivo teve zero capturas
+dentro dos últimos 30 dias. O dump de **10.369.789 bytes** do arquivo foi
+restaurado em outro banco, com a mesma contagem e o mesmo SHA-256 da
+exportação ordenada.
+
+Em Postgres 17 descartável com linhas sintéticas, uma escrita concorrente
+fez a manutenção abortar com `55P03` antes da exclusão. Após o commit do
+escritor, o recorte preservou a linha nova e o rollback recolocou a linha
+arquivada. A aplicação na VM ainda requer migration versionada, destino
+persistente do arquivo e conferência da janela de bloqueio. A telemetria
+de notificações e sincronização segue em D04 no inventário.
+
+
+### Idade da telemetria na VM (Sentinel D04, 23/11/2026)
+
+Consulta agregada em transação somente leitura, com limite de 5 s por
+comando. Idade por `created_at` para registros e por `finished_at` para
+a última execução bem-sucedida.
+
+| Recorte | Total | Mais de 30 dias | Mais de 60 dias | Mais de 90 dias |
+| --- | ---: | ---: | ---: | ---: |
+| Notificações | 144.119 | 125.802 | 61.567 | 0 |
+| Notificações com pelo menos um destinatário sem leitura | — | 88.477 | 24.242 | 0 |
+| Execuções de sincronização | 59.847 | 52.797 | 14.168 | 0 |
+| Último sucesso por organização, conta e recurso | 36 | 7 | 4 | 0 |
+
+Entre as execuções com mais de 60 dias, 601 são falhas ou resultados
+parciais. Um corte apenas por idade afetaria notificações ainda pendentes
+e poderia retirar a última execução bem-sucedida de quatro grupos.
+Medir em cópia um recorte que preserve esses registros antes de definir
+a política. Nenhuma retenção de notificações ou sync foi aplicada.
