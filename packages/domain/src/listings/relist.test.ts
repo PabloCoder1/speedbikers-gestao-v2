@@ -69,4 +69,10 @@ describe("máquina de estados do relist (D-159)", () => {
       }
     }
   });
+
+  it("D-801: estado desconhecido ou chave de Object.prototype devolve false sem lançar TypeError", () => {
+    expect(canTransitionRelist("DESCONHECIDO" as unknown as (typeof RELIST_STATES)[number], "CLOSING")).toBe(false);
+    expect(canTransitionRelist("toString" as unknown as (typeof RELIST_STATES)[number], "CLOSING")).toBe(false);
+    expect(canTransitionRelist("constructor" as unknown as (typeof RELIST_STATES)[number], "CLOSING")).toBe(false);
+  });
 });

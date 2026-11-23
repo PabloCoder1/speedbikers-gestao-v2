@@ -111,4 +111,12 @@ describe("detectFulfillmentEvents", () => {
 
     expect(first[0]?.dedupKey).toBe(second[0]?.dedupKey);
   });
+
+  it("D-801: ignora captura com quantidade não finita ou capturedAt inválido sem emitir evento falso nem RangeError", () => {
+    expect(detectFulfillmentEvents(capture({ quantity: 0 }), capture({ quantity: Number.NaN }))).toEqual([]);
+    expect(detectFulfillmentEvents(capture({ quantity: 0 }), capture({ quantity: Number.POSITIVE_INFINITY }))).toEqual([]);
+    expect(
+      detectFulfillmentEvents(capture({ quantity: 3 }), capture({ quantity: 0, capturedAt: new Date("invalid") })),
+    ).toEqual([]);
+  });
 });

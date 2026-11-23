@@ -38,7 +38,7 @@ export const LIMITES_PADRAO: LimitesDaCentral = {
 
 function numero(r: Record<string, unknown>, chave: string): number | null {
   const v = r[chave];
-  const n = typeof v === "string" ? Number(v) : v;
+  const n = typeof v === "string" ? (v.trim() === "" ? Number.NaN : Number(v)) : v;
 
   return typeof n === "number" && Number.isFinite(n) ? n : null;
 }
@@ -48,7 +48,7 @@ function numero(r: Record<string, unknown>, chave: string): number | null {
  * volta aos padrões: julgar com o limite de antes é melhor que não julgar.
  */
 export function lerLimites(linha: unknown): LimitesDaCentral {
-  if (linha === null || typeof linha !== "object") return LIMITES_PADRAO;
+  if (linha === null || typeof linha !== "object" || Array.isArray(linha)) return LIMITES_PADRAO;
 
   const r = linha as Record<string, unknown>;
   const valores = [
@@ -65,6 +65,22 @@ export function lerLimites(linha: unknown): LimitesDaCentral {
 
   const [vn, vf, pn, pf, atraso, margem, amostra] = valores as [number, number, number, number, number, number, number];
 
+  if (
+    vn <= 0 ||
+    vf <= vn ||
+    pn <= 0 ||
+    pf <= pn ||
+    atraso <= 0 ||
+    margem < 0 ||
+    !Number.isInteger(amostra) ||
+    amostra < 1
+  ) {
+    return LIMITES_PADRAO;
+  }
+
+  const margemMinima = numero(r, "margin_floor");
+  const roasPiso = numero(r, "ads_roas_floor");
+
   // D-410: colunas que chegaram depois. Ausentes (banco anterior à migration),
   // valem os padrões -- sem descartar os limites que a organização já salvou.
   return {
@@ -72,8 +88,8 @@ export function lerLimites(linha: unknown): LimitesDaCentral {
     atrasoDaMeta: atraso,
     margemAposAdsBaixa: margem,
     amostraMinima: amostra,
-    margemMinima: numero(r, "margin_floor") ?? LIMITES_PADRAO.margemMinima,
-    roasPisoDaMeta: numero(r, "ads_roas_floor") ?? LIMITES_PADRAO.roasPisoDaMeta,
+    margemMinima: margemMinima !== null && margemMinima > 0 ? margemMinima : LIMITES_PADRAO.margemMinima,
+    roasPisoDaMeta: roasPiso !== null && roasPiso > 0 ? roasPiso : LIMITES_PADRAO.roasPisoDaMeta,
     personalizados: true,
   };
 }

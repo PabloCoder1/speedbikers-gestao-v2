@@ -100,4 +100,11 @@ describe("rotuloEstrategia", () => {
     expect(rotuloEstrategia("NOVA")).toBe("nova");
     expect(rotuloEstrategia(null)).toBeNull();
   });
+
+  it("D-801: tomDoRoas devolve neutro para ROAS não finito (NaN/Infinity) em vez de ok", () => {
+    expect(tomDoRoas(Number.NaN, 3)).toBe("neutro");
+    expect(tomDoRoas(Number.POSITIVE_INFINITY, 3)).toBe("neutro");
+    expect(tomDoRoas(Number.NEGATIVE_INFINITY, 3)).toBe("neutro");
+    expect(tomDoRoas(2, Number.NaN)).toBe("ok");
+  });
 });

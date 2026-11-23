@@ -71,14 +71,14 @@ export function detectListingEvents(
   current: ListingSnapshot,
   syncedAt: Date,
 ): DomainEventDraft[] {
-  if (previous === null) {
+  if (previous === null || !Number.isFinite(syncedAt.getTime())) {
     return [];
   }
 
   const events: DomainEventDraft[] = [];
   const syncedAtKey = syncedAt.toISOString();
 
-  if (current.price !== previous.price) {
+  if (Number.isFinite(previous.price) && Number.isFinite(current.price) && current.price !== previous.price) {
     events.push({
       eventType: "listing.price.changed",
       entityType: "listing",
@@ -154,7 +154,11 @@ export function detectListingEvents(
     });
   }
 
-  if (current.availableQuantity !== previous.availableQuantity) {
+  if (
+    Number.isFinite(previous.availableQuantity) &&
+    Number.isFinite(current.availableQuantity) &&
+    current.availableQuantity !== previous.availableQuantity
+  ) {
     const eventType = "listing.available_quantity.changed";
 
     events.push({

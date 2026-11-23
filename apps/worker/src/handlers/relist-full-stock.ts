@@ -22,9 +22,9 @@ import { ZodError, z } from "zod";
  */
 
 const fullStockResponseSchema = z.object({
-  inventory_id: z.string(),
-  available_quantity: z.number(),
-  not_available_quantity: z.number(),
+  inventory_id: z.string().trim().min(1),
+  available_quantity: z.number().int().nonnegative(),
+  not_available_quantity: z.number().int().nonnegative(),
 });
 
 export async function readRelistFullStock(params: {
@@ -42,7 +42,7 @@ export async function readRelistFullStock(params: {
     try {
       const stock = await params.mercadoLivre.request({
         method: "GET",
-        path: `/inventories/${inventoryId}/stock/fulfillment`,
+        path: `/inventories/${encodeURIComponent(inventoryId)}/stock/fulfillment`,
         accessToken: params.accessToken,
         schema: fullStockResponseSchema,
       });

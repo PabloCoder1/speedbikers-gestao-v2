@@ -85,4 +85,23 @@ describe("computeLedgerIntegrityDivergences", () => {
 
     expect(first[0]?.dedupKey).toBe(second[0]?.dedupKey);
   });
+
+  it("D-801: recusa quantidade não finita (NaN/Infinity) com RangeError em vez de emitir divergência falsa", () => {
+    expect(() =>
+      computeLedgerIntegrityDivergences(
+        [{ skuId: "sku-1", locationKind: "LOCAL", quantity: Number.NaN }],
+        [{ skuId: "sku-1", locationKind: "LOCAL", quantity: Number.NaN }],
+        BUSINESS_DATE,
+        OCCURRED_AT,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      computeLedgerIntegrityDivergences(
+        [{ skuId: "sku-1", locationKind: "LOCAL", quantity: 5 }],
+        [{ skuId: "sku-1", locationKind: "LOCAL", quantity: Number.POSITIVE_INFINITY }],
+        BUSINESS_DATE,
+        OCCURRED_AT,
+      ),
+    ).toThrow(RangeError);
+  });
 });

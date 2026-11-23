@@ -178,9 +178,9 @@ export function lerVisaoAds(dado: unknown): VisaoAds | null {
  * ainda perde dinheiro. A tela diz isso ao lado.
  */
 export function tomDoRoas(roas: number | null, alvo: number | null): Tom {
-  if (roas === null) return "neutro";
+  if (roas === null || !Number.isFinite(roas)) return "neutro";
   if (roas < 1) return "perigo";
-  if (alvo !== null && alvo > 0 && roas < alvo) return "atencao";
+  if (alvo !== null && Number.isFinite(alvo) && alvo > 0 && roas < alvo) return "atencao";
 
   return "ok";
 }
