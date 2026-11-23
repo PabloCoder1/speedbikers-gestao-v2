@@ -130,13 +130,22 @@ export function diagnoseSalesAnomaly(
   relatedEvents: readonly CorrelatedEvent[],
   supportSignal?: SupportSignal,
 ): SalesAnomalyDiagnosis | null {
+  if (
+    !Number.isFinite(signal.sampleCount) ||
+    !Number.isFinite(signal.baselineMean) ||
+    !Number.isFinite(signal.baselineStddev) ||
+    !Number.isFinite(signal.currentUnitsSold)
+  ) {
+    return null;
+  }
+
   if (signal.sampleCount < 4) return null;
   if (signal.baselineMean <= 0) return null;
   if (signal.baselineStddev <= 0) return null;
 
   const zScore = (signal.currentUnitsSold - signal.baselineMean) / signal.baselineStddev;
 
-  if (Math.abs(zScore) < ANOMALY_Z_THRESHOLD) return null;
+  if (!Number.isFinite(zScore) || Math.abs(zScore) < ANOMALY_Z_THRESHOLD) return null;
 
   const direcao: AnomalyDirection = zScore < 0 ? "queda" : "alta";
   const confianca: DiagnosisConfidence = Math.abs(zScore) >= HIGH_CONFIDENCE_Z_THRESHOLD ? "alta" : "media";
@@ -217,6 +226,9 @@ export function diagnoseSalesAnomaly(
  * com preço) — impacto desconhecido é diferente de impacto zero.
  */
 export function estimateImpactBrl(unitsDelta: number, averagePrice: number | null): number | null {
-  if (averagePrice === null) return null;
+  if (averagePrice === null || !Number.isFinite(averagePrice) || !Number.isFinite(unitsDelta) || averagePrice < 0) {
+    return null;
+  }
+
   return Math.round(Math.abs(unitsDelta) * averagePrice * 100) / 100;
 }

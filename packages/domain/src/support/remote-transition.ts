@@ -119,13 +119,27 @@ export interface ConversationRemoteSignal {
   readonly lastOutboundAt: string | null;
 }
 
+function parseInstantMs(value: string | null): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  const ms = Date.parse(value);
+
+  return Number.isFinite(ms) ? ms : null;
+}
+
 export function evaluateConversationRemoteTransition(
   signal: ConversationRemoteSignal,
 ): SupportRemoteTransition | null {
   const inbound = signal.lastInboundAt;
   const outbound = signal.lastOutboundAt;
+  const inboundMs = parseInstantMs(inbound);
+  const outboundMs = parseInstantMs(outbound);
 
-  if (outbound !== null && (inbound === null || outbound >= inbound)) {
+  // D-788: compara instantes reais (ms), nunca strings lexicográficas — fusos
+  // distintos (-03:00 vs +00:00/Z) invertiam quem respondeu por último e o empate.
+  if (outbound !== null && outboundMs !== null && (inboundMs === null || outboundMs >= inboundMs)) {
     return {
       expectedStatuses: ["NOVO"],
       newStatus: "AGUARDANDO_CLIENTE",
@@ -137,7 +151,7 @@ export function evaluateConversationRemoteTransition(
     };
   }
 
-  if (inbound !== null && (outbound === null || inbound > outbound)) {
+  if (inbound !== null && inboundMs !== null && (outboundMs === null || inboundMs > outboundMs)) {
     return {
       expectedStatuses: ["AGUARDANDO_CLIENTE", "RESOLVIDO"],
       newStatus: "NOVO",

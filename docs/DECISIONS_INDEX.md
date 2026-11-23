@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **689** (D-001 a D-787).
+Decisões registradas: **690** (D-001 a D-788).
 
 ## Por domínio
 
-### atendimento (69)
+### atendimento (70)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -87,6 +87,7 @@ Decisões registradas: **689** (D-001 a D-787).
 - **D-770** — Edição de itens de NF-e e saída manual separam erro transitório, exigem linha afetada e fatiamento em lotes na API
 - **D-778** — Autorização no servidor em `claimAction`, fail-closed em Server Actions/Caixa de Entrada e escape de curingas `ILIKE`
 - **D-781** — Encerra últimos `getSession()` diretos em clientes web e valida corpo `200 OK` em aplicação, republicação e narração IA
+- **D-788** — Invariantes de tempo e finitude em `@sb/domain` (`remote-transition`, `support-events`, `sales-anomaly`, `calculadora-preco`)
 
 ### banco/rls (50)
 
