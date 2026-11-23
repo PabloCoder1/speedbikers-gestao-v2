@@ -31,6 +31,26 @@ service_url() {
   printf '%s\n' "${url}"
 }
 
+worker_invoker_ready=false
+ensure_worker_invoker() {
+  if [[ "${worker_invoker_ready}" = true ]]; then
+    return
+  fi
+  step "Permissão de invocação do worker"
+  # Menor privilégio: só o Cloud Tasks invoca o worker, e a permissão é dada no
+  # serviço, não no projeto.
+  # O worker foi publicado nesta execução ou teve a URL confirmada pela API.
+  binding="$(gc run services add-iam-policy-binding worker \
+    --region "${REGION}" \
+    --member "serviceAccount:$(sa_email "${SA_TASKS}")" \
+    --role roles/run.invoker 2>&1)" || {
+    printf '%s\n' "${binding}" >&2
+    fail "Falha ao conceder run.invoker no worker. Mensagem do gcloud acima."
+  }
+  ok "worker: run.invoker -> ${SA_TASKS}"
+  worker_invoker_ready=true
+}
+
 build_and_deploy() {
   local app="$1"
   local image="${REGISTRY}/${app}:${TAG}"
@@ -110,6 +130,10 @@ build_and_deploy() {
     fi
   else
     worker_url="${worker_url:-https://placeholder.invalid}"
+  fi
+
+  if [[ "${app}" = api ]]; then
+    ensure_worker_invoker
   fi
 
   step "Build da imagem: ${app}"
@@ -292,6 +316,10 @@ YAML
   local url
   url="$(gc run services describe "${app}" --region "${REGION}" --format='value(status.url)')"
   ok "${app}: ${url}"
+
+  if [[ "${app}" = worker ]]; then
+    ensure_worker_invoker
+  fi
 }
 
 step "Pré-condições"
@@ -335,19 +363,6 @@ else
   build_and_deploy worker
   build_and_deploy api
 fi
-
-step "Permissão de invocação do worker"
-# Menor privilégio: só o Cloud Tasks invoca o worker, e a permissão é dada no
-# serviço, não no projeto.
-# O worker foi publicado nesta execução ou teve a URL confirmada pela API.
-binding="$(gc run services add-iam-policy-binding worker \
-  --region "${REGION}" \
-  --member "serviceAccount:$(sa_email "${SA_TASKS}")" \
-  --role roles/run.invoker 2>&1)" || {
-  printf '%s\n' "${binding}" >&2
-  fail "Falha ao conceder run.invoker no worker. Mensagem do gcloud acima."
-}
-ok "worker: run.invoker -> ${SA_TASKS}"
 
 step "Concluído"
 gc run services list --region "${REGION}" \

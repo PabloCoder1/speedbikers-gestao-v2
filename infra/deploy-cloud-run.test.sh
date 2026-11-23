@@ -204,8 +204,18 @@ success_file="$(grep -A1 -Fx -- --env-vars-file "${fixture}/deploy-args" | tail 
 printf 'ok    deploy bem-sucedido remove seu temporário e preserva o arquivo preexistente\n'
 
 if saida="$(RUN_INVENTORY=binding_denied rodar_push present api 2>&1)" ||
-  [[ "$saida" != *'PERMISSION_DENIED no binding simulado'* || "$saida" = *'== Concluído'* ]]; then
+  [[ "$saida" != *'PERMISSION_DENIED no binding simulado'* || "$saida" = *'== Concluído'* ||
+    -s "${fixture}/build-args" || -s "${fixture}/deploy-args" ]]; then
   printf 'FALHA: ausência da confirmação de run.invoker deve impedir sucesso\n%s\n' "$saida" >&2
   exit 1
 fi
-printf 'ok    erro na concessão de run.invoker impede sucesso\n'
+printf 'ok    erro na concessão de run.invoker impede o build da API isolada\n'
+
+if saida="$(RUN_INVENTORY=binding_denied rodar_push present 2>&1)" ||
+  [[ "$saida" != *'PERMISSION_DENIED no binding simulado'* || "$saida" = *'== Concluído'* ]] ||
+  ! grep -Fq '_APP=worker,' "${fixture}/build-args" ||
+  grep -Fq '_APP=api,' "${fixture}/build-args"; then
+  printf 'FALHA: o deploy combinado deve parar no binding do worker\n%s\n' "$saida" >&2
+  exit 1
+fi
+printf 'ok    deploy combinado bloqueia a API se o worker não receber run.invoker\n'
