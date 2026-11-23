@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **690** (D-001 a D-788).
+Decisões registradas: **692** (D-001 a D-793).
 
 ## Por domínio
 
@@ -281,7 +281,7 @@ Decisões registradas: **690** (D-001 a D-788).
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
 
-### mercado-livre (133)
+### mercado-livre (135)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -416,6 +416,8 @@ Decisões registradas: **690** (D-001 a D-788).
 - **D-772** — Paginação, fatiamento `.in()` e liberação garantida de trava no estoque Shopee, catálogo ML e hidratação Shopee do worker
 - **D-780** — Worker falha fechado em erro de gravação de visitas, registra `sync_runs` no backfill financeiro e protege unlock de refresh ML/Shopee
 - **D-782** — Endurecimento da API em convites (corrida 23505), webhook ML (`user_id`/`questionId`/enqueue), cotação de frete e resposta do SAC
+- **D-789** — Hardening em `@sb/mercado-livre` e `@sb/shopee` (cifra AES-GCM 128-bit, paginação Ads, mensagens pós-venda, HTTP 200 não-JSON, OAuth retry e parsers Shopee)
+- **D-793** — Isolamento de falhas de enqueue em agendadores/relist, validação de epoch TikTok e hardening OAuth/push na API
 
 ### outros (112)
 
