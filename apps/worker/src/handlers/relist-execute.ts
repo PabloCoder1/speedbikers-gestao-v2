@@ -245,21 +245,29 @@ async function transition(
     return { ok: false, casLost: true, message: `a operação não estava mais em ${from} — transição não aplicada` };
   }
 
-  const event = await ctx.db.from("listing_relist_events").insert({
-    organization_id: ctx.operation.organization_id,
-    ml_account_id: ctx.operation.ml_account_id,
-    relist_id: ctx.operation.id,
-    from_status: from,
-    to_status: to,
-    actor_user_id: options.actorUserId ?? null,
-    reason,
-  });
+  try {
+    const event = await ctx.db.from("listing_relist_events").insert({
+      organization_id: ctx.operation.organization_id,
+      ml_account_id: ctx.operation.ml_account_id,
+      relist_id: ctx.operation.id,
+      from_status: from,
+      to_status: to,
+      actor_user_id: options.actorUserId ?? null,
+      reason,
+    });
 
-  if (event.error !== null) {
+    if (event.error !== null) {
+      ctx.logger.error("relist_event_not_recorded", {
+        relist_id: ctx.operation.id,
+        to_status: to,
+        reason: event.error.message,
+      });
+    }
+  } catch (error) {
     ctx.logger.error("relist_event_not_recorded", {
       relist_id: ctx.operation.id,
       to_status: to,
-      reason: event.error.message,
+      reason: error instanceof Error ? error.message : String(error),
     });
   }
 

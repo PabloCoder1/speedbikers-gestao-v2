@@ -5,6 +5,7 @@ import type { MercadoLivreClient } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 
 import type { EnqueueRequest, Enqueuer } from "../enqueue.js";
 import type { fetchSupportQuestions } from "./ml-support-questions-fetch.js";
@@ -75,6 +76,8 @@ interface FakeDbOptions {
   /** D-621: os `external_case_id` das perguntas `UNANSWERED` da conta na V3, na ordem da leitura. */
   openCases?: string[];
   openCasesError?: { message: string };
+  /** D-796: falha o enfileiramento para um questionId específico. */
+  failEnqueueForQuestionId?: number;
 }
 
 interface OpenCasesQuery {
@@ -141,6 +144,13 @@ function run(options: FakeDbOptions = {}, payload: unknown = { mlAccountId: ML_A
   const client: MercadoLivreClient = { request: () => Promise.reject(new Error("não usado")) };
   const enqueuer: Enqueuer = {
     enqueue: (request) => {
+      if (
+        options.failEnqueueForQuestionId !== undefined &&
+        (request.payload as { questionId?: number }).questionId === options.failEnqueueForQuestionId
+      ) {
+        return Promise.reject(new Error("cloud tasks unavailable"));
+      }
+
       enqueued.push(request);
 
       return Promise.resolve({ taskName: request.dedupeKey, envelope: {} as never, deduplicated: false });
@@ -375,5 +385,25 @@ describe("createSyncSupportQuestionsReconcileHandler", () => {
     expect(recordSyncRunSuccessMock).toHaveBeenCalledTimes(1);
     expect(enqueued).toEqual([]);
     expect(lines.join()).toContain("sync_support_questions_recheck_failed");
+  });
+
+  it("D-796: rejeita external_case_id não canônico e isola falha de enqueue sem impedir os demais rechecks", async () => {
+    const { outcome, enqueued, lines } = run({
+      openCases: ["1e5", " 104 ", "000105", "106", "107"],
+      failEnqueueForQuestionId: 106,
+    });
+
+    expect(await outcome).toEqual({ status: "done", processed: 3 });
+    expect(enqueued.map((e) => (e.payload as { questionId: number }).questionId)).toEqual([107]);
+    expect(lines.join()).toContain("sync_support_questions_recheck_failed");
+  });
+
+  it("D-796: ZodError na varredura de perguntas falha como not_retryable", async () => {
+    fetchSupportQuestionsMock.mockRejectedValue(
+      new ZodError([{ code: "invalid_type", expected: "array", path: ["questions"], message: "x" }]),
+    );
+
+    expect(await run().outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(recordSyncRunFailureMock.mock.calls[0]?.[1]).toMatchObject({ errorClass: "not_retryable" });
   });
 });

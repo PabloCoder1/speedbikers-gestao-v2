@@ -206,6 +206,18 @@ describe("autorização (open.shopee.com/developer-guide/20)", () => {
     expect(corpoDe(chamadas[0]?.init)).toEqual({ refresh_token: "r1", partner_id: 1248019, shop_id: 54804 });
     expect(token.refresh_token).toBe("r2");
   });
+
+  it("D-796: recusa expire_in absurdo que estouraria Date no cálculo de expiração", async () => {
+    const { client } = clienteCom(200, {
+      error: "",
+      request_id: "r3",
+      access_token: "a2",
+      refresh_token: "r2",
+      expire_in: 9_000_000_000_000,
+    });
+
+    await expect(getAccessToken(client, { code: "abc", shopId: 54804 })).rejects.toThrow();
+  });
 });
 
 describe("datas da Shopee", () => {

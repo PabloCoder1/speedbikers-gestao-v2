@@ -76,6 +76,9 @@ export function buildAuthorizationUrl(
   return url.toString();
 }
 
+/** Teto de validade relativa (100 anos em segundos): evita estouro de `Date` ao calcular `now + expires_in * 1000`. */
+const MAX_TOKEN_TTL_SECONDS = 3_153_600_000;
+
 /**
  * Corpo de resposta de `POST /oauth/token`, confirmado por leitura direta de
  * `developers.mercadolivre.com.br/pt_br/autenticacao-e-autorizacao` em
@@ -85,7 +88,7 @@ export const tokenResponseSchema = z.object({
   access_token: z.string().min(1),
   token_type: z.string().min(1),
   /** Segundos até expirar. Confirmado: sempre 21600 (6h) hoje. */
-  expires_in: z.number().int().min(1),
+  expires_in: z.number().int().min(1).max(MAX_TOKEN_TTL_SECONDS),
   scope: z.string().min(1),
   user_id: z.number().int(),
   /**

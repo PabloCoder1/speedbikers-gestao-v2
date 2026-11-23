@@ -175,8 +175,10 @@ export function createSyncSupportClaimsReconcileHandler(
 
     const fallback = new Date(now.getTime() - FALLBACK_WINDOW_DAYS * 24 * 60 * 60 * 1000);
     const stored = checkpoint.data?.latest_record_at ?? null;
-    const from =
-      stored === null ? fallback : new Date(new Date(stored).getTime() - OVERLAP_MINUTES * 60 * 1000);
+    const storedMs = stored === null ? Number.NaN : Date.parse(stored);
+    const from = Number.isFinite(storedMs)
+      ? new Date(Math.min(storedMs, now.getTime()) - OVERLAP_MINUTES * 60 * 1000)
+      : fallback;
 
     const started = now;
     const tokenResult = await ensureAccessToken(deps, mlAccountId, now);
@@ -213,7 +215,12 @@ export function createSyncSupportClaimsReconcileHandler(
       });
     } catch (error) {
       const finishedAt = deps.now?.() ?? new Date();
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+      const errorClass =
+        error instanceof MercadoLivreApiError
+          ? error.errorClass
+          : error instanceof z.ZodError
+            ? "not_retryable"
+            : "retryable";
       const reason = describeFailure(error);
 
       await recordSyncRunFailure(deps.db, {
