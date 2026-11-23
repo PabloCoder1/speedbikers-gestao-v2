@@ -248,11 +248,11 @@ export function lerFaturamento(valor: unknown): Faturamento | null {
         ? MARGEM_MINIMA
         : typeof minima === "number"
           ? minima
-          : typeof minima === "string"
+          : typeof minima === "string" && minima.trim() !== ""
             ? Number(minima)
             : Number.NaN;
 
-    if (!Number.isFinite(margemMinima)) throw new ForaDoContrato("margem_minima");
+    if (!Number.isFinite(margemMinima) || margemMinima <= 0) throw new ForaDoContrato("margem_minima");
 
     return {
       margemMinima,
@@ -293,16 +293,19 @@ export type TomDaMargem = "neutro" | "ok" | "atencao" | "perigo";
 
 /** Sem margem é neutro, nunca "ok": a ausência de cobertura não é uma margem boa. */
 export function tomDaMargem(margem: number | null, minima: number = MARGEM_MINIMA): TomDaMargem {
-  if (margem === null) return "neutro";
+  if (margem === null || !Number.isFinite(margem)) return "neutro";
+  const corte = Number.isFinite(minima) && minima > 0 ? minima : MARGEM_MINIMA;
   if (margem < 0) return "perigo";
-  if (margem < minima) return "atencao";
+  if (margem < corte) return "atencao";
 
   return "ok";
 }
 
 /** Fração de um todo, para LEITURA (cobertura, participação). `null` quando falta um lado ou o todo é zero — nunca 0% fingido. */
 export function participacao(parte: number | null, todo: number | null): number | null {
-  if (parte === null || todo === null || todo === 0) return null;
+  if (parte === null || todo === null || !Number.isFinite(parte) || !Number.isFinite(todo) || todo === 0) {
+    return null;
+  }
 
   return parte / todo;
 }
@@ -433,8 +436,9 @@ function limitarMargem(margem: number): number {
  * referência de 10% caber no gráfico mesmo num período de margem baixa.
  */
 export function escalaDasMargens(margens: readonly (number | null)[], minima: number = MARGEM_MINIMA): EscalaDaMargem {
-  const valores = margens.filter((m): m is number => m !== null).map(limitarMargem);
-  const positivo = Math.max(minima * 1.5, ...valores);
+  const valores = margens.filter((m): m is number => m !== null && Number.isFinite(m)).map(limitarMargem);
+  const corte = Number.isFinite(minima) && minima > 0 ? minima : MARGEM_MINIMA;
+  const positivo = Math.max(corte * 1.5, ...valores);
   const negativo = Math.max(0, ...valores.map((m) => -m));
   const total = positivo + negativo;
 
@@ -443,6 +447,10 @@ export function escalaDasMargens(margens: readonly (number | null)[], minima: nu
 
 /** Base e altura da barra de um dia, em fração da altura do gráfico. */
 export function barraDaMargem(margem: number, escala: EscalaDaMargem): { base: number; altura: number } {
+  if (!Number.isFinite(margem) || !Number.isFinite(escala.total) || escala.total <= 0) {
+    return { base: escala.zero, altura: 0 };
+  }
+
   const limitada = limitarMargem(margem);
   const altura = Math.abs(limitada) / escala.total;
 

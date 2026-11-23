@@ -553,6 +553,30 @@ describe("handleCopilotQuery", () => {
     expect(narrate).not.toHaveBeenCalled();
     expect(from).not.toHaveBeenCalled();
   });
+
+  it("D-800: recusa ferramenta desconhecida ou chave de Object.prototype com 400 sem lançar TypeError", async () => {
+    const createUserClient = vi.fn();
+    const deps = {
+      db: fakeDb(() => Promise.resolve({ error: null })),
+      logger: createLogger({}, { sink: () => undefined }),
+      createUserClient,
+      anthropic: fakeAnthropic,
+    };
+
+    for (const invalidTool of ["toString", "constructor", "ferramenta_inexistente"]) {
+      const outcome = await handleCopilotQuery(deps, CALLER, "token", {
+        tool: invalidTool as unknown as Parameters<typeof handleCopilotQuery>[3]["tool"],
+        input: {},
+      });
+
+      expect(outcome).toEqual({
+        status: 400,
+        body: { error: { code: "unknown_tool", message: "ferramenta desconhecida" } },
+      });
+    }
+
+    expect(createUserClient).not.toHaveBeenCalled();
+  });
 });
 
 
@@ -752,6 +776,18 @@ describe("runSkuReplenishment (D-293)", () => {
     );
     expect(fromMissing).not.toHaveBeenCalled();
   });
+
+  it("D-800: envia p_search aparado para get_purchase_suggestions quando o SKU chega com espaços laterais", async () => {
+    const { userClient, calls } = fakeStockClient({
+      suggestions: { data: [LINHA_SKU], error: null },
+      settings: { data: [CONFIG_PADRAO], error: null },
+    });
+
+    const result = await runSkuReplenishment(userClient, { sku: "  SB-001  " }, "org-1");
+
+    expect(calls[0]?.args.p_search).toBe("SB-001");
+    expect(result.sku).toBe("SB-001");
+  });
 });
 
 /** Fake para `listing_performance`: `.rpc(...).single()` mais um `.from(...)` encadeado. */
@@ -828,6 +864,31 @@ describe("runListingPerformance (D-293)", () => {
     // Anúncio fora do cadastro não inventa título nem preço.
     expect(result.title).toBeNull();
     expect(result.price).toBeNull();
+  });
+
+  it("D-800: recusa data inexistente ou intervalo invertido com CopilotToolError antes de consultar o banco", async () => {
+    const { userClient, calls } = fakeListingClient({
+      summary: { data: RESUMO, error: null },
+      listing: { data: null, error: null },
+    });
+
+    await expect(
+      runListingPerformance(
+        userClient,
+        { itemId: "MLB1", mlAccountId: "22222222-2222-4222-8222-222222222222", dateFrom: "2026-02-01", dateTo: "2026-02-31" },
+        "org-1",
+      ),
+    ).rejects.toBeInstanceOf(CopilotToolError);
+
+    await expect(
+      runListingPerformance(
+        userClient,
+        { itemId: "MLB1", mlAccountId: "22222222-2222-4222-8222-222222222222", dateFrom: "2026-08-30", dateTo: "2026-08-01" },
+        "org-1",
+      ),
+    ).rejects.toBeInstanceOf(CopilotToolError);
+
+    expect(calls).toEqual([]);
   });
 });
 

@@ -419,4 +419,21 @@ describe("detecção de anomalia de venda vira ação (Fase 6, D-064)", () => {
     expect(upserted).toHaveLength(1);
     expect(lines.some((line) => line.includes("sales_anomaly_support_signal_failed"))).toBe(true);
   });
+
+  it("D-800: ignora evento correlacionado com occurred_at corrompido sem derrubar o diagnóstico com RangeError", async () => {
+    const { deps, upserted, lines } = fakeDeps({
+      events: [
+        { sku_id: "sku-a", event_type: "listing.price.changed", occurred_at: "data-invalida", marketplace: "ML" },
+        { sku_id: "sku-a", event_type: "stock.depleted", occurred_at: "2026-08-22T21:00:00.000Z", marketplace: null },
+      ],
+    });
+
+    const outcome = await createDetectSalesAnomalyActionsHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(upserted).toHaveLength(1);
+
+    const evidence = upserted[0]?.evidence as { causas_candidatas: { event_type: string }[] };
+    expect(evidence.causas_candidatas.map((causa) => causa.event_type)).toEqual(["stock.depleted"]);
+  });
 });

@@ -165,7 +165,9 @@ function pedidoDe(id: string | null): string | null {
     return null;
   }
 
-  return Number.isSafeInteger(Number(id)) ? id : null;
+  const numeric = Number(id);
+
+  return Number.isSafeInteger(numeric) && numeric > 0 ? String(numeric) : null;
 }
 
 /**

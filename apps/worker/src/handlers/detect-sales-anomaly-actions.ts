@@ -232,9 +232,13 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     const eventsBySkuAndChannel = new Map<string, CorrelatedEvent[]>();
 
     for (const event of correlatedEvents) {
+      const occurredAt = new Date(event.occurred_at);
+
+      if (Number.isNaN(occurredAt.getTime())) continue;
+
       for (const marketplace of event.marketplace === null ? MARKETPLACES : [event.marketplace]) {
         const list = eventsBySkuAndChannel.get(chave(event.sku_id, marketplace)) ?? [];
-        list.push({ eventType: event.event_type, occurredAt: new Date(event.occurred_at) });
+        list.push({ eventType: event.event_type, occurredAt });
         eventsBySkuAndChannel.set(chave(event.sku_id, marketplace), list);
       }
     }
