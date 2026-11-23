@@ -29,7 +29,7 @@ case "$1 $2" in
     case "$3" in
       list)
         case "$inventory" in
-          existing|success) printf 'api\thttps://api.example.invalid\r\nworker\thttps://worker.example.invalid\r\n' ;;
+          existing|success|binding_denied) printf 'api\thttps://api.example.invalid\r\nworker\thttps://worker.example.invalid\r\n' ;;
           api_missing) printf 'worker\thttps://worker.example.invalid\r\n' ;;
           worker_missing) printf 'api\thttps://api.example.invalid\r\n' ;;
           worker_pending) printf 'worker\t\r\n' ;;
@@ -42,12 +42,16 @@ case "$1 $2" in
           *) exit 1 ;;
         esac
         ;;
-      add-iam-policy-binding) ;;
+      add-iam-policy-binding)
+        if [[ "$inventory" = binding_denied ]]; then echo 'PERMISSION_DENIED no binding simulado' >&2; exit 1; fi
+        ;;
       describe)
         case "$*" in
           *latestCreatedRevisionName*) echo worker-00001-fixture ;;
           *status.traffic*) echo worker-00001-fixture,100 ;;
-          *) printf 'https://worker.example.invalid\r\n' ;;
+          *--format=*) printf 'https://worker.example.invalid
+' ;;
+          *) if [[ "$inventory" = binding_denied ]]; then echo 'PERMISSION_DENIED no describe simulado' >&2; exit 1; fi ;;
         esac
         ;;
       *) exit 1 ;;
@@ -67,7 +71,7 @@ case "$1 $2" in
       fi
     fi
     if [[ "${RUN_INVENTORY:-}" = combined && "$3" = worker ]]; then exit 0; fi
-    if [[ "${RUN_INVENTORY:-}" = success ]]; then exit 0; fi
+    if [[ "${RUN_INVENTORY:-}" = success || "${RUN_INVENTORY:-}" = binding_denied ]]; then exit 0; fi
     exit 43
     ;;
   'builds submit')
@@ -198,3 +202,10 @@ success_file="$(grep -A1 -Fx -- --env-vars-file "${fixture}/deploy-args" | tail 
 [[ -n "$success_file" && ! -e "${fixture}/$success_file" ]]
 [[ "$(cat "${fixture}/.env.deploy.yaml")" = 'arquivo preexistente' ]]
 printf 'ok    deploy bem-sucedido remove seu temporário e preserva o arquivo preexistente\n'
+
+if saida="$(RUN_INVENTORY=binding_denied rodar_push present api 2>&1)" ||
+  [[ "$saida" != *'PERMISSION_DENIED no binding simulado'* || "$saida" = *'== Concluído'* ]]; then
+  printf 'FALHA: ausência da confirmação de run.invoker deve impedir sucesso\n%s\n' "$saida" >&2
+  exit 1
+fi
+printf 'ok    erro na concessão de run.invoker impede sucesso\n'

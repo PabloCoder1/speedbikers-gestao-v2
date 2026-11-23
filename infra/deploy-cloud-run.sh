@@ -339,16 +339,15 @@ fi
 step "Permissão de invocação do worker"
 # Menor privilégio: só o Cloud Tasks invoca o worker, e a permissão é dada no
 # serviço, não no projeto.
-if gc run services describe worker --region "${REGION}" >/dev/null 2>&1; then
-  binding="$(gc run services add-iam-policy-binding worker \
-    --region "${REGION}" \
-    --member "serviceAccount:$(sa_email "${SA_TASKS}")" \
-    --role roles/run.invoker 2>&1)" || {
-    printf '%s\n' "${binding}" >&2
-    fail "Falha ao conceder run.invoker no worker. Mensagem do gcloud acima."
-  }
-  ok "worker: run.invoker -> ${SA_TASKS}"
-fi
+# O worker foi publicado nesta execução ou teve a URL confirmada pela API.
+binding="$(gc run services add-iam-policy-binding worker \
+  --region "${REGION}" \
+  --member "serviceAccount:$(sa_email "${SA_TASKS}")" \
+  --role roles/run.invoker 2>&1)" || {
+  printf '%s\n' "${binding}" >&2
+  fail "Falha ao conceder run.invoker no worker. Mensagem do gcloud acima."
+}
+ok "worker: run.invoker -> ${SA_TASKS}"
 
 step "Concluído"
 gc run services list --region "${REGION}" \
