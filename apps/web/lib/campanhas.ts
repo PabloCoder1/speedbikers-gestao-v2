@@ -45,7 +45,7 @@ const TIPOS: Record<string, string> = {
 };
 
 export function rotuloDoTipo(type: string): string {
-  return TIPOS[type] ?? type;
+  return Object.hasOwn(TIPOS, type) ? (TIPOS[type] ?? type) : type;
 }
 
 function numero(valor: unknown): number | null {
@@ -64,7 +64,7 @@ export function lerCampanhas(valor: unknown): Campanha[] | null {
   if (!Array.isArray(valor)) return null;
 
   return valor.flatMap((bruto: unknown): Campanha[] => {
-    if (bruto === null || typeof bruto !== "object") return [];
+    if (bruto === null || typeof bruto !== "object" || Array.isArray(bruto)) return [];
 
     const e = bruto as Record<string, unknown>;
     const type = texto(e.type);
@@ -119,13 +119,16 @@ const PERCENTUAL = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 });
  */
 export function precoDaCampanha(c: Campanha): string | null {
   if (c.status === "started" || c.price !== null) {
-    return c.price === null ? null : formatCurrency(c.price);
+    return c.price === null || !Number.isFinite(c.price) ? null : formatCurrency(c.price);
   }
 
-  if (c.suggested_price === null) return null;
+  if (c.suggested_price === null || !Number.isFinite(c.suggested_price)) return null;
 
   const faixa =
-    c.min_price !== null && c.max_price !== null
+    c.min_price !== null &&
+    Number.isFinite(c.min_price) &&
+    c.max_price !== null &&
+    Number.isFinite(c.max_price)
       ? ` (de ${formatCurrency(c.min_price)} a ${formatCurrency(c.max_price)})`
       : "";
 
@@ -134,11 +137,18 @@ export function precoDaCampanha(c: Campanha): string | null {
 
 /** Quem paga o desconto: a co-participada divide, o cupom é um percentual fixo. */
 export function quemPaga(c: Campanha): string | null {
-  if (c.meli_percentage !== null && c.seller_percentage !== null) {
+  if (
+    c.meli_percentage !== null &&
+    Number.isFinite(c.meli_percentage) &&
+    c.seller_percentage !== null &&
+    Number.isFinite(c.seller_percentage)
+  ) {
     return `Mercado Livre ${PERCENTUAL.format(c.meli_percentage)}% · você ${PERCENTUAL.format(c.seller_percentage)}%`;
   }
 
-  return c.fixed_percentage === null ? null : `cupom de ${PERCENTUAL.format(c.fixed_percentage)}%`;
+  return c.fixed_percentage === null || !Number.isFinite(c.fixed_percentage)
+    ? null
+    : `cupom de ${PERCENTUAL.format(c.fixed_percentage)}%`;
 }
 
 /** As candidatas, agrupadas na ordem em que chegaram — a no ar vai à parte. */

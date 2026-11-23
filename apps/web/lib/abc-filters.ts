@@ -12,7 +12,7 @@
  *   recorte, e o filtro só esconde linhas -- a classe de cada SKU não muda.
  */
 
-import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
+import { isValidBusinessDate, shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 
 import { buildFilterHref, resolvePageParam, summarizePagedWindow } from "./filters";
 import { resolverContas, resolverEscopoVendas, type ContaDoSeletor, type EscopoVendas } from "./vendas-multicanal";
@@ -191,9 +191,9 @@ function lerContas(raw: unknown): string[] | null {
  * a tela anunciar "últimos 4.000 dias" com uma curva que não tem esse dado.
  */
 export function resolveAbcPeriod(raw: unknown): number {
-  if (typeof raw !== "string") return DEFAULT_PERIOD;
+  if (typeof raw !== "string" || !/^\d+$/.test(raw)) return DEFAULT_PERIOD;
 
-  const parsed = Number.parseInt(raw, 10);
+  const parsed = Number(raw);
 
   return (ABC_PERIODS as readonly number[]).includes(parsed) ? parsed : DEFAULT_PERIOD;
 }
@@ -201,8 +201,6 @@ export function resolveAbcPeriod(raw: unknown): number {
 export function resolveAbcClass(raw: unknown): AbcClass | null {
   return typeof raw === "string" && (ABC_CLASSES as readonly string[]).includes(raw) ? (raw as AbcClass) : null;
 }
-
-const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Dias de `from` a `to`, os dois incluídos (datas ISO de negócio). */
 export function daysBetween(from: string, to: string): number {
@@ -226,10 +224,9 @@ export function resolveAbcCustomRange(
   if (
     de === null ||
     ate === null ||
-    !DATA_ISO.test(de) ||
-    !DATA_ISO.test(ate) ||
-    Number.isNaN(Date.parse(`${de}T00:00:00Z`)) ||
-    Number.isNaN(Date.parse(`${ate}T00:00:00Z`)) ||
+    !isValidBusinessDate(de) ||
+    !isValidBusinessDate(ate) ||
+    !isValidBusinessDate(today) ||
     de > ate ||
     ate > today ||
     daysBetween(de, ate) > MAX_CUSTOM_DAYS

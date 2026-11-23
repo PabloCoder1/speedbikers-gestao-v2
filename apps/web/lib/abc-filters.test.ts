@@ -66,6 +66,8 @@ describe("critério e período", () => {
     expect(resolveAbcPeriod("365")).toBe(365);
     expect(resolveAbcPeriod("4000")).toBe(90);
     expect(resolveAbcPeriod("abc")).toBe(90);
+    expect(resolveAbcPeriod("30abc")).toBe(90);
+    expect(resolveAbcPeriod("30.5")).toBe(90);
     expect(resolveAbcPeriod(undefined)).toBe(90);
   });
 
@@ -230,10 +232,12 @@ describe("período personalizado e de comparação (D-424)", () => {
     expect(buildAbcHref(f, {})).toBe("/curva-abc?de=2026-01-01&ate=2026-03-31");
   });
 
-  it("recusa invertido, futuro, formato ruim, só um lado e mais de dois anos", () => {
+  it("recusa invertido, futuro, formato ruim, data inexistente no calendário, só um lado e mais de dois anos", () => {
     expect(resolveAbcCustomRange({ de: "2026-03-01", ate: "2026-01-01" }, HOJE).invalid).toBe(true);
     expect(resolveAbcCustomRange({ de: "2026-10-01", ate: "2026-10-08" }, HOJE).invalid).toBe(true);
     expect(resolveAbcCustomRange({ de: "01/01/2026", ate: "2026-02-01" }, HOJE).invalid).toBe(true);
+    expect(resolveAbcCustomRange({ de: "2026-02-31", ate: "2026-03-05" }, HOJE).invalid).toBe(true);
+    expect(resolveAbcCustomRange({ de: "2026-01-01", ate: "2026-04-31" }, HOJE).invalid).toBe(true);
     expect(resolveAbcCustomRange({ de: "2026-01-01" }, HOJE).invalid).toBe(true);
     expect(resolveAbcCustomRange({ de: "2024-01-01", ate: "2026-01-01" }, HOJE).invalid).toBe(true);
     expect(resolveAbcCustomRange({}, HOJE)).toEqual({ custom: null, invalid: false });

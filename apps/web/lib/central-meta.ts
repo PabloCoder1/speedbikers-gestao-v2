@@ -373,8 +373,18 @@ export function ritmoDaMeta(
   m: MetaDoMes,
   atrasoDaMeta: number = LIMITES_PADRAO.atrasoDaMeta,
 ): { tom: Tom; texto: string } | null {
-  if (m.situacao !== "em_curso" || m.diferenca_ritmo === null || m.esperado_ate_ontem === null) return null;
-  if (m.dias_completos === null || m.dias_completos === 0) return null;
+  if (
+    m.situacao !== "em_curso" ||
+    m.diferenca_ritmo === null ||
+    m.esperado_ate_ontem === null ||
+    !Number.isFinite(m.diferenca_ritmo) ||
+    !Number.isFinite(m.esperado_ate_ontem) ||
+    !Number.isFinite(atrasoDaMeta) ||
+    atrasoDaMeta < 0
+  ) {
+    return null;
+  }
+  if (m.dias_completos === null || !Number.isFinite(m.dias_completos) || m.dias_completos <= 0) return null;
 
   if (m.diferenca_ritmo >= 0) {
     return { tom: "ok", texto: `${formatCurrency(m.diferenca_ritmo)} acima do ritmo necessário` };
@@ -399,7 +409,7 @@ const DIA_DA_SEMANA: Readonly<Record<number, string>> = {
 };
 
 export function rotuloDoDiaDaSemana(isodow: number): string {
-  return DIA_DA_SEMANA[isodow] ?? String(isodow);
+  return Object.hasOwn(DIA_DA_SEMANA, isodow) ? (DIA_DA_SEMANA[isodow] ?? String(isodow)) : String(isodow);
 }
 
 const INTEIRO = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 0 });
@@ -429,13 +439,15 @@ export function fraseDaDataComercial(d: DataComercial): string {
   }
 
   const janela = `a janela de ${diaEMes(d.inicio)} a ${diaEMes(d.fim)}`;
-  const efeito = d.efeito === null ? "sem efeito calculado" : `vende ${contraDiaNormal(d.efeito)}`;
+  const efeito = d.efeito === null || !Number.isFinite(d.efeito) ? "sem efeito calculado" : `vende ${contraDiaNormal(d.efeito)}`;
   let frase = `${quando}: medida na de ${anoMedido}, ${janela} ${efeito}`;
 
-  const pico = d.dias.reduce<DiaDaData | null>(
-    (maior, dia) => (maior === null || Math.abs(dia.fator - 1) > Math.abs(maior.fator - 1) ? dia : maior),
-    null,
-  );
+  const pico = d.dias
+    .filter((dia) => Number.isFinite(dia.fator))
+    .reduce<DiaDaData | null>(
+      (maior, dia) => (maior === null || Math.abs(dia.fator - 1) > Math.abs(maior.fator - 1) ? dia : maior),
+      null,
+    );
 
   if (pico !== null && Math.abs(pico.fator - 1) >= 0.1) {
     const variacao = INTEIRO.format(Math.abs(pico.fator - 1));
@@ -446,7 +458,7 @@ export function fraseDaDataComercial(d: DataComercial): string {
         : `, com o pior dia a −${variacao} em ${diaEMes(pico.dia)}`;
   }
 
-  if (d.efeito_no_mes !== null && Math.round(d.efeito_no_mes * 100) !== 0) {
+  if (d.efeito_no_mes !== null && Number.isFinite(d.efeito_no_mes) && Math.round(d.efeito_no_mes * 100) !== 0) {
     const noMes = INTEIRO.format(Math.abs(d.efeito_no_mes));
 
     frase += d.efeito_no_mes > 0 ? ` — soma cerca de ${noMes} ao mês` : ` — tira cerca de ${noMes} do mês`;
