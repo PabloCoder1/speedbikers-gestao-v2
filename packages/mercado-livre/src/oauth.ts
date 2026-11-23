@@ -151,7 +151,17 @@ async function postToken(
     });
 
     if (response.ok) {
-      const json: unknown = await response.json();
+      let json: unknown;
+
+      try {
+        json = await response.json();
+      } catch {
+        throw new MercadoLivreApiError(
+          `Mercado Livre respondeu ${String(response.status)} com corpo não-JSON na troca de token.`,
+          { status: response.status, errorClass: "retryable", url: TOKEN_URL },
+        );
+      }
+
       return tokenResponseSchema.parse(json);
     }
 
@@ -174,6 +184,8 @@ async function postToken(
     }
 
     const retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
+    // Libera o stream da resposta descartada para o pool HTTP/Undici reutilizar o socket (D-789).
+    await response.body?.cancel().catch(() => undefined);
     await sleep(computeBackoffDelayMs({ attempt, retryAfterMs }));
     attempt += 1;
   }

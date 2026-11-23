@@ -36,5 +36,13 @@ describe("push da Shopee (D-453)", () => {
     // O return_updates_push de teste (15/10) veio com o código em texto.
     expect(shopeePushSchema.parse({ code: "29", shop_id: "727720655", timestamp: "1732796767" })).toMatchObject({ code: 29, shop_id: 727720655, timestamp: 1732796767 });
     expect(shopeePushSchema.safeParse({ code: "2a" }).success).toBe(false);
+    // D-789: string numérica acima de MAX_SAFE_INTEGER não perde precisão em silêncio.
+    expect(shopeePushSchema.safeParse({ code: 3, shop_id: "99999999999999999999" }).success).toBe(false);
+  });
+
+  it("D-789: recusa partnerKey vazia mesmo que a assinatura HMAC corresponda à chave vazia", () => {
+    const assinaturaVazia = signPush("", URL_PUSH, CORPO);
+
+    expect(verifyPushSignature("", URL_PUSH, CORPO, assinaturaVazia)).toBe(false);
   });
 });

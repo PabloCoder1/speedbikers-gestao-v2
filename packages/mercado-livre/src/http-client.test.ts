@@ -272,4 +272,25 @@ describe("createMercadoLivreClient - request", () => {
     expect(cancel429).toHaveBeenCalledTimes(1);
     expect(cancel503).toHaveBeenCalledTimes(1);
   });
+
+  it("D-789: HTTP 200 com corpo não-JSON vira MercadoLivreApiError retryable, chama onFailure e não vaza token", async () => {
+    const falhas: unknown[] = [];
+    const segredo = "APP_USR-SEGREDO-HTML-200";
+    const client = createMercadoLivreClient({
+      fetchImpl: vi.fn(() => Promise.resolve(new Response("<html><body>proxy</body></html>", { status: 200 }))),
+      sleep: NOOP_SLEEP,
+      onFailure: (f) => falhas.push(f),
+    });
+
+    const erro = await client
+      .request({ method: "GET", path: "/orders/1", accessToken: segredo, schema: orderSchema })
+      .catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(MercadoLivreApiError);
+    expect(erro).toMatchObject({ status: 200, errorClass: "retryable" });
+    expect(JSON.stringify(erro, Object.getOwnPropertyNames(erro))).not.toContain(segredo);
+    expect(falhas).toEqual([
+      { status: 200, method: "GET", path: "/orders/1", errorClass: "retryable", body: undefined },
+    ]);
+  });
 });

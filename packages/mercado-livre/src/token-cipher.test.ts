@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createCipheriv, randomBytes } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
@@ -60,5 +60,17 @@ describe("encryptToken / decryptToken", () => {
     raw[raw.byteLength - 1] = (raw[raw.byteLength - 1] ?? 0) ^ 0xff;
 
     expect(() => decryptToken(raw.toString("base64"), KEY)).toThrow();
+  });
+
+  it("D-789: recusa payload truncado ou com authTag GCM menor que 16 bytes (previne truncamento de tag)", () => {
+    const iv = randomBytes(12);
+    const shortCipher = createCipheriv("aes-256-gcm", KEY, iv, { authTagLength: 4 });
+    const shortCt = Buffer.concat([shortCipher.update("", "utf8"), shortCipher.final()]);
+    const shortTag = shortCipher.getAuthTag();
+    const forgedShortTagPayload = Buffer.concat([iv, shortTag, shortCt]).toString("base64");
+
+    expect(() => decryptToken(forgedShortTagPayload, KEY)).toThrow();
+    expect(() => decryptToken("", KEY)).toThrow();
+    expect(() => decryptToken(randomBytes(27).toString("base64"), KEY)).toThrow();
   });
 });
