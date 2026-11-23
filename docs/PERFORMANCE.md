@@ -2463,3 +2463,31 @@ recusar o erro tardio com `23503`. O bloqueio de linha sozinho resolve
 a disputa antes do commit. O corte ainda exige preservar a referência
 depois do commit e medir o tempo de bloqueio por lote. [Bloqueios de linha no PostgreSQL
 17](https://www.postgresql.org/docs/17/explicit-locking.html#LOCKING-ROWS).
+
+#### Custo de preservar a referência depois do corte (D04)
+
+Uma chave estrangeira para um registro de IDs independente da tabela
+ativa preservou o vínculo de um erro inserido após a movimentação de uma
+execução sintética. A variante com organização e conta também rejeitou
+IDs inexistentes e vínculos fora do escopo, manteve o vínculo opcional e
+preservou as tabelas no rollback. [Chaves estrangeiras no PostgreSQL
+17](https://www.postgresql.org/docs/17/ddl-constraints.html#DDL-CONSTRAINTS-FK).
+
+O restore seletivo da geração 1795328157907250 foi usado para medir
+`pg_total_relation_size` com as tabelas reconstruídas e os índices da
+tabela de execuções. O recorte de 60 dias removeu 12.782 de 57.853
+execuções na cópia. Entre os erros já vinculados, a organização e a
+conta coincidiram com as da execução em todos os registros do recorte.
+
+| Estrutura ativa | Bytes | Variação frente à base |
+| --- | ---: | ---: |
+| Tabela integral | 15.695.872 | — |
+| Tabela compactada + registro só com ID | 16.916.480 | +7,78% |
+| Tabela compactada + registro com ID, organização e conta | 21.094.400 | +34,39% |
+
+A medição exclui o arquivo e a sobrecarga de escrever no registro.
+Para esse recorte o registro resolve a integridade, com aumento de
+espaço. A alternativa fica fora do candidato. A revisão de retenção
+pode avançar na leitura do histórico de notificações e manter o
+histórico append-only de sincronização enquanto se mede o benefício
+de um recorte maior.

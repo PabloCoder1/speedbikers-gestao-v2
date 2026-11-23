@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "Full em P03/D-850. Restore com SHA-256 igual em três tabelas. Ensaios SQL/PostgREST preservaram RLS, página e contagens. Bloqueio preservou vínculos em curso, mas FK recusou referência tardia após corte de uma linha sintética. Faltam contrato na Central e referência após o corte (PERFORMANCE.md).",
+      "evidencia": "Full em P03/D-850. Restore com SHA-256 igual em três tabelas. Ensaios SQL/PostgREST preservaram RLS, página e contagens. Registro de IDs preservou a FK tardia, mas somado à tabela compactada elevou espaço ativo em 7,78% no mínimo. Falta integrar a leitura na Central e encontrar recorte de sync com ganho (PERFORMANCE.md).",
       "fase": 3
     },
     {

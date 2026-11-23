@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **690** (D-001 a D-850).
+Decisões registradas: **691** (D-001 a D-851).
 
 ## Por domínio
 
@@ -419,7 +419,7 @@ Decisões registradas: **690** (D-001 a D-850).
 - **D-782** — Endurecimento da API em convites (corrida 23505), webhook ML (`user_id`/`questionId`/enqueue), cotação de frete e resposta do SAC
 - **D-791** — O cliente usa o endpoint bulk de anúncios do Mercado Livre
 
-### outros (113)
+### outros (114)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -534,6 +534,7 @@ Decisões registradas: **690** (D-001 a D-850).
 - **D-775** — Autenticação da API recusa múltiplas organizações e separa 503 de 401/403; OIDC exige `email_verified`; unlock de `shopee.orders.sync` protegido no `finally`
 - **D-777** — Backfills internos respondem 503 em erro de banco, rotas D-766 usam `erroInterno` com `request_id` e callback Shopee exige inteiro seguro positivo
 - **D-784** — Demais Server Components web falham fechado em erro de contas/organização e BuscaSku trata rejeição de transporte
+- **D-851** — Central de Notificações usa ID para desempatar horários iguais
 
 ### processo/docs (1)
 

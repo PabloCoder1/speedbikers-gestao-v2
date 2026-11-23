@@ -178,6 +178,7 @@ export default async function NotificacoesPage({
     .from("notification_recipients")
     .select(SELECT_LISTA)
     .order("created_at", { ascending: false })
+    .order("notification_id", { ascending: false })
     .range(desde, desde + PAGE_SIZE - 1);
 
   let contagemDoRecorte = supabase

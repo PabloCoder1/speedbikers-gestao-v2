@@ -20379,3 +20379,13 @@ O [ensaio P03](PERFORMANCE.md#tamanho-de-full-e-telemetria-na-vm-sentinel-p03-23
 conferiu a partição dos dados, a restauração do complemento e o
 comportamento diante de escrita concorrente e rollback. A aplicação na
 VM depende da migration e do procedimento operacional de arquivo e restore.
+
+## D-851 - Central de Notificações usa ID para desempatar horários iguais
+
+**23/11/2026 · Central de Notificações.** A lista mantém a ordem
+decrescente de chegada e usa `notification_id` como segundo critério.
+No PostgreSQL 17, 350 notificações de um único destinatário com o mesmo
+horário retornaram ordens diferentes em uma leitura por índice e em uma
+leitura sequencial. As duas leituras passaram a devolver a mesma página
+com o desempate. As contagens e os filtros continuam usando o mesmo
+recorte. Como o destinatário é fixado por RLS, o ID é único na lista.
