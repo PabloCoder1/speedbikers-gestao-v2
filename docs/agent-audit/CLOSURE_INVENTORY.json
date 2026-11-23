@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-23, integração local e0bedddf + continuidade Gemini D-770–D-789 e D-793–D-798 (00ec8df4, PR #343)",
+  "corte": "2026-11-23, integração local e0bedddf + continuidade Gemini D-770–D-789 e D-793–D-799 (5b99bc7b, PR #343)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -29,7 +29,7 @@
       "peso": 5,
       "status": "Testado localmente",
       "responsavel": "Sentinel",
-      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121, D-783/A123, D-784/A124, D-785/A125; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/Components fail-closed, mesmaUrl no retry, ILIKE, teto .in() e zero getSession direto em clientes web (1.577 unit + 401/401 E2E em f3ae0df6)",
+      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121, D-783/A123, D-784/A124, D-785/A125, D-799/A136; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/Components fail-closed, mesmaUrl no retry, períodos/saúde/CSV blindados, ILIKE, teto .in() e zero getSession direto em clientes web (1.583 unit + 401/401 E2E em f3ae0df6)",
       "fase": 3
     },
     {
@@ -69,7 +69,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776, D-779, D-780, D-786, D-787 e D-794 a D-798 testados localmente com paginação, guardas por versão, lotes .in() Full/Shopee, proteção Flate zip bomb PDF (CWE-409), visitas/Full/relist/backfills/pedidos/cauda/claims/SAC/NF-e/attempt endurecidos, telemetria blindada contra transporte, IDs seguros ML, janelas/datas Shopee e Ads, clientes HTTP/OAuth resilientes, unlock protegido e logger blindado (1.154 worker + 745 domain + 30 db + 38 observability)",
+      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776, D-779, D-780, D-786, D-787 e D-794 a D-799 testados localmente com paginação, guardas por versão, lotes .in() Full/Shopee, proteção Flate zip bomb PDF (CWE-409), visitas/Full/relist/backfills/pedidos/cauda/claims/SAC/NF-e/documentos/datas/cobertura/attempt endurecidos, telemetria blindada contra transporte, IDs seguros ML, janelas/datas Shopee e Ads, clientes HTTP/OAuth resilientes, unlock protegido e logger blindado (1.154 worker + 753 domain + 30 db + 38 observability)",
       "fase": 3
     },
     {
@@ -329,7 +329,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Todos/Sentinel",
-      "evidencia": "check 37/37 tarefas (4.387 unitários), build 10/10, 7 guardas web em 00ec8df4; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 (sem nova migration)",
+      "evidencia": "check 37/37 tarefas (4.401 unitários), build 10/10, 7 guardas web em 5b99bc7b; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 (sem nova migration)",
       "fase": 5
     },
     {
