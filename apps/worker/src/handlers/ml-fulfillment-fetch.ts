@@ -358,15 +358,23 @@ async function updateItemAbsences(
       });
 
   if (marks.length > 0) {
-    const written = await params.db
-      .from("fulfillment_item_absences")
-      .upsert(marks, { onConflict: "ml_account_id,item_id" });
+    try {
+      const written = await params.db
+        .from("fulfillment_item_absences")
+        .upsert(marks, { onConflict: "ml_account_id,item_id" });
 
-    if (written.error !== null) {
+      if (written.error !== null) {
+        params.logger.warn("fulfillment_item_absences_not_recorded", {
+          ml_account_id: params.mlAccountId,
+          items: marks.length,
+          reason: written.error.message,
+        });
+      }
+    } catch (error) {
       params.logger.warn("fulfillment_item_absences_not_recorded", {
         ml_account_id: params.mlAccountId,
         items: marks.length,
-        reason: written.error.message,
+        reason: errorMessage(error),
       });
     }
   }
@@ -389,17 +397,26 @@ async function updateItemAbsences(
 
   for (let start = 0; start < toClear.length; start += ABSENCE_DELETE_CHUNK) {
     const chunk = toClear.slice(start, start + ABSENCE_DELETE_CHUNK);
-    const cleared = await params.db
-      .from("fulfillment_item_absences")
-      .delete()
-      .eq("ml_account_id", params.mlAccountId)
-      .in("item_id", chunk);
 
-    if (cleared.error !== null) {
+    try {
+      const cleared = await params.db
+        .from("fulfillment_item_absences")
+        .delete()
+        .eq("ml_account_id", params.mlAccountId)
+        .in("item_id", chunk);
+
+      if (cleared.error !== null) {
+        params.logger.warn("fulfillment_item_absences_not_cleared", {
+          ml_account_id: params.mlAccountId,
+          items: chunk.length,
+          reason: cleared.error.message,
+        });
+      }
+    } catch (error) {
       params.logger.warn("fulfillment_item_absences_not_cleared", {
         ml_account_id: params.mlAccountId,
         items: chunk.length,
-        reason: cleared.error.message,
+        reason: errorMessage(error),
       });
     }
   }
@@ -549,6 +566,16 @@ export async function fetchFulfillmentSnapshots(
         return { link, item: null, failed: true, deferred: false, absentStatus: absenceStatusOf(error) };
       }
 
+      if (error instanceof z.ZodError) {
+        params.logger.warn("fulfillment_item_fetch_failed", {
+          ml_account_id: params.mlAccountId,
+          item_id: link.item_id,
+          reason: error.message,
+        });
+
+        return { link, item: null, failed: true, deferred: false, absentStatus: null };
+      }
+
       throw error;
     }
 
@@ -567,7 +594,7 @@ export async function fetchFulfillmentSnapshots(
     try {
       return { inventoryId, stock: await params.mercadoLivre.request({ method: "GET", path: `/inventories/${inventoryId}/stock/fulfillment`, accessToken: params.accessToken, schema: fulfillmentStockResponseSchema }), failed: false };
     } catch (error) {
-      if (error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") {
+      if ((error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") || error instanceof z.ZodError) {
         params.logger.warn("fulfillment_stock_fetch_failed", { ml_account_id: params.mlAccountId, inventory_id: inventoryId, reason: error.message });
         return { inventoryId, stock: null, failed: true };
       }

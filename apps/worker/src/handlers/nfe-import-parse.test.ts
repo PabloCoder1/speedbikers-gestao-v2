@@ -641,4 +641,19 @@ describe("parse: a venda de marketplace e a gravação recusada (D-497)", () => 
     expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "delete timeout" });
     expect(captured.inserted).toHaveLength(0);
   });
+
+  it("D-797: exceção inesperada do parser marca o documento como FAILED sem retry em vez de travá-lo em PARSING", async () => {
+    const xmlCorrompido = {
+      get nfeProc(): unknown {
+        throw new RangeError("estrutura XML corrompida");
+      },
+    };
+    const { deps, captured, lines } = fakeDeps({ xmlObject: xmlCorrompido });
+
+    const outcome = await createNfeImportParseHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false, reason: "estrutura XML corrompida" });
+    expect(captured.updates.at(-1)).toMatchObject({ status: "FAILED", last_error: "estrutura XML corrompida" });
+    expect(lines.join("\n")).toContain("documento_parse_invalido");
+  });
 });

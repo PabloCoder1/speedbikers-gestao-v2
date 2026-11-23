@@ -268,14 +268,22 @@ export function createBackfillOrderUserProductsHandler(deps: BackfillOrderUserPr
     const janela = `${(deps.now?.() ?? new Date()).toISOString().slice(0, 16)}Z`;
 
     for (const metricDate of [...diasTocados].sort()) {
-      await deps.enqueuer.enqueue({
-        jobType: "analytics.recompute",
-        organizationId,
-        dedupeKey: `recompute:${mlAccountId}:${metricDate}:${janela}`,
-        queue: "analytics-recompute",
-        payload: { mode: "incremental", mlAccountId, metricDate },
-        delaySeconds: 60,
-      });
+      try {
+        await deps.enqueuer.enqueue({
+          jobType: "analytics.recompute",
+          organizationId,
+          dedupeKey: `recompute:${mlAccountId}:${metricDate}:${janela}`,
+          queue: "analytics-recompute",
+          payload: { mode: "incremental", mlAccountId, metricDate },
+          delaySeconds: 60,
+        });
+      } catch (error) {
+        context.logger.warn("backfill_order_user_products_recompute_enqueue_failed", {
+          ml_account_id: mlAccountId,
+          metric_date: metricDate,
+          reason: error instanceof Error ? error.message : "erro desconhecido",
+        });
+      }
     }
 
     const finishedAt = deps.now?.() ?? new Date();

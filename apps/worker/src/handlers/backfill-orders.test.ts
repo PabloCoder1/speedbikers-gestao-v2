@@ -5,6 +5,7 @@ import type { MercadoLivreClient, RequestOptions } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
 import type { EnqueueRequest, EnqueueResult } from "../enqueue.js";
 import type { BackfillOrdersDeps } from "./backfill-orders.js";
@@ -489,5 +490,38 @@ describe("backfill.orders", () => {
     expect(joined).not.toContain("APP_USR-valido");
     expect(joined).not.toContain("TG-valido");
     expect(joined).not.toContain(OAUTH_CONFIG.clientSecret);
+  });
+
+  it("D-797: ZodError no envelope de /orders/search falha como not_retryable", async () => {
+    const { deps: d, db, enqueued, lines } = deps({}, () =>
+      Promise.reject(new ZodError([{ code: "invalid_type", expected: "object", path: ["paging"], message: "x" }])),
+    );
+
+    const outcome = await run(d, lines);
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(enqueued).toHaveLength(0);
+    expect(db.inserted.find((e) => e.table === "sync_errors")?.row).toMatchObject({ error_class: "not_retryable" });
+  });
+
+  it("D-797: connected_at inválido falha sem retry e backfill_covered_until inválido cai na janela de retenção sem RangeError", async () => {
+    const invalidaConnected = deps({ account: { ...DEFAULT_ACCOUNT, connected_at: "data-invalida" } }, []);
+
+    await expect(run(invalidaConnected.deps, invalidaConnected.lines)).resolves.toMatchObject({
+      status: "failed",
+      retryable: false,
+    });
+    expect(invalidaConnected.requests).toHaveLength(0);
+
+    const invalidoCheckpoint = deps(
+      { account: { ...DEFAULT_ACCOUNT, backfill_covered_until: "data-invalida" } },
+      [],
+    );
+
+    await expect(run(invalidoCheckpoint.deps, invalidoCheckpoint.lines)).resolves.toEqual({
+      status: "done",
+      processed: 0,
+    });
+    expect(invalidoCheckpoint.requests).toHaveLength(1);
   });
 });

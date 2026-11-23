@@ -98,9 +98,17 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
       backfill_covered_until: coveredUntil,
     } = account;
 
-    const connectedAtDate = new Date(connectedAt);
+    const connectedAtMs = Date.parse(connectedAt);
 
-    if (coveredUntil !== null && new Date(coveredUntil).getTime() >= connectedAtDate.getTime()) {
+    if (!Number.isFinite(connectedAtMs)) {
+      return { status: "failed", retryable: false, reason: `connected_at inválido na conta: ${connectedAt}` };
+    }
+
+    const connectedAtDate = new Date(connectedAtMs);
+    const coveredUntilMs = coveredUntil === null ? Number.NaN : Date.parse(coveredUntil);
+    const hasValidCoveredUntil = Number.isFinite(coveredUntilMs);
+
+    if (hasValidCoveredUntil && coveredUntilMs >= connectedAtMs) {
       // Já cobriu tudo até onde a reconciliação assume — nada a fazer. Só
       // acontece se o job for reentregue depois do último pedaço já ter
       // decidido não reenfileirar mais nada.
@@ -110,7 +118,9 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
     }
 
     const chunkFrom = floorToHour(
-      coveredUntil !== null ? new Date(coveredUntil) : new Date(now.getTime() - RETENTION_MS),
+      hasValidCoveredUntil
+        ? new Date(coveredUntilMs)
+        : new Date(Math.min(now.getTime() - RETENTION_MS, connectedAtMs)),
     );
     const chunkTo = ceilToHour(
       new Date(Math.min(chunkFrom.getTime() + CHUNK_SPAN_MS, connectedAtDate.getTime())),
@@ -153,7 +163,12 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
       });
     } catch (error) {
       const finishedAt = deps.now?.() ?? new Date();
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+      const errorClass =
+        error instanceof MercadoLivreApiError
+          ? error.errorClass
+          : error instanceof z.ZodError
+            ? "not_retryable"
+            : "retryable";
       const reason = error instanceof Error ? error.message : "erro desconhecido ao buscar pedidos";
 
       await recordSyncRunFailure(deps.db, {
