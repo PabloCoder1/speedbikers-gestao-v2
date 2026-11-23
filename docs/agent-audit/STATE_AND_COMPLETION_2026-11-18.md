@@ -205,7 +205,7 @@ Operação estável exige monitoramento externo, backups restauráveis e rotina 
 | F04 | Frontend e telas: Quatro operações da confirmação compartilhada | Sentinel | 2 | Testado localmente | D-729/A87 e D-730/A88: transporte e recusa sem linhas; banco/papéis conferidos e oito testes de contrato | 3 |
 | F05 | Frontend e telas: Nova experiência de compras e reposição aprovada | Agente Compras | 5 | Publicado | #330 incorporado pelo #332. CI 44381338715 e alias READY em f2eb787c. Validação das planilhas reais pendente | 3 |
 | B01 | Backend e APIs: API autenticada, contratos e limites de organização | Backend | 8 | Publicado | apps/api/src; main dc69d1fb na API; D-770 e D-775 endurecem edição NF-e, saída manual, auth multi-org/503 e OIDC email_verified (561 testes) | 3 |
-| B02 | Backend e APIs: Worker idempotente, despacho e retentativas | Backend | 8 | Publicado | Worker em produção. D-746 a D-752, D-772, D-773 e D-775 validados localmente (1.093 testes) | 3 |
+| B02 | Backend e APIs: Worker idempotente, despacho e retentativas | Backend | 8 | Publicado | Worker em produção. D-746 a D-752, D-772, D-773, D-775, D-776, D-779, D-780, D-786 e D-787 validados localmente (1.120 worker + 745 domain + 38 observability) | 3 |
 | B03 | Backend e APIs: SAC: envio único, fencing e recuperação | Sentinel | 5 | Testado localmente | D-658–684; migrations 11175814; SESSION_LOG | 1 |
 | M01 | Integrações dos marketplaces: ML: ingestão, pedidos, anúncios, SAC e reconciliação | Backend | 8 | Publicado | main; apps/worker handlers; validação pós-corte pendente | 3 |
 | M02 | Integrações dos marketplaces: Shopee: pedidos, financeiro, catálogo, Ads e devoluções | Multicanal | 8 | Publicado | D-425–632; main | 3 |
@@ -231,7 +231,7 @@ Operação estável exige monitoramento externo, backups restauráveis e rotina 
 | P01 | Performance: RPCs, paginação e consultas existentes otimizadas | Sentinel/Backend | 8 | Testado localmente | PERFORMANCE: baseline, SQL health/coverage, parallelreads A26–36, D-736/D-738/D-739/D-743/D-746/D-770–D-772 paginam >1.000 no worker, Copiloto, estoque Shopee e /diagnostico + lotes .in 100/200 | 3 |
 | P02 | Performance: Benchmarks representativos após restauração | Performance | 5 | Não iniciado | Baseline antiga não mede VM atual; faturamento90d e frete frio | 3 |
 | P03 | Performance: Reduzir crescimento Full/telemetria sem perder auditoria | Database | 3 | Em andamento | 1092→979MB apenas simulação; medir retenções | 3 |
-| Q01 | Testes e qualidade: Suíte unitária, contratos, RLS e idempotência | Todos/Sentinel | 8 | Testado localmente | check 37/37 tarefas (4.231 unitários), build 10/10, 7 guardas web, 1.213 integração (326 migrations) e 39 embeds em 73f886e3 | 5 |
+| Q01 | Testes e qualidade: Suíte unitária, contratos, RLS e idempotência | Todos/Sentinel | 8 | Testado localmente | check 37/37 tarefas (4.303 unitários), build 10/10, 7 guardas web em ece85555; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 | 5 |
 | Q02 | Testes e qualidade: Regressões de navegação, transporte e escrita real local | Sentinel | 5 | Testado localmente | Playwright E2E completo: 401/401 (chromium + loja-live) em 73f886e3 | 5 |
 | Q03 | Testes e qualidade: Carga e falhas representativas em stack equivalente | QA/Infra | 5 | Não iniciado | ROADMAP696; carga histórica não fecha ensaio | 5 |
 | Q04 | Testes e qualidade: Ensaio completo negócio→dados após recuperação | Dono/QA | 5 | Bloqueado | Pedidos/estoque/faturamento/SAC e importação; requer ambiente recuperado | 5 |

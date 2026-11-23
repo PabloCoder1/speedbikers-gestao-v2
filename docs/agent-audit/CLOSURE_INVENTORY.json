@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-23, integração local e0bedddf + continuidade Gemini D-770–D-786 (01bbf12b, PR #343)",
+  "corte": "2026-11-23, integração local e0bedddf + continuidade Gemini D-770–D-788 (ece85555, PR #343)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -69,7 +69,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776, D-779, D-780 e D-786 testados localmente com paginação, guardas por versão, lotes .in() Full/Shopee, visitas fail-closed, checkpoint backfill.orders, sync_runs em order-financials, paginação order_items, retry de alertas, clientes HTTP resilientes, unlock protegido e logger blindado (1.106 worker + 38 observability)",
+      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776, D-779, D-780, D-786 e D-787 testados localmente com paginação, guardas por versão, lotes .in() Full/Shopee, visitas fail-closed, checkpoint backfill.orders, sync_runs em order-financials, paginação order_items, retry de alertas, persistência/varredura SAC e NF-e apply endurecidos, clientes HTTP resilientes, unlock protegido e logger blindado (1.120 worker + 745 domain + 38 observability)",
       "fase": 3
     },
     {
@@ -329,7 +329,7 @@
       "peso": 8,
       "status": "Testado localmente",
       "responsavel": "Todos/Sentinel",
-      "evidencia": "check 37/37 tarefas (4.282 unitários), build 10/10, 7 guardas web em 01bbf12b; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 (sem nova migration)",
+      "evidencia": "check 37/37 tarefas (4.303 unitários), build 10/10, 7 guardas web em ece85555; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 (sem nova migration)",
       "fase": 5
     },
     {
