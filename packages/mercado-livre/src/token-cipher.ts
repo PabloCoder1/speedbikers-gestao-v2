@@ -55,11 +55,16 @@ export function encryptToken(plaintext: string, key: Buffer): string {
  */
 export function decryptToken(payload: string, key: Buffer): string {
   const raw = Buffer.from(payload, "base64");
+
+  if (raw.byteLength < IV_BYTES + AUTH_TAG_BYTES) {
+    throw new Error("Ciphertext inválido: payload menor que IV + authTag AES-256-GCM.");
+  }
+
   const iv = raw.subarray(0, IV_BYTES);
   const authTag = raw.subarray(IV_BYTES, IV_BYTES + AUTH_TAG_BYTES);
   const ciphertext = raw.subarray(IV_BYTES + AUTH_TAG_BYTES);
 
-  const decipher = createDecipheriv(ALGORITHM, key, iv);
+  const decipher = createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_BYTES });
   decipher.setAuthTag(authTag);
 
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");

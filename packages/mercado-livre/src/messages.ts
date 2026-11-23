@@ -269,9 +269,30 @@ function messageOccurredAt(message: PackMessage, fallback: string): string {
     message.message_date?.received ?? null,
     message.message_date?.available ?? null,
   ];
-  const first = candidates.find((value): value is string => value !== null);
 
-  return first === undefined ? fallback : new Date(first).toISOString();
+  for (const value of candidates) {
+    if (value !== null) {
+      const parsed = Date.parse(value);
+
+      if (Number.isFinite(parsed)) {
+        return new Date(parsed).toISOString();
+      }
+    }
+  }
+
+  return fallback;
+}
+
+function parseSafePositiveId(value: string): number | null {
+  const normalized = normalizeRemoteId(value);
+
+  if (normalized === null) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 /**
@@ -365,10 +386,12 @@ export function mapPackMessagesToSupportProjection(
 
   const inboundTimestamps = messages
     .filter((message) => message.direction === "INBOUND")
-    .map((message) => Date.parse(message.occurredAt));
+    .map((message) => Date.parse(message.occurredAt))
+    .filter(Number.isFinite);
   const outboundTimestamps = messages
     .filter((message) => message.direction === "OUTBOUND")
-    .map((message) => Date.parse(message.occurredAt));
+    .map((message) => Date.parse(message.occurredAt))
+    .filter(Number.isFinite);
 
   // `status_date` é FALLBACK, nunca entra num `max()` com as mensagens.
   //
@@ -383,13 +406,14 @@ export function mapPackMessagesToSupportProjection(
   // coisa conhecida; sem ele, o instante da observação, porque a coluna é NOT
   // NULL e não aceita chute vazio.
   const statusDate = page.conversation_status?.status_date ?? null;
-  const messageTimestamps = messages.map((message) => Date.parse(message.occurredAt));
+  const parsedStatusDate = statusDate === null ? Number.NaN : Date.parse(statusDate);
+  const messageTimestamps = messages.map((message) => Date.parse(message.occurredAt)).filter(Number.isFinite);
   const lastActivityAt =
     messageTimestamps.length > 0
       ? new Date(Math.max(...messageTimestamps)).toISOString()
-      : statusDate === null
-        ? observedAtIso
-        : new Date(statusDate).toISOString();
+      : Number.isFinite(parsedStatusDate)
+        ? new Date(parsedStatusDate).toISOString()
+        : observedAtIso;
 
   // O comprador REAL, nunca o agente e nunca o vendedor. Numa conversa só com
   // o agente isto fica null — é a resposta correta, não uma falha: D-083 proíbe
@@ -413,7 +437,7 @@ export function mapPackMessagesToSupportProjection(
       channel: "POST_SALE_MESSAGE",
       externalCaseKey: `${keyPrefix}${reference.id}`,
       externalCaseId: reference.id,
-      packId: reference.kind === "PACK" ? Number(reference.id) : null,
+      packId: reference.kind === "PACK" ? parseSafePositiveId(reference.id) : null,
       externalStatus: page.conversation_status?.status ?? null,
       externalSubstatus: page.conversation_status?.substatus ?? null,
       customerExternalId,
@@ -457,9 +481,15 @@ export function parseConversationResource(
     return null;
   }
 
-  const [, packOrOrderId, seller] = match;
+  const [, rawPackOrOrderId, seller] = match;
 
-  if (packOrOrderId === undefined || seller === undefined) {
+  if (rawPackOrOrderId === undefined || seller === undefined) {
+    return null;
+  }
+
+  const packOrOrderId = normalizeRemoteId(rawPackOrOrderId);
+
+  if (packOrOrderId === null) {
     return null;
   }
 

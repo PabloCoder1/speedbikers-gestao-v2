@@ -214,6 +214,12 @@ describe("datas da Shopee", () => {
     expect(shopeeEpochToIso(0)).toBeNull();
     expect(shopeeEpochToIso(null)).toBeNull();
   });
+
+  it("D-789: epoch não finito ou fora da faixa de Date devolve nulo sem lançar RangeError", () => {
+    expect(shopeeEpochToIso(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(shopeeEpochToIso(Number.NaN)).toBeNull();
+    expect(shopeeEpochToIso(1e20)).toBeNull();
+  });
 });
 
 describe("classificação dos erros da Shopee (D-428)", () => {

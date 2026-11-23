@@ -147,6 +147,33 @@ describe("exchangeCodeForToken", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("D-789: cancela body antes de retentar 429/5xx e converte HTTP 200 não-JSON em MercadoLivreApiError retryable", async () => {
+    const cancel429 = vi.fn(() => Promise.resolve());
+    const resp429 = jsonResponse(429, { error: "local_rate_limited" });
+    Object.defineProperty(resp429, "body", { value: { cancel: cancel429 } });
+
+    const fetchRetry = vi
+      .fn()
+      .mockResolvedValueOnce(resp429)
+      .mockResolvedValueOnce(jsonResponse(200, TOKEN_RESPONSE_BODY));
+
+    const token = await exchangeCodeForToken(CONFIG, "codigo", { fetchImpl: fetchRetry, sleep: NOOP_SLEEP });
+
+    expect(token.access_token).toBe(TOKEN_RESPONSE_BODY.access_token);
+    expect(cancel429).toHaveBeenCalledTimes(1);
+
+    const fetchHtml = vi.fn(() => Promise.resolve(new Response("<html>gateway</html>", { status: 200 })));
+    const erro = await refreshAccessToken(CONFIG, "TG-refresh-segredo-html", {
+      fetchImpl: fetchHtml,
+      sleep: NOOP_SLEEP,
+    }).catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(MercadoLivreApiError);
+    expect(erro).toMatchObject({ status: 200, errorClass: "retryable" });
+    expect(JSON.stringify(erro, Object.getOwnPropertyNames(erro))).not.toContain(CONFIG.clientSecret);
+    expect(JSON.stringify(erro, Object.getOwnPropertyNames(erro))).not.toContain("TG-refresh-segredo-html");
+  });
+
   it("nunca deixa o client_secret vazar na mensagem nem no corpo do erro lançado", async () => {
     const fetchImpl = vi.fn(() =>
       Promise.resolve(jsonResponse(400, { error: "invalid_client", error_description: "bad credentials" })),

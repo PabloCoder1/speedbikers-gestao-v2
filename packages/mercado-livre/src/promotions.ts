@@ -101,7 +101,7 @@ export function effectivePromotionalPrice(entries: readonly SellerPromotionEntry
   const ativos = entries
     .filter((entry) => entry.status === "started")
     .map((entry) => entry.price)
-    .filter((price): price is number => typeof price === "number" && price > 0);
+    .filter((price): price is number => typeof price === "number" && Number.isFinite(price) && price > 0);
 
   return ativos.length === 0 ? null : Math.min(...ativos);
 }
@@ -140,11 +140,11 @@ export interface PromotionOffer {
 const MAX_OFFERS = 30;
 
 function positivo(valor: number | null | undefined): number | null {
-  return typeof valor === "number" && valor > 0 ? valor : null;
+  return typeof valor === "number" && Number.isFinite(valor) && valor > 0 ? valor : null;
 }
 
 function numero(valor: number | null | undefined): number | null {
-  return typeof valor === "number" ? valor : null;
+  return typeof valor === "number" && Number.isFinite(valor) ? valor : null;
 }
 
 function texto(valor: string | undefined): string | null {

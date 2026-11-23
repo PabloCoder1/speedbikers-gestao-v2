@@ -198,4 +198,27 @@ describe("promotionOffers (D-420)", () => {
   it("sem campanha nenhuma, lista vazia", () => {
     expect(promotionOffers([])).toEqual([]);
   });
+
+  it("D-789: descarta valores não finitos (NaN/Infinity) em preços e percentuais", () => {
+    const invalidas = [
+      {
+        type: "SELLER_CAMPAIGN",
+        status: "started",
+        price: Number.POSITIVE_INFINITY,
+        original_price: Number.NaN,
+        meli_percentage: Number.NaN,
+        seller_percentage: Number.POSITIVE_INFINITY,
+        fixed_percentage: Number.NEGATIVE_INFINITY,
+      },
+    ];
+
+    expect(effectivePromotionalPrice(invalidas)).toBeNull();
+    expect(promotionOffers(invalidas)[0]).toMatchObject({
+      price: null,
+      original_price: null,
+      meli_percentage: null,
+      seller_percentage: null,
+      fixed_percentage: null,
+    });
+  });
 });
