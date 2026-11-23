@@ -23,13 +23,43 @@ case "$1 $2" in
   'secrets describe')
     [[ "${PUSH_INVENTORY:-}" = present ]]
     ;;
-  'run services') printf 'https://service.example.invalid\r\n' ;;
+  'run services')
+    inventory="${RUN_INVENTORY:-existing}"
+    if [[ "$inventory" = denied ]]; then echo 'PERMISSION_DENIED Cloud Run simulado' >&2; exit 1; fi
+    case "$3" in
+      list)
+        case "$inventory" in
+          existing) printf 'api\thttps://api.example.invalid\r\nworker\thttps://worker.example.invalid\r\n' ;;
+          api_missing) printf 'worker\thttps://worker.example.invalid\r\n' ;;
+          worker_missing) printf 'api\thttps://api.example.invalid\r\n' ;;
+          worker_pending) printf 'worker\t\r\n' ;;
+          empty) ;;
+          combined)
+            if grep -Fxq worker "${DEPLOY_ARGS_FIXTURE}"; then
+              printf 'worker\thttps://worker.example.invalid\r\n'
+            fi
+            ;;
+          *) exit 1 ;;
+        esac
+        ;;
+      describe)
+        case "$*" in
+          *latestCreatedRevisionName*) echo worker-00001-fixture ;;
+          *status.traffic*) echo worker-00001-fixture,100 ;;
+          *) printf 'https://worker.example.invalid\r\n' ;;
+        esac
+        ;;
+      *) exit 1 ;;
+    esac
+    ;;
   'run deploy')
     printf '%s\n' "$@" > "${DEPLOY_ARGS_FIXTURE}"
+    if [[ "$3" = api ]]; then grep -E '^(API_URL|WORKER_URL):' .env.deploy.yaml >> "${DEPLOY_ARGS_FIXTURE}"; fi
+    if [[ "${RUN_INVENTORY:-}" = combined && "$3" = worker ]]; then exit 0; fi
     exit 43
     ;;
   'builds submit')
-    printf '%s\n' "$@" > "${BUILD_ARGS_FIXTURE}"
+    printf '%s\n' "$@" >> "${BUILD_ARGS_FIXTURE}"
     # Só os testes da montagem da chave seguem até o deploy simulado.
     if [ "${PUSH_INVENTORY:-}" = present ] || [ "${PUSH_INVENTORY:-}" = missing ]; then exit 0; fi
     exit 42 ;;
@@ -81,7 +111,7 @@ rodar_push() (
   cd "${fixture}"
   env -i PATH="${fixture}:$PATH" GCLOUD_BIN="${fixture}/gcloud" MERCADO_LIVRE_CLIENT_ID=123 \
     SHOPEE_PARTNER_ID=456 PUSH_INVENTORY="$local_inventory" BUILD_ARGS_FIXTURE="${fixture}/build-args" \
-    DEPLOY_ARGS_FIXTURE="${fixture}/deploy-args" bash "$script" "$@"
+    RUN_INVENTORY="${RUN_INVENTORY:-existing}" DEPLOY_ARGS_FIXTURE="${fixture}/deploy-args" bash "$script" "$@"
 )
 
 for target in api both; do
@@ -112,3 +142,30 @@ for inventory in present missing; do
   fi
 done
 printf 'ok    somente o segredo confirmado entra na revisão simulada\n'
+
+for inventory in denied worker_pending worker_missing; do
+  if saida="$(RUN_INVENTORY="$inventory" rodar_push missing api 2>&1)" ||
+    [[ -s "${fixture}/build-args" || -s "${fixture}/deploy-args" ]]; then
+    printf 'FALHA: %s deve abortar antes do build da API\n%s\n' "$inventory" "$saida" >&2
+    exit 1
+  fi
+done
+printf 'ok    inventário ilegível, worker ausente e URL pendente bloqueiam o build da API\n'
+
+for target in api worker; do
+  inventory=api_missing
+  if [[ "$target" = worker ]]; then inventory=empty; fi
+  codigo=0
+  RUN_INVENTORY="$inventory" rodar_push missing "$target" >/dev/null || codigo=$?
+  [[ "$codigo" = 43 && -s "${fixture}/build-args" ]]
+  grep -Fq 'https://placeholder.invalid' "${fixture}/deploy-args"
+done
+printf 'ok    ausência confirmada do próprio serviço preserva o bootstrap em duas etapas\n'
+
+codigo=0
+RUN_INVENTORY=combined rodar_push missing >/dev/null || codigo=$?
+[[ "$codigo" = 43 ]]
+grep -Fq '_APP=worker,' "${fixture}/build-args"
+grep -Fq '_APP=api,' "${fixture}/build-args"
+grep -Fxq 'WORKER_URL: "https://worker.example.invalid"' "${fixture}/deploy-args"
+printf 'ok    deploy combinado relê a URL do worker recém-criado\n'

@@ -19,7 +19,16 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 service_url() {
-  gc run services describe "$1" --region "${REGION}" --format='value(status.url)' 2>/dev/null || true
+  local service="$1" inventory="$2" row url
+  row="$(awk -F '\t' -v service="${service}" '$1 == service { print; exit }' <<< "${inventory}")"
+  if [[ -z "${row}" ]]; then
+    return 0
+  fi
+  url="${row#*$'\t'}"
+  if [[ ! "${url}" =~ ^https://[^[:space:]]+$ ]]; then
+    fail "${service} existe no Cloud Run, mas ainda não tem uma URL HTTPS válida."
+  fi
+  printf '%s\n' "${url}"
 }
 
 build_and_deploy() {
@@ -85,6 +94,24 @@ build_and_deploy() {
       ;;
   esac
 
+  # Consulte o Cloud Run antes de pagar o build. Em um deploy combinado,
+  # a API relê o inventário após o worker para obter a URL recém-criada.
+  local services worker_url api_url
+  if ! services="$(gc run services list --region "${REGION}" --format='value(metadata.name,status.url)' | tr -d '\r')"; then
+    fail "Não foi possível listar os serviços do Cloud Run em ${REGION}."
+  fi
+  worker_url="$(service_url worker "${services}")"
+  if [[ "${app}" = api ]]; then
+    [[ -n "${worker_url}" ]] || fail "worker ainda não existe. Rode: bash infra/deploy-cloud-run.sh worker"
+    api_url="$(service_url api "${services}")"
+    if [[ -z "${api_url}" ]]; then
+      info "api ainda não existe; primeiro deploy define a URL e o segundo a injeta"
+      api_url="https://placeholder.invalid"
+    fi
+  else
+    worker_url="${worker_url:-https://placeholder.invalid}"
+  fi
+
   step "Build da imagem: ${app}"
   info "${image}"
   local build_identity=()
@@ -100,23 +127,6 @@ build_and_deploy() {
   step "Deploy: ${app}"
 
   if [ "${app}" = "api" ]; then
-    # A api precisa conhecer a própria URL (audience do OIDC) e a do worker.
-    # Ambas são estáveis por serviço; na primeira criação a de si mesma ainda
-    # não existe, então o deploy roda em duas fases.
-    local api_url worker_url
-    api_url="$(service_url api)"
-    worker_url="$(service_url worker)"
-
-    # URL vazia viraria variável vazia no container, o Zod recusaria no boot e
-    # o Cloud Run reportaria apenas "failed to start" — erro caro de diagnosticar.
-    # Falhar aqui, com a causa explícita, custa muito menos.
-    [ -n "${worker_url}" ] || fail "worker ainda não existe. Rode: bash infra/deploy-cloud-run.sh worker"
-
-    if [ -z "${api_url}" ]; then
-      info "api ainda não existe; primeiro deploy define a URL e o segundo a injeta"
-      api_url="https://placeholder.invalid"
-    fi
-
     # Precisa bater exatamente com o cadastrado no painel de aplicações do
     # Mercado Livre. Vazio antes do primeiro cadastro é aceitável no
     # placeholder acima; falhar aqui de verdade quando a api_url real existir
@@ -226,10 +236,6 @@ YAML
     #
     # Timeout longo e concorrência baixa: perfil oposto ao da api, que é a
     # razão de serem dois serviços (D-013).
-    local self_url
-    self_url="$(service_url worker)"
-    [ -n "${self_url}" ] || self_url="https://placeholder.invalid"
-
     # D-426: o worker lê os pedidos da Shopee e renova os tokens — o mesmo
     # interruptor da api (SHOPEE_PARTNER_ID), sem redirect_uri.
     local shopee_env="" shopee_secret=""
@@ -250,11 +256,11 @@ YAML
       --concurrency 4 \
       --timeout 900s \
       --cpu 1 --memory 512Mi \
-      --set-env-vars "NODE_ENV=production,APP_COMMIT=${TAG},SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,DOCUMENTS_BUCKET=${PROJECT_ID}-documents,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${self_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}"),AI_MONTHLY_BUDGET_USD=${AI_MONTHLY_BUDGET_USD}${shopee_env}" \
+      --set-env-vars "NODE_ENV=production,APP_COMMIT=${TAG},SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,DOCUMENTS_BUCKET=${PROJECT_ID}-documents,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${worker_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}"),AI_MONTHLY_BUDGET_USD=${AI_MONTHLY_BUDGET_USD}${shopee_env}" \
       --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest${shopee_secret}" \
       --quiet
 
-    if [ "${self_url}" = "https://placeholder.invalid" ]; then
+    if [ "${worker_url}" = "https://placeholder.invalid" ]; then
       info "worker ainda não existe; primeiro deploy define a URL — rode este comando de novo para injetar WORKER_URL real"
     fi
   fi
