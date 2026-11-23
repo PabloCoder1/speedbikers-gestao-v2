@@ -26,6 +26,16 @@ function persistenceError(operation: string, error: { message: string }): Error 
   return new Error(`falha ao ${operation}: ${error.message}`);
 }
 
+function parsePositiveSafeOrderId(raw: string): number | null {
+  if (!/^[1-9][0-9]*$/u.test(raw)) {
+    return null;
+  }
+
+  const parsed = Number(raw);
+
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 /**
  * Persiste a projeção de uma conversa pós-venda, sem rede/job/webhook.
  *
@@ -153,23 +163,39 @@ export async function persistSupportConversation(
 
   // Um pack agrupa VÁRIOS pedidos (`orders.pack_id`); um pedido avulso é ele
   // mesmo. Nos dois casos o vínculo útil para a operação é o pedido.
-  const ordersQuery = db
-    .from("orders")
-    .select("id")
-    .eq("organization_id", context.organizationId)
-    .eq("ml_account_id", context.mlAccountId);
-  const orders =
-    projection.case.packId === null
-      ? await ordersQuery.eq("id", Number(projection.case.externalCaseId))
-      : await ordersQuery.eq("pack_id", projection.case.packId);
+  // D-787: quando `packId === null`, validar inteiro seguro positivo antes de
+  // consultar `orders.id` (evita `Number("") === 0`, `NaN` ou arredondamento).
+  let orders: { data: { id: number }[] | null; error: { message: string } | null };
+
+  if (projection.case.packId !== null) {
+    orders = await db
+      .from("orders")
+      .select("id")
+      .eq("organization_id", context.organizationId)
+      .eq("ml_account_id", context.mlAccountId)
+      .eq("pack_id", projection.case.packId);
+  } else {
+    const singleOrderId = parsePositiveSafeOrderId(projection.case.externalCaseId);
+
+    orders =
+      singleOrderId === null
+        ? { data: [], error: null }
+        : await db
+            .from("orders")
+            .select("id")
+            .eq("organization_id", context.organizationId)
+            .eq("ml_account_id", context.mlAccountId)
+            .eq("id", singleOrderId);
+  }
 
   if (orders.error !== null) {
     throw persistenceError(`resolver pedidos do case ${supportCaseId}`, orders.error);
   }
 
+  const resolvedOrders = orders.data ?? [];
   const externalEntityKind = projection.case.packId === null ? "ORDER" : "PACK";
 
-  if (orders.data.length === 0) {
+  if (resolvedOrders.length === 0) {
     // A conversa pode chegar antes de o pedido ter sido sincronizado. O
     // fallback externo mantém o case rastreável até o pedido existir.
     await ensureSupportLink(db, {
@@ -184,7 +210,7 @@ export async function persistSupportConversation(
     return { supportCaseId, messagesUpserted: projection.messages.length, linkedOrderIds: [], linkMode: "EXTERNAL", transitionApplied };
   }
 
-  for (const order of orders.data) {
+  for (const order of resolvedOrders) {
     await ensureSupportLink(db, {
       organization_id: context.organizationId,
       ml_account_id: context.mlAccountId,
@@ -212,7 +238,7 @@ export async function persistSupportConversation(
   return {
     supportCaseId,
     messagesUpserted: projection.messages.length,
-    linkedOrderIds: orders.data.map((order) => order.id),
+    linkedOrderIds: resolvedOrders.map((order) => order.id),
     linkMode: "TYPED",
     transitionApplied,
   };

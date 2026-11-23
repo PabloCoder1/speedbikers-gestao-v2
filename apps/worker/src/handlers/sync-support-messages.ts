@@ -115,13 +115,20 @@ async function readWholeConversation(
   const total = first.paging?.total ?? first.messages.length;
   const messages: PackMessage[] = [...first.messages];
 
+  // D-787: primeira página vazia encerra sem segunda chamada desperdiçada;
+  // páginas seguintes avançam `offset` por `messages.length` para não pular
+  // mensagens quando a API limita a página abaixo de `PAGE_LIMIT`.
+  if (messages.length === 0) {
+    return first;
+  }
+
   for (let page = 1; page < MAX_PAGES && messages.length < total; page += 1) {
     const next = await fetchPackMessages({
       mercadoLivre: deps.mercadoLivre,
       accessToken,
       packOrOrderId,
       sellerId,
-      offset: page * PAGE_LIMIT,
+      offset: messages.length,
       limit: PAGE_LIMIT,
     });
 

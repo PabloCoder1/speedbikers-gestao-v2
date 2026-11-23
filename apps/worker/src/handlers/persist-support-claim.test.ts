@@ -31,7 +31,12 @@ function matches(row: Row, filters: Row): boolean {
 }
 
 /** Fake stateful mínimo: só as tabelas que `persistSupportClaim` toca. */
-function fakeDb(options: { orders?: number[]; orderItems?: { sku_id: string | null }[]; caseWriteError?: string } = {}) {
+function fakeDb(options: {
+  orders?: number[];
+  orderItems?: { sku_id: string | null }[];
+  orderItemsError?: string;
+  caseWriteError?: string;
+} = {}) {
   const cases = new Map<string, Row>();
   const links: Row[] = [];
   const messages: Row[] = [];
@@ -74,7 +79,12 @@ function fakeDb(options: { orders?: number[]; orderItems?: { sku_id: string | nu
           if (table === "order_items") {
             const chain = {
               eq: () => chain,
-              not: () => Promise.resolve({ data: options.orderItems ?? [], error: null }),
+              not: () =>
+                Promise.resolve(
+                  options.orderItemsError !== undefined
+                    ? { data: null, error: { message: options.orderItemsError } }
+                    : { data: options.orderItems ?? [], error: null },
+                ),
             };
 
             return chain;
@@ -321,5 +331,26 @@ describe("derivação de SKU do pedido vinculado (D-116)", () => {
     // O fake não tem índice único: um INSERT cego a mais apareceria aqui
     // como linha duplicada, que é o 23505 que enchia o log de produção.
     expect(fake.links).toHaveLength(3);
+  });
+
+  it("D-787: falha ao ler order_items propaga em vez de sumir com vínculos ORDER_DERIVED e apagar fallback", async () => {
+    const fake = fakeDb({
+      orders: [2000007819609432],
+      orderItemsError: "statement timeout em order_items",
+    });
+    fake.links.push({
+      organization_id: CONTEXT.organizationId,
+      ml_account_id: CONTEXT.mlAccountId,
+      support_case_id: "case-1",
+      external_entity_kind: "ORDER",
+      external_entity_id: "2000007819609432",
+      link_source: "REMOTE",
+    });
+
+    await expect(persistSupportClaim(fake.db as never, CONTEXT, project())).rejects.toThrow(
+      /statement timeout em order_items/,
+    );
+    // O fallback externo não pode ter sido apagado antes da derivação concluir.
+    expect(fake.links.some((link) => link.external_entity_kind === "ORDER")).toBe(true);
   });
 });

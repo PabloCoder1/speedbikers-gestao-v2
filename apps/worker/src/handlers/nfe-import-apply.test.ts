@@ -32,6 +32,7 @@ function fakeDeps(options: {
   items?: { position: number; sku_id: string | null; quantity: number; cfop?: string | null }[];
   movementInsertFails?: boolean;
   finalUpdateFails?: boolean;
+  failedUpdateFails?: boolean;
   intermediaryCnpj?: string | null;
 }): { deps: NfeApplyDeps; captured: Captured; lines: string[] } {
   const captured: Captured = { documentUpdates: [], movements: [] };
@@ -76,7 +77,8 @@ function fakeDeps(options: {
               eq: () =>
                 Promise.resolve({
                   error:
-                    options.finalUpdateFails === true && values.status === "APPLIED"
+                    (options.finalUpdateFails === true && values.status === "APPLIED") ||
+                    (options.failedUpdateFails === true && values.status === "FAILED")
                       ? { message: "connection reset" }
                       : null,
                 }),
@@ -407,5 +409,19 @@ describe("saída por documento não fiscal (D-375)", () => {
 
     expect(outcome).toEqual({ status: "done", processed: 1_005 });
     expect(captured.movements).toHaveLength(1_005);
+  });
+
+  it("D-787: falha transitória ao gravar status FAILED na recusa retorna retryable para não travar em APPLYING", async () => {
+    const { deps, captured, lines } = fakeDeps({
+      operationType: "SAIDA",
+      intermediaryCnpj: "35635824000112",
+      items: [{ position: 0, sku_id: "sku-capacete", quantity: 1, cfop: "6108" }],
+      failedUpdateFails: true,
+    });
+
+    const outcome = await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "connection reset" });
+    expect(captured.movements).toHaveLength(0);
   });
 });

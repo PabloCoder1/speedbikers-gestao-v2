@@ -277,4 +277,57 @@ describe("fetchSupportClaims", () => {
       expect(requests.some((request) => request.path.endsWith("/claims/1/detail"))).toBe(true);
     });
   });
+
+  it("D-787: remoteTotal soma paging.total uma vez por papel mesmo em múltiplas páginas", async () => {
+    const page0 = Array.from({ length: 100 }, (_, i) => claim(1000 + i));
+    const page1 = Array.from({ length: 25 }, (_, i) => claim(2000 + i));
+    const fake = fakeDb();
+    const client = {
+      request: (options: RequestOptions<unknown>) => {
+        if (options.path.includes("/messages")) return Promise.resolve([]);
+        if (options.path.includes("/detail")) return Promise.resolve({ due_date: null });
+        const params = new URL(`https://x${options.path}`).searchParams;
+        const role = params.get("players.role");
+        const offset = Number(params.get("offset") ?? "0");
+        if (role === "respondent") {
+          return Promise.resolve({
+            data: offset === 0 ? page0 : page1,
+            paging: { total: 125 },
+          });
+        }
+        return Promise.resolve({ data: [], paging: { total: 0 } });
+      },
+    } as unknown as MercadoLivreClient;
+
+    const result = await fetchSupportClaims({
+      db: fake.db,
+      organizationId: ORGANIZATION_ID,
+      mlAccountId: ML_ACCOUNT_ID,
+      sellerId: SELLER_ID,
+      mercadoLivre: client,
+      accessToken: "token",
+      updatedAfter: UPDATED_AFTER,
+      notifyEpoch: NOTIFY_EPOCH,
+      logger,
+    });
+
+    expect(result.itemsProcessed).toBe(125);
+    expect(result.remoteTotal).toBe(125);
+  });
+
+  it("D-787: latestRecordAt compara instantes reais entre fusos distintos e ignora data inválida", async () => {
+    const { result } = await run({
+      respondent: [
+        [
+          // 10:00-04:00 = 14:00Z (mais recente que 12:00+00:00 = 12:00Z, apesar de lexicograficamente menor)
+          claim(1, { last_updated: "2026-08-27T10:00:00.000-04:00" }),
+          claim(2, { last_updated: "2026-08-27T12:00:00.000+00:00" }),
+          claim(3, { last_updated: "data-invalida" }),
+        ],
+      ],
+      complainant: [[]],
+    });
+
+    expect(result.latestRecordAt).toBe("2026-08-27T10:00:00.000-04:00");
+  });
 });

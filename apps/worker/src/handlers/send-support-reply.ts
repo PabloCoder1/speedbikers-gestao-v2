@@ -150,9 +150,10 @@ export function createSendSupportReplyHandler(deps: SendSupportReplyDeps): JobHa
       return { status: "failed", retryable: !recorded && dispatchStartedAt === null, reason };
     };
 
-    const questionId = Number(attempt.support_cases?.external_case_id);
+    const rawExternalCaseId = attempt.support_cases?.external_case_id ?? "";
+    const questionId = /^[1-9][0-9]*$/u.test(rawExternalCaseId) ? Number(rawExternalCaseId) : Number.NaN;
 
-    if (attempt.support_cases?.channel !== "QUESTION" || !Number.isSafeInteger(questionId)) {
+    if (attempt.support_cases?.channel !== "QUESTION" || !Number.isSafeInteger(questionId) || questionId <= 0) {
       return fail("escopo", "atendimento não é uma Pergunta respondível");
     }
 

@@ -414,4 +414,17 @@ describe("createSendSupportReplyHandler (D-096)", () => {
     expect(ctx.calls).toHaveLength(0);
     expect(ctx.updates[0]).toMatchObject({ status: "FAILED", error_code: "token" });
   });
+
+  it.each(["", "0", "-5", " 123 "])(
+    "D-787: external_case_id inválido (%j) falha em escopo sem chamar /questions",
+    async (externalCaseId) => {
+      const ctx = run({
+        attempt: { ...DEFAULT_ATTEMPT, support_cases: { external_case_id: externalCaseId, channel: "QUESTION" } },
+      });
+
+      expect(await ctx.outcome).toMatchObject({ status: "failed", retryable: false });
+      expect(ctx.calls).toHaveLength(0);
+      expect(ctx.updates[0]).toMatchObject({ status: "FAILED", error_code: "escopo" });
+    },
+  );
 });
