@@ -2513,3 +2513,18 @@ e o índice `user_id, created_at DESC`. Uma execução de cada variante em
 O novo critério manteve o índice e acrescentou ordenação incremental,
 com pico observado de 27 kB. A página profunda continua lendo o
 deslocamento inteiro. A amostra mede a ordenação e o acesso ao índice. Os tempos da rota com joins e RLS não foram medidos aqui.
+
+### Marcação de notificações visíveis em lote (D-853)
+
+Medição em PostgreSQL 17 descartável com duas vCPU e 141.500 vínculos
+sintéticos. O usuário do ensaio tinha 55.000 vínculos sem leitura, dos
+quais 49.500 tinham evento visível pela RLS. Cada variante foi executada
+uma vez, em transação própria, com rollback.
+
+| Escrita | Vínculos alterados | Tempo |
+| --- | ---: | ---: |
+| Update direto, contando as linhas alteradas | 55.000 | 670,231 ms |
+| RPC com join nos eventos visíveis | 49.500 | 1.311,154 ms |
+
+Após os rollbacks, nenhuma linha havia ficado marcada. O ensaio mede o
+custo de banco e não inclui HTTP, latência de produção nem contenção.

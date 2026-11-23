@@ -20403,3 +20403,17 @@ direta retornou seis vínculos sem leitura. A contagem com o join
 retornou três eventos visíveis, excluindo um evento de conta, um de loja
 e um de organização sem acesso. O histórico combinado preservou listas
 por loja e contagens por severidade no ensaio.
+
+## D-853 - Marcar todas como lidas usa o escopo visível da Central
+
+**23/11/2026 · Central de Notificações.** A ação geral chama a mesma
+RPC das ações filtradas. O join com `domain_events` aplica a RLS dos
+eventos e a função devolve a contagem de linhas alteradas. A atualização
+direta anterior filtrava só o destinatário. Se um vínculo continuasse
+no histórico após a perda de acesso a uma conta ou loja, essa atualização
+também o marcava, apesar de ele estar fora da lista e da contagem.
+
+No ensaio PostgreSQL com a RPC do repositório, a escrita direta alterou
+três vínculos próprios. A RPC marcou os dois eventos visíveis, preservou
+o terceiro vínculo e o de outro destinatário e retornou zero ao repetir.
+A escrita continua usando a assinatura existente, com a loja opcional.
