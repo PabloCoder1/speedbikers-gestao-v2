@@ -2286,3 +2286,28 @@ vazia. A compactação precisa preservar essas duas leituras e os eventos de
 mudança. `/api/vitals` escreve logs e fica fora da amostra do Postgres.
 Próximo ensaio em cópia isolada: comparar os resultados das RPCs e os eventos
 antes e depois da compactação e medir o tamanho físico recuperável.
+
+Restore seletivo de `fulfillment_stock_snapshots` da geração
+`1795328157907250` de 22/11, com MD5 e tamanho conferidos. PostgreSQL 17
+descartável sem rede nem portas publicadas, limitado a 2 vCPU e 8 GiB.
+As tabelas da comparação foram reconstruídas com os mesmos cinco índices.
+
+| Regra ensaiada | Linhas | Bytes com índices |
+| --- | ---: | ---: |
+| Cópia integral | 382.574 | 131.448.832 |
+| Últimos 30 dias e primeira/última captura de cada sequência de estado igual | 67.086 | 23.289.856 |
+| Regra anterior mais última captura por dia comercial, org, conta, inventário, anúncio, variação e SKU | 148.093 | 50.987.008 |
+
+Estado igual considera organização, anúncio, variação, SKU e quantidade. A
+primeira regra conservou a captura atual e as transições comparadas, mas
+falhou numa janela histórica de três dias com saldo constante: podia
+descartar a única captura válida para o fechamento de um dia em
+`get_purchase_analysis`. A segunda preservou, por ID, **104.303 fechamentos
+diários**, **2.412 últimas capturas de inventários** e **22.032 inícios de
+sequência**. Todas as comparações tiveram zero divergências.
+
+A segunda regra economizou 80.461.824 bytes (61,21%) na cópia reconstruída.
+Faltam a comparação das RPCs completas sob RLS, a auditoria dos demais
+consumidores e a aprovação da política. A medição não projeta economia em
+disco na VM. Os dois contêineres temporários e arquivos locais foram
+removidos ao fim dos ensaios.

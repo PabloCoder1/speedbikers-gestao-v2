@@ -319,7 +319,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database",
-      "evidencia": "Catálogo da VM em 23/11: Full 174.301.184 bytes e job_runs 140.722.176 bytes, com índices e TOAST. Falta provar compactação e preservação das leituras em cópia isolada (PERFORMANCE.md, P03).",
+      "evidencia": "Cópia isolada: -61,21% com últimos 30 dias, transições e fechamento diário, zero divergências nas projeções comparadas. Faltam RPCs sob RLS e política aprovada (PERFORMANCE.md, P03).",
       "fase": 3
     },
     {
