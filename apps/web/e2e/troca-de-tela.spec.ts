@@ -33,7 +33,7 @@ async function segurarTela(page: Page, caminho: string, aba?: string): Promise<v
 async function abrirHome(page: Page): Promise<string> {
   await login(page, "/");
   await page.waitForURL((url) => url.pathname === "/");
-  await page.getByRole("region", { name: "Atenção necessária" }).locator("a[href='/notificacoes']").waitFor();
+  await page.getByRole("region", { name: "Atenção necessária" }).getByRole("link", { name: /Notificações não lidas/ }).waitFor();
   await page.waitForLoadState("networkidle");
 
   return (await page.locator("h1").first().textContent()) ?? "";
@@ -301,11 +301,11 @@ test("link no conteúdo: o IndicadorDeNavegacao dá o sinal até a tela nova che
   const titulo = await abrirHome(page);
 
   await segurarTela(page, "/notificacoes");
-  await page.getByRole("region", { name: "Atenção necessária" }).locator("a[href='/notificacoes']").click();
+  await page.getByRole("region", { name: "Atenção necessária" }).getByRole("link", { name: /Notificações não lidas/ }).click();
 
   await esperandoNaTelaAnterior(page, titulo);
   await chegou(page, /^Central de Notificações$/);
-  await expect(page).toHaveURL(/\/notificacoes$/);
+  await expect(page).toHaveURL((url) => url.pathname === "/notificacoes" && url.searchParams.get("estado") === "nao-lidas");
 });
 
 test("paleta de busca: a escolha navega por código e também tem o sinal (D-513)", async ({ page }) => {

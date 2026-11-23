@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **696** (D-001 a D-856).
+Decisões registradas: **697** (D-001 a D-857).
 
 ## Por domínio
 
@@ -618,7 +618,7 @@ Decisões registradas: **696** (D-001 a D-856).
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
 
-### worker/infra (118)
+### worker/infra (119)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -738,4 +738,5 @@ Decisões registradas: **696** (D-001 a D-856).
 - **D-760** — O pedido feito fora do sistema é um pedido de compra comum, com origem e referência externa
 - **D-761** — "Já fiz o pedido" passa pelo caminho canônico e devolve os candidatos a duplicidade em vez de criar
 - **D-779** — Logger estruturado redige `message`, protege referências circulares e serializa `Error` em qualquer profundidade
+- **D-857** — Avisos em tempo real respeitam o ciclo da sessão
 

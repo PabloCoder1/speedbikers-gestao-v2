@@ -143,6 +143,8 @@ export function NotificationToasts({
         .eq("id", payload.new.notification_id)
         .maybeSingle();
 
+      if (cancelled) return;
+
       const event = (data as ToastNotificationRow | null)?.domain_events ?? null;
 
       if (event === null) return;
@@ -222,6 +224,8 @@ export function NotificationToasts({
             filter: `user_id=eq.${uid}`,
           },
           (payload) => {
+            if (cancelled) return;
+
             void handleInsert(payload);
           },
         )

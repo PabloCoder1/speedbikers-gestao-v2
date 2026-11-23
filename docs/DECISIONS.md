@@ -20463,3 +20463,17 @@ sem evento visível. A nova retornou cinco eventos mais antigos,
 com conta e data do fato preservadas, em ordem estável. O teste
 de renderização confirmou que os indicadores chegaram antes da
 resposta da atividade.
+
+## D-857 - Avisos em tempo real respeitam o ciclo da sessão
+
+**23/11/2026 · Notificações.** O callback de leitura verifica se a
+assinatura segue ativa antes da consulta e após a resposta. O
+cabeçalho remonta os avisos quando muda o identificador do usuário,
+reiniciando os grupos e os temporizadores. Uma simulação em memória
+confirmou que uma resposta tardia deixava um aviso e um temporizador
+após o encerramento da assinatura. Com a guarda, callbacks encerrados
+são ignorados e a assinatura ativa continua exibindo avisos.
+
+Os testes de navegação passaram a localizar o cartão de não lidas
+pelo rótulo e a confirmar o filtro no destino. A CI de 20b6e4c8 havia
+reprovado três casos que buscavam a URL antiga sem o filtro de D-855.

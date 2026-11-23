@@ -245,7 +245,11 @@ export async function Shell({ children }: { children: ReactNode }): Promise<Reac
       */}
       <CopilotLauncher />
 
-      <NotificationToasts userId={auth.user?.id ?? null} preferenceRules={preferenceRules} />
+      <NotificationToasts
+        key={auth.user?.id ?? "sem-sessao"}
+        userId={auth.user?.id ?? null}
+        preferenceRules={preferenceRules}
+      />
       {/* O sinal de toda troca de tela: as pastas do grupo `(app)` não têm `loading.tsx` (D-512). */}
       <IndicadorDeNavegacao />
     </div>
