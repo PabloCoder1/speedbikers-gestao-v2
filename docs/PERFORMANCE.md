@@ -2264,3 +2264,25 @@ No Postgres local, a consulta `DISTINCT ON (ml_account_id, inventory_id)` com or
 
 
 A VM tinha estimativa de 346.394 linhas e `pg_table_size` de 50.454.528 bytes. Um Postgres 17.6 descartável, sem rede, recebeu 346.394 linhas sintéticas (48.971.776 bytes) e as definições prévias dos índices. A DDL versionada levou **549 ms** sem concorrência, medidos de ponta a ponta no cliente local. Com uma segunda sessão mantendo `ACCESS SHARE`, a troca abortou com `55P03` em **10,718 s**. O rollback preservou a constraint e os dois índices anteriores. Sem o bloqueio, a mesma DDL manteve as 346.394 linhas e deixou um índice único válido. A latência e a janela de bloqueio na VM seguem sem medição.
+
+### Tamanho de Full e telemetria na VM (Sentinel P03, 23/11/2026)
+
+Leitura de catálogo no Postgres da VM `sb-db`, em transação somente leitura com
+limite de 5 s por consulta. O tamanho inclui índices e TOAST. As linhas vivas
+são estimativas de `pg_stat_user_tables`. O reset das estatísticas do banco
+aparece em 18/11 às 13:49 UTC. A amostra mede tamanho atual, sem taxa mensal.
+
+| Relação | Bytes totais | Linhas vivas estimadas |
+| --- | ---: | ---: |
+| `fulfillment_stock_snapshots` | 174.301.184 | 394.693 |
+| `job_runs` | 140.722.176 | 348.192 |
+| `notifications` | 32.358.400 | 143.287 |
+| `sync_runs` | 19.128.320 | 59.543 |
+| `sync_errors` | 253.952 | 558 |
+
+O Full da reposição usa as capturas dos últimos três dias. O worker também
+busca a captura anterior por conta e inventário quando a janela recente está
+vazia. A compactação precisa preservar essas duas leituras e os eventos de
+mudança. `/api/vitals` escreve logs e fica fora da amostra do Postgres.
+Próximo ensaio em cópia isolada: comparar os resultados das RPCs e os eventos
+antes e depois da compactação e medir o tamanho físico recuperável.

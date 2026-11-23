@@ -469,13 +469,6 @@ jobs:
       - name: Verificação do backup diário
         run: node --test infra/vm/check-daily-backup.test.mjs
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Verificação do backup diário
-        run: node --test infra/vm/check-daily-backup.test.mjs
-
       - name: Provisionamento de infraestrutura com gcloud simulado
         run: |
           bash infra/alertas.test.sh

@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-21, candidato sobre a81f5235 concilia a infraestrutura do #374",
+  "corte": "2026-11-23, candidato #378 com evidências operacionais de #374 e locais de #381 e #382",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -207,9 +207,9 @@
       "area": "Google Cloud e infraestrutura",
       "entrega": "Backup/restore recorrente com prova e alerta",
       "peso": 5,
-      "status": "Em andamento",
+      "status": "Validado em produção",
       "responsavel": "Infra/Database",
-      "evidencia": "Restore integral do diário de 19/11 em container sem rede, com 322 migrations e zero índices inválidos. Sondagem externa diária ativa, com entrega do alerta confirmada após falha sintética (#372). Faltam política de retenção e ensaios de restore recorrentes.",
+      "evidencia": "Restores isolados de 19 e 22/11. O segundo restaurou em 91 s com 324 migrations. Retenção de 35 dias em diario/. Sondagem externa ativa e incidente/e-mail confirmados após falha controlada (#372, #374, infra/vm/README.md).",
       "fase": 2
     },
     {
@@ -307,9 +307,9 @@
       "area": "Performance",
       "entrega": "Benchmarks representativos após restauração",
       "peso": 5,
-      "status": "Não iniciado",
+      "status": "Testado localmente",
       "responsavel": "Performance",
-      "evidencia": "Baseline antiga não mede VM atual; faturamento90d e frete frio",
+      "evidencia": "72 consultas sob concorrência de seis em backup restaurado com limites equivalentes à VM (2 vCPU e 8 GiB). Todas abaixo de 8 s (#381).",
       "fase": 3
     },
     {
@@ -319,7 +319,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database",
-      "evidencia": "1092→979MB apenas simulação; medir retenções",
+      "evidencia": "Catálogo da VM em 23/11: Full 174.301.184 bytes e job_runs 140.722.176 bytes, com índices e TOAST. Falta provar compactação e preservação das leituras em cópia isolada (PERFORMANCE.md, P03).",
       "fase": 3
     },
     {
@@ -349,7 +349,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "QA/Infra",
-      "evidencia": "Ensaio em processo do webhook com duas rajadas de 320: 503 sem enqueue durante falha de lookup; 200 após recuperação. Postgres e Cloud Tasks reais ainda pendentes.",
+      "evidencia": "Duas rodadas de 1.088 requisições com API, PostgREST e SDK Cloud Tasks contra gRPC local. Recuperação criou 80 tarefas únicas e deduplicou 240. Falta validar fila gerenciada e entrega ao worker (#382).",
       "fase": 5
     },
     {
