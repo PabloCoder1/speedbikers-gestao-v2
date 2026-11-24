@@ -14,7 +14,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * - o anúncio pausado ou excluído (D-631 b) não conta;
  * - na Shopee só conta a unidade NORMAL de loja live;
  * - a ação é uma por SKU, com a evidência e a recomendação pela origem da marca;
- * - quem volta ao catálogo encerra pelo ciclo de vida de 3 dias.
+ * - quem volta ao catálogo encerra pelo ciclo de vida de 3 dias;
+ * - D-862: o anúncio ativo de um KIT que leva o SKU como componente conta, na
+ *   mesma ação do SKU, com o kit na evidência.
  *
  * Exige o Supabase local no ar (`pnpm exec supabase start`).
  */
@@ -47,7 +49,8 @@ interface Acao {
     origem: string;
     anuncios_ml: number;
     anuncios_shopee: number;
-    anuncios: { canal: string; item_id: string | number }[];
+    anuncios_de_kit: number;
+    anuncios: { canal: string; item_id: string | number; kit_sku?: string }[];
     saldo_local: number | null;
   };
   motivo: string | null;
@@ -110,10 +113,12 @@ beforeAll(async () => {
   // A: planilha, anúncio ML pelo SKU resolvido. B: à mão, vínculo ITEM no ML
   // e unidade na Shopee. C: anúncio pausado. D: anúncio excluído (D-631 b).
   // E: no catálogo, com anúncio. F: fora, sem anúncio. G: só Shopee fora do ar.
-  for (const chave of ["A", "B", "C", "D", "E", "F", "G"]) {
+  // D-862: H, fora, só vende por dois kits (K1 no ML, K2 na Shopee). K3 leva
+  // o E, que está no catálogo, e não entra.
+  for (const chave of ["A", "B", "C", "D", "E", "F", "G", "H", "K1", "K2", "K3"]) {
     const result = await client.query<{ id: string }>(
-      "insert into public.skus (organization_id, sku, kind, title) values ($1, $2, 'PRODUTO', $3) returning id",
-      [ORG, codigo(chave), `Produto ${chave}`],
+      "insert into public.skus (organization_id, sku, kind, title) values ($1, $2, $3, $4) returning id",
+      [ORG, codigo(chave), chave.startsWith("K") ? "KIT" : "PRODUTO", `Produto ${chave}`],
     );
     const id = result.rows[0]?.id;
 
@@ -127,6 +132,12 @@ beforeAll(async () => {
   await marcar("D", "PLANILHA");
   await marcar("F", "MANUAL");
   await marcar("G", "PLANILHA");
+  await marcar("H", "PLANILHA");
+  await client.query(
+    `insert into public.sku_components (kit_sku_id, component_sku_id, quantity)
+     values ($1, $4, 2), ($2, $4, 1), ($2, $5, 1), ($3, $5, 1)`,
+    [sku.K1, sku.K2, sku.K3, sku.H, sku.E],
+  );
 
   await client.query(
     `insert into public.listings (organization_id, ml_account_id, item_id, title, status, price, currency_id, available_quantity, sku_id, deleted_at)
@@ -134,8 +145,10 @@ beforeAll(async () => {
             ($1, $2, 'MLB8610002', 'Anúncio B', 'active', 10, 'BRL', 1, null, null),
             ($1, $2, 'MLB8610003', 'Anúncio C', 'paused', 10, 'BRL', 0, $4, null),
             ($1, $2, 'MLB8610004', 'Anúncio D', 'active', 10, 'BRL', 1, $5, now()),
-            ($1, $2, 'MLB8610005', 'Anúncio E', 'active', 10, 'BRL', 1, $6, null)`,
-    [ORG, CONTA, sku.A, sku.C, sku.D, sku.E],
+            ($1, $2, 'MLB8610005', 'Anúncio E', 'active', 10, 'BRL', 1, $6, null),
+            ($1, $2, 'MLB8610006', 'Kit K1', 'active', 10, 'BRL', 1, $7, null),
+            ($1, $2, 'MLB8610007', 'Kit K3', 'active', 10, 'BRL', 1, $8, null)`,
+    [ORG, CONTA, sku.A, sku.C, sku.D, sku.E, sku.K1, sku.K3],
   );
   await client.query(
     `insert into public.sku_listing_links (organization_id, ml_account_id, sku_id, ref_kind, item_id)
@@ -146,8 +159,9 @@ beforeAll(async () => {
     `insert into public.shopee_items (shopee_shop_id, organization_id, item_id, item_status, shopee_updated_at, item_name, item_sku, has_model,
                                       details_synced_at, details_update_time, details_error, available_stock, is_fulfillment_by_shopee)
      values ($1, $2, 8610001, 'NORMAL', now(), 'Shopee B', $3, false, now(), now(), null, 2, false),
-            ($1, $2, 8610002, 'UNLIST', now(), 'Shopee G', $4, false, now(), now(), null, 2, false)`,
-    [LOJA, ORG, codigo("B"), codigo("G")],
+            ($1, $2, 8610002, 'UNLIST', now(), 'Shopee G', $4, false, now(), now(), null, 2, false),
+            ($1, $2, 8610003, 'NORMAL', now(), 'Shopee K2', $5, false, now(), now(), null, 2, false)`,
+    [LOJA, ORG, codigo("B"), codigo("G"), codigo("K2")],
   );
   await client.query(
     `insert into public.stock_movements (organization_id, sku_id, location_kind, qty_delta, movement_type, idempotency_key, occurred_at)
@@ -166,12 +180,12 @@ describe("o produto fora do catálogo com anúncio ativo na Central de Ações (
     const r = await sincronizar("2026-11-24");
 
     expect(r.fontes).toEqual([FONTE]);
-    expect(r.detectados).toEqual({ [FONTE]: 2 });
-    expect(r.criadas).toBe(2);
+    expect(r.detectados).toEqual({ [FONTE]: 3 });
+    expect(r.criadas).toBe(3);
 
     const lista = await acoes();
 
-    expect(lista.map((a) => a.detector.sku)).toEqual([codigo("A"), codigo("B")]);
+    expect(lista.map((a) => a.detector.sku)).toEqual([codigo("A"), codigo("B"), codigo("H")]);
   });
 
   it("uma ação por SKU, média, confiança alta, sem impacto e sem conta ou loja", async () => {
@@ -185,7 +199,7 @@ describe("o produto fora do catálogo com anúncio ativo na Central de Ações (
     const a = (await acoes()).find((x) => x.detector.sku === codigo("A"));
 
     expect(a?.sku_id).toBe(sku.A);
-    expect(a?.detector).toMatchObject({ origem: "PLANILHA", anuncios_ml: 1, anuncios_shopee: 0, saldo_local: 3 });
+    expect(a?.detector).toMatchObject({ origem: "PLANILHA", anuncios_ml: 1, anuncios_shopee: 0, anuncios_de_kit: 0, saldo_local: 3 });
     expect(a?.detector.anuncios).toEqual([expect.objectContaining({ canal: "mercado_livre", item_id: "MLB8610001", conta: "Conta D-861" })]);
     expect(a?.evidencias.map((e) => e.descricao)).toEqual([
       `O SKU ${codigo("A")} está fora do catálogo desde 23/11/2026: saiu da planilha de produtos do UpSeller.`,
@@ -193,6 +207,22 @@ describe("o produto fora do catálogo com anúncio ativo na Central de Ações (
       "O último saldo local na V3 é 3.",
     ]);
     expect(a?.recommendation).toContain("cadastre-o de novo no UpSeller");
+    expect(a?.recommendation).not.toContain("kit");
+  });
+
+  it("H (D-862): o anúncio de kit que leva o SKU conta, com o kit na evidência e na recomendação", async () => {
+    const h = (await acoes()).find((x) => x.detector.sku === codigo("H"));
+
+    expect(h?.sku_id).toBe(sku.H);
+    expect(h?.detector).toMatchObject({ anuncios_ml: 1, anuncios_shopee: 1, anuncios_de_kit: 2 });
+    expect(h?.detector.anuncios.map((x) => [x.canal, x.item_id, x.kit_sku])).toEqual([
+      ["mercado_livre", "MLB8610006", codigo("K1")],
+      ["shopee", 8610003, codigo("K2")],
+    ]);
+    expect(h?.evidencias[1]?.descricao).toBe(
+      "Ainda há 2 anúncio(s) ativo(s) vinculado(s) a ele: 1 no Mercado Livre e 1 na Shopee; 2 deles de kit que leva o SKU como componente.",
+    );
+    expect(h?.recommendation).toContain("No kit que leva o SKU, troque o componente no UpSeller ou pause o anúncio do kit.");
   });
 
   it("B: a marca à mão, o vínculo ITEM no ML e a unidade da Shopee; sem saldo não vira zero", async () => {
@@ -211,7 +241,7 @@ describe("o produto fora do catálogo com anúncio ativo na Central de Ações (
     const r = await sincronizar("2026-11-24");
 
     expect(r.criadas).toBe(0);
-    expect(await acoes()).toHaveLength(2);
+    expect(await acoes()).toHaveLength(3);
   });
 
   it("quem volta ao catálogo encerra depois de 3 dias sem detecção, com o motivo", async () => {

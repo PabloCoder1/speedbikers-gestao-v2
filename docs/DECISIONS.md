@@ -19986,3 +19986,24 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
   - quem volta ao catálogo encerra no 3º dia com o motivo;
   - a função continua sem grant para `authenticated` e `anon`.
 - Unitários: o rótulo, os atalhos e as 8 chamadas do worker.
+
+## D-862 - O kit que leva um componente fora do catálogo conta no aviso da Central
+
+**Contexto:** a D-861 deixou de fora o kit cujo componente saiu do catálogo. A venda do kit baixa o estoque dos componentes (`sku_components`), então o anúncio ativo do kit também vende o produto que a empresa deixou de ter. O kit nunca recebe a marca: a D-860 só marca PRODUTO.
+
+**Decisão:**
+
+- **Mesma fonte e mesma ação.** `fora_do_catalogo_anunciado` passa a contar, para cada SKU fora do catálogo, os anúncios ativos dele e os anúncios ativos de todo kit que o leva como componente. A regra do anúncio é a mesma de cada canal: o vínculo de `get_sku_listings` no Mercado Livre e a unidade NORMAL de loja live na Shopee. A migration é a `20261124130000`, com o corpo da `20261124120000`; só a seção 4.8 muda.
+- **Uma ação por SKU fora do catálogo**, e não uma por kit. A decisão é uma só, a do componente. Abrir uma ação por kit espalharia a mesma decisão pela Central.
+- **Evidência:** `anuncios_de_kit` conta quantos anúncios são de kit. Cada anúncio de kit traz o código dele em `kit_sku`, e a lista põe primeiro os do próprio SKU. O texto diz quantos são de kit.
+- **Recomendação:** com anúncio de kit, ganha "No kit que leva o SKU, troque o componente no UpSeller ou pause o anúncio do kit."
+- **Sem mudança no worker nem na web:** a fonte é a mesma, e a tela já mostra a evidência e a recomendação escritas no banco.
+
+**Ordem de publicação:** depois da `20261124120000`, a migration `20261124130000`. Nada mais a publicar.
+
+**Alternativas rejeitadas:** uma ação por kit (a mesma decisão em várias linhas); marcar o kit como fora do catálogo (o kit continua existindo no UpSeller e pode trocar o componente); contar o kit só quando todos os componentes saíram (basta um faltar para o kit não poder ser montado).
+
+**Verificação:**
+- Integração (`fora-do-catalogo-na-central.integration.test.ts`, 8 testes): o H, fora do catálogo, só vende por dois kits (um no ML e um na Shopee) e é detectado com os dois. O kit que leva um componente do catálogo não entra.
+- A ordem da lista é determinística, primeiro os do próprio SKU e depois os de kit. A primeira versão ordenava pelo UUID do kit e variava entre rodadas.
+- `@sb/db test:integration`: 1.237 testes, duas rodadas com `db reset`.

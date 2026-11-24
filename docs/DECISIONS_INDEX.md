@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **640** (D-001 a D-861).
+Decisões registradas: **641** (D-001 a D-862).
 
 ## Por domínio
 
@@ -131,7 +131,7 @@ Decisões registradas: **640** (D-001 a D-861).
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 - **D-766** — Saída Manual e itens editáveis na conferência, sem migration
 
-### estoque (54)
+### estoque (55)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -187,6 +187,7 @@ Decisões registradas: **640** (D-001 a D-861).
 - **D-763** — A reposição mostra o que já está encomendado, sem recalcular a sugestão
 - **D-765** — O envio ao Full conferido dá saída no estoque da loja
 - **D-792** — Receber o pedido de compra dá entrada no estoque, e a conferência da invoice cria o SKU que falta
+- **D-862** — O kit que leva um componente fora do catálogo conta no aviso da Central
 
 ### interface (75)
 
