@@ -217,4 +217,11 @@ describe("números da paginação", () => {
     expect(summarizeWindow(2, 4447, 100, 100).label).toBe("Mostrando 101 a 200 de 4.447 anúncios.");
     expect(summarizeWindow(1, 4447, 20, 20).totalPages).toBe(223);
   });
+
+  it("pageNumbers ignora totalPages não finito/não positivo e normaliza página atual fracionária", () => {
+    expect(pageNumbers(1, Number.POSITIVE_INFINITY)).toEqual([]);
+    expect(pageNumbers(1, Number.NaN)).toEqual([]);
+    expect(pageNumbers(1, 0)).toEqual([]);
+    expect(pageNumbers(2.5, 20)).toEqual([1, 2, 3, "…", 20]);
+  });
 });

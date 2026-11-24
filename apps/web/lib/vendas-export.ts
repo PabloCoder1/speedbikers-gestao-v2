@@ -20,6 +20,12 @@ import { agruparLinhas, type CodigoMarketplace, type DiaDeVendas, type EscopoMul
 
 const NOME_DO_MARKETPLACE: Readonly<Record<CodigoMarketplace, string>> = { ML: "Mercado Livre", SHOPEE: "Shopee" };
 
+function nomeDoMarketplace(codigo: string): string {
+  return Object.hasOwn(NOME_DO_MARKETPLACE, codigo)
+    ? NOME_DO_MARKETPLACE[codigo as CodigoMarketplace]
+    : codigo;
+}
+
 /** A linha do total chama-se como o recorte "Todos" da tela. */
 const TOTAL = "Todos os marketplaces";
 
@@ -32,16 +38,17 @@ const CABECALHO_DIAS = ["Dia", "Marketplace", "Receita bruta", "Pedidos sem rece
  */
 const ORDEM_NO_DIA: Readonly<Record<string, number>> = { ML: 0, SHOPEE: 1, TOTAL: 2 };
 
+function ordemNoDia(chave: string): number {
+  return Object.hasOwn(ORDEM_NO_DIA, chave) ? (ORDEM_NO_DIA[chave] ?? 3) : 3;
+}
+
 export function diasParaCsv(dias: readonly DiaDeVendas[], escopo: EscopoMulticanal): string {
   const linhas = dias
     .filter((dia) => escopo === "todos" || dia.marketplace !== null)
-    .sort(
-      (a, b) =>
-        a.dia.localeCompare(b.dia) || (ORDEM_NO_DIA[a.marketplace ?? "TOTAL"] ?? 3) - (ORDEM_NO_DIA[b.marketplace ?? "TOTAL"] ?? 3),
-    )
+    .sort((a, b) => a.dia.localeCompare(b.dia) || ordemNoDia(a.marketplace ?? "TOTAL") - ordemNoDia(b.marketplace ?? "TOTAL"))
     .map((dia) => [
       csvCell(formatBusinessDate(dia.dia)),
-      csvCell(dia.marketplace === null ? TOTAL : NOME_DO_MARKETPLACE[dia.marketplace]),
+      csvCell(dia.marketplace === null ? TOTAL : nomeDoMarketplace(dia.marketplace)),
       csvNumber(dia.receita_bruta),
       csvNumber(dia.pedidos_sem_receita),
       csvNumber(dia.compras),
@@ -81,7 +88,7 @@ function celulasDaLinha(rotulo: string, linha: LinhaDeVendas): string[] {
 
   return [
     csvCell(rotulo),
-    csvCell(linha.marketplace === null ? TOTAL : NOME_DO_MARKETPLACE[linha.marketplace]),
+    csvCell(linha.marketplace === null ? TOTAL : nomeDoMarketplace(linha.marketplace)),
     csvCell(linha.nivel === "CONTA" ? (linha.account_name ?? "") : ""),
     csvCell(ambiente),
     csvNumber(linha.receita_bruta),
@@ -110,7 +117,7 @@ export function contasParaCsv(linhas: readonly LinhaDeVendas[], escopo: EscopoMu
       grupo.soma === null
         ? [
             csvCell("Soma do marketplace"),
-            csvCell(NOME_DO_MARKETPLACE[grupo.marketplace]),
+            csvCell(nomeDoMarketplace(grupo.marketplace)),
             ...Array.from({ length: CABECALHO_CONTAS.length - 3 }, () => ""),
             csvCell("nada somável: só loja de teste ou ainda não lida"),
           ]
@@ -128,11 +135,15 @@ export function contasParaCsv(linhas: readonly LinhaDeVendas[], escopo: EscopoMu
  * dizendo a tabela. Assim o arquivo nunca tem um recorte diferente do que se vê.
  */
 export function hrefDaExportacao(hrefDaTela: string, tabela: "dia" | "conta"): string {
-  const url = new URL(hrefDaTela, "http://tela.local");
+  try {
+    const url = new URL(hrefDaTela, "http://tela.local");
 
-  url.searchParams.set("tabela", tabela);
+    url.searchParams.set("tabela", tabela);
 
-  return `/vendas/exportar?${url.searchParams.toString()}`;
+    return `/vendas/exportar?${url.searchParams.toString()}`;
+  } catch {
+    return `/vendas/exportar?tabela=${tabela}`;
+  }
 }
 
 /** Um dia de `get_sales_daily_series`, a série da `/vendas` do Mercado Livre. */

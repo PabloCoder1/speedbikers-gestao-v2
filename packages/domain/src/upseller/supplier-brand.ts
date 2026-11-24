@@ -289,10 +289,14 @@ function doTituloOuSku(title: unknown, sku: string): string | null {
     if (citadas.length === 1) return citadas[0] ?? null;
   }
 
-  const codigo = buscavel(sku).trim();
+  const codigo = sku
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .trim()
+    .toUpperCase();
 
   for (const [prefixo, marca] of PREFIXOS_DE_SKU) {
-    if (codigo.startsWith(buscavel(prefixo).trim())) return marca;
+    if (codigo.startsWith(prefixo)) return marca;
   }
 
   return null;

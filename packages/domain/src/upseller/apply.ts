@@ -24,17 +24,25 @@ function asRecord(value: unknown): Record_ | null {
 }
 
 function str(source: Record_, key: string): string | null {
+  if (!Object.hasOwn(source, key)) return null;
+
   const value = source[key];
 
-  return typeof value === "string" && value.trim() !== "" ? value : null;
+  if (typeof value !== "string") return null;
+
+  const trimmed = value.trim();
+
+  return trimmed !== "" ? trimmed : null;
 }
 
 function bool(source: Record_, key: string): boolean {
-  return source[key] === true;
+  return Object.hasOwn(source, key) && source[key] === true;
 }
 
 /** Número finito ou `null`. `NaN` e `Infinity` nunca chegam ao banco. */
 function numberOrNull(source: Record_, key: string): number | null {
+  if (!Object.hasOwn(source, key)) return null;
+
   const value = source[key];
 
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -103,7 +111,7 @@ export function readSkuUpsert(payload: unknown): ReadResult<SkuUpsert> {
       category_raw: str(source, "categoryRaw"),
       is_discontinued: bool(source, "isDiscontinued"),
       // Ausente significa ativo: o ERP só marca o contrário.
-      is_active: source.isActive !== false,
+      is_active: !(Object.hasOwn(source, "isActive") && source.isActive === false),
       origin_code: origin !== null && Number.isInteger(origin) && origin >= 0 && origin <= 8 ? origin : null,
       unit: str(source, "unit"),
       barcode: str(source, "barcode"),
@@ -184,14 +192,14 @@ export function readListingLink(payload: unknown): ReadResult<ListingLinkRef> {
   const skuKey = str(source, "skuKey");
   const slug = str(source, "storeSlug");
   const label = str(source, "storeLabel");
-  const ref = asRecord(source.ref);
+  const ref = Object.hasOwn(source, "ref") ? asRecord(source.ref) : null;
 
   if (skuKey === null) return { ok: false, reason: "linha sem SKU" };
   if (slug === null || label === null) return { ok: false, reason: "linha sem loja" };
   if (ref === null) return { ok: false, reason: "linha sem identificador de anúncio" };
 
   const channelSku = str(source, "channelSku");
-  const kind = ref.kind;
+  const kind = Object.hasOwn(ref, "kind") ? ref.kind : undefined;
 
   if (kind === "USER_PRODUCT") {
     const userProductId = str(ref, "userProductId");

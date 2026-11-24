@@ -36,6 +36,10 @@
  */
 import type { EtapaProcesso } from "../components/process-steps";
 
+function contagemSegura(valor: number | null): number {
+  return valor !== null && Number.isFinite(valor) && valor >= 0 ? valor : 0;
+}
+
 export function erpImportEtapas(input: {
   status: string;
   parsedAt: string | null;
@@ -45,10 +49,10 @@ export function erpImportEtapas(input: {
   unresolvedRows: number | null;
 }): readonly EtapaProcesso[] {
   const { status, parsedAt } = input;
-  const total = input.totalRows ?? 0;
-  const ok = input.okRows ?? 0;
-  const aplicadas = input.appliedRows ?? 0;
-  const pendentes = input.unresolvedRows ?? 0;
+  const total = contagemSegura(input.totalRows);
+  const ok = contagemSegura(input.okRows);
+  const aplicadas = contagemSegura(input.appliedRows);
+  const pendentes = contagemSegura(input.unresolvedRows);
 
   const leu = parsedAt !== null;
   const aplicou = status === "APPLIED";

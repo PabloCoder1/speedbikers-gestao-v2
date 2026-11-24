@@ -1,4 +1,4 @@
-import { businessDateRangeLength } from "@sb/domain";
+import { businessDateRangeLength, isValidBusinessDate } from "@sb/domain";
 
 /**
  * Alinhamento entre a série do período atual e a do período anterior no
@@ -35,5 +35,15 @@ export function indexByOffset<T extends { metric_date: string }>(
   series: readonly T[],
   periodStart: string,
 ): Map<number, T> {
-  return new Map(series.map((point) => [offsetInPeriod(point.metric_date, periodStart), point]));
+  const indexed = new Map<number, T>();
+
+  if (!isValidBusinessDate(periodStart)) return indexed;
+
+  for (const point of series) {
+    if (!isValidBusinessDate(point.metric_date) || point.metric_date < periodStart) continue;
+
+    indexed.set(offsetInPeriod(point.metric_date, periodStart), point);
+  }
+
+  return indexed;
 }

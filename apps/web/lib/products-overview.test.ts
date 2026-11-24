@@ -88,6 +88,11 @@ describe("lerVisaoProdutos", () => {
     expect(lerVisaoProdutos({ ...resposta, linhas: [{ ...linha, situacao: undefined }] })).toBeNull();
     expect(lerVisaoProdutos({ ...resposta, facetas: { ...resposta.facetas, tipo: { todos: 1 } } })).toBeNull();
     expect(lerVisaoProdutos({ ...resposta, resumo: { ...resposta.resumo, sem_anuncio: null } })).toBeNull();
+
+    const tipoHerdado = Object.create({ kit: 0 }) as Record<string, unknown>;
+    tipoHerdado.todos = 1;
+    tipoHerdado.produto = 1;
+    expect(lerVisaoProdutos({ ...resposta, facetas: { ...resposta.facetas, tipo: tipoHerdado } })).toBeNull();
   });
 });
 
@@ -124,6 +129,15 @@ describe("opcoesDeLista", () => {
       "BAU",
     ]);
     expect(opcoesDeLista(lista, "SELIM", SEM_CATEGORIA, 2).principais.at(-1)).toEqual({ valor: "SELIM", n: 0 });
+  });
+
+  it("limite negativo ou não finito não fatia a lista pelo fim", () => {
+    const rNeg = opcoesDeLista(lista, null, SEM_CATEGORIA, -1);
+    expect(rNeg.principais).toEqual([]);
+    expect(rNeg.demais.map((c) => c.valor)).toEqual(["MANETE", "PISCA", "BAU", null]);
+
+    const rNan = opcoesDeLista(lista, null, SEM_CATEGORIA, Number.NaN);
+    expect(rNan.principais).toEqual([]);
   });
 });
 

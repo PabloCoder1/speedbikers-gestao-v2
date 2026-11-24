@@ -137,6 +137,8 @@ function lerContagens<K extends string>(v: unknown, chaves: readonly K[]): Recor
   const saida = {} as Record<K, number>;
 
   for (const chave of chaves) {
+    if (!Object.hasOwn(v, chave)) return null;
+
     const valor = v[chave];
 
     if (!ehNum(valor)) return null;
@@ -154,7 +156,9 @@ function lerPresenca(v: unknown): ContagemPresenca | null {
 
   const chaves = ["so_ml", "so_shopee", "ambos"] as const;
 
-  if (chaves.every((chave) => v[chave] === undefined)) return { ...base, porMarketplace: null };
+  if (chaves.every((chave) => !Object.hasOwn(v, chave) || v[chave] === undefined)) {
+    return { ...base, porMarketplace: null };
+  }
 
   const porMarketplace = lerContagens(v, chaves);
 
@@ -167,7 +171,8 @@ function lerLista(v: unknown): Contagem[] | null {
   const saida: Contagem[] = [];
 
   for (const item of v) {
-    if (!ehObj(item) || !textoOuNulo(item.valor) || !ehNum(item.n)) return null;
+    if (!ehObj(item) || !Object.hasOwn(item, "valor") || !Object.hasOwn(item, "n")) return null;
+    if (!textoOuNulo(item.valor) || !ehNum(item.n)) return null;
     saida.push({ valor: item.valor, n: item.n });
   }
 
@@ -187,15 +192,15 @@ function lerLinha(v: unknown): LinhaProduto | null {
   if (!numOuNulo(v.snapshot_available) || !numOuNulo(v.retail_price) || !numOuNulo(v.purchase_cost)) return null;
 
   for (const campo of ["title", "brand", "supplier_brand", "supplier_brand_source", "stock_is_virtual_set_at"]) {
-    if (!textoOuNulo(v[campo])) return null;
+    if (!Object.hasOwn(v, campo) || !textoOuNulo(v[campo])) return null;
   }
 
   if (typeof v.kind !== "string" || !KINDS.has(v.kind)) return null;
   if (typeof v.situacao !== "string" || !SITUACOES.has(v.situacao)) return null;
 
   // Ausente = a leitura anterior a D-445; presente, tem de ser número ou nulo.
-  const shopeeAnuncios = v.shopee_listing_count === undefined ? null : v.shopee_listing_count;
-  const shopeeVendas = v.shopee_units_sold_90d === undefined ? null : v.shopee_units_sold_90d;
+  const shopeeAnuncios = !Object.hasOwn(v, "shopee_listing_count") || v.shopee_listing_count === undefined ? null : v.shopee_listing_count;
+  const shopeeVendas = !Object.hasOwn(v, "shopee_units_sold_90d") || v.shopee_units_sold_90d === undefined ? null : v.shopee_units_sold_90d;
 
   if (!numOuNulo(shopeeAnuncios) || !numOuNulo(shopeeVendas)) return null;
 
@@ -253,16 +258,25 @@ export function lerVisaoProdutos(dado: unknown): VisaoProdutos | null {
     "encerrando",
   ] as const);
 
-  if (resumoNumeros === null || !textoOuNulo(dado.resumo.retrato_em)) return null;
+  if (resumoNumeros === null || !Object.hasOwn(dado.resumo, "retrato_em") || !textoOuNulo(dado.resumo.retrato_em)) {
+    return null;
+  }
 
   // D-445: as três chaves novas do resumo vêm juntas, ou nenhuma (leitura antiga).
   const resumo = dado.resumo;
-  const novas = [resumo.sem_anuncio_ml, resumo.sem_venda_90d_ml, resumo.tem_shopee];
+  const chavesNovas = ["sem_anuncio_ml", "sem_venda_90d_ml", "tem_shopee"] as const;
   let doMl: { sem_anuncio_ml: number | null; sem_venda_90d_ml: number | null; tem_shopee: boolean | null };
 
-  if (novas.every((v) => v === undefined)) {
+  if (chavesNovas.every((chave) => !Object.hasOwn(resumo, chave) || resumo[chave] === undefined)) {
     doMl = { sem_anuncio_ml: null, sem_venda_90d_ml: null, tem_shopee: null };
-  } else if (ehNum(resumo.sem_anuncio_ml) && ehNum(resumo.sem_venda_90d_ml) && typeof resumo.tem_shopee === "boolean") {
+  } else if (
+    Object.hasOwn(resumo, "sem_anuncio_ml") &&
+    Object.hasOwn(resumo, "sem_venda_90d_ml") &&
+    Object.hasOwn(resumo, "tem_shopee") &&
+    ehNum(resumo.sem_anuncio_ml) &&
+    ehNum(resumo.sem_venda_90d_ml) &&
+    typeof resumo.tem_shopee === "boolean"
+  ) {
     doMl = {
       sem_anuncio_ml: resumo.sem_anuncio_ml,
       sem_venda_90d_ml: resumo.sem_venda_90d_ml,
@@ -358,10 +372,11 @@ export function opcoesDeLista(
   semValor: string,
   limite: number,
 ): { principais: Contagem[]; demais: Contagem[] } {
+  const teto = Number.isFinite(limite) && limite > 0 ? Math.floor(limite) : 0;
   const comValor = lista.filter((c) => c.valor !== null);
   const sem = lista.find((c) => c.valor === null);
-  const principais = comValor.slice(0, limite);
-  const demais = comValor.slice(limite);
+  const principais = comValor.slice(0, teto);
+  const demais = comValor.slice(teto);
 
   if (ativo !== null && ativo !== semValor && !principais.some((c) => c.valor === ativo)) {
     const achado = demais.find((c) => c.valor === ativo) ?? { valor: ativo, n: 0 };
