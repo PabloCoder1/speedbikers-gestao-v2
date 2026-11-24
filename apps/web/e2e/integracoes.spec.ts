@@ -68,7 +68,11 @@ test("ADMIN: verde exige atividade observada — nos dois sentidos; nenhuma conf
   */
   const integracoes = page.getByRole("region").filter({ has: page.getByRole("row", { name: /Conexão/ }) });
 
-  await expect(integracoes).toHaveCount(7);
+  await expect(integracoes).toHaveCount(8);
+
+  const tiktok = page.getByRole("region", { name: "TikTok Shop", exact: true });
+  await expect(tiktok).toBeVisible();
+  await expect(tiktok.getByRole("link", { name: "Contas e lojas" })).toHaveAttribute("href", "/contas");
 
   for (const regiao of await integracoes.all()) {
     const configuracao = regiao.getByRole("row", { name: /Configuração/ });
