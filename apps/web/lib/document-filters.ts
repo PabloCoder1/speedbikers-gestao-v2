@@ -72,7 +72,7 @@ const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
 export function documentTypeLabel(raw: string | null): string {
   if (raw === null) return "Em leitura";
 
-  return (DOCUMENT_TYPE_LABELS as Record<string, string>)[raw] ?? raw;
+  return Object.hasOwn(DOCUMENT_TYPE_LABELS, raw) ? DOCUMENT_TYPE_LABELS[raw as DocumentType] : raw;
 }
 
 /** `documents.operation_type` — a direção do movimento que a nota gera. */

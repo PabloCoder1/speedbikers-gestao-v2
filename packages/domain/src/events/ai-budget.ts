@@ -27,7 +27,21 @@ export interface AiBudgetSignal {
   readonly budgetUsd: number;
 }
 
+const BUSINESS_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
 export function evaluateAiBudget(signal: AiBudgetSignal, occurredAt: Date): DomainEventDraft | null {
+  if (!Number.isFinite(occurredAt.getTime())) {
+    throw new RangeError("occurredAt precisa ser uma data válida.");
+  }
+
+  if (signal.organizationId.trim() === "") {
+    throw new RangeError("organizationId não pode estar vazio.");
+  }
+
+  if (!BUSINESS_MONTH_RE.test(signal.month)) {
+    throw new RangeError("month precisa estar no formato YYYY-MM válido.");
+  }
+
   if (!Number.isFinite(signal.budgetUsd) || signal.budgetUsd <= 0) {
     throw new RangeError("budgetUsd precisa ser um número positivo.");
   }

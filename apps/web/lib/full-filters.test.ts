@@ -141,4 +141,19 @@ describe("coverageOf — a fórmula da RPC, para o caminho de degradação", () 
     expect(coverageOf(12, 0, 30)).toEqual({ daily_rate: null, coverage_days: null });
     expect(coverageOf(-2, 10, 30).coverage_days).toBe(0);
   });
+
+  it("D-804: cobertura, formatação e cálculo degradam entradas não finitas sem NaN, infinito nem falso verde", () => {
+    expect(coverageTom(Number.NaN)).toBe("neutro");
+    expect(coverageTom(Number.POSITIVE_INFINITY)).toBe("neutro");
+    expect(coverageTom(Number.NEGATIVE_INFINITY)).toBe("neutro");
+
+    expect(formatCoverage(Number.NaN)).toBe("sem venda");
+    expect(formatCoverage(Number.POSITIVE_INFINITY)).toBe("sem venda");
+    expect(formatCoverage(Number.NEGATIVE_INFINITY)).toBe("sem venda");
+
+    expect(coverageOf(Number.NaN, 5, 30)).toEqual({ daily_rate: null, coverage_days: null });
+    expect(coverageOf(10, Number.NaN, 30)).toEqual({ daily_rate: null, coverage_days: null });
+    expect(coverageOf(10, 5, Number.POSITIVE_INFINITY)).toEqual({ daily_rate: null, coverage_days: null });
+    expect(coverageOf(Number.POSITIVE_INFINITY, 5, 30)).toEqual({ daily_rate: null, coverage_days: null });
+  });
 });

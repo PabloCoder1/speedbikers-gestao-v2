@@ -127,7 +127,8 @@ export function isQueueRow<T extends { id: string | null }>(
  * exibir "Baixa 0" é mais honesto do que esconder a linha.
  */
 export function readFacet(facet: unknown, key: string): number {
-  if (typeof facet !== "object" || facet === null) return 0;
+  if (typeof facet !== "object" || facet === null || Array.isArray(facet)) return 0;
+  if (!Object.hasOwn(facet, key)) return 0;
 
   const valor = (facet as Record<string, unknown>)[key];
 
@@ -142,10 +143,13 @@ export function readFacet(facet: unknown, key: string): number {
  * lista fixa aqui faria o tipo novo sumir do painel sem ninguém notar.
  */
 export function facetEntries(facet: unknown): { key: string; count: number }[] {
-  if (typeof facet !== "object" || facet === null) return [];
+  if (typeof facet !== "object" || facet === null || Array.isArray(facet)) return [];
 
   return Object.entries(facet as Record<string, unknown>)
-    .filter((entrada): entrada is [string, number] => typeof entrada[1] === "number")
+    .filter(
+      (entrada): entrada is [string, number] =>
+        typeof entrada[1] === "number" && Number.isFinite(entrada[1]),
+    )
     .map(([key, count]) => ({ key, count }))
     .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
 }

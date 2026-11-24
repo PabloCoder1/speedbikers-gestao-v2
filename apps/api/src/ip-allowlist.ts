@@ -59,22 +59,19 @@ export function extractClientIp(forwardedFor: string | undefined | null): string
     return undefined;
   }
 
-  const parts = forwardedFor
-    .split(",")
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
+  // O último segmento é o único que o Cloud Run acrescenta; se vier vazio após
+  // vírgula final (ex.: "54.88.218.97, "), falhar fechado em vez de recuar para
+  // uma entrada anterior controlada pelo cliente.
+  const segments = forwardedFor.split(",");
+  const last = segments[segments.length - 1]?.trim() ?? "";
 
-  if (parts.length === 0) {
-    return undefined;
-  }
-
-  return parts[parts.length - 1];
+  return last.length > 0 ? last : undefined;
 }
 
 export function createIpAllowlistVerifier(
   allowedIps: readonly string[] = MERCADO_LIVRE_IPS,
 ): IpAllowlistVerifier {
-  const allowed = new Set(allowedIps);
+  const allowed = new Set(allowedIps.map((ip) => ip.trim()).filter((ip) => ip.length > 0));
 
   return {
     verify: (forwardedFor) => {

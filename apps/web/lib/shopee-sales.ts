@@ -15,13 +15,13 @@
  * mesma coisa aqui e em `/vendas`, e o link entre as duas telas leva o período.
  */
 
+import { isValidBusinessDate } from "@sb/domain";
+
 import type { Tom } from "../components/tone";
 import { buildFilterHref, resolvePageParam, summarizePagedWindow, type PagedWindow } from "./filters";
 import { DEFAULT_PERIOD_DAYS, resolvePeriodRange, type PeriodRange } from "./period";
 
 const SHOPEE_SALES_PATH = "/vendas/shopee";
-
-const DIA = /^\d{4}-\d{2}-\d{2}$/u;
 
 /**
  * O endereço de UM pedido em `/vendas/shopee`, como a Busca Universal o abre
@@ -31,9 +31,12 @@ const DIA = /^\d{4}-\d{2}-\d{2}$/u;
  * texto, nunca um link para lista vazia.
  */
 export function hrefDoPedidoShopee(loja: string | null, dia: string | null, orderSn: string): string | null {
-  if (loja === null || dia === null || !DIA.test(dia) || orderSn.trim() === "") return null;
+  const lojaLimpa = loja?.trim() ?? "";
+  const pedidoLimpo = orderSn.trim();
 
-  const busca = new URLSearchParams({ loja, from: dia, to: dia, pedido: orderSn });
+  if (lojaLimpa === "" || dia === null || !isValidBusinessDate(dia) || pedidoLimpo === "") return null;
+
+  const busca = new URLSearchParams({ loja: lojaLimpa, from: dia, to: dia, pedido: pedidoLimpo });
 
   return `${SHOPEE_SALES_PATH}?${busca.toString()}`;
 }
@@ -137,7 +140,7 @@ const ORIGENS_DO_SKU: Record<string, string> = {
 export function origemDoSkuShopee(vinculoVia: string | null): string | null {
   if (vinculoVia === null) return null;
 
-  return ORIGENS_DO_SKU[vinculoVia] ?? vinculoVia;
+  return Object.hasOwn(ORIGENS_DO_SKU, vinculoVia) ? (ORIGENS_DO_SKU[vinculoVia] ?? vinculoVia) : vinculoVia;
 }
 
 /** Um item do pedido, como `get_shopee_orders` o devolve em `itens` (jsonb). */

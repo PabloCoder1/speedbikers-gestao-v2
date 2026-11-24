@@ -63,4 +63,12 @@ describe("evaluateAiBudget", () => {
   it("custo negativo lança — soma de custo nunca é negativa, isso seria bug de leitura", () => {
     expect(() => evaluateAiBudget({ ...BASE, monthCostUsd: -0.01 }, OCCURRED_AT)).toThrow(RangeError);
   });
+
+  it("D-804: recusa occurredAt inválida, organizationId em branco e month fora de YYYY-MM com RangeError", () => {
+    expect(() => evaluateAiBudget({ ...BASE, monthCostUsd: 20 }, new Date("invalid"))).toThrow(RangeError);
+    expect(() => evaluateAiBudget({ ...BASE, organizationId: "   ", monthCostUsd: 20 }, OCCURRED_AT)).toThrow(RangeError);
+    expect(() => evaluateAiBudget({ ...BASE, month: "2026-13", monthCostUsd: 20 }, OCCURRED_AT)).toThrow(RangeError);
+    expect(() => evaluateAiBudget({ ...BASE, month: "2026-00", monthCostUsd: 20 }, OCCURRED_AT)).toThrow(RangeError);
+    expect(() => evaluateAiBudget({ ...BASE, month: "invalido", monthCostUsd: 20 }, OCCURRED_AT)).toThrow(RangeError);
+  });
 });
