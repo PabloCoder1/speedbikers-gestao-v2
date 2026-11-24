@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **644** (D-001 a D-865).
+Decisões registradas: **645** (D-001 a D-866).
 
 ## Por domínio
 
@@ -398,7 +398,7 @@ Decisões registradas: **644** (D-001 a D-865).
 - **D-719** — O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
 - **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
-### outros (98)
+### outros (99)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -498,6 +498,7 @@ Decisões registradas: **644** (D-001 a D-865).
 - **D-860** — O produto que sai da planilha de produtos do UpSeller fica fora do catálogo, nunca apagado
 - **D-864** — O formulário de pedido de compra sobrevive à Server Action que não responde
 - **D-865** — O detalhe do pedido de compra sobrevive à Server Action que não responde
+- **D-866** — "Já fiz o pedido" e o cadastro de fornecedor sobrevivem à Server Action que não responde
 
 ### processo/docs (1)
 

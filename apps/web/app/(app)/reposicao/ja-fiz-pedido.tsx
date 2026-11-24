@@ -135,18 +135,33 @@ function Dialogo({
     setGravando(true);
     setErro(null);
 
-    const r = await registrarPedidoJaFeito({
-      requestId: requestId.current,
-      itens: [{ skuId, quantity: qtd }],
-      situacao,
-      fornecedorId: fornecedorId === "" ? null : fornecedorId,
-      referencia: referencia.trim() === "" ? null : referencia,
-      dataPedido: dataPedido === "" ? null : dataPedido,
-      previsao: previsao === "" ? null : previsao,
-      etapa: situacao === "PEDIDO_REALIZADO" && etapa !== "" ? etapa : null,
-      observacoes: observacoes.trim() === "" ? null : observacoes,
-      confirmarNovo,
-    });
+    /*
+      FALHA DE TRANSPORTE (D-866). Sem o `try`, `gravando` ficava ligado para
+      sempre, e o diálogo, que não fecha enquanto grava, prendia a tela inteira.
+      As três ações aceitam a repetição: registrar e acrescentar levam o mesmo
+      `requestId` (D-761), e vincular é recusado se a referência já foi gravada.
+    */
+    let r: Awaited<ReturnType<typeof registrarPedidoJaFeito>>;
+
+    try {
+      r = await registrarPedidoJaFeito({
+        requestId: requestId.current,
+        itens: [{ skuId, quantity: qtd }],
+        situacao,
+        fornecedorId: fornecedorId === "" ? null : fornecedorId,
+        referencia: referencia.trim() === "" ? null : referencia,
+        dataPedido: dataPedido === "" ? null : dataPedido,
+        previsao: previsao === "" ? null : previsao,
+        etapa: situacao === "PEDIDO_REALIZADO" && etapa !== "" ? etapa : null,
+        observacoes: observacoes.trim() === "" ? null : observacoes,
+        confirmarNovo,
+      });
+    } catch {
+      setErro("Não foi possível confirmar o registro. Tente de novo: o mesmo pedido não é registrado duas vezes.");
+      setGravando(false);
+
+      return;
+    }
 
     setGravando(false);
 
@@ -176,7 +191,16 @@ function Dialogo({
     setGravando(true);
     setErro(null);
 
-    const r = await vincularReferenciaExterna(c.purchaseOrderId, referencia, dataPedido === "" ? null : dataPedido);
+    let r: Awaited<ReturnType<typeof vincularReferenciaExterna>>;
+
+    try {
+      r = await vincularReferenciaExterna(c.purchaseOrderId, referencia, dataPedido === "" ? null : dataPedido);
+    } catch {
+      setErro(`Não foi possível confirmar se a referência foi vinculada. Abra o pedido nº ${String(c.orderNumber)} para conferir antes de tentar de novo.`);
+      setGravando(false);
+
+      return;
+    }
 
     setGravando(false);
 
@@ -194,7 +218,16 @@ function Dialogo({
     setGravando(true);
     setErro(null);
 
-    const r = await acrescentarAoPedidoExterno(c.purchaseOrderId, [{ skuId, quantity: qtd }], requestId.current);
+    let r: Awaited<ReturnType<typeof acrescentarAoPedidoExterno>>;
+
+    try {
+      r = await acrescentarAoPedidoExterno(c.purchaseOrderId, [{ skuId, quantity: qtd }], requestId.current);
+    } catch {
+      setErro("Não foi possível confirmar o acréscimo. Tente de novo: o mesmo acréscimo não é somado duas vezes.");
+      setGravando(false);
+
+      return;
+    }
 
     setGravando(false);
 
