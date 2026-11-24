@@ -14,14 +14,14 @@
 |---|---|
 | **Atualizado em** | 2026-11-24 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | O candidato integra a main em 5a49133b (#384). A migration do alerta de margem consta no catálogo da VM. [Checkpoint](agent-audit/SESSION_LOG.md). |
+| **HEAD conhecido** | Candidato em composição com `origin/main` `9670cde3`. A CI do corte anterior `034ffb34` passou 402 E2E e 1.229 testes SQL. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Fechamento da V3** | 155/226 pontos (68,58%), 28/43 entregas. [Inventário Sentinel](agent-audit/CLOSURE_INVENTORY.json). [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7107161168). |
-| **Sentinel: próximo passo** | O candidato #378 inclui 19 fatias do Gemini até D-806 e o isolamento de falha no agendador de margem (D-882). A CI do primeiro corte isolou uma regressão na paginação do SKU. O ajuste de D-803 restaura a leitura até a página vazia e segue para nova CI. O Dev está inativo e bloqueia o registro de quatro versões definitivas. D04 tem restore e ensaios SQL/PostgREST. A leitura do arquivo na Central permanece pendente. |
+| **Sentinel: próximo passo** | Confirmar a CI da composição com D-859 a D-862. O Dev inativo bloqueia quatro versões definitivas. D04 tem restore e ensaios SQL/PostgREST. Falta leitura do arquivo na Central. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo, com 2,0 GB acima do limite gratuito. Google Cloud segue como ambiente atual. Lembrete para retomar em 01/12, condicionado ao Dev ativo. Rotinas Dev pausadas (D-350). |
 | **Supabase** | Produção usa a VM `sb-db` (`speedbikers-prod`). O antigo projeto hosted `imvjfgnaprqsfjlnsyev` estava `INACTIVE` em 18/11. Convite, SMTP e recuperação Auth seguem pendentes. [VM](../infra/vm/README.md). |
-| **Produção** | Cloud Run em leitura de 24/11: API `api-00042-7bl` e worker `worker-00060-z8h`, ambos no SHA `5a49133b` com 100% do tráfego. A validação do alias web do catálogo de compras está registrada no #333. |
-| **Migrations** | Preflight em 24/11: 325 versões até 20261123180000. Plano de publicação aprovado. Quatro migrations temporárias anteriores bloqueiam a publicação do candidato. [VM](../infra/vm/README.md). |
-| **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | Compras inteligentes, importação anterior e invoice/proforma entregues. D-792 acrescenta entrada no LOCAL e criação do SKU na conferência. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
+| **Produção** | D-859 a D-862 estão registrados no [handoff de publicação #388](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/388). A correção do multiget segue no #377. |
+| **Migrations** | Última versão registrada na VM `20261124130000` (D-862). Quatro migrations provisórias do candidato exigem registro definitivo. [VM](../infra/vm/README.md). |
+| **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | Compras inteligentes, importação anterior e invoice/proforma entregues. #347 integrado para ler a moeda da invoice. D-792 acrescenta entrada no LOCAL e criação do SKU na conferência. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
 | **Notas (D-765, D-766)** | #334 registrou saída para Full. #335 incorporou Saída Manual e edição de itens. O aceite operacional de ponta a ponta segue no fechamento. |
 | **UX (Agente 3)** | Central integrada até D-519. [Escopo e evidências](UX_SYSTEM.md). |
 | **Frente atual** | Recuperação e fechamento após o corte de banco. Estoque Shopee no Go Live e TikTok transacional seguem pendentes. [Multicanal](MULTICHANNEL_HANDOFF.md). |
@@ -194,7 +194,7 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
-13. **Alerta de margem (D-858):** VM tem `20261123180000`. Em 24/11, o cadastro de cinco destinatários foi confirmado em leitura e havia 46 alertas pendentes. Falta observar a entrega em rodada regular. O candidato protege o vínculo de SMTP e pagina as organizações ativas (D-882).
+13. **Alerta de margem (D-858, D-859):** no ar desde 24/11 (worker `00061`, api `00043`; Scheduler `v3-low-margin-sales` às 8h e 17h e `v3-order-financials-sweep` em `30 6,16 * * *`). D-882 pagina e isola as falhas de fila no candidato. Acompanhar a entrega nas rodadas regulares.
 
 ---
 

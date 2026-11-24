@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-24, candidato #378, integração Gemini até D-806 e conferência de produção em leitura",
+  "corte": "2026-11-24, candidato #378 composto com main 9670cde3 e conferência de produção em leitura",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {

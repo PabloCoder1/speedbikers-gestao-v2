@@ -76,6 +76,20 @@ describe("chamar-api / lerTokenDeSessao (D-741, D-745)", () => {
     });
   });
 
+  it("envia a opção de catálogo como JSON na confirmação de ERP", async () => {
+    process.env.NEXT_PUBLIC_API_URL = "http://api.local";
+    getSessionMock.mockResolvedValueOnce({ data: { session: { access_token: "tok-1" } } });
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(Response.json({ queued: true }));
+
+    await expect(confirmarAplicacaoNaApi("/v1/erp-imports/123/apply", { markAbsent: true })).resolves.toEqual({ ok: true });
+
+    expect(fetch).toHaveBeenCalledWith("http://api.local/v1/erp-imports/123/apply", {
+      method: "POST",
+      headers: { authorization: "Bearer tok-1", "content-type": "application/json" },
+      body: JSON.stringify({ markAbsent: true }),
+    });
+  });
+
   it("D-781: confirmarAplicacaoNaApi recusa 200 HTML ou JSON sem queued=true e aceita confirmação válida", async () => {
     process.env.NEXT_PUBLIC_API_URL = "http://api.local";
     getSessionMock.mockResolvedValue({ data: { session: { access_token: "tok-1" } } });

@@ -34,7 +34,7 @@ Os objetos de compras/importação conferem com as migrations versionadas.
 Detalhes e limites da validação:
 [handoff de integração](../../docs/archive/handoffs/2026-11-18_integracao-compras-importacao.md).
 
-Não reaplicar essa faixa. O catálogo não informa o canal da aplicação; ela
+Não reaplicar essa faixa. Depois dela, `20261119180000` (D-792) e `20261123180000` (D-858, por SSH em 23/11, com o registro no histórico na mesma transação) também estão no histórico. O catálogo não informa o canal da aplicação; ela
 não deve ser atribuída ao workflow `migrations-producao.yml`.
 
 ## Backups anteriores à aplicação

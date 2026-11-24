@@ -1,4 +1,4 @@
-import { COLUNAS_MAXIMAS, LINHAS_MAXIMAS_POR_ABA, type Aba, type Celula } from "./xlsx";
+import { COLUNAS_MAXIMAS, LINHAS_MAXIMAS_POR_ABA, moedaDoFormato, type Aba, type Celula } from "./xlsx";
 
 /**
  * Leitura mínima do .xls antigo (Excel 97–2003, BIFF8) para a importação
@@ -279,6 +279,10 @@ export function lerBiff(fluxo: Uint8Array, abasEscolhidas?: readonly string[]): 
 
   const folhas: { nome: string; pos: number }[] = [];
   let sst: string[] = [];
+  // FORMAT (id → código) e XF (estilo → id do formato), na ordem do arquivo:
+  // dão a moeda que o formato numérico da célula declara.
+  const formatos = new Map<number, string>();
+  const formatoPorXf: number[] = [];
 
   for (let i = 0; i < regs.length; i += 1) {
     const r = regs[i];
@@ -294,6 +298,14 @@ export function lerBiff(fluxo: Uint8Array, abasEscolhidas?: readonly string[]): 
 
       if (tipoFolha === 0) folhas.push({ nome: leitor.texto(false), pos: dv.getUint32(0, true) });
     }
+
+    if (r.tipo === 0x041e && r.dados.length >= 5) {
+      const id = (r.dados[0] ?? 0) | ((r.dados[1] ?? 0) << 8);
+
+      formatos.set(id, new LeitorContinuo([r.dados.subarray(2)]).texto());
+    }
+
+    if (r.tipo === 0x00e0 && r.dados.length >= 4) formatoPorXf.push((r.dados[2] ?? 0) | ((r.dados[3] ?? 0) << 8));
 
     if (r.tipo === 0x00fc) {
       const partes = [r.dados];
@@ -311,6 +323,17 @@ export function lerBiff(fluxo: Uint8Array, abasEscolhidas?: readonly string[]): 
     }
   }
 
+  const moedaPorXf = formatoPorXf.map((id) => {
+    const codigo = formatos.get(id);
+
+    return codigo === undefined ? null : moedaDoFormato(codigo);
+  });
+  /** O número com a moeda do formato do estilo `xf`, quando o formato declara uma. */
+  const numero = (texto: string, xf: number): Celula => {
+    const moeda = moedaPorXf[xf];
+
+    return typeof moeda === "string" ? { texto, formula: null, numerica: true, moeda } : { texto, formula: null, numerica: true };
+  };
   const indicePorPos = new Map(regs.map((r, i) => [r.pos, i]));
   const abas: Aba[] = [];
 
@@ -352,14 +375,14 @@ export function lerBiff(fluxo: Uint8Array, abasEscolhidas?: readonly string[]): 
       if (r.tipo === 0x00fd && d.length >= 10) {
         por(linha, coluna, { texto: sst[dv.getUint32(6, true)] ?? "", formula: null, numerica: false });
       } else if (r.tipo === 0x0203 && d.length >= 14) {
-        por(linha, coluna, { texto: textoDoNumero(dv.getFloat64(6, true)), formula: null, numerica: true });
+        por(linha, coluna, numero(textoDoNumero(dv.getFloat64(6, true)), dv.getUint16(4, true)));
       } else if (r.tipo === 0x027e && d.length >= 10) {
-        por(linha, coluna, { texto: textoDoNumero(numeroRk(dv.getUint32(6, true))), formula: null, numerica: true });
+        por(linha, coluna, numero(textoDoNumero(numeroRk(dv.getUint32(6, true))), dv.getUint16(4, true)));
       } else if (r.tipo === 0x00bd && d.length >= 6) {
         const ultima = dv.getUint16(d.length - 2, true);
 
         for (let c = coluna, p = 4; c <= ultima && p + 6 <= d.length - 2; c += 1, p += 6) {
-          por(linha, c, { texto: textoDoNumero(numeroRk(dv.getUint32(p + 2, true))), formula: null, numerica: true });
+          por(linha, c, numero(textoDoNumero(numeroRk(dv.getUint32(p + 2, true))), dv.getUint16(p, true)));
         }
       } else if (r.tipo === 0x0204 && d.length >= 8) {
         por(linha, coluna, { texto: new LeitorContinuo([d.subarray(6)]).texto(), formula: null, numerica: false });
@@ -371,7 +394,7 @@ export function lerBiff(fluxo: Uint8Array, abasEscolhidas?: readonly string[]): 
           if (tipoValor === 0) formulaPendente = { linha, coluna };
           else if (tipoValor === 1) por(linha, coluna, { texto: d[8] === 1 ? "TRUE" : "FALSE", formula: null, numerica: false });
         } else {
-          por(linha, coluna, { texto: textoDoNumero(dv.getFloat64(6, true)), formula: null, numerica: true });
+          por(linha, coluna, numero(textoDoNumero(dv.getFloat64(6, true)), dv.getUint16(4, true)));
         }
       } else if (r.tipo === 0x0207 && formulaPendente !== null) {
         por(formulaPendente.linha, formulaPendente.coluna, { texto: new LeitorContinuo([d]).texto(), formula: null, numerica: false });

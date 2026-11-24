@@ -26,14 +26,25 @@ const ENVELOPE = {
  */
 type FakeRow = Record<string, unknown>;
 
+interface RpcCall {
+  fn: string;
+  args: Record<string, unknown>;
+}
+
+type RpcResult = { data: unknown; error: null } | { data: null; error: { message: string } };
+
 function createFakeDb(
   seed: Record<string, FakeRow[]> = {},
-  options: { failUpdateTable?: string } = {},
+  options: { failUpdateTable?: string; rpcResult?: (call: RpcCall) => RpcResult } = {},
 ): {
   db: ApplyDeps["db"];
   tables: Record<string, FakeRow[]>;
+  rpcCalls: RpcCall[];
 } {
   const tables: Record<string, FakeRow[]> = seed;
+  // D-860: a marcação de fora do catálogo é SQL (apply_products_batch_absences);
+  // aqui só importa QUANDO e COM QUE argumento o handler a chama.
+  const rpcCalls: RpcCall[] = [];
   let counter = 0;
 
   function nextId(prefix: string): string {
@@ -183,7 +194,19 @@ function createFakeDb(
     return api;
   }
 
-  return { db: { from: (table: string) => builder(table) } as unknown as ApplyDeps["db"], tables };
+  function rpc(fn: string, args: Record<string, unknown>): Promise<RpcResult> {
+    const call = { fn, args };
+
+    rpcCalls.push(call);
+
+    return Promise.resolve(options.rpcResult?.(call) ?? { data: { marked: 0, cleared: 0 }, error: null });
+  }
+
+  return {
+    db: { from: (table: string) => builder(table), rpc } as unknown as ApplyDeps["db"],
+    tables,
+    rpcCalls,
+  };
 }
 
 function ctx(payload: unknown): { logger: ReturnType<typeof createLogger>; payload: unknown } {
@@ -261,6 +284,95 @@ describe("aplicação — produtos", () => {
 
     expect(outcome).toEqual({ status: "done", processed: 0 });
     expect(tables.skus).toHaveLength(1);
+  });
+});
+
+/**
+ * D-860: o produto que sai da planilha fica fora do catálogo, nunca apagado.
+ * O conjunto e a marcação são SQL (provados na integração do @sb/db); aqui a
+ * trava é o contrato do handler: só PRODUCTS chama, a marcação só vai quando
+ * a confirmação pediu, e marcação pedida que falha não vira APPLIED.
+ */
+describe("aplicação — produtos fora do catálogo (D-860)", () => {
+  it("sem pedido de marcação, chama com p_mark falso (só tira a marca de quem voltou)", async () => {
+    const { db, rpcCalls, tables } = createFakeDb({
+      erp_import_batches: [batch()],
+      erp_import_rows: [okRow(1, { sku: "PI150", title: "Painel" })],
+    });
+
+    const outcome = await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(rpcCalls).toEqual([{ fn: "apply_products_batch_absences", args: { p_batch_id: BATCH, p_mark: false } }]);
+    expect(tables.erp_import_batches?.[0]).toMatchObject({ status: "APPLIED" });
+  });
+
+  it("com markAbsent, chama com p_mark verdadeiro DEPOIS de gravar o catálogo", async () => {
+    let skusNaHora = -1;
+    const fake = createFakeDb(
+      {
+        erp_import_batches: [batch()],
+        erp_import_rows: [okRow(1, { sku: "PI150", title: "Painel" })],
+      },
+      {
+        rpcResult: () => {
+          skusNaHora = fake.tables.skus?.length ?? 0;
+          return { data: { marked: 3, cleared: 0 }, error: null };
+        },
+      },
+    );
+
+    await createErpImportApplyHandler({ db: fake.db })(ENVELOPE, ctx({ batchId: BATCH, markAbsent: true }));
+
+    expect(fake.rpcCalls).toEqual([
+      { fn: "apply_products_batch_absences", args: { p_batch_id: BATCH, p_mark: true } },
+    ]);
+    // O SKU da planilha já estava gravado quando a marcação rodou: senão o
+    // produto novo seria julgado antes de existir.
+    expect(skusNaHora).toBe(1);
+    expect(fake.tables.erp_import_batches?.[0]).toMatchObject({ status: "APPLIED" });
+  });
+
+  it("marcação pedida que falha deixa o lote em APPLYING e pede nova tentativa", async () => {
+    const { db, tables } = createFakeDb(
+      {
+        erp_import_batches: [batch()],
+        erp_import_rows: [okRow(1, { sku: "PI150", title: "Painel" })],
+      },
+      { rpcResult: () => ({ data: null, error: { message: "statement timeout" } }) },
+    );
+
+    const outcome = await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH, markAbsent: true }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(String((outcome as { reason?: string }).reason)).toContain("fora do catálogo");
+    expect(tables.erp_import_batches?.[0]).toMatchObject({ status: "APPLYING" });
+  });
+
+  it("sem marcação pedida, a falha de tirar a marca não derruba a aplicação", async () => {
+    const { db, tables } = createFakeDb(
+      {
+        erp_import_batches: [batch()],
+        erp_import_rows: [okRow(1, { sku: "PI150", title: "Painel" })],
+      },
+      { rpcResult: () => ({ data: null, error: { message: "function does not exist" } }) },
+    );
+
+    const outcome = await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(tables.erp_import_batches?.[0]).toMatchObject({ status: "APPLIED" });
+  });
+
+  it("lote que não é de produtos nunca chama a marcação, nem com markAbsent", async () => {
+    const { db, rpcCalls } = createFakeDb({
+      erp_import_batches: [batch({ kind: "STOCK", file_name: "Lista_de_Estoque_0914184200.xlsx" })],
+      erp_import_rows: [okRow(1, { skuKey: "PI150", warehouse: "LOJA", onHand: 1, available: 1 })],
+    });
+
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH, markAbsent: true }));
+
+    expect(rpcCalls).toEqual([]);
   });
 });
 

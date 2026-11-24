@@ -924,3 +924,9 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 
 - O Playwright de `f9b9ec26` (45395072874) passou 367 testes e falhou 15. D-803 tratava `Infinity` como zero, apesar de os leitores ML e Shopee do SKU usarem esse teto para ler todos os anúncios. A regressão de 1.002 linhas falhou antes do ajuste. O teste de Contas depende do estado que a jornada de vínculo Shopee restaura ao terminar. O novo corte precisa validar os dois fluxos em conjunto.
 - O #377 foi reconciliado com a main em `87636bf9`. Os quatro checks passaram (45396006316), com aplicação de migrations no Dev omitida. Issue #367 tem a janela de 63 HTTP 403 em seis horas e o requisito de preservação do SMTP. A publicação isolada depende de autorização.
+
+### 24/11/2026 · Composição com a main de produção
+
+- O corte `034ffb34` passou a CI `45399007243` com 402 jornadas Playwright, 1.229 testes de integração PostgreSQL e 42 projeções PostgREST. A nova base `9670cde3` incorpora D-859 a D-862 e a correção de invoice #347. A publicação funcional dessa base está registrada no #388.
+- D-882 continua na rota dedicada de margem de D-859, com 503 por falha de fila, paginação, dedupe e tentativa das demais organizações. A composição mantém a confirmação protegida e o parâmetro `markAbsent` até o worker. O teste de erro de transporte da Central verifica também a execução da fonte D-861 após a falha de frete. O #377, separado, foi atualizado para `2d9a06d2` sobre a mesma base e segue na CI `45434819641`.
+- Gemini em `879ac5b9`, com D-807 a D-811 preparados. Revisar D-808/D-810 sobre a API da nova base antes de incorporar. Os dois projetos Supabase hospedados responderam INACTIVE. O Dev bloqueia quatro timestamps definitivos do candidato.

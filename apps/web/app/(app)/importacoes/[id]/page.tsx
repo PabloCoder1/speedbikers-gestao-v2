@@ -28,9 +28,16 @@ import {
   rowStatusLabel,
   statusTone,
 } from "../../../../lib/labels";
+import {
+  lerPreviaForaDoCatalogo,
+  novosAusentes,
+  pareceExportacaoParcial,
+  sugereMarcar,
+} from "../../../../lib/produtos-fora-do-catalogo";
 import { createClient } from "../../../../lib/supabase/server";
 import { currentMembership } from "../../../../lib/request-membership";
 import { ConfirmApplyForm } from "./confirm-apply-form";
+import { ForaDoCatalogo } from "./fora-do-catalogo";
 import { summarize } from "./summarize";
 
 export const dynamic = "force-dynamic";
@@ -129,6 +136,24 @@ export default async function ConferenciaPage({
   // seria so gasto.
   const working = info.status === "UPLOADED" || info.status === "PARSING" || info.status === "APPLYING";
 
+  // D-860: na planilha de produtos, quem ficaria fora do catálogo. Duas
+  // leituras à parte, e tolerantes: antes da migration de produção a função
+  // e as colunas não existem, e a conferência tem de continuar igual a antes
+  // (sem a caixa, e a api lendo "não marcar"). Só a prévia espera o lote --
+  // não há como saber a natureza dele antes.
+  const ehProdutos = info.kind === "PRODUCTS";
+  const [previaRpc, marcacao] = await Promise.all([
+    ehProdutos && info.status === "PARSED"
+      ? supabase.rpc("get_products_batch_absences", { p_batch_id: info.id })
+      : Promise.resolve(null),
+    ehProdutos && info.status === "APPLIED"
+      ? supabase.from("erp_import_batches").select("absent_marked, absent_cleared").eq("id", info.id).maybeSingle()
+      : Promise.resolve(null),
+  ]);
+
+  const previa = previaRpc?.error !== null ? null : lerPreviaForaDoCatalogo(previaRpc.data);
+  const marcados = marcacao?.error !== null ? null : marcacao.data;
+
   const etapas = erpImportEtapas({
     status: info.status,
     parsedAt: info.parsed_at,
@@ -155,6 +180,14 @@ export default async function ConferenciaPage({
           ["Aplicadas", formatCount(info.applied_rows)],
           ["Pendentes", formatCount(info.unresolved_rows)],
         ] as const)
+      : []),
+    // D-860: só depois de aplicada, e só com a marcação pedida (nulo = não pedida,
+    // que é diferente de zero marcado).
+    ...(marcados !== null && marcados.absent_marked !== null
+      ? ([["Fora do catálogo", formatCount(marcados.absent_marked)]] as const)
+      : []),
+    ...(marcados !== null && marcados.absent_cleared !== null && marcados.absent_cleared > 0
+      ? ([["Voltaram ao catálogo", formatCount(marcados.absent_cleared)]] as const)
       : []),
   ];
 
@@ -205,7 +238,19 @@ export default async function ConferenciaPage({
         </p>
       )}
 
-      {info.status === "PARSED" && <ConfirmApplyForm batchId={info.id} okRows={info.ok_rows} />}
+      {info.status === "PARSED" && previa !== null && <ForaDoCatalogo previa={previa} />}
+
+      {info.status === "PARSED" && (
+        <ConfirmApplyForm
+          batchId={info.id}
+          okRows={info.ok_rows}
+          foraDoCatalogo={
+            previa === null
+              ? null
+              : { novos: novosAusentes(previa), sugerido: sugereMarcar(previa), parcial: pareceExportacaoParcial(previa) }
+          }
+        />
+      )}
 
       <div style={{ marginTop: "var(--sb-space-3)" }}>
         <Panel

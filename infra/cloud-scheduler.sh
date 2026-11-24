@@ -166,14 +166,26 @@ upsert_job \
   "Sincronizacao de visitas por anuncio, por conta Mercado Livre CONNECTED"
 
 # Captura de custos por pedido (D-165) -- frete do vendedor e desconto
-# bancado, para a margem operacional (METRICS 5C.2). DIARIA, depois do pico
-# de visitas (7h) para nao disputar o mesmo rate limit por conta; a varredura
-# cobre 7 dias por rodada, entao uma rodada perdida se autocorrige.
+# bancado, para a margem operacional (METRICS 5C.2). DUAS VEZES POR DIA
+# (D-859), meia hora antes de cada rodada do alerta de margem (8h e 17h),
+# para o pedido do ML ja chegar julgavel. 6h30 fica antes das visitas (7h),
+# que disputam o mesmo rate limit. A varredura pula o pedido ja capturado:
+# a segunda rodada so le o que entrou depois da primeira. Cobre 7 dias, e
+# uma rodada perdida se autocorrige.
 upsert_job \
   "v3-order-financials-sweep" \
-  "30 9 * * *" \
+  "30 6,16 * * *" \
   "${API_URL}/internal/schedule/order-financials" \
   "Captura de frete do vendedor e desconto por pedido, por conta CONNECTED"
+
+# Alerta de venda abaixo da margem (D-858, horario em D-859): o dono quer o
+# aviso duas vezes por dia, as 8h e as 17h. Cada rodada julga as vendas
+# novas, avisa no sino e manda o e-mail (lotes de ate 200 vendas).
+upsert_job \
+  "v3-low-margin-sales" \
+  "0 8,17 * * *" \
+  "${API_URL}/internal/schedule/low-margin-sales" \
+  "Alerta de venda abaixo da margem: sino e e-mail, as 8h e as 17h"
 
 # Varredura da logistica dos pedidos (D-352, R2) -- le GET /shipments/{id} dos
 # pedidos com VENDA_ML sem estorno e grava o ESTORNO_FULL que falta.

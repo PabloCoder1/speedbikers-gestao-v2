@@ -80,7 +80,7 @@ import type { ReconcileDeps } from "./reconcile.js";
 import { triggerOrdersReconciliation } from "./reconcile.js";
 import type { SalesAnomalyActionsScheduleDeps } from "./sales-anomaly-actions-schedule.js";
 import { triggerSalesAnomalyActionsDetection } from "./sales-anomaly-actions-schedule.js";
-import type { LowMarginSalesScheduleOutcome } from "./low-margin-sales-schedule.js";
+import type { LowMarginSalesScheduleDeps } from "./low-margin-sales-schedule.js";
 import { triggerLowMarginSalesDetection } from "./low-margin-sales-schedule.js";
 import type { WebhookDeps } from "./webhook.js";
 import { receiveWebhook } from "./webhook.js";
@@ -148,6 +148,8 @@ export interface AppDependencies {
   pricingQuote?: PricingQuoteDeps;
   invites?: InviteDeps;
   metricsRefreshSchedule?: MetricsRefreshScheduleDeps;
+  /** D-858/D-859: o alerta de venda abaixo da margem, às 8h e às 17h. */
+  lowMarginSalesSchedule?: LowMarginSalesScheduleDeps;
   salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
   decisionOutcomesSchedule?: DecisionOutcomesScheduleDeps;
   aiBudgetSchedule?: AiBudgetScheduleDeps;
@@ -544,27 +546,24 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerMetricsRefresh(metricsRefreshSchedule);
 
-    // O piso roda primeiro. Uma falha de fila no alerta pede retentativa da
-    // rota, aproveitando as chaves horárias de deduplicação dos dois fluxos.
-    // A indisponibilidade da tabela continua sinalizada no resultado do alerta.
-    let alertaDeMargem: LowMarginSalesScheduleOutcome | { failed: true; reason: string; retryable?: never };
+    return respostaDoAgendador(context, outcome);
+  });
 
-    try {
-      alertaDeMargem = await triggerLowMarginSalesDetection(metricsRefreshSchedule);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
+  // --------------------------------------------------------------------
+  // ALERTA DE VENDA ABAIXO DA MARGEM (D-858, horário em D-859). Duas rodadas
+  // por dia, às 8h e às 17h de Brasília: cada uma julga as vendas novas, avisa
+  // no sino e manda um e-mail só. Cadência em `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/low-margin-sales", async (context) => {
+    const lowMarginSalesSchedule = dependencies.lowMarginSalesSchedule;
 
-      metricsRefreshSchedule.logger.error("low_margin_sales_schedule_failed", { reason });
-      alertaDeMargem = { failed: true, reason };
+    if (lowMarginSalesSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
     }
 
-    const resposta = {
-      ...outcome,
-      alertaDeMargem,
-      ...(alertaDeMargem.retryable === true ? { failed: true as const } : {}),
-    };
+    const outcome = await triggerLowMarginSalesDetection(lowMarginSalesSchedule);
 
-    return respostaDoAgendador(context, resposta);
+    return respostaDoAgendador(context, outcome);
   });
 
   // --------------------------------------------------------------------
@@ -1456,7 +1455,31 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
     }
 
-    const outcome = await confirmApply(importDeps, authorized.caller, batchId);
+    // Corpo opcional (D-860): a web antiga confirma sem corpo, e isso continua
+    // valendo como "não marcar fora do catálogo". Corpo presente e malformado
+    // é recusado -- nunca vira falso em silêncio.
+    const rawBody = await context.req.text();
+    let markAbsent = false;
+
+    if (rawBody.trim() !== "") {
+      let parsedBody: unknown;
+
+      try {
+        parsedBody = JSON.parse(rawBody);
+      } catch {
+        return context.json({ error: { code: "invalid_payload", message: "corpo inválido" } }, 400);
+      }
+
+      const body = z.object({ markAbsent: z.boolean().optional() }).safeParse(parsedBody);
+
+      if (!body.success) {
+        return context.json({ error: { code: "invalid_payload", message: "corpo inválido" } }, 400);
+      }
+
+      markAbsent = body.data.markAbsent === true;
+    }
+
+    const outcome = await confirmApply(importDeps, authorized.caller, batchId, { markAbsent });
 
     if (outcome.status === "not_found") {
       return context.json({ error: { code: "not_found" } }, 404);

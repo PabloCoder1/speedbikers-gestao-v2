@@ -196,7 +196,16 @@ export async function receiveUpload(
  * `applied_by` é gravado AQUI, não no worker: é o momento em que um humano
  * decidiu. A constraint `erp_import_batches_applied_coherent` exige que ele já
  * esteja preenchido quando o worker marcar o lote como `APPLIED`.
+ *
+ * `markAbsent` (D-860): quem confirma diz que a planilha de PRODUTOS é o
+ * catálogo completo, e o worker marca como fora do catálogo o SKU que já veio
+ * numa planilha anterior e não veio nesta. Vai no payload do job, e não numa
+ * coluna, para valer exatamente para esta aplicação.
  */
+
+export interface ConfirmApplyOptions {
+  markAbsent?: boolean;
+}
 
 export type ConfirmApplyOutcome =
   | { status: "queued"; batchId: string }
@@ -207,10 +216,13 @@ export async function confirmApply(
   deps: ImportDeps,
   caller: Caller,
   batchId: string,
+  options: ConfirmApplyOptions = {},
 ): Promise<ConfirmApplyOutcome> {
+  const markAbsent = options.markAbsent === true;
+
   const batch = await deps.db
     .from("erp_import_batches")
-    .select("id, status")
+    .select("id, status, kind")
     .eq("id", batchId)
     .eq("organization_id", caller.organizationId)
     .maybeSingle();
@@ -225,9 +237,15 @@ export async function confirmApply(
     return { status: "rejected", reason: `lote em ${batch.data.status}, não está pronto para aplicação` };
   }
 
+  if (markAbsent && batch.data.kind !== "PRODUCTS") {
+    // Só a planilha de produtos diz o que é o catálogo: kits, vínculos e
+    // estoque ausentes não querem dizer produto que deixou de existir.
+    return { status: "rejected", reason: "marcar fora do catálogo só vale para a planilha de produtos" };
+  }
+
   const rejected = await confirmAndEnqueueApply({
     caller,
-    logger: deps.logger,
+    logger: deps.logger.child({ mark_absent: markAbsent }),
     enqueuer: deps.enqueuer,
     logPrefix: "erp_apply",
     targetKey: "batch_id",
@@ -238,7 +256,7 @@ export async function confirmApply(
       // Uma aplicação por lote. Reconfirmar não duplica trabalho.
       dedupeKey: `erp-apply:${batchId}`,
       queue: "maintenance",
-      payload: { batchId },
+      payload: markAbsent ? { batchId, markAbsent: true } : { batchId },
     },
     markApplying: async () =>
       await deps.db

@@ -215,3 +215,58 @@ describe("composeMarginAlertEmail (D-858)", () => {
     expect(m.text).not.toContain("Ver no sistema");
   });
 });
+
+describe("detect-low-margin-sales em lotes (D-859)", () => {
+  /** Fila que esvazia de verdade: o mock padrão devolve sempre a mesma lista. */
+  function storeComFila(total: number) {
+    const { store, registro } = fakeStore();
+    let fila = Array.from({ length: total }, (_, i) => alerta({ id: `a${String(i)}` }));
+
+    store.listPending = (_org, limite) => Promise.resolve({ data: fila.slice(0, limite), error: null });
+    store.markSent = (ids) => {
+      registro.enviados.push(ids);
+      fila = fila.filter((a) => !ids.includes(a.id));
+
+      return Promise.resolve(null);
+    };
+    store.markSkipped = (ids, motivo) => {
+      registro.pulados.push({ ids, motivo });
+      fila = fila.filter((a) => !ids.includes(a.id));
+
+      return Promise.resolve(null);
+    };
+
+    return { store, registro };
+  }
+
+  it("450 vendas pendentes saem em três e-mails de até 200", async () => {
+    const { store, registro } = storeComFila(450);
+    const { sender, mensagens } = fakeEmail();
+
+    const { outcome } = await run(store, sender);
+
+    expect(outcome.status).toBe("done");
+    expect(mensagens).toHaveLength(3);
+    expect(registro.enviados.map((ids) => ids.length)).toEqual([200, 200, 50]);
+  });
+
+  it("para em cinco e-mails: o resto fica para a rodada seguinte", async () => {
+    const { store, registro } = storeComFila(1_300);
+    const { sender, mensagens } = fakeEmail();
+
+    await run(store, sender);
+
+    expect(mensagens).toHaveLength(5);
+    expect(registro.enviados.flat()).toHaveLength(1_000);
+  });
+
+  it("sem destinatário, marca todos os lotes como pulados", async () => {
+    const { store, registro } = storeComFila(250);
+
+    store.recipients = () => Promise.resolve({ data: [], error: null });
+
+    await run(store, fakeEmail().sender);
+
+    expect(registro.pulados.map((p) => p.ids.length)).toEqual([200, 50]);
+  });
+});

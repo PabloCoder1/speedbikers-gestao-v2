@@ -27,12 +27,6 @@ function deps(options: {
       select: () => ({
         eq: (coluna: string, valor: unknown) => {
           filtros.push([`${tabela}.${coluna}`, valor]);
-          if (tabela === "ml_accounts") {
-            return Promise.resolve({
-              data: [{ id: "acc-1", organization_id: "org-1", slug: "loja-1" }],
-              error: null,
-            });
-          }
 
           let cursor: string | undefined;
           const readPage = (limit: number) => {
@@ -132,26 +126,27 @@ describe("triggerLowMarginSalesDetection (D-858)", () => {
 
     const app = createApp({
       logger: d.logger,
-      metricsRefreshSchedule: d,
+      lowMarginSalesSchedule: d,
       oidc: { verify: () => Promise.resolve({ ok: true, email: "scheduler@exemplo.com" }) },
     });
-    const run = () => app.request("/internal/schedule/metrics-refresh", { method: "POST" });
+    const run = () => app.request("/internal/schedule/low-margin-sales", { method: "POST" });
 
     const first = await run();
     expect(first.status).toBe(503);
     expect(await first.json()).toMatchObject({
       failed: true,
-      enqueued: 2,
-      alertaDeMargem: { organizationsScanned: 2, enqueued: 1, deduplicated: 0, failed: true },
+      organizationsScanned: 2,
+      enqueued: 1,
+      deduplicated: 0,
     });
     expect(records.some((line) => line.includes("low_margin_sales_enqueue_failed") && line.includes("org-1"))).toBe(true);
 
     const retry = await run();
     expect(retry.status).toBe(200);
     expect(await retry.json()).toMatchObject({
-      enqueued: 0,
-      deduplicated: 2,
-      alertaDeMargem: { organizationsScanned: 2, enqueued: 1, deduplicated: 1 },
+      organizationsScanned: 2,
+      enqueued: 1,
+      deduplicated: 1,
     });
     expect(enqueued.filter((request) => request.jobType === "diagnostics.detect-low-margin-sales")
       .map((request) => request.organizationId)).toEqual(["org-2", "org-1", "org-2"]);

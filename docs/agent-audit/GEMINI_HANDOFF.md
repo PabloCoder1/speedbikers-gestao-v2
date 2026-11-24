@@ -90,6 +90,6 @@ git cherry-pick 157553df 4d2a90e1 9d3c9280
 
 Sobre `2ae7a4b4`, o candidato recebeu 19 commits de código até `b04bdcea` (D-785–D-789 e D-793–D-806). Os SHAs de origem constam nos commits. Os arquivos compartilhados da Curva ABC e de saúde da sincronização mantêm as alterações do candidato e do Gemini. O índice foi regenerado com as 19 decisões. [Handoff de origem do #343](https://github.com/PabloCoder1/speedbikers-gestao-v2/blob/b04bdceacecf3b9359965accf43fdac477b71a0d/docs/agent-audit/GEMINI_HANDOFF.md).
 
-D-807 continua reservado pelo Gemini nos doze módulos do checkpoint de origem. D-795 é a decisão do Gemini no candidato. O PR #383 usa D-795 para catálogo e precisa coordenar a renumeração antes da composição. D-858 de margem fica com o ID publicado na main. O preflight da VM permanece em D-880/D-881.
+D-807 continua reservado pelo Gemini nos doze módulos do checkpoint de origem. D-795 é a decisão do Gemini no candidato. O #383 entrou na main com o ID D-860. A decisão D-795 do Gemini permanece no candidato. D-858 de margem fica com o ID publicado na main. O preflight da VM permanece em D-880/D-881.
 
 **Revisão de integração de D-803.** O leitor `lerPaginasDaRpc` aceita `Infinity` para buscar todos os anúncios de um SKU, em páginas de até 1.000 linhas. A regressão foi reproduzida no Playwright e em teste focado no candidato. A correção está no #378. O Gemini pode incorporar esse ajuste em sua branch sem alterar os tetos finitos de exportação.
