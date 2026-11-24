@@ -295,6 +295,30 @@ function avisoDeCustoRecente(purchaseOrderId: string): string | null {
   return aviso.texto;
 }
 
+/*
+  A requisição da inclusão (D-869) também precisa sobreviver à troca de ramo:
+  se a primeira tentativa gravou e a resposta se perdeu, quem repete com os
+  MESMOS dados no formulário novo tem de mandar a mesma requisição, e o banco
+  devolve o custo já lançado. Dados diferentes geram outra requisição. A
+  pendência some quando a inclusão é confirmada, e vale por 10 minutos.
+*/
+const REQUISICAO_DE_CUSTO_VALIDA_MS = 600_000;
+const requisicoesDeCusto = new Map<string, { chave: string; id: string; em: number }>();
+
+function requisicaoDeCusto(purchaseOrderId: string, chave: string): string {
+  const pendente = requisicoesDeCusto.get(purchaseOrderId);
+
+  if (pendente?.chave === chave && Date.now() - pendente.em <= REQUISICAO_DE_CUSTO_VALIDA_MS) {
+    return pendente.id;
+  }
+
+  const id = crypto.randomUUID();
+
+  requisicoesDeCusto.set(purchaseOrderId, { chave, id, em: Date.now() });
+
+  return id;
+}
+
 /** Os custos adicionais do pedido: listar, incluir e excluir. */
 export function CustosDoPedido({
   purchaseOrderId,
@@ -339,24 +363,26 @@ export function CustosDoPedido({
     setBusy(true);
     setErro(null);
 
+    const input = {
+      id: null,
+      kind,
+      description: descricao.trim() === "" ? null : descricao.trim(),
+      amount,
+      currency: moeda.trim().toUpperCase() || "BRL",
+      exchangeRate: moeda.trim().toUpperCase() === "BRL" ? null : rate,
+      status,
+    };
+    const requestId = requisicaoDeCusto(purchaseOrderId, JSON.stringify(input));
     let r: Awaited<ReturnType<typeof upsertPurchaseOrderCost>>;
 
     try {
-      r = await upsertPurchaseOrderCost(purchaseOrderId, {
-        id: null,
-        kind,
-        description: descricao.trim() === "" ? null : descricao.trim(),
-        amount,
-        currency: moeda.trim().toUpperCase() || "BRL",
-        exchangeRate: moeda.trim().toUpperCase() === "BRL" ? null : rate,
-        status,
-      });
+      r = await upsertPurchaseOrderCost(purchaseOrderId, { ...input, requestId });
     } catch {
-      // Lançar custo NÃO é idempotente (`id: null` cria uma linha nova): se a
-      // primeira tentativa gravou, repetir lança o custo duas vezes e infla o
-      // custo de importação. Por isso a tela relê a lista e manda conferir.
+      // A inclusão é idempotente pela requisição (D-869): repetir com os mesmos
+      // dados devolve o custo já lançado. A tela relê a lista para mostrar se
+      // ele entrou.
       avisarFalhaDeTransporte(
-        "Não foi possível confirmar o lançamento do custo. Confira a lista antes de lançar de novo: repetir pode lançar o mesmo custo duas vezes.",
+        "Não foi possível confirmar o lançamento do custo. Confira a lista: se ele já aparece, não precisa lançar de novo. Repetir com os mesmos dados não lança duas vezes.",
       );
       setBusy(false);
       reler(router);
@@ -372,6 +398,7 @@ export function CustosDoPedido({
       return;
     }
 
+    requisicoesDeCusto.delete(purchaseOrderId);
     setValor("");
     setDescricao("");
     router.refresh();
