@@ -33,3 +33,31 @@ export {
   type TikTokStockInputs,
   type TikTokStockMovements,
 } from "./stock-deduction.js";
+export {
+  classifyTikTokProductStatus,
+  projectTikTokProductCatalog,
+  type ProjectedTikTokListingUnit,
+  type TikTokCatalogProductInput,
+  type TikTokCatalogSkuInput,
+  type TikTokCatalogSkuPriceInput,
+  type TikTokCatalogWarehouseInput,
+  type TikTokProductLifecycle,
+  type TikTokSkuInventoryOverride,
+} from "./catalog-projection.js";
+export {
+  classifyTikTokReturnKind,
+  isTikTokReturnCompleted,
+  normalizeTikTokReturnStatus,
+  planTikTokReturnStockReversal,
+  projectTikTokReturn,
+  tiktokReturnKeyOf,
+  type PlanTikTokReturnReversalInput,
+  type ProjectedTikTokReturn,
+  type ProjectedTikTokReturnItem,
+  type TikTokRecordedReversalForReturn,
+  type TikTokRecordedSaleForReturn,
+  type TikTokReturnKind,
+  type TikTokReturnLineItemInput,
+  type TikTokReturnProjectionInput,
+  type TikTokReturnRefundAmountInput,
+} from "./returns-projection.js";
