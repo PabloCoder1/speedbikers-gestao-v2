@@ -35,7 +35,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
 
   if (lojas.error !== null) {
-    return new Response(`Não foi possível ler as lojas Shopee: ${lojas.error.message}`, { status: 502 });
+    return new Response("Não foi possível ler as lojas Shopee no momento.", { status: 502 });
   }
 
   const organizationId = membership.organizationId;
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   );
 
   if (error !== null) {
-    return new Response(`Não foi possível exportar os pedidos: ${error.message}`, { status: 502 });
+    return new Response("Não foi possível exportar os pedidos no momento.", { status: 502 });
   }
 
   const total = linhas[0]?.total_count ?? 0;

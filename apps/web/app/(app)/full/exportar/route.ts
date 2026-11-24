@@ -60,7 +60,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   );
 
   if (error !== null) {
-    return new Response(`Não foi possível exportar o Full: ${error.message}`, { status: 502 });
+    return new Response("Não foi possível exportar o Full no momento.", { status: 502 });
   }
 
   const total = rows[0]?.total_count ?? 0;

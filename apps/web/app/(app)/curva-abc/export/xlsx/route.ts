@@ -58,14 +58,11 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   // Sem as contas do escopo, o filtro de conta cairia em "todas" e a aba "Por conta" sairia sem colunas.
   if (!multicanal && accounts.error !== null) {
-    return NextResponse.json({ error: { code: "accounts_read_failed", message: accounts.error.message } }, { status: 502 });
+    return NextResponse.json({ error: { code: "accounts_read_failed" } }, { status: 502 });
   }
 
   if (multicanal && contasDoRecorte.error !== null) {
-    return NextResponse.json(
-      { error: { code: "accounts_read_failed", message: contasDoRecorte.error.message } },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: { code: "accounts_read_failed" } }, { status: 502 });
   }
 
   // Conta desconhecida cai em "todas", a MESMA regra da tela.
@@ -104,7 +101,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   });
 
   if (error !== null || data === null) {
-    return NextResponse.json({ error: { code: "read_failed", message: error?.message } }, { status: 502 });
+    return NextResponse.json({ error: { code: "read_failed" } }, { status: 502 });
   }
 
   const arquivo = await buildAbcWorkbook({
