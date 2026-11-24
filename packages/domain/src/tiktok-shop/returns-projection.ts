@@ -14,7 +14,7 @@ import { isTikTokFulfilledByPlatform, parseDecimalOpcional } from "./order-proje
  *   unidades vendidas menos cancelamentos/devoluções já gravados.
  */
 
-export type TikTokReturnKind = "DEVOLUCAO_FISICA" | "APENAS_REEMBOLSO" | "CANCELAMENTO" | "DESCONHECIDO";
+export type TikTokReturnKind = "RETORNO_FISICO" | "APENAS_REEMBOLSO" | "CANCELAMENTO" | "DESCONHECIDO";
 
 export interface TikTokReturnRefundAmountInput {
   readonly currency?: string | null;
@@ -94,8 +94,8 @@ const TIKTOK_RETURN_PREFIX = "tiktok-devolucao:";
 const CANCELAMENTO_PREFIX = "cancelamento:";
 
 const RETURN_KIND_MAP: Readonly<Record<string, TikTokReturnKind>> = {
-  RETURN_AND_REFUND: "DEVOLUCAO_FISICA",
-  RETURN_OR_REFUND: "DEVOLUCAO_FISICA",
+  RETURN_AND_REFUND: "RETORNO_FISICO",
+  RETURN_OR_REFUND: "RETORNO_FISICO",
   REFUND_ONLY: "APENAS_REEMBOLSO",
   CANCEL: "CANCELAMENTO",
 };
@@ -242,7 +242,7 @@ export function planTikTokReturnStockReversal(input: PlanTikTokReturnReversalInp
   }
 
   if (!input.orderDeductionEnabled) return [];
-  if (classifyTikTokReturnKind(input.returnType) !== "DEVOLUCAO_FISICA") return [];
+  if (classifyTikTokReturnKind(input.returnType) !== "RETORNO_FISICO") return [];
   if (!isTikTokReturnCompleted(input.returnStatus)) return [];
   if (isTikTokFulfilledByPlatform(input.fulfillmentType)) return [];
 

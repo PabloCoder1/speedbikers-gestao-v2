@@ -15,8 +15,8 @@ describe("D-813 — devoluções, cancelamentos e reversão idempotente de estoq
     expect(normalizeTikTokReturnStatus("CANCEL")).toBe("CANCELLED");
     expect(normalizeTikTokReturnStatus("RETURN_OR_REFUND_REQUEST_COMPLETE")).toBe("RETURN_OR_REFUND_REQUEST_COMPLETE");
 
-    expect(classifyTikTokReturnKind("RETURN_AND_REFUND")).toBe("DEVOLUCAO_FISICA");
-    expect(classifyTikTokReturnKind("RETURN_OR_REFUND")).toBe("DEVOLUCAO_FISICA");
+    expect(classifyTikTokReturnKind("RETURN_AND_REFUND")).toBe("RETORNO_FISICO");
+    expect(classifyTikTokReturnKind("RETURN_OR_REFUND")).toBe("RETORNO_FISICO");
     expect(classifyTikTokReturnKind("REFUND_ONLY")).toBe("APENAS_REEMBOLSO");
     expect(classifyTikTokReturnKind("CANCEL")).toBe("CANCELAMENTO");
     expect(classifyTikTokReturnKind("toString")).toBe("DESCONHECIDO");
@@ -52,7 +52,7 @@ describe("D-813 — devoluções, cancelamentos e reversão idempotente de estoq
     expect(projected).toMatchObject({
       returnId: "ret-100",
       orderId: "ord-500",
-      kind: "DEVOLUCAO_FISICA",
+      kind: "RETORNO_FISICO",
       completed: true,
       businessDate: "2026-11-23",
       currency: "BRL",
