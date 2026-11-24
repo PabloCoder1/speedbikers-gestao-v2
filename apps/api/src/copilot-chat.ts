@@ -17,6 +17,7 @@ import type { PlanBlock, PlanMessage, PlanToolDefinition } from "./anthropic-cli
 import type { Caller } from "./auth.js";
 import type { CopilotDeps } from "./copilot.js";
 import {
+  CopilotToolError,
   runListingPerformance,
   runMarketplaceSalesSummary,
   runMarketplaceSkuSales,
@@ -461,11 +462,22 @@ export async function runCopilotChat(
 
           toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: JSON.stringify(data) });
         } catch (error) {
-          // O erro volta para o MODELO decidir como explicar — nunca some.
+          // D-829: paridade com `copilot.ts` — só `CopilotToolError` carrega mensagem segura
+          // para o modelo; erro interno (Postgres/PostgREST/rede) vai apenas para o log.
+          const safeMessage =
+            error instanceof CopilotToolError ? error.message : "falha ao executar a ferramenta";
+
+          if (!(error instanceof CopilotToolError)) {
+            deps.logger.error("copilot_chat_tool_failed", {
+              tool: toolUse.name,
+              reason: error instanceof Error ? error.message : String(error),
+            });
+          }
+
           toolResults.push({
             type: "tool_result",
             tool_use_id: toolUse.id,
-            content: error instanceof Error ? error.message : "falha ao executar a ferramenta",
+            content: safeMessage,
             is_error: true,
           });
         }
