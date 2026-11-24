@@ -20520,3 +20520,11 @@ inválida ou divergência de histórico reprova a execução.
 A etapa usa somente o catálogo informado e acesso de leitura ao repositório.
 O operador extrai novamente o catálogo na VM e confere o plano antes da
 aplicação aprovada. A CI do Dev mantém seu fluxo próprio.
+
+## D-882 - Agendamento de margem percorre todas as organizações com alerta ativo
+
+**24/11/2026 · Alertas.** O PostgREST limita respostas a 1.000 linhas.
+A consulta do agendamento de margem passa a paginar pela chave primária
+`organization_id` e termina a leitura antes de enfileirar. Uma página com
+erro faz o agendamento retornar falha. A chave de deduplicação horária é
+preservada. Testes cobrem 1.001 organizações e erro na segunda página.

@@ -198,7 +198,7 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
-13. **Alerta de margem (D-858):** VM tem `20261123180000`. Em 24/11 às 08:21 BRT, a API enfileirou o job e o worker registrou 50 alertas sem envio por falta de destinatários. O candidato aceita `MARGIN_ALERT_EMAIL_ENABLED=sim` para vincular versões habilitadas no deploy e exige escolha explícita quando o serviço já tem SMTP. Falta validar a entrega após o responsável definir os destinatários em `/central/limites`.
+13. **Alerta de margem (D-858):** VM tem `20261123180000`. Em 24/11 às 08:21 BRT, a API enfileirou o job e o worker registrou 50 alertas sem envio por falta de destinatários. O candidato protege o vínculo de SMTP e pagina as organizações ativas (D-882). Falta validar a entrega após o responsável definir os destinatários em `/central/limites`.
 
 ---
 
