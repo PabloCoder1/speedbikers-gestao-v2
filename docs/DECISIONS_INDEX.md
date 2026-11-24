@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **707** (D-001 a D-808).
+Decisões registradas: **710** (D-001 a D-811).
 
 ## Por domínio
 
@@ -144,7 +144,7 @@ Decisões registradas: **707** (D-001 a D-808).
 - **D-767** — Um índice único atende a timeline do Full
 - **D-769** — Ordem de migrations validada por upgrade incremental
 
-### estoque (60)
+### estoque (61)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -206,6 +206,7 @@ Decisões registradas: **707** (D-001 a D-808).
 - **D-799** — Domínio e web: calendário real em datas de negócio e períodos, PDFs/NF-e, preflight/corpo de republicação, cobertura, saúde e CSV
 - **D-802** — Domínio, API e Web: ledger/UpSeller, diretório de contas e indicadores/saúde fail-closed
 - **D-803** — Domínio, API e Web: reversões de estoque, enqueue, filtros ABC, paginação RPC e utilitários web
+- **D-809** — Domínio TikTok Shop: projeção de pedidos, margem oficial V3 e plano de baixa de estoque com guarda D-497 (`M04`)
 
 ### interface (78)
 
@@ -432,7 +433,7 @@ Decisões registradas: **707** (D-001 a D-808).
 - **D-801** — Domínio, Worker e Web: finitude em eventos/inventário/suporte, estoque Full no preflight de relist e parsers/filtros web
 - **D-807** — TikTok Shop: camada transacional de leitura, webhook e coordenador de refresh em `@sb/tiktok-shop` (`M04`)
 
-### outros (112)
+### outros (113)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -546,12 +547,13 @@ Decisões registradas: **707** (D-001 a D-808).
 - **D-775** — Autenticação da API recusa múltiplas organizações e separa 503 de 401/403; OIDC exige `email_verified`; unlock de `shopee.orders.sync` protegido no `finally`
 - **D-777** — Backfills internos respondem 503 em erro de banco, rotas D-766 usam `erroInterno` com `request_id` e callback Shopee exige inteiro seguro positivo
 - **D-784** — Demais Server Components web falham fechado em erro de contas/organização e BuscaSku trata rejeição de transporte
+- **D-811** — Web: falha fechada em `removeMember`, hardening de `POST /api/vitals` e busca de SKU em NF-e/Saída Manual
 
 ### processo/docs (1)
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (71)
+### vendas/métricas (72)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -624,6 +626,7 @@ Decisões registradas: **707** (D-001 a D-808).
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
 - **D-798** — Contratos, API e Worker: janelas de datas no Copiloto, lookup de ferramenta/NF-e/suspensão blindados, papéis/dedupe de claims, cauda de pedidos e `attempt` do worker
+- **D-810** — API TikTok Shop: agendador paginado de pedidos e adaptador Supabase de refresh de token (`M04`)
 
 ### worker/infra (122)
 
