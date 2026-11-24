@@ -20047,6 +20047,8 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
   - o link de recuperação da Admin API leva a "Crie uma nova senha", a senha nova entra e a antiga é recusada.
 - O e-mail de verdade não é testado, porque o Supabase local não tem capturador ligado (`[local_smtp]`). O envio real é o passo 3 do dono.
 
+**Em produção (24/11):** o dono fez os quatro passos. O Auth da VM usa o mesmo Gmail do alerta de margem, pela porta 465 com senha de app. O remetente é a própria conta, porque o Gmail não aceita outro endereço no `From`, e o nome é `Speed Bikers Gestão`. O `.env` anterior ficou guardado na VM como `.env.antes-smtp-20261124`. Na publicação seguinte, o `/login` de produção passou a mostrar "Esqueci a senha". O dono pediu a recuperação, recebeu o e-mail e trocou a senha.
+
 ## D-864 - O formulário de pedido de compra sobrevive à Server Action que não responde
 
 **Contexto:** em `/compras/novo` e `/compras/[id]/editar`, o `submit()` chamava `createPurchaseOrder` e `updatePurchaseOrderDraft` sem `try`. Se a Server Action falhava no transporte (rede caída, servidor reiniciando, resposta perdida), a promessa rejeitava, `setBusy(false)` nunca rodava e o botão ficava em "Salvando…" para sempre, sem aviso. A única saída era recarregar a tela, e o rascunho digitado se perdia. Na varredura de falha de transporte do PLAN, este era o arquivo de compras que faltava.
