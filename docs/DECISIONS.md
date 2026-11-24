@@ -20665,3 +20665,22 @@ Auditoria de segurança multi-tenant e integridade em 7 handlers do worker que r
 4. **Isolamento de loja e enqueue em `shopee-order-financials-sync.ts`:** recusa com `retryable: false` quando `loja.organization_id !== envelope.organizationId` e envolve `deps.enqueuer.enqueue()` da continuação de lote cheio em `try/catch`, registrando `shopee_order_financials_enqueue_failed` e devolvendo `{ status: "failed", retryable: true }` em vez de rejeição não tratada.
 
 TDD RED (`7 failed (7)` / `7 failed | 71 passed (78)`) -> GREEN (`7 passed (7)` / `78 passed (78)`). Verificação completa do monorepo pós-`0072e5ac`: `pnpm run check` (`37/37`, `359` arquivos / `4.577` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` e `pnpm audit --prod --audit-level high` (saída `0`).
+
+## D-815 - Worker `service_role`: isolamento multi-tenant `envelope.organizationId` em 7 handlers críticos de escrita, importação, relist, logística e webhook
+
+Continuação da auditoria de isolamento multi-tenant sob `service_role` no worker (fora dos arquivos em diff no `#378`, commit `daa30b3a`):
+
+1. **Importação ERP/NF-e (`erp-import-parse.ts`, `nfe-import-parse.ts`, `nfe-import-apply.ts`):** recusam com `{ status: "failed", retryable: false, reason: "... pertence a outra organização" }` antes de qualquer download no Storage, parse ou baixa de estoque/ledger quando `batch.organization_id` ou `document.organization_id` diverge de `envelope.organizationId`.
+2. **Republicação e detecção de queda (`relist-execute.ts`, `listing-sales-drop.ts`):** recusam com `retryable: false` quando `operation.organization_id` ou `payload.organizationId` diverge de `envelope.organizationId`, bloqueando chamada externa ao Mercado Livre ou escrita de alerta/evento em organização divergente.
+3. **Logística e webhook ML (`sync-order-logistics.ts`, `webhook-received.ts`):** conferem `account.organization_id === envelope.organizationId` antes de consultar/atualizar pedidos ou enfileirar/processar eventos do webhook, devolvendo `retryable: false` em divergência.
+
+TDD RED (`7 failed (7)` / `7 failed | 191 passed (198)`) -> GREEN (`7 passed (7)` / `198 passed (198)`), com `@sb/worker` `tsc`/`eslint`/`build` aprovados.
+
+## D-816 - Worker `service_role`: `expectedOrganizationId` centralizado em `resolveMlAccountRead` e isolamento em 9 handlers do Mercado Livre
+
+Centralizamos a guarda de fronteira multi-tenant para leitura de `ml_accounts` no helper compartilhado `resolveMlAccountRead` (commit `ce980cdc`), mantendo assinatura retrocompatível com `sync-listings-snapshot.ts` no `#378`:
+
+1. **Helper compartilhado (`apps/worker/src/handlers/ml-account-read.ts`):** aceita `expectedOrganizationId?: string` opcional e recusa com `{ ok: false, outcome: { status: "failed", retryable: false, reason: "conta do Mercado Livre pertence a outra organização" } }` sempre que `account.organization_id !== expectedOrganizationId`.
+2. **Adoção em 9 handlers ML intocados pelo `#378` (`backfill-orders.ts`, `sync-ads-campaigns.ts`, `sync-fulfillment-snapshot.ts`, `sync-listing-visits-snapshot.ts`, `sync-orders-window.ts`, `sync-support-claims-reconcile.ts`, `sync-support-messages-reconcile.ts`, `sync-support-questions-reconcile.ts`, `webhook-received.ts`):** todos passam `expectedOrganizationId: envelope.organizationId` em `resolveMlAccountRead`, bloqueando qualquer acesso `service_role` cross-tenant antes de token refresh, chamadas à API ML ou persistência.
+
+TDD RED (`9 failed | 21 passed (30)` em `ml-account-read.test.ts`) -> GREEN (`69/69` arquivos / `1.183/1.183` testes no `@sb/worker`). Verificação completa do monorepo pós-`ce980cdc`: `pnpm run check` (`37/37`, `359` arquivos / `4.594` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `6/6` commits pendentes com `0` conflitos sobre `#378` (`c1ef6afd`).

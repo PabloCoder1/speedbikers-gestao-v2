@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **713** (D-001 a D-814).
+Decisões registradas: **715** (D-001 a D-816).
 
 ## Por domínio
 
@@ -290,7 +290,7 @@ Decisões registradas: **713** (D-001 a D-814).
 - **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
 - **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
 
-### mercado-livre (141)
+### mercado-livre (143)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -433,6 +433,8 @@ Decisões registradas: **713** (D-001 a D-814).
 - **D-800** — API, Worker e Web: hardening de Copiloto, OAuth Shopee, logística/pacote/anomalias e helpers de métricas
 - **D-801** — Domínio, Worker e Web: finitude em eventos/inventário/suporte, estoque Full no preflight de relist e parsers/filtros web
 - **D-807** — TikTok Shop: camada transacional de leitura, webhook e coordenador de refresh em `@sb/tiktok-shop` (`M04`)
+- **D-815** — Worker `service_role`: isolamento multi-tenant `envelope.organizationId` em 7 handlers críticos de escrita, importação, relist, logística e webhook
+- **D-816** — Worker `service_role`: `expectedOrganizationId` centralizado em `resolveMlAccountRead` e isolamento em 9 handlers do Mercado Livre
 
 ### outros (113)
 
