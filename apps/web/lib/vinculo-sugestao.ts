@@ -74,7 +74,7 @@ export function lerSugestoesDoAnuncio(dado: unknown): SugestoesDoAnuncio | null 
   const vinculos: VinculoExistente[] = [];
 
   for (const l of dado.vinculos) {
-    if (!ehObj(l) || typeof l.link_id !== "string") return null;
+    if (!ehObj(l) || typeof l.link_id !== "string" || l.link_id.trim() === "") return null;
     if (![l.variation_id, l.sku_id, l.sku].every(textoOuNulo)) return null;
 
     vinculos.push({
@@ -177,16 +177,17 @@ function montarAlvo(
   let unidades = 0;
 
   for (const v of vistas) {
-    unidades += v.unidades;
+    const qtd = Number.isFinite(v.unidades) ? v.unidades : 0;
+    unidades += qtd;
 
-    if (v.skuId !== null && v.sku !== null) {
+    if (v.skuId !== null && v.skuId.trim() !== "" && v.sku !== null && v.sku.trim() !== "") {
       const atual = porSku.get(v.skuId);
 
       porSku.set(v.skuId, {
         opcao: { skuId: v.skuId, sku: v.sku, title: v.skuTitle },
-        unidades: (atual?.unidades ?? 0) + v.unidades,
+        unidades: (atual?.unidades ?? 0) + qtd,
       });
-    } else if (v.sellerSku !== null) {
+    } else if (v.sellerSku !== null && v.sellerSku.trim() !== "") {
       semCadastro.add(v.sellerSku);
     }
   }

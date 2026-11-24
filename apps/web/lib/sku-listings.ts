@@ -50,11 +50,11 @@ function lerVinculos(cru: unknown): VinculoDoAnuncio[] {
   const vinculos: VinculoDoAnuncio[] = [];
 
   for (const item of cru) {
-    if (typeof item !== "object" || item === null) continue;
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
 
     const linha = item as Record<string, unknown>;
 
-    if (typeof linha.id !== "string") continue;
+    if (typeof linha.id !== "string" || linha.id.trim() === "") continue;
 
     vinculos.push({
       id: linha.id,
@@ -118,7 +118,9 @@ const SEM_LINHA =
   "este anúncio aponta para o SKU pela última sincronização, e não há linha de vínculo para remover";
 
 export function acaoDeVinculo(anuncio: AnuncioDoSku): AcaoDeVinculo {
-  const rotuloForma = ROTULO_FORMA[anuncio.vinculo_forma] ?? anuncio.vinculo_forma;
+  const rotuloForma = Object.hasOwn(ROTULO_FORMA, anuncio.vinculo_forma)
+    ? (ROTULO_FORMA[anuncio.vinculo_forma] ?? anuncio.vinculo_forma)
+    : anuncio.vinculo_forma;
 
   if (anuncio.links.length === 0) {
     return { linkId: null, variosVinculos: false, rotuloForma, motivoSemAcao: SEM_LINHA };

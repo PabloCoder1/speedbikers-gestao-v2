@@ -27,4 +27,9 @@ describe("applyTemplate (D-111)", () => {
     expect(result.applied).toBe(false);
     expect(result.text).toBe(rascunho);
   });
+
+  it("limite não finito ou negativo recusa a inserção sem burlar o teto", () => {
+    expect(applyTemplate("rascunho", "template", Number.NaN)).toEqual({ text: "rascunho", applied: false });
+    expect(applyTemplate("rascunho", "template", -1)).toEqual({ text: "rascunho", applied: false });
+  });
 });

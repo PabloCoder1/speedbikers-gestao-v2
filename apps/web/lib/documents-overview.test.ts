@@ -118,6 +118,23 @@ describe("leitura do contrato", () => {
     expect(lerVisaoDocumentos([])).toBeNull();
     expect(lerVisaoDocumentos("{}")).toBeNull();
   });
+
+  it("recusa campos herdados apenas do protótipo no resumo e na linha", () => {
+    const dado = respostaValida() as { resumo: Record<string, unknown>; linhas: Record<string, unknown>[] };
+    const resumoProto = Object.create({ itens_sem_vinculo: 99 }) as Record<string, unknown>;
+    Object.assign(resumoProto, dado.resumo);
+    delete resumoProto.itens_sem_vinculo;
+    dado.resumo = resumoProto;
+
+    expect(lerVisaoDocumentos(dado)).toBeNull();
+
+    const dado2 = respostaValida() as { linhas: Record<string, unknown>[] };
+    const linhaProto = Object.create({ last_error_code: "HERDADO" }) as Record<string, unknown>;
+    Object.assign(linhaProto, dado2.linhas[0]);
+    dado2.linhas[0] = linhaProto;
+
+    expect(lerVisaoDocumentos(dado2)?.linhas[0]?.last_error_code).toBeNull();
+  });
 });
 
 describe("leitura antiga", () => {
@@ -197,6 +214,13 @@ describe("próximo passo", () => {
     expect(proximoPassoDoDocumento({ ...base, status: "APPLYING" }).texto).toBe("Aplicando…");
     expect(proximoPassoDoDocumento({ ...base, status: "FAILED" }).tom).toBe("perigo");
     expect(proximoPassoDoDocumento({ ...base, status: "APPLIED" }).tom).toBe("ok");
+  });
+
+  it("contagens não finitas nunca geram rótulo 'Vincular NaN de Infinity'", () => {
+    expect(proximoPassoDoDocumento({ ...base, total_items: Number.POSITIVE_INFINITY, resolved_items: Number.NaN })).toEqual({
+      texto: "Nenhum item lido",
+      tom: "perigo",
+    });
   });
 });
 

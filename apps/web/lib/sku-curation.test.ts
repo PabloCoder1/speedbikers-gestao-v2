@@ -68,6 +68,11 @@ describe("parseSelecao", () => {
   it("recusa seleção vazia", () => {
     expect(parseSelecao([]).ok).toBe(false);
     expect(parseSelecao(["", ""]).ok).toBe(false);
+    expect(parseSelecao(["   ", "\t"]).ok).toBe(false);
+  });
+
+  it("apara espaços nas bordas antes de deduplicar", () => {
+    expect(parseSelecao([" a ", "a", "   ", " b "])).toEqual({ ok: true, value: ["a", "b"] });
   });
 
   it("recusa acima do teto, dizendo quantos foram selecionados", () => {

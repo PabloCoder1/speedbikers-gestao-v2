@@ -20,6 +20,12 @@ describe("hrefDaPaginaDosPedidos", () => {
     expect(hrefDaPaginaDosPedidos("sku-1", 1)).toBe("/skus/sku-1?aba=vendas");
     expect(hrefDaPaginaDosPedidos("sku-1", 2)).toBe("/skus/sku-1?aba=vendas&pedidos=2");
   });
+
+  it("codifica o skuId no caminho e ignora página não inteira ou não finita", () => {
+    expect(hrefDaPaginaDosPedidos("sku/a b", Number.POSITIVE_INFINITY)).toBe("/skus/sku%2Fa%20b?aba=vendas");
+    expect(hrefDaPaginaDosPedidos("sku-1", 2.5)).toBe("/skus/sku-1?aba=vendas");
+    expect(hrefDaPaginaDosPedidos("sku-1", Number.NaN)).toBe("/skus/sku-1?aba=vendas");
+  });
 });
 
 describe("janelaDosPedidos", () => {
