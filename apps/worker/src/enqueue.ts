@@ -70,12 +70,19 @@ export function createEnqueuer(
         JSON.stringify({ ...envelope, payload: request.payload ?? {} }),
       ).toString("base64");
 
+      if (
+        request.delaySeconds !== undefined &&
+        (!Number.isFinite(request.delaySeconds) || request.delaySeconds < 0)
+      ) {
+        throw new RangeError("delaySeconds precisa ser finito e >= 0");
+      }
+
       const scheduleTime =
         request.delaySeconds === undefined
           ? {}
           : {
               scheduleTime: {
-                seconds: Math.floor(Date.now() / 1000) + request.delaySeconds,
+                seconds: Math.floor(Date.now() / 1000) + Math.floor(request.delaySeconds),
               },
             };
 
