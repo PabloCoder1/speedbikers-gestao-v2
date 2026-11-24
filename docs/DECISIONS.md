@@ -20563,3 +20563,23 @@ Doze módulos puros de `apps/web/lib/` (`24` arquivos no total, todos 100% byte-
    - `documents-overview.ts`: `lerContagens` e `lerLinha` usam `Object.hasOwn` (recusando campos herdados de protótipo); `proximoPassoDoDocumento` normaliza `total_items`/`resolved_items` não finitos ou negativos para `0` (evitando `"Vincular NaN de Infinity"`).
 
 Reprodução pré-correção registrou `12/12` arquivos vermelhos (`20/20` novos casos em `@sb/web`); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `343` arquivos / `4.477` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` e `pnpm audit --prod --audit-level high` (saída `0`).
+
+## D-806 - Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
+
+Doze módulos puros de `packages/domain/src/upseller/` e `apps/web/lib/` (`24` arquivos no total, todos 100% byte-idênticos ao candidato `#378` em `fb8b8ffe` e com zero sobreposição contra `origin/main` `#384` `D-858`, `#383`, `#347` e todos os PRs abertos do Codex) endurecidos via TDD:
+
+1. **Parsers UpSeller (`packages/domain/src/upseller/{rows,apply,listing-ref,supplier-brand}.ts`):**
+   - `rows.ts`: `mapStockRow` recusa estouro não finito (`Infinity`) na soma `transitPurchase + transitTransfer`.
+   - `apply.ts`: `str()`, `bool()`, `numberOrNull()`, `isActive`, `ref` e `kind` exigem propriedades próprias (`Object.hasOwn`), e `str()` apara espaços nas bordas (impedindo `componentSkuKey: " K "` de burlar a trava de auto-componente de kit e espaços em `sku`/`supplierBrand` de violarem constraints do Postgres).
+   - `listing-ref.ts`: `isMercadoLivreStore` exige `/^mercado-ml\s*-/i` e `storeLabel` devolve `null` para `"mercado-ML"` sem nome de loja (eliminando a criação de uma conta falsa `"ML"`/`"ml"`).
+   - `supplier-brand.ts`: `doTituloOuSku` compara `PREFIXOS_DE_SKU` preservando o hífen (em vez de passar o prefixo por `buscavel()`, que transformava `"RT-"` em `"RT"` e classificava falsamente SKUs como `"RTA01"`).
+2. **Visões, etapas, exportações, alinhamento de série e paginação web (`apps/web/lib/{products-overview,vinculacoes-visao,erp-import-steps,nfe-steps,full-export,vendas-export,series-alignment,listings-dashboard}.ts`):**
+   - `products-overview.ts`: `lerContagens`, `lerPresenca`, `lerLista`, `lerLinha` e `lerVisaoProdutos` usam `Object.hasOwn`; `opcoesDeLista` normaliza `limite` não finito ou `<= 0` para `0` (evitando `slice(0, -1)`).
+   - `vinculacoes-visao.ts`: `lerConta` e `lerVisaoVinculacoes` usam `Object.hasOwn`; `tonsDasContas` deduplica IDs repetidos preservando o primeiro tom sem deslocar contas seguintes.
+   - `erp-import-steps.ts` e `nfe-steps.ts`: normalizam contagens não finitas/negativas para `0` via `contagemSegura`; `nfe-steps.ts` ignora `semBaixaPorRegra` só com espaços.
+   - `full-export.ts`: trata `coverage_days` não finito como `"sem venda"`, consistente com `formatCoverage`.
+   - `vendas-export.ts`: protege `ORDEM_NO_DIA` e `NOME_DO_MARKETPLACE` com `Object.hasOwn` (eliminando vazamento de `[Function toString]` e `TypeError` em marketplace desconhecido) e envolve `new URL(...)` em `hrefDaExportacao` com `try/catch`.
+   - `series-alignment.ts`: `indexByOffset` valida `isValidBusinessDate(periodStart)` e descarta pontos inválidos ou anteriores a `periodStart` sem lançar `RangeError`.
+   - `listings-dashboard.ts`: `pageNumbers` recusa `totalPages` não finito/`< 1` (`[]`) e normaliza `totalPages`/`current` com `Math.floor` (eliminando `[1, 2, "…", Infinity]` e páginas fracionárias).
+
+Reprodução pré-correção registrou `12/12` arquivos vermelhos (`4` domain + `8` web); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `343` arquivos / `4.488` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` e `pnpm audit --prod --audit-level high` (saída `0`).
