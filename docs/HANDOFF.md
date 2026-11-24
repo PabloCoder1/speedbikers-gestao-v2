@@ -191,7 +191,7 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
-13. **Alerta de margem (D-858, D-859):** código no ar (worker `00061`, api `00043`). Faltam o job `v3-low-margin-sales` (8h e 17h) e o `v3-order-financials-sweep` em `30 6,16 * * *` (hoje `30 9 * * *`), ambos em `infra/cloud-scheduler.sh`, e os e-mails em `/central/limites`.
+13. **Alerta de margem (D-858, D-859):** no ar desde 24/11 (worker `00061`, api `00043`; Scheduler `v3-low-margin-sales` às 8h e 17h e `v3-order-financials-sweep` em `30 6,16 * * *`). Falta cadastrar os e-mails em `/central/limites`.
 
 ---
 
