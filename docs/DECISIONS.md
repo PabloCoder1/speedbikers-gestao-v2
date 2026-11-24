@@ -20097,3 +20097,27 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
   - custo com a resposta cortada: aviso, botão liberado, um custo só no banco, e a releitura mostra o valor na lista;
   - previsão com o POST bloqueado: aviso, data preservada, e a nova tentativa salva.
 - Vermelho/verde: com os três componentes da `main`, os 4 testes falham esperando o aviso. Com a correção, as specs de compras, estoque, fornecedores e reposição passam juntas (38 testes).
+
+## D-866 - "Já fiz o pedido" e o cadastro de fornecedor sobrevivem à Server Action que não responde
+
+**Contexto:** a mesma varredura da D-865 achou mais cinco chamadas sem `try` em reposição e fornecedores:
+- **"Já fiz o pedido"** (`ja-fiz-pedido.tsx`): registrar, vincular a referência e acrescentar ao pedido externo. O diálogo não fecha enquanto grava (`useDialogo(..., !gravando)`), e a falha de transporte deixava `gravando` ligado. A tela inteira ficava presa sob o diálogo até recarregar.
+- **Cadastro e edição do fornecedor** (`supplier-form.tsx`): a chamada roda dentro de `startTransition`, e a rejeição ia para a fronteira de erro. O formulário era trocado pela tela de erro, com tudo o que foi digitado.
+- **Produto do fornecedor** (`produtos-fornecidos.tsx`): o botão ficava preso.
+
+**Decisão:**
+
+- **Toda falha de transporte vira aviso, botão liberado e campos preservados**, e o diálogo volta a fechar.
+- **O texto segue o que a repetição faz no banco:**
+  - **Registrar e acrescentar** levam o mesmo `requestId` (D-761): a repetição devolve o mesmo pedido ou o mesmo acréscimo, e o aviso diz que pode tentar de novo.
+  - **Vincular a referência** é recusado se ela já foi gravada. O aviso manda abrir o pedido e conferir.
+  - **Fornecedor novo:** o nome é único por empresa (`suppliers_org_name_unique`). Se a primeira tentativa gravou, repetir é recusado como nome repetido, então o aviso manda conferir a lista. Na edição, `update_supplier` regrava os mesmos valores.
+  - **Produto do fornecedor:** `upsert_supplier_sku` grava por fornecedor e SKU, e repetir regrava a mesma linha.
+- **Sem migration e sem mudança de contrato.**
+
+**Verificação (`reposicao-fornecedor-transporte.spec.ts`, stack local isolada, `db reset` e seed):**
+- "Já fiz o pedido" com o POST bloqueado: aviso, "Registrar pedido" liberado, quantidade preservada, e "Cancelar" fecha o diálogo.
+- Fornecedor novo com o POST bloqueado: aviso, botão liberado, nome preservado e nenhum fornecedor gravado.
+- O POST é bloqueado antes do servidor, então nada é gravado e a sugestão do SKU do seed fica intacta para as outras specs. A repetição segura de registrar já é provada por `pedido-ja-feito.spec.ts`.
+- Vermelho/verde: com os componentes da `main`, os 2 testes falham esperando o aviso.
+- **Não exercitado em e2e:** vincular referência, acrescentar ao pedido externo e o produto do fornecedor. Os três recebem o mesmo `try`, conferido por leitura e pelo typecheck.
