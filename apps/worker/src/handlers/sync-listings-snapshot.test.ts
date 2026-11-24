@@ -276,6 +276,25 @@ describe("sync.listings.snapshot (D-058)", () => {
     expect(db.inserted.find((e) => e.table === "sync_errors")?.row).toMatchObject({ error_class: "retryable" });
   });
 
+  it("não hidrata quando o scan atinge o teto com cursor aberto", async () => {
+    const { deps: d, db, lines } = deps({});
+    const paths: string[] = [];
+    d.mercadoLivre.request = ((options: RequestOptions<unknown>) => {
+      paths.push(options.path);
+      const response = options.path.endsWith("/items/search")
+        ? { results: ["MLB1"], scroll_id: "aberto" }
+        : [{ code: 200, body: { ...ITEM_MLB1, status: "paused" } }];
+      return Promise.resolve(options.schema.parse(response));
+    }) as typeof d.mercadoLivre.request;
+
+    await expect(run(d, lines)).resolves.toMatchObject({ status: "failed", retryable: false });
+    expect(paths).toHaveLength(500);
+    expect(paths.every((path) => path.endsWith("/items/search"))).toBe(true);
+    expect(db.inserted.find((entry) => entry.table === "listings")).toBeUndefined();
+    expect(db.inserted.find((entry) => entry.table === "sync_runs")?.row).toMatchObject({ status: "failed" });
+    expect(db.inserted.find((entry) => entry.table === "sync_errors")?.row).toMatchObject({ error_class: "not_retryable" });
+  });
+
   it("falha num item específico: NÃO derruba o job — vira partial, itemsFailed no reason", async () => {
     // Desde a Fase 4B o 404 de um item chega como `code` DENTRO do envelope
     // verbose do multiget, não como exceção da chamada inteira — é o que
