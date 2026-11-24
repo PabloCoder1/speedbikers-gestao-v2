@@ -20750,3 +20750,12 @@ Adicionamos o terceiro canal (`tiktok_shop`) à Central de Integrações (`/inte
 2. **Leitura paralela e E2E (`apps/web/app/(app)/integracoes/page.tsx`, `apps/web/e2e/integracoes.spec.ts`):** lê `tiktok_shops` no mesmo `Promise.all` (zero waterfall, aprovado em `check:waterfalls`) e atualiza `integracoes.spec.ts` para `toHaveCount(8)` com asserções explícitas no cartão `TikTok Shop`.
 
 TDD RED (`3 failed | 36 passed (39)`) -> GREEN (`39/39`, incluindo todas as invariantes adversas de D-232). Verificação completa pós-`8e439358`: `pnpm run check` (`37/37`, `362` arquivos / `4.623` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `9/9` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-824 - Web `/sincronizacao`: seção `Lojas TikTok Shop` e saúde da autorização (`M04`)
+
+Fechamos a visibilidade operacional do terceiro canal também em `/sincronizacao` (commit `789aa4cb`):
+
+1. **Helper puro (`apps/web/lib/saude-loja-tiktok.{ts,test.ts}`):** espelha `saude-loja-shopee.ts` com `avisoDaAutorizacaoTikTok` (aviso oficial de 30 dias `UPCOMING_AUTHORIZATION_EXPIRATION` em `atencao` e `Autorização vencida` em `perigo`, tolerante a datas inválidas) e `vereditoDaLojaTikTok` (nunca declara verde sem sincronização transacional observada — usa `neutro` `"Conectada (aguardando sync)"`, `atencao` se vencendo, `perigo` em erro ou vencida).
+2. **Leitura paralela e seção condicional (`apps/web/app/(app)/sincronizacao/page.tsx`):** lê `tiktok_shops` no mesmo `Promise.all` (zero waterfall, aprovado em `check:waterfalls`), adiciona o atalho `#tiktok` na navegação interna e renderiza a seção `Lojas TikTok Shop` apenas quando `lojasTikTok.length > 0` (100% retrocompatível com `e2e/sincronizacao.spec.ts`).
+
+TDD RED (`saude-loja-tiktok.test.ts` fail) -> GREEN (`3/3`). Verificação completa pós-`789aa4cb`: `pnpm run check` (`37/37`, `363` arquivos / `4.626` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `10/10` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).

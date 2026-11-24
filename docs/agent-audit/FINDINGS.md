@@ -246,6 +246,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A158 | P1 · ENTREGUE localmente (`8e439358`, `D-823`, `M04`) | A Central de Integrações (`/integracoes`) monitorava 7 regiões (ML, Webhook, Shopee, UpSeller, IA, Supabase, Google Cloud), mas não exibia o terceiro canal (`TikTok Shop`) nem seu estado de conexão OAuth/jobs | Adicionado o 8º cartão `TikTok Shop` em `apps/web/lib/integrations.{ts,test.ts}`, lido em paralelo em `/integracoes/page.tsx` e coberto em `apps/web/e2e/integracoes.spec.ts`, respeitando integralmente D-232 (`CONNECTED` sem sync -> `observado`, nunca `ok`; `configuration` sempre `nao_verificavel`). TDD RED (`3 failed`) -> GREEN (`39/39`); check `37/37` (`362` / `4.623`), build `10/10`, 7 guardas web e `git merge-tree` `9/9` limpo sobre `#378` (`b1950d4a`). [Handoff](GEMINI_HANDOFF.md) |
 
+| A159 | P1 · ENTREGUE localmente (`789aa4cb`, `D-824`, `M04`) | A tela `/sincronizacao` exibia a saúde de contas ML e `Lojas Shopee`, mas não exibia `Lojas TikTok Shop` nem o aviso de vencimento de 30 dias da autorização no Partner Center | Criado `apps/web/lib/saude-loja-tiktok.{ts,test.ts}` (`vereditoDaLojaTikTok` e `avisoDaAutorizacaoTikTok`, nunca verde sem sync) e adicionada a seção condicional `Lojas TikTok Shop` em paralelo no `Promise.all` de `/sincronizacao/page.tsx` (zero waterfall, zero regressão E2E). TDD RED -> GREEN (`3/3`); check `37/37` (`363` / `4.626`), build `10/10`, 7 guardas web e `git merge-tree` `10/10` limpo sobre `#378` (`b1950d4a`). [Handoff](GEMINI_HANDOFF.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).

@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-24, integração local e0bedddf + continuidade Gemini D-770–D-789, D-793–D-823 e hotfix rpc-pages (8e439358, PR #343)",
+  "corte": "2026-11-24, integração local e0bedddf + continuidade Gemini D-770–D-789, D-793–D-824 e hotfix rpc-pages (789aa4cb, PR #343)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -119,7 +119,7 @@
       "peso": 8,
       "status": "Em andamento",
       "responsavel": "Multicanal/Dono",
-      "evidencia": "ROADMAP 796–797; conexão (D-645), SDK transacional completo e refresh coordenado em @sb/tiktok-shop (D-807), webhook POST /push/tiktok-shop (D-808), domínio puro completo de pedidos/margem/estoque D-497/catálogo/devoluções em @sb/domain (D-809, D-813), agendador paginado + adaptador Supabase CAS de token na API (D-810), contratos compartilhados de jobs em @sb/contracts (D-812), painel Lojas TikTok Shop + conector OAuth em /contas (D-822) e cartão TikTok Shop na Central de Integrações /integracoes (D-823); faltam tabelas transacionais (bloqueadas no Dev INACTIVE), handlers do worker e validação em loja real",
+      "evidencia": "ROADMAP 796–797; conexão (D-645), SDK transacional completo e refresh coordenado em @sb/tiktok-shop (D-807), webhook POST /push/tiktok-shop (D-808), domínio puro completo de pedidos/margem/estoque D-497/catálogo/devoluções em @sb/domain (D-809, D-813), agendador paginado + adaptador Supabase CAS de token na API (D-810), contratos compartilhados de jobs em @sb/contracts (D-812), painel Lojas TikTok Shop + conector OAuth em /contas (D-822), cartão TikTok Shop em /integracoes (D-823) e seção Lojas TikTok Shop em /sincronizacao (D-824); faltam tabelas transacionais (bloqueadas no Dev INACTIVE), handlers do worker e validação em loja real",
       "fase": 3
     },
     {
