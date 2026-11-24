@@ -244,8 +244,8 @@ describe("escritas em lote por página (D-190)", () => {
     const exclusoes = chamadas.filter((c) => c.verbo === "delete");
 
     expect(exclusoes).toHaveLength(3);
-    expect((exclusoes[0]?.filtros?.order_id as number[]).length).toBe(100);
-    expect((exclusoes[1]?.filtros?.order_id as number[]).length).toBe(100);
-    expect((exclusoes[2]?.filtros?.order_id as number[]).length).toBe(50);
+    expect((exclusoes[0]?.filtros.order_id as number[]).length).toBe(100);
+    expect((exclusoes[1]?.filtros.order_id as number[]).length).toBe(100);
+    expect((exclusoes[2]?.filtros.order_id as number[]).length).toBe(50);
   });
 });
