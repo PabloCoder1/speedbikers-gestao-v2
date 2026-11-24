@@ -48,7 +48,7 @@ export interface RelistPrepareDeps {
 }
 
 export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -75,6 +75,14 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
     }
 
     const organizationId = account.data.organization_id;
+
+    if (organizationId !== envelope.organizationId) {
+      return {
+        status: "failed",
+        retryable: false,
+        reason: "conta do Mercado Livre pertence a outra organização",
+      };
+    }
 
     // D-742: se já existe operação viva para este anúncio, encerra antes de
     // chamar o Mercado Livre e evita gravar um PREFLIGHT_FAILED paralelo.
@@ -207,39 +215,55 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
     // Evento de criação com o ATOR humano (D-159). Falhar aqui não desfaz a
     // operação (a linha carrega requested_by/created_at); logar e seguir —
     // falhar o job inteiro repetiria o insert e cairia no 23505 SEM o evento.
-    const createdEvent = await deps.db.from("listing_relist_events").insert({
-      organization_id: organizationId,
-      ml_account_id: mlAccountId,
-      relist_id: relistId,
-      from_status: null,
-      to_status: "REQUESTED",
-      actor_user_id: requestedBy,
-    });
+    try {
+      const createdEvent = await deps.db.from("listing_relist_events").insert({
+        organization_id: organizationId,
+        ml_account_id: mlAccountId,
+        relist_id: relistId,
+        from_status: null,
+        to_status: "REQUESTED",
+        actor_user_id: requestedBy,
+      });
 
-    if (createdEvent.error !== null) {
+      if (createdEvent.error !== null) {
+        context.logger.error("relist_event_not_recorded", {
+          relist_id: relistId,
+          to_status: "REQUESTED",
+          reason: createdEvent.error.message,
+        });
+      }
+    } catch (error) {
       context.logger.error("relist_event_not_recorded", {
         relist_id: relistId,
         to_status: "REQUESTED",
-        reason: createdEvent.error.message,
+        reason: error instanceof Error ? error.message : String(error),
       });
     }
 
     if (rejected) {
-      const failedEvent = await deps.db.from("listing_relist_events").insert({
-        organization_id: organizationId,
-        ml_account_id: mlAccountId,
-        relist_id: relistId,
-        from_status: "REQUESTED",
-        to_status: "PREFLIGHT_FAILED",
-        actor_user_id: null,
-        reason: preflight.blocks.map((block) => block.code).join(","),
-      });
+      try {
+        const failedEvent = await deps.db.from("listing_relist_events").insert({
+          organization_id: organizationId,
+          ml_account_id: mlAccountId,
+          relist_id: relistId,
+          from_status: "REQUESTED",
+          to_status: "PREFLIGHT_FAILED",
+          actor_user_id: null,
+          reason: preflight.blocks.map((block) => block.code).join(","),
+        });
 
-      if (failedEvent.error !== null) {
+        if (failedEvent.error !== null) {
+          context.logger.error("relist_event_not_recorded", {
+            relist_id: relistId,
+            to_status: "PREFLIGHT_FAILED",
+            reason: failedEvent.error.message,
+          });
+        }
+      } catch (error) {
         context.logger.error("relist_event_not_recorded", {
           relist_id: relistId,
           to_status: "PREFLIGHT_FAILED",
-          reason: failedEvent.error.message,
+          reason: error instanceof Error ? error.message : String(error),
         });
       }
     }
