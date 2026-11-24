@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-24, integração local e0bedddf + continuidade Gemini D-770–D-789 e D-793–D-804 (14e4123f, PR #343)",
+  "corte": "2026-11-24, integração local e0bedddf + continuidade Gemini D-770–D-789 e D-793–D-805 (1f66ac93, PR #343)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {

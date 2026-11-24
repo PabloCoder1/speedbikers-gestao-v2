@@ -20542,3 +20542,24 @@ Doze módulos independentes de `@sb/domain`, `@sb/api` e `@sb/web` (`24` arquivo
    - `quem-paga-frete.ts`: usa `Object.hasOwn` no parser e em `rotuloDaLogistica`; `fracao` e `frasesDoQuemPaga` exigem entradas/razões finitas.
 
 Reprodução pré-correção registrou `12/12` arquivos vermelhos (`12/12` novos casos: `2` arquivos / `2 failed` em `@sb/domain`, `1` arquivo / `1 failed` em `@sb/api` e `9` arquivos / `9 failed` em `@sb/web`); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `343` arquivos / `4.462` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` e `pnpm audit --prod --audit-level high` (saída `0`).
+
+## D-805 - Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
+
+Doze módulos puros de `apps/web/lib/` (`24` arquivos no total, todos 100% byte-idênticos ao candidato `#378` em `fb8b8ffe` e com zero sobreposição contra `origin/main` `#384` `D-858`, `#383`, `#347` e todos os PRs abertos do Codex) endurecidos via TDD:
+
+1. **Gráficos XLSX nativos (`apps/web/lib/xlsx-charts.ts`):** `columnLetter(col)` agora exige `Number.isSafeInteger(col) && col >= 1` (lançando `RangeError`, eliminando laço infinito em `columnLetter(Infinity)` e saída corrompida/vazia para `0`, negativos, decimais e `NaN`); `rangeRef` valida `firstRow >= 1` e `lastRow >= firstRow` inteiros seguros (`RangeError`); `escapeXml` remove caracteres de controle ilegais no XML 1.0 (`0x00–0x08`, `0x0B`, `0x0C`, `0x0E–0x1F`, `0xFFFE`, `0xFFFF`) via `stripInvalidXmlChars`; `preenchimento(cor)` e `linha(cor)` escapam `cor` com `escapeXml`.
+2. **Anúncios e diagnóstico do SKU (`apps/web/lib/{sku-listings,sku-diagnostico,sku-shopee,sku-curation}.ts`):**
+   - `sku-listings.ts`: `acaoDeVinculo` protege `ROTULO_FORMA` com `Object.hasOwn` (impedindo retorno de `[Function toString]` em chaves de `Object.prototype`); `lerVinculos` descarta arrays e `id` vazio/só com espaços.
+   - `sku-diagnostico.ts`: `acimaDoTeto` exige `menor` e `maior` finitos (eliminando `acimaDoTeto(10, Infinity) === true`); `precoEfetivo`, `estoqueAnunciado`, `temEstoqueInterno`, `comPromocaoAtiva` e `compararPrecoDaConta` descartam valores não finitos e `catalogo-velho` usa `!Number.isFinite(idade)`.
+   - `sku-shopee.ts`: `hrefDaPaginaDosPedidos` codifica `skuId` com `encodeURIComponent` e exige `Number.isSafeInteger(pagina) && pagina > 1` (evitando `?pedidos=Infinity`/`?pedidos=2.5`).
+   - `sku-curation.ts`: `parseSelecao` apara cada ID antes de filtrar vazios e deduplicar (recusando IDs só com espaços).
+3. **Shopee, Copiloto, templates, saúde da API, vínculo e documentos (`apps/web/lib/{shopee-listings,shopee-export,apply-template,copiloto-ferramentas,api-health,vinculo-sugestao,documents-overview}.ts`):**
+   - `shopee-listings.ts`: `formatShopeeMoney` devolve `"—"` para não finitos; `recorteDeVendasShopee` exige `recorte_unidades` finito e sanitiza `receita`/`semReceita`; `resumoDoCatalogoShopee` devolve `null` quando `anuncios` ou `vinculados` não é finito.
+   - `shopee-export.ts`: `anunciosShopeeParaCsv` protege `ESTADO_DO_VINCULO` com `Object.hasOwn` e exige finitude em `item_id`/`model_id`.
+   - `apply-template.ts`: recusa `limit` não finito (`NaN`) ou negativo sem burlar o teto de comprimento.
+   - `copiloto-ferramentas.ts`: `rotuloDaFerramenta` usa `Object.hasOwn(ROTULO, ferramenta)`.
+   - `api-health.ts`: `apiBaseUrl` apara espaços e barras finais (evitando `//health` e fetch em string só com espaços); `fetchApiHealth` exige objeto JSON plano (devolvendo `null` para arrays, `null` e primitivos).
+   - `vinculo-sugestao.ts`: `lerSugestoesDoAnuncio` recusa `link_id` em branco; `montarAlvo` ignora `unidades` não finitas e `skuId`/`sku`/`sellerSku` em branco.
+   - `documents-overview.ts`: `lerContagens` e `lerLinha` usam `Object.hasOwn` (recusando campos herdados de protótipo); `proximoPassoDoDocumento` normaliza `total_items`/`resolved_items` não finitos ou negativos para `0` (evitando `"Vincular NaN de Infinity"`).
+
+Reprodução pré-correção registrou `12/12` arquivos vermelhos (`20/20` novos casos em `@sb/web`); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `343` arquivos / `4.477` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` e `pnpm audit --prod --audit-level high` (saída `0`).
