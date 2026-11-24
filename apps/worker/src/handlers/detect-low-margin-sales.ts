@@ -17,8 +17,8 @@ import type { HandlerContext, JobHandler } from "../router.js";
  * o e-mail dos alertas que ainda não saíram.
  *
  * **O e-mail não desfaz nada.** Falhou o SMTP: o alerta continua no sino, o
- * e-mail fica pendente e a rodada seguinte (de hora em hora, junto do piso de
- * métricas) tenta de novo. Depois de 5 tentativas o alerta vira `failed`, e o
+ * e-mail fica pendente e a rodada seguinte (às 8h ou às 17h de Brasília,
+ * D-859) tenta de novo. Depois de 5 tentativas o alerta vira `failed`, e o
  * que ficou pendente mais de 48 h (SMTP sem configurar) vira `skipped`: ninguém
  * recebe na quinta-feira o aviso de uma venda da segunda.
  */
@@ -34,7 +34,8 @@ const resumoSchema = z.object({
 
 export const MAX_EMAIL_ATTEMPTS = 5;
 export const PENDING_EMAIL_TTL_HOURS = 48;
-const LOTE = 50;
+const LOTE = 200;
+const MAX_LOTES = 5;
 
 export interface PendingAlert extends MarginAlertRow {
   email_attempts: number;
@@ -100,67 +101,77 @@ export function createDetectLowMarginSalesHandler(deps: DetectLowMarginSalesDeps
       return { status: "failed", retryable: true, reason: `expirar e-mails pendentes: ${expirou}` };
     }
 
-    const pendentes = await deps.store.listPending(organizationId, LOTE);
-
-    if (pendentes.error !== null) {
-      return { status: "failed", retryable: true, reason: `ler e-mails pendentes: ${pendentes.error}` };
-    }
-
-    if (pendentes.data.length === 0) {
-      return { status: "done", processed: resumo.data.novos };
-    }
-
-    const ids = pendentes.data.map((a) => a.id);
     const destinatarios = await deps.store.recipients(organizationId);
 
     if (destinatarios.error !== null) {
       return { status: "failed", retryable: true, reason: `ler destinatários: ${destinatarios.error}` };
     }
 
-    if (destinatarios.data.length === 0) {
-      const erro = await deps.store.markSkipped(ids, "sem destinatário cadastrado");
+    // Duas rodadas por dia (D-859) juntam mais vendas que um e-mail lê bem: sai
+    // um e-mail por lote de LOTE, até MAX_LOTES; o que sobrar vai na rodada seguinte.
+    for (let lote = 0; lote < MAX_LOTES; lote++) {
+      const pendentes = await deps.store.listPending(organizationId, LOTE);
 
-      context.logger.info("low_margin_email_skipped", { organization_id: organizationId, alertas: ids.length, motivo: "sem_destinatario" });
-
-      return erro === null
-        ? { status: "done", processed: resumo.data.novos }
-        : { status: "failed", retryable: true, reason: `marcar sem destinatário: ${erro}` };
-    }
-
-    if (deps.email === null) {
-      // Fica pendente: quando o SMTP for configurado, sai o que tiver menos de 48 h.
-      context.logger.warn("low_margin_email_not_configured", { organization_id: organizationId, pendentes: ids.length });
-
-      return { status: "done", processed: resumo.data.novos };
-    }
-
-    const mensagem = composeMarginAlertEmail(pendentes.data, { to: destinatarios.data, appUrl: deps.appUrl });
-
-    try {
-      await deps.email.send(mensagem);
-    } catch (error) {
-      const motivo = error instanceof Error ? error.message : String(error);
-
-      for (const alerta of pendentes.data) {
-        await deps.store.markAttemptFailed(alerta, motivo.slice(0, 500), alerta.email_attempts + 1 >= MAX_EMAIL_ATTEMPTS);
+      if (pendentes.error !== null) {
+        return { status: "failed", retryable: true, reason: `ler e-mails pendentes: ${pendentes.error}` };
       }
 
-      context.logger.warn("low_margin_email_failed", { organization_id: organizationId, alertas: ids.length, motivo });
+      if (pendentes.data.length === 0) break;
 
-      return { status: "failed", retryable: true, reason: `envio do e-mail: ${motivo}` };
-    }
+      const ids = pendentes.data.map((a) => a.id);
 
-    const marcado = await deps.store.markSent(ids, now);
+      if (destinatarios.data.length === 0) {
+        const erro = await deps.store.markSkipped(ids, "sem destinatário cadastrado");
 
-    context.logger.info("low_margin_email_sent", {
-      organization_id: organizationId,
-      alertas: ids.length,
-      destinatarios: destinatarios.data.length,
-    });
+        context.logger.info("low_margin_email_skipped", { organization_id: organizationId, alertas: ids.length, motivo: "sem_destinatario" });
 
-    // O e-mail já saiu: falhar aqui faria o Cloud Tasks reenviar a mesma mensagem.
-    if (marcado !== null) {
-      context.logger.error("low_margin_email_mark_failed", { organization_id: organizationId, motivo: marcado });
+        if (erro !== null) return { status: "failed", retryable: true, reason: `marcar sem destinatário: ${erro}` };
+
+        if (pendentes.data.length < LOTE) break;
+
+        continue;
+      }
+
+      if (deps.email === null) {
+        // Fica pendente: quando o SMTP for configurado, sai o que tiver menos de 48 h.
+        context.logger.warn("low_margin_email_not_configured", { organization_id: organizationId, pendentes: ids.length });
+
+        break;
+      }
+
+      const mensagem = composeMarginAlertEmail(pendentes.data, { to: destinatarios.data, appUrl: deps.appUrl });
+
+      try {
+        await deps.email.send(mensagem);
+      } catch (error) {
+        const motivo = error instanceof Error ? error.message : String(error);
+
+        for (const alerta of pendentes.data) {
+          await deps.store.markAttemptFailed(alerta, motivo.slice(0, 500), alerta.email_attempts + 1 >= MAX_EMAIL_ATTEMPTS);
+        }
+
+        context.logger.warn("low_margin_email_failed", { organization_id: organizationId, alertas: ids.length, motivo });
+
+        return { status: "failed", retryable: true, reason: `envio do e-mail: ${motivo}` };
+      }
+
+      const marcado = await deps.store.markSent(ids, now);
+
+      context.logger.info("low_margin_email_sent", {
+        organization_id: organizationId,
+        alertas: ids.length,
+        destinatarios: destinatarios.data.length,
+      });
+
+      // O e-mail já saiu: falhar aqui faria o Cloud Tasks reenviar a mesma
+      // mensagem. E sem a marca o próximo lote leria as mesmas: para aqui.
+      if (marcado !== null) {
+        context.logger.error("low_margin_email_mark_failed", { organization_id: organizationId, motivo: marcado });
+
+        break;
+      }
+
+      if (pendentes.data.length < LOTE) break;
     }
 
     return { status: "done", processed: resumo.data.novos };

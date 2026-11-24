@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **637** (D-001 a D-858).
+Decisões registradas: **638** (D-001 a D-859).
 
 ## Por domínio
 
@@ -498,7 +498,7 @@ Decisões registradas: **637** (D-001 a D-858).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (71)
+### vendas/métricas (72)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -571,6 +571,7 @@ Decisões registradas: **637** (D-001 a D-858).
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
 - **D-858** — Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
+- **D-859** — O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
 
 ### worker/infra (105)
 

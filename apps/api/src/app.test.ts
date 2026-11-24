@@ -1907,6 +1907,59 @@ describe("POST /internal/backfill/order-financials (D-396)", () => {
   });
 });
 
+describe("POST /internal/schedule/low-margin-sales (D-859)", () => {
+  const aceitaTudo: OidcVerifier = {
+    verify: () => Promise.resolve({ ok: true, email: "scheduler@exemplo.com" }),
+  };
+
+  it("exige OIDC e responde 503 sem as dependências", async () => {
+    const recusa = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: { verify: () => Promise.resolve({ ok: false, reason: "token inválido" }) },
+    });
+    const semDeps = createApp({ logger: createLogger({}, { sink: () => undefined }), oidc: aceitaTudo });
+
+    expect((await recusa.request("/internal/schedule/low-margin-sales", { method: "POST" })).status).toBe(401);
+    expect((await semDeps.request("/internal/schedule/low-margin-sales", { method: "POST" })).status).toBe(503);
+  });
+
+  it("enfileira um job por organização com o alerta ligado, na fila maintenance", async () => {
+    const enqueued: EnqueueRequest[] = [];
+    const app = createApp({
+      logger: createLogger({}, { sink: () => undefined }),
+      oidc: aceitaTudo,
+      lowMarginSalesSchedule: {
+        db: {
+          from: () => ({
+            select: () => ({
+              eq: () => Promise.resolve({ data: [{ organization_id: "org-1" }], error: null }),
+            }),
+          }),
+        } as unknown as ListingVisitsScheduleDeps["db"],
+        logger: createLogger({}, { sink: () => undefined }),
+        now: () => new Date("2026-11-24T11:00:00.000Z"),
+        enqueuer: {
+          enqueue: (request) => {
+            enqueued.push(request);
+
+            return Promise.resolve({ taskName: "t", deduplicated: false, envelope: {} as never });
+          },
+        },
+      },
+    });
+
+    const response = await app.request("/internal/schedule/low-margin-sales", { method: "POST" });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ organizationsScanned: 1, enqueued: 1 });
+    expect(enqueued[0]).toMatchObject({
+      jobType: "diagnostics.detect-low-margin-sales",
+      queue: "maintenance",
+      dedupeKey: "low-margin-sales:org-1:2026-11-24T11",
+    });
+  });
+});
+
 describe("POST /internal/backfill/order-user-products (D-362, 3ª parte)", () => {
   const aceitaTudo: OidcVerifier = {
     verify: () => Promise.resolve({ ok: true, email: "scheduler@exemplo.com" }),

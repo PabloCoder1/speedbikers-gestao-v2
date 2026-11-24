@@ -61,7 +61,8 @@ Cadência declarada em [cloud-scheduler.sh](../../infra/cloud-scheduler.sh), em 
 | `/internal/schedule/ai-budget` | `0 9 * * *` | `maintenance.check-ai-budget`, `maintenance` |
 | `/internal/schedule/listings` | `0 */6 * * *` | `sync.listings.snapshot`, ML |
 | `/internal/schedule/listing-visits` | `0 7 * * *` | `sync.listing-visits.snapshot`, ML |
-| `/internal/schedule/order-financials` | `30 9 * * *` | `sync.order-financials`, ML |
+| `/internal/schedule/order-financials` | `30 6,16 * * *` | `sync.order-financials`, ML |
+| `/internal/schedule/low-margin-sales` | `0 8,17 * * *` | `diagnostics.detect-low-margin-sales`, por organização (D-859) |
 | `/internal/schedule/order-logistics` | `40 */6 * * *` | `sync.order-logistics`, ML |
 | `/internal/schedule/ads` | `0 11 * * *` | `sync.ads.campaigns`, ML |
 | `/internal/schedule/support-questions` | `*/10 * * * *` | `sync.support.questions.reconcile`, ML |

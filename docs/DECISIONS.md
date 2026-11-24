@@ -19916,3 +19916,18 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 **Consequência:** o worker ganha `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (Secret Manager), `SMTP_PORT` (465), `ALERT_EMAIL_FROM` e `WEB_APP_URL`. Sem as três primeiras, o worker sobe e o alerta fica só no sino. Pedido de várias linhas no ML e de vários SKUs na Shopee não é julgado, porque o frete não se divide por produto (5E).
 
 **Alternativas rejeitadas:** usar `skus.brand`, que é a categoria do UpSeller e marcaria produto errado como importado; um e-mail por venda, que enche a caixa num dia de promoção; disparar e-mail dentro do trigger do banco, que prenderia a escrita do pedido à disponibilidade do SMTP; avisar com custo desconhecido como zero, que mostraria margem cheia em vez de "não sei".
+
+## D-859 - O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
+
+**Contexto:** D-858 julgava as vendas de hora em hora, pela rota do piso de métricas. Na primeira rodada de produção, a Shopee pôs dezenas de vendas no sino de uma vez, e o dono prefere receber o resumo em horário fixo. O ML, além disso, só ficava julgável depois da varredura diária do frete das 9h30.
+
+**Decisão (do dono, 24/11):**
+
+- **Duas rodadas por dia, às 8h e às 17h de Brasília, todos os dias.** O job `v3-low-margin-sales` (`0 8,17 * * *`) chama `/internal/schedule/low-margin-sales`. Cada rodada julga as vendas novas, cria os avisos do sino e manda o e-mail. A rota do piso de métricas volta a pedir só o recálculo (D-304).
+- **O frete do ML chega antes de cada rodada.** `v3-order-financials-sweep` passa de `30 9 * * *` para `30 6,16 * * *`. A varredura pula o pedido já capturado, então a segunda rodada só lê o que entrou depois da primeira; 6h30 fica antes das visitas das 7h, que disputam o mesmo rate limit.
+- **E-mail em lotes de 200 vendas, até 5 por rodada.** Meio dia junta mais vendas que as 50 de um e-mail de D-858. O que passar de mil fica para a rodada seguinte.
+- **A conta não muda:** margem = (valor líquido recebido − custo do produto) × 100 ÷ valor de venda, com as metas de D-858 (40% importadas, 30% demais).
+
+**Consequência:** a venda do ML feita depois das 16h30 só aparece na rodada das 8h do dia seguinte; a da Shopee, na rodada seguinte à sincronização do pedido. A saúde do job passa a esperar até 15 h entre rodadas.
+
+**Alternativas rejeitadas:** julgar de hora em hora e só segurar o e-mail, que deixaria o sino tocando o dia todo; manter a varredura do frete às 9h30, que deixaria o ML da noite fora da rodada das 8h.
