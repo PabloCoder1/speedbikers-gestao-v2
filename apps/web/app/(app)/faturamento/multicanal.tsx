@@ -124,7 +124,6 @@ export async function FaturamentoMulticanal({
           tipo="erro"
           titulo="Não foi possível confirmar sua organização."
           descricao="Tente novamente em instantes."
-          detalhe={membershipError.message}
           acao={{ href: mesmaUrl("/faturamento", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       </>
@@ -336,7 +335,6 @@ export async function FaturamentoMulticanal({
           tipo="erro"
           titulo="Não foi possível carregar as contas e lojas"
           descricao="O seletor e o filtro de lojas estão indisponíveis."
-          detalhe={contasResult.error.message}
           acao={{ href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       )}
@@ -469,7 +467,6 @@ async function CorpoShopee({
       <EstadoDaTela
         tipo="erro"
         titulo="Não foi possível carregar o faturamento da Shopee"
-        detalhe={atualResult.error.message}
         acao={acao}
       />
     );
@@ -491,7 +488,6 @@ async function CorpoShopee({
           tipo="erro"
           titulo="O período anterior não carregou"
           descricao="A comparação foi omitida, e isso não é zero."
-          detalhe={anteriorResult.error.message}
           acao={acao}
         />
       )}
@@ -520,7 +516,6 @@ async function CorpoShopee({
                 <EstadoDaTela
                   tipo="erro"
                   titulo="Não foi possível carregar a composição do recebido"
-                  detalhe={composicaoResult.error.message}
                   acao={acao}
                 />
               )}
@@ -661,7 +656,6 @@ async function CorpoShopee({
               <EstadoDaTela
                 tipo="erro"
                 titulo="Não foi possível carregar a série diária"
-                detalhe={diarioResult.error.message}
                 acao={acao}
               />
             ) : diarioResult.data.length === 0 ? (
@@ -740,7 +734,7 @@ function ProdutosShopee({
   vazio: VazioDoRecorte;
 }): ReactNode {
   if (resultado.error !== null) {
-    return <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os produtos" detalhe={resultado.error.message} acao={acao} />;
+    return <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os produtos" acao={acao} />;
   }
 
   const linhas = (resultado.data ?? []).map(skuParaALista).filter((linha): linha is SkuFaturamento => linha !== null);
@@ -1119,11 +1113,11 @@ async function ComparacaoTodos({
   const acao: AcaoDoEstado = { href: hrefDeFaturamento(recorte), rotulo: TENTAR_DE_NOVO, mesmaTela: true };
   const falhaMl =
     mlResult.error !== null
-      ? { titulo: "O Mercado Livre não carregou", detalhe: mlResult.error.message }
+      ? { titulo: "O Mercado Livre não carregou", detalhe: undefined }
       : ml === null
         ? { titulo: "A resposta do Mercado Livre veio num formato que esta tela não reconhece", detalhe: undefined }
         : null;
-  const falhaShopee = shopeeResult.error !== null ? { titulo: "A Shopee não carregou", detalhe: shopeeResult.error.message } : null;
+  const falhaShopee = shopeeResult.error !== null ? { titulo: "A Shopee não carregou", detalhe: undefined } : null;
   const motivoShopee =
     shopeeResult.error === null && shopee === null ? "nenhuma loja real com pedidos lidos — a loja de teste fica fora" : null;
 

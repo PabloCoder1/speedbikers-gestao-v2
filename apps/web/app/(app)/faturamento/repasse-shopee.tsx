@@ -77,7 +77,7 @@ export async function RepasseShopee({
   if (resposta.error !== null) {
     return (
       <Panel title={TITULO} subtitle={periodo}>
-        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os repasses da Shopee" detalhe={resposta.error.message} acao={acao} />
+        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os repasses da Shopee" acao={acao} />
       </Panel>
     );
   }
@@ -213,7 +213,7 @@ function Resumo({
 
 function Liberacoes({ lista, acao }: { lista: Resposta<Liberacao>; acao: AcaoDoEstado | undefined }): ReactNode {
   if (lista.error !== null) {
-    return <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as liberações" detalhe={lista.error.message} acao={acao} />;
+    return <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as liberações" acao={acao} />;
   }
 
   const linhas = lista.data ?? [];
