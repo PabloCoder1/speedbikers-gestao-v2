@@ -145,6 +145,10 @@ export function createBackfillOrderUserProductsHandler(deps: BackfillOrderUserPr
       return { status: "done", processed: 0 };
     }
 
+    if (account.data.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "conta do Mercado Livre pertence a outra organização" };
+    }
+
     const { organization_id: organizationId, slug } = account.data;
     const desde = new Date(Math.max(ate.getTime() - PEDACO_MS, limite.getTime()));
     const started = now;
@@ -313,13 +317,25 @@ export function createBackfillOrderUserProductsHandler(deps: BackfillOrderUserPr
     const temMais = desde.getTime() > limite.getTime();
 
     if (temMais) {
-      await deps.enqueuer.enqueue({
-        jobType: "backfill.order-user-products",
-        organizationId,
-        dedupeKey: `backfill-order-user-products:${slug}:${desde.toISOString()}`,
-        queue: "backfill",
-        payload: { mlAccountId, ate: desde.toISOString(), limite: limite.toISOString() },
-      });
+      try {
+        await deps.enqueuer.enqueue({
+          jobType: "backfill.order-user-products",
+          organizationId,
+          dedupeKey: `backfill-order-user-products:${slug}:${desde.toISOString()}`,
+          queue: "backfill",
+          payload: { mlAccountId, ate: desde.toISOString(), limite: limite.toISOString() },
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "erro desconhecido ao enfileirar próximo pedaço";
+
+        context.logger.error("backfill_order_user_products_enqueue_failed", {
+          ml_account_id: mlAccountId,
+          desde: desde.toISOString(),
+          reason,
+        });
+
+        return { status: "failed", retryable: true, reason: `falha ao enfileirar próximo pedaço: ${reason}` };
+      }
     }
 
     context.logger.info("backfill_order_user_products_chunk_done", {

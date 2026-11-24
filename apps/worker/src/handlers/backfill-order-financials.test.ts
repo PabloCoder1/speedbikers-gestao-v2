@@ -178,6 +178,7 @@ function run(
   db: BackfillOrderFinancialsDeps["db"],
   client: MercadoLivreClient,
   payload: Record<string, unknown> = { mlAccountId: ML_ACCOUNT_ID, ate: ATE, limite: LIMITE },
+  options: { envelopeOrganizationId?: string; enqueueError?: Error } = {},
 ) {
   const enfileirados: EnqueueRequest[] = [];
   const handler = createBackfillOrderFinancialsHandler({
@@ -189,6 +190,10 @@ function run(
     sleep: () => Promise.resolve(),
     enqueuer: {
       enqueue: (request) => {
+        if (options.enqueueError !== undefined) {
+          return Promise.reject(options.enqueueError);
+        }
+
         enfileirados.push(request);
 
         return Promise.resolve({ deduplicated: false });
@@ -197,9 +202,13 @@ function run(
   });
 
   const lines: string[] = [];
+  const envelope =
+    options.envelopeOrganizationId === undefined
+      ? ENVELOPE
+      : { ...ENVELOPE, organizationId: options.envelopeOrganizationId };
 
-  return handler(ENVELOPE, { logger: createLogger({}, { sink: (line) => lines.push(line) }), payload }).then(
-    (outcome) => ({ outcome, enfileirados }),
+  return handler(envelope, { logger: createLogger({}, { sink: (line) => lines.push(line) }), payload }).then(
+    (outcome) => ({ outcome, enfileirados, lines }),
   );
 }
 
@@ -327,5 +336,31 @@ describe("backfill.order-financials (D-396)", () => {
     expect(runsCkpt).toHaveLength(1);
     expect(runsCkpt[0]).toMatchObject({ status: "failed", resource: "order_financials", channel: "backfill" });
     expect(resCkpt.enfileirados).toEqual([]);
+  });
+
+  it("D-817: recusa sem repetir quando a conta pertence a outra organização", async () => {
+    const { db, upserted } = fakeDb({ orders: [{ id: 9001, shipping_id: 5001 }] });
+    const { client, calls } = fakeClient();
+
+    const { outcome, enfileirados } = await run(db, client, undefined, {
+      envelopeOrganizationId: "99999999-9999-4999-8999-999999999999",
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(calls).toEqual([]);
+    expect(upserted).toEqual([]);
+    expect(enfileirados).toEqual([]);
+  });
+
+  it("D-817: falha transitória ao enfileirar próximo pedaço devolve retryable=true e registra log", async () => {
+    const { db } = fakeDb({ orders: [{ id: 9001, shipping_id: 5001 }] });
+    const { client } = fakeClient();
+
+    const { outcome, lines } = await run(db, client, undefined, {
+      enqueueError: new Error("cloud tasks timeout"),
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(lines.join("\n")).toContain("backfill_order_financials_enqueue_failed");
   });
 });

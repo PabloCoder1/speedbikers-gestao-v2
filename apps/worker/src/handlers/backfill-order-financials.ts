@@ -92,6 +92,10 @@ export function createBackfillOrderFinancialsHandler(deps: BackfillOrderFinancia
       return { status: "done", processed: 0 };
     }
 
+    if (account.data.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "conta do Mercado Livre pertence a outra organização" };
+    }
+
     const { organization_id: organizationId, slug } = account.data;
     const desde = new Date(Math.max(ate.getTime() - PEDACO_MS, limite.getTime()));
     const started = now;
@@ -213,13 +217,25 @@ export function createBackfillOrderFinancialsHandler(deps: BackfillOrderFinancia
     const temMais = desde.getTime() > limite.getTime();
 
     if (temMais) {
-      await deps.enqueuer.enqueue({
-        jobType: "backfill.order-financials",
-        organizationId,
-        dedupeKey: `backfill-order-financials:${slug}:${desde.toISOString()}`,
-        queue: "backfill",
-        payload: { mlAccountId, ate: desde.toISOString(), limite: limite.toISOString() },
-      });
+      try {
+        await deps.enqueuer.enqueue({
+          jobType: "backfill.order-financials",
+          organizationId,
+          dedupeKey: `backfill-order-financials:${slug}:${desde.toISOString()}`,
+          queue: "backfill",
+          payload: { mlAccountId, ate: desde.toISOString(), limite: limite.toISOString() },
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "erro desconhecido ao enfileirar próximo pedaço";
+
+        context.logger.error("backfill_order_financials_enqueue_failed", {
+          ml_account_id: mlAccountId,
+          desde: desde.toISOString(),
+          reason,
+        });
+
+        return { status: "failed", retryable: true, reason: `falha ao enfileirar próximo pedaço: ${reason}` };
+      }
     }
 
     context.logger.info("backfill_order_financials_chunk_done", {

@@ -315,6 +315,10 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
       return { status: "done", processed: 0 };
     }
 
+    if (account.data.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "conta do Mercado Livre pertence a outra organização" };
+    }
+
     const organizationId = account.data.organization_id;
     const started = now;
     const tokenResult = await ensureAccessToken(deps, mlAccountId, now);

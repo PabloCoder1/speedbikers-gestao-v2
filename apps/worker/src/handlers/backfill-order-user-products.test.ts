@@ -258,7 +258,7 @@ function run(
   db: BackfillOrderUserProductsDeps["db"],
   client: MercadoLivreClient,
   payload: Record<string, unknown> = { mlAccountId: ML_ACCOUNT_ID, ate: ATE, limite: LIMITE },
-  opcoes: { falharEnqueuePara?: (request: EnqueueRequest) => boolean } = {},
+  opcoes: { falharEnqueuePara?: (request: EnqueueRequest) => boolean; envelopeOrganizationId?: string } = {},
 ) {
   const enfileirados: EnqueueRequest[] = [];
   const handler = createBackfillOrderUserProductsHandler({
@@ -282,8 +282,12 @@ function run(
   });
 
   const lines: string[] = [];
+  const envelope =
+    opcoes.envelopeOrganizationId === undefined
+      ? ENVELOPE
+      : { ...ENVELOPE, organizationId: opcoes.envelopeOrganizationId };
 
-  return handler(ENVELOPE, { logger: createLogger({}, { sink: (line) => lines.push(line) }), payload }).then(
+  return handler(envelope, { logger: createLogger({}, { sink: (line) => lines.push(line) }), payload }).then(
     (outcome) => ({ outcome, enfileirados, lines }),
   );
 }
@@ -576,5 +580,33 @@ describe("backfill.order-user-products (D-362, 3ª parte)", () => {
     expect(enfileirados.map((e) => e.jobType)).toEqual(["analytics.recompute", "backfill.order-user-products"]);
     expect(enfileirados[0]?.payload).toMatchObject({ metricDate: "2026-09-16" });
     expect(lines.join("\n")).toContain("backfill_order_user_products_recompute_enqueue_failed");
+  });
+
+  it("D-817: recusa sem repetir quando a conta pertence a outra organização", async () => {
+    const { db } = fakeDb({
+      orders: [{ id: 9001, date_created: "2026-09-16T10:00:00.000Z" }],
+      items: [item(9001, "MLB1")],
+    });
+    const { client, calls } = fakeClient({});
+
+    const { outcome, enfileirados } = await run(db, client, undefined, {
+      envelopeOrganizationId: "99999999-9999-4999-8999-999999999999",
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(calls).toEqual([]);
+    expect(enfileirados).toEqual([]);
+  });
+
+  it("D-817: falha transitória ao enfileirar próximo pedaço devolve retryable=true e registra log", async () => {
+    const { db } = fakeDb({ orders: [] });
+    const { client } = fakeClient({});
+
+    const { outcome, lines } = await run(db, client, undefined, {
+      falharEnqueuePara: (req) => req.jobType === "backfill.order-user-products",
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(lines.join("\n")).toContain("backfill_order_user_products_enqueue_failed");
   });
 });
