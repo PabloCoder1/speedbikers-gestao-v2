@@ -1,4 +1,4 @@
-import { toSalesMetricDate } from "@sb/domain";
+import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
@@ -22,6 +22,7 @@ import { tomDaMargem } from "../../../../lib/faturamento";
 import { carregarLimites } from "../../../../lib/limites-central";
 import { currentMembership } from "../../../../lib/request-membership";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../../lib/format";
+import { lerMargens, type LeituraMargens, type MargemRecorte } from "../../../../lib/purchase-analysis";
 import {
   definicaoDaOrdem,
   formatPontos,
@@ -52,10 +53,11 @@ export const dynamic = "force-dynamic";
  * no prejuízo, os que crescem e os que perderam margem, cada lista com a
  * comparação contra o período anterior e o caminho para o dashboard do SKU.
  *
- * **Uma leitura por ordem.** `get_ranking_produtos` agrega os dois períodos no
+ * `get_ranking_produtos` agrega os dois períodos no
  * SQL e devolve a página pedida (50 por vez: um mês passa de mil SKUs
  * vendidos) com o resumo. O período e a comparação são os da central
- * (`lib/central-periodo.ts`, METRICS 5I), e os custos, os de `get_faturamento`.
+ * (`lib/central-periodo.ts`, METRICS 5I). A margem de venda usa a mesma
+ * leitura por SKU da Curva ABC, limitada aos produtos da página.
  */
 
 type Consulta = Record<string, string | string[] | undefined>;
@@ -231,6 +233,20 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
     );
   }
 
+  const periodoMargemExcedido = periodo.atual.to > shiftBusinessDate(periodo.atual.from, 365);
+  const leituraMargens = ranking.itens.length > 0 && membership.organizationId !== null && !periodoMargemExcedido
+    ? await supabase.rpc("get_sku_margins", {
+        p_organization_id: membership.organizationId,
+        p_sku_ids: ranking.itens.map((produto) => produto.sku_id),
+        p_date_from: periodo.atual.from,
+        p_date_to: periodo.atual.to,
+      })
+    : null;
+  const margens = leituraMargens?.error === null ? lerMargens(leituraMargens.data) : null;
+  const avisoMargens = periodoMargemExcedido
+    ? "A margem de venda está disponível em períodos de até 366 dias."
+    : margens === null ? "Não foi possível carregar a margem de venda." : null;
+
   return (
     <>
       {titulo}
@@ -256,7 +272,14 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
 
       <Resumo ranking={ranking} estado={estado} />
 
-      <Lista ranking={ranking} estado={estado} margemMinima={(await leituraLimites).margemMinima} />
+      <Lista
+        ranking={ranking}
+        estado={estado}
+        margemMinima={(await leituraLimites).margemMinima}
+        margens={margens}
+        contaId={selectedAccount?.id ?? null}
+        avisoMargens={avisoMargens}
+      />
 
       <ComoCalcula ranking={ranking} />
     </>
@@ -274,12 +297,12 @@ const TERMOS_DO_RANKING = [
   {
     termo: "Receita",
     definicao:
-      "Receita bruta de todos os pedidos válidos. Quando a cobertura é parcial, “na margem” mostra a receita dos pedidos usados no cálculo. A variação compara a receita total, com pelo menos 5 pedidos em cada período.",
+      "Receita bruta de todos os pedidos válidos. Quando a cobertura é parcial, “na margem do ranking” mostra a receita dos pedidos usados no cálculo dessa margem. A variação compara a receita total, com pelo menos 5 pedidos em cada período.",
   },
   {
     termo: "Comissão",
     definicao:
-      "Comissão do Mercado Livre por unidade × unidades vendidas. Quando a cobertura é parcial, “na margem” mostra a comissão dos pedidos usados no cálculo.",
+      "Comissão do Mercado Livre por unidade × unidades vendidas. Quando a cobertura é parcial, “na margem do ranking” mostra a comissão dos pedidos usados no cálculo dessa margem.",
   },
   {
     termo: "Frete",
@@ -296,9 +319,14 @@ const TERMOS_DO_RANKING = [
       "Receita − comissão − frete − custo, nos pedidos cobertos. Não é lucro líquido: custos fixos, devoluções e Ads ficam fora.",
   },
   {
-    termo: "Margem",
+    termo: "Margem do ranking",
     definicao:
       "(Receita − comissão − frete do vendedor − custo do produto) × 100 ÷ receita, nos mesmos pedidos cobertos. Embaixo, a variação em pontos percentuais (p.p.) contra o período anterior, com pelo menos 5 pedidos cobertos em cada período.",
+  },
+  {
+    termo: "Margem de venda",
+    definicao:
+      "A mesma margem por SKU da Curva ABC. (Valor recebido após taxas − custo do produto) × 100 ÷ valor de venda, nos pedidos com dados completos do Mercado Livre.",
   },
   {
     termo: "Após imposto",
@@ -414,21 +442,28 @@ function colunaDaOrdem(ordem: OrdemRanking): { coluna: string; direcao: "descend
 const COLUNAS: readonly { readonly id: string; readonly rotulo: string; readonly titulo: string }[] = [
   { id: "unidades", rotulo: "Unid.", titulo: "unidades vendidas no período" },
   { id: "receita", rotulo: "Receita", titulo: "receita bruta e receita usada na margem quando a cobertura é parcial" },
+  { id: "margem_venda", rotulo: "Margem de venda", titulo: "(Recebido após taxas − custo) × 100 ÷ valor de venda, nos pedidos com dados completos" },
   { id: "taxas", rotulo: "Comissão", titulo: "comissão total e comissão usada na margem quando a cobertura é parcial" },
   { id: "frete", rotulo: "Frete", titulo: "frete pago pelo vendedor, pedidos cobertos" },
   { id: "custo", rotulo: "Custo", titulo: "custo do produto na data da venda, pedidos cobertos" },
   { id: "resultado", rotulo: "Resultado", titulo: "receita − comissão − frete − custo, pedidos cobertos" },
-  { id: "margem", rotulo: "Margem", titulo: "resultado ÷ receita, pedidos cobertos e, embaixo, contra o anterior em pontos (5 cobertos nos dois)" },
+  { id: "margem", rotulo: "Margem do ranking", titulo: "resultado ÷ receita dos pedidos cobertos, com variação em pontos percentuais" },
 ];
 
 function Lista({
   ranking,
   estado,
   margemMinima,
+  margens,
+  contaId,
+  avisoMargens,
 }: {
   ranking: RankingDeProdutos;
   estado: Estado;
   margemMinima: number;
+  margens: LeituraMargens | null;
+  contaId: string | null;
+  avisoMargens: string | null;
 }): ReactNode {
   const definicao = definicaoDaOrdem(ranking.ordem);
   const { coluna, direcao } = colunaDaOrdem(ranking.ordem);
@@ -455,6 +490,7 @@ function Lista({
           <EstadoDaTela tipo="vazio" titulo={vazio(ranking.ordem, estado.pagina)} />
         ) : (
           <>
+          {avisoMargens !== null && <p className="sb-texto-suave" role="status">{avisoMargens}</p>}
           <p className="sb-tabela-dica" aria-hidden="true">Deslize a tabela para o lado para ver todas as colunas.</p>
           <div className="sb-central-tabela">
             <table className="sb-table sb-rank-tabela">
@@ -480,16 +516,24 @@ function Lista({
                 </tr>
               </thead>
               <tbody>
-                {ranking.itens.map((p, i) => (
-                  <Linha
-                    key={p.sku_id}
-                    produto={p}
-                    posicao={inicio + i + 1}
-                    coluna={coluna}
-                    comImposto={comImposto}
-                    margemMinima={margemMinima}
-                  />
-                ))}
+                {ranking.itens.map((p, i) => {
+                  const margemDoSku = margens?.porSku.get(p.sku_id);
+                  const margemVenda = contaId === null
+                    ? margemDoSku?.porMarketplace.find((m) => m.marketplace === "MERCADO_LIVRE")
+                    : margemDoSku?.porConta.find((m) => m.marketplace === "MERCADO_LIVRE" && m.contaId === contaId);
+
+                  return (
+                    <Linha
+                      key={p.sku_id}
+                      produto={p}
+                      posicao={inicio + i + 1}
+                      coluna={coluna}
+                      comImposto={comImposto}
+                      margemMinima={margemMinima}
+                      margemVenda={margemVenda ?? null}
+                    />
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -541,12 +585,14 @@ function Linha({
   coluna,
   comImposto,
   margemMinima,
+  margemVenda,
 }: {
   produto: ProdutoDoRanking;
   posicao: number;
   coluna: string;
   comImposto: boolean;
   margemMinima: number;
+  margemVenda: MargemRecorte | null;
 }): ReactNode {
   const classe = (id: string): string => (id === coluna ? "sb-num sb-rank-ordenada" : "sb-num");
   const coberturaParcial = p.pedidos_cobertos < p.pedidos;
@@ -567,16 +613,27 @@ function Linha({
       <td className={classe("receita")}>
         {formatCurrency(p.receita_bruta)}
         {coberturaParcial && p.receita_coberta !== null && (
-          <span className="sb-central-motivo">{formatCurrency(p.receita_coberta)} na margem</span>
+          <span className="sb-central-motivo">{formatCurrency(p.receita_coberta)} na margem do ranking</span>
         )}
         {p.variacao_receita !== null && (
           <span className="sb-central-motivo">{formatVariacao(p.variacao_receita)} contra o anterior</span>
         )}
       </td>
+      <td className="sb-num">
+        {formatPercent(margemVenda?.avaliacao.margin ?? null)}
+        {margemVenda !== null && margemVenda.coveredOrders < margemVenda.orders && (
+          <span className="sb-central-motivo">
+            {formatCount(margemVenda.coveredOrders)} de {formatCount(margemVenda.orders)} pedidos
+          </span>
+        )}
+        {margemVenda !== null && margemVenda.currentCostOrders > 0 && (
+          <span className="sb-central-motivo">Inclui custo atual</span>
+        )}
+      </td>
       <td className={classe("taxas")}>
         {formatCurrency(p.taxas_ml)}
         {coberturaParcial && p.taxas_ml_cobertas !== null && (
-          <span className="sb-central-motivo">{formatCurrency(p.taxas_ml_cobertas)} na margem</span>
+          <span className="sb-central-motivo">{formatCurrency(p.taxas_ml_cobertas)} na margem do ranking</span>
         )}
       </td>
       <td className={classe("frete")}>

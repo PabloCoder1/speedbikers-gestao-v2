@@ -117,7 +117,7 @@ export const RECONCILIATION_RESOURCE: Readonly<Record<string, ReconciliationReso
   visits: { label: "Visitas", cadenceMin: 1440 }, // v3-listing-visits-snapshot: "0 7 * * *" (diário)
   // Frete e desconto do vendedor por pedido (D-165) — os dois custos que
   // bloqueavam a margem operacional. Faltava aqui desde que o job nasceu.
-  order_financials: { label: "Custos do pedido", cadenceMin: 1440 }, // v3-order-financials-sweep: "30 9 * * *"
+  order_financials: { label: "Custos do pedido", cadenceMin: 840 }, // v3-order-financials-sweep: "30 6,16 * * *" (D-859; maior intervalo 14 h)
   // Mercado Ads (D-363). Conta sem Product Ads habilitado também registra run
   // (done, zero processados), então o frescor vale para todas as contas.
   ads: { label: "Mercado Ads", cadenceMin: 1440 }, // v3-ads-campaigns-sync: "0 11 * * *"
@@ -160,7 +160,7 @@ export const JOB_CADENCE_MIN: Readonly<Record<string, number>> = {
   "sync.listings.snapshot": 360, // v3-listings-snapshot: "0 */6 * * *"
   "sync.fulfillment.snapshot": 360, // v3-fulfillment-snapshot: "0 */6 * * *"
   "sync.listing-visits.snapshot": 1440, // v3-listing-visits-snapshot: "0 7 * * *"
-  "sync.order-financials": 1440, // v3-order-financials-sweep: "30 9 * * *"
+  "sync.order-financials": 840, // v3-order-financials-sweep: "30 6,16 * * *" (D-859)
   "sync.order-logistics": 360, // v3-order-logistics-sweep: "40 */6 * * *" (D-352)
   "sync.ads.campaigns": 1440, // v3-ads-campaigns-sync: "0 11 * * *"
   "maintenance.reconcile-balances": 1440, // v3-reconcile-balances: "0 6 * * *"
@@ -171,6 +171,7 @@ export const JOB_CADENCE_MIN: Readonly<Record<string, number>> = {
   "diagnostics.detect-support-patterns": 1440,
   "diagnostics.sync-central-alerts": 1440, // D-403
   "diagnostics.listing-sales-drop": 1440, // D-629 (C-79), do mesmo agendador
+  "diagnostics.detect-low-margin-sales": 900, // D-859: v3-low-margin-sales ("0 8,17 * * *"); maior intervalo 15 h
   "diagnostics.measure-decision-outcomes": 1440, // v3-measure-decision-outcomes: "30 8 * * *"
   /*
     SHOPEE (D-431), todos de hora em hora por loja CONECTADA. Um agendador só,

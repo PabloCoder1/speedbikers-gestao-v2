@@ -1044,6 +1044,8 @@ export type Database = {
       }
       erp_import_batches: {
         Row: {
+          absent_cleared: number | null
+          absent_marked: number | null
           applied_at: string | null
           applied_by: string | null
           applied_rows: number | null
@@ -1066,6 +1068,8 @@ export type Database = {
           uploaded_by: string | null
         }
         Insert: {
+          absent_cleared?: number | null
+          absent_marked?: number | null
           applied_at?: string | null
           applied_by?: string | null
           applied_rows?: number | null
@@ -1088,6 +1092,8 @@ export type Database = {
           uploaded_by?: string | null
         }
         Update: {
+          absent_cleared?: number | null
+          absent_marked?: number | null
           applied_at?: string | null
           applied_by?: string | null
           applied_rows?: number | null
@@ -2088,6 +2094,57 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      margin_alert_settings: {
+        Row: {
+          active_since: string
+          default_min_margin: number
+          email_recipients: string[]
+          enabled: boolean
+          imported_brands: string[]
+          imported_min_margin: number
+          organization_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          active_since?: string
+          default_min_margin?: number
+          email_recipients?: string[]
+          enabled?: boolean
+          imported_brands?: string[]
+          imported_min_margin?: number
+          organization_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          active_since?: string
+          default_min_margin?: number
+          email_recipients?: string[]
+          enabled?: boolean
+          imported_brands?: string[]
+          imported_min_margin?: number
+          organization_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "margin_alert_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "margin_alert_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -3662,6 +3719,116 @@ export type Database = {
           },
         ]
       }
+      sale_margin_alerts: {
+        Row: {
+          brand: string | null
+          cost_is_current: boolean
+          detected_at: string
+          email_attempts: number
+          email_error: string | null
+          email_sent_at: string | null
+          email_status: string
+          id: string
+          imported: boolean
+          margin: number
+          marketplace: string
+          min_margin: number
+          ml_account_id: string | null
+          net_received: number
+          order_ref: string
+          organization_id: string
+          product_cost: number
+          quantity: number | null
+          sale_value: number
+          shopee_shop_id: string | null
+          sku: string | null
+          sku_id: string | null
+          sold_at: string
+          title: string | null
+        }
+        Insert: {
+          brand?: string | null
+          cost_is_current?: boolean
+          detected_at?: string
+          email_attempts?: number
+          email_error?: string | null
+          email_sent_at?: string | null
+          email_status?: string
+          id?: string
+          imported: boolean
+          margin: number
+          marketplace: string
+          min_margin: number
+          ml_account_id?: string | null
+          net_received: number
+          order_ref: string
+          organization_id: string
+          product_cost: number
+          quantity?: number | null
+          sale_value: number
+          shopee_shop_id?: string | null
+          sku?: string | null
+          sku_id?: string | null
+          sold_at: string
+          title?: string | null
+        }
+        Update: {
+          brand?: string | null
+          cost_is_current?: boolean
+          detected_at?: string
+          email_attempts?: number
+          email_error?: string | null
+          email_sent_at?: string | null
+          email_status?: string
+          id?: string
+          imported?: boolean
+          margin?: number
+          marketplace?: string
+          min_margin?: number
+          ml_account_id?: string | null
+          net_received?: number
+          order_ref?: string
+          organization_id?: string
+          product_cost?: number
+          quantity?: number | null
+          sale_value?: number
+          shopee_shop_id?: string | null
+          sku?: string | null
+          sku_id?: string | null
+          sold_at?: string
+          title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sale_margin_alerts_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_margin_alerts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_margin_alerts_shopee_shop_id_fkey"
+            columns: ["shopee_shop_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_margin_alerts_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       saved_filters: {
         Row: {
           created_at: string
@@ -5043,6 +5210,10 @@ export type Database = {
           category_raw: string | null
           cest: string | null
           created_at: string
+          erp_absent_batch_id: string | null
+          erp_absent_since: string | null
+          erp_absent_source: string | null
+          erp_absent_was_active: boolean | null
           erp_product_code: string | null
           erp_spu: string | null
           height_cm: number | null
@@ -5079,6 +5250,10 @@ export type Database = {
           category_raw?: string | null
           cest?: string | null
           created_at?: string
+          erp_absent_batch_id?: string | null
+          erp_absent_since?: string | null
+          erp_absent_source?: string | null
+          erp_absent_was_active?: boolean | null
           erp_product_code?: string | null
           erp_spu?: string | null
           height_cm?: number | null
@@ -5115,6 +5290,10 @@ export type Database = {
           category_raw?: string | null
           cest?: string | null
           created_at?: string
+          erp_absent_batch_id?: string | null
+          erp_absent_since?: string | null
+          erp_absent_source?: string | null
+          erp_absent_was_active?: boolean | null
           erp_product_code?: string | null
           erp_spu?: string | null
           height_cm?: number | null
@@ -5146,6 +5325,13 @@ export type Database = {
           width_cm?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "skus_erp_absent_batch_id_fkey"
+            columns: ["erp_absent_batch_id"]
+            isOneToOne: false
+            referencedRelation: "erp_import_batches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "skus_organization_id_fkey"
             columns: ["organization_id"]
@@ -6489,6 +6675,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      apply_products_batch_absences: {
+        Args: { p_batch_id: string; p_mark: boolean }
+        Returns: Json
+      }
       apply_support_remote_transition: {
         Args: {
           p_case_id: string
@@ -6650,6 +6840,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      detectar_vendas_abaixo_da_margem: {
+        Args: { p_agora?: string; p_organization_id: string }
+        Returns: Json
+      }
       get_erp_stock_cutoffs: {
         Args: { p_organization_id: string; p_sku_ids: string[] }
         Returns: {
@@ -6674,6 +6868,10 @@ export type Database = {
       }
       get_open_purchases_for_skus: {
         Args: { p_organization_id: string; p_sku_ids: string[] }
+        Returns: Json
+      }
+      get_products_batch_absences: {
+        Args: { p_batch_id: string; p_sample?: number }
         Returns: Json
       }
       get_purchase_analysis: {
@@ -7327,6 +7525,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      products_batch_absent_sku_ids: {
+        Args: { p_batch_id: string }
+        Returns: string[]
       }
       receive_purchase_order_items: {
         Args: {
@@ -9723,6 +9925,17 @@ export type Database = {
         Args: { p_id: string; p_logo_path?: string }
         // D-370: devolve o caminho ANTERIOR, NULL quando nao havia logo (o gerador nao marcaria o nulo).
         Returns: string | null
+      }
+      set_skus_out_of_catalog: {
+        Args: {
+          p_organization_id: string
+          p_out: boolean
+          p_sku_ids: string[]
+        }
+        Returns: {
+          sku_id: string
+          status: string
+        }[]
       }
       set_skus_stock_virtual: {
         Args: {

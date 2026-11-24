@@ -19899,3 +19899,55 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 **Consequência:** o SKU criado aqui só se junta ao produto do UpSeller se o código for idêntico (a importação do ERP casa por `sku_key`); o dono cria lá com o mesmo código.
 
 **Alternativas rejeitadas:** vincular sozinho o código parecido -- D-764 só aceita vínculo exato automático, e KC30 pode ser outro produto; esperar a NF-e para dar entrada -- é o que deixava a sugestão errada, e o pedido importado não tem nota no sistema.
+
+## D-858 - Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
+
+**Contexto:** o dono quer saber de cada venda que sai abaixo da margem, sem abrir a Curva ABC. A margem é a de 5F e da regra 5X: (recebido − custo) ÷ preço, com o custo na data da venda. As marcas importadas (Navetec, Off Racer, Off Volt) custam mais para repor e têm meta maior.
+
+**Decisão (do dono, 23/11):**
+
+- **Metas:** 40% para as marcas importadas, 30% para o resto. Ficam em `margin_alert_settings` (uma linha por empresa, editável por ADMIN e GESTOR em `/central/limites`), com a lista de marcas e até 20 e-mails. A meta é estrita: margem exatamente igual à meta não avisa.
+- **Marca é a do fornecedor.** Vale `skus.supplier_brand`, comparada por `private.chave_da_marca` (maiúsculas, só letras e dígitos). `skus.brand` é a CATEGORIA do UpSeller e é ignorada. O kit é importado quando algum componente for. SKU sem marca do fornecedor é julgado pela meta dos demais.
+- **Só a venda coberta é julgada**, como na 5X: no ML, pedido de uma linha, com comissão e frete observados e custo conhecido; na Shopee, o pedido coberto de SKU único de `get_shopee_faturamento_pedidos`. Pedido sem frete ainda não é julgado e entra na rodada em que o frete chegar. Venda sem custo não vira alerta.
+- **Um alerta por pedido.** `detectar_vendas_abaixo_da_margem` (só `service_role`) varre os últimos 7 dias desde `active_since`, grava `sale_margin_alerts` (único por empresa, canal e pedido) e um `domain_events` `sale.margin.below` (importante). O sino sai do fan-out de sempre, pela conta ou loja. Venda anterior à ativação nunca avisa.
+- **E-mail fora da transação.** O job `diagnostics.detect-low-margin-sales` roda de hora em hora pela rota `/internal/schedule/metrics-refresh`, sem job novo de Scheduler. Ele manda **um** e-mail por rodada com as vendas novas (destinatários em cópia oculta, por SMTP). Falha de SMTP não desfaz o alerta: tenta de novo até 5 vezes; SMTP sem configurar deixa o e-mail pendente, e pendente há mais de 48 h vira `skipped`. O sino nunca depende do e-mail.
+- **E-mail é a exceção ao "in-app apenas" de `NOTIFICATIONS.md` §8**, restrita a este alerta. Os endereços vivem só no banco, nunca no repositório.
+
+**Consequência:** o worker ganha `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (Secret Manager), `SMTP_PORT` (465), `ALERT_EMAIL_FROM` e `WEB_APP_URL`. Sem as três primeiras, o worker sobe e o alerta fica só no sino. Pedido de várias linhas no ML e de vários SKUs na Shopee não é julgado, porque o frete não se divide por produto (5E).
+
+**Alternativas rejeitadas:** usar `skus.brand`, que é a categoria do UpSeller e marcaria produto errado como importado; um e-mail por venda, que enche a caixa num dia de promoção; disparar e-mail dentro do trigger do banco, que prenderia a escrita do pedido à disponibilidade do SMTP; avisar com custo desconhecido como zero, que mostraria margem cheia em vez de "não sei".
+
+## D-859 - O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
+
+**Contexto:** D-858 julgava as vendas de hora em hora, pela rota do piso de métricas. Na primeira rodada de produção, a Shopee pôs dezenas de vendas no sino de uma vez, e o dono prefere receber o resumo em horário fixo. O ML, além disso, só ficava julgável depois da varredura diária do frete das 9h30.
+
+**Decisão (do dono, 24/11):**
+
+- **Duas rodadas por dia, às 8h e às 17h de Brasília, todos os dias.** O job `v3-low-margin-sales` (`0 8,17 * * *`) chama `/internal/schedule/low-margin-sales`. Cada rodada julga as vendas novas, cria os avisos do sino e manda o e-mail. A rota do piso de métricas volta a pedir só o recálculo (D-304).
+- **O frete do ML chega antes de cada rodada.** `v3-order-financials-sweep` passa de `30 9 * * *` para `30 6,16 * * *`. A varredura pula o pedido já capturado, então a segunda rodada só lê o que entrou depois da primeira; 6h30 fica antes das visitas das 7h, que disputam o mesmo rate limit.
+- **E-mail em lotes de 200 vendas, até 5 por rodada.** Meio dia junta mais vendas que as 50 de um e-mail de D-858. O que passar de mil fica para a rodada seguinte.
+- **A conta não muda:** margem = (valor líquido recebido − custo do produto) × 100 ÷ valor de venda, com as metas de D-858 (40% importadas, 30% demais).
+
+**Consequência:** a venda do ML feita depois das 16h30 só aparece na rodada das 8h do dia seguinte; a da Shopee, na rodada seguinte à sincronização do pedido. A saúde do job passa a esperar até 15 h entre rodadas.
+
+**Alternativas rejeitadas:** julgar de hora em hora e só segurar o e-mail, que deixaria o sino tocando o dia todo; manter a varredura do frete às 9h30, que deixaria o ML da noite fora da rodada das 8h.
+
+## D-860 - O produto que sai da planilha de produtos do UpSeller fica fora do catálogo, nunca apagado
+
+**Contexto:** a aplicação de um lote PRODUCTS só criava e atualizava os SKUs que estavam no arquivo. O produto que o dono tirou do UpSeller continuava ativo na V3, com o último saldo da planilha de estoque, e seguia na Reposição pedindo compra de algo que não existe mais. O dono perguntou se uma planilha nova apagaria os que sumiram, e achava que deveria.
+
+**Decisão (do dono, 23/11, sobre o desenho apresentado):**
+
+- **Marcar, não apagar.** O SKU é referenciado por pedidos, vínculos, pedidos de compra e pelo ledger de estoque; apagar quebraria esse histórico. O ausente ganha `is_active` falso e `erp_absent_since`/`erp_absent_batch_id` (migration `20261124100000`). O `is_active` falso leva o produto para "Inativo" em toda tela que já trata a situação; a coluna nova diz por quê, e as telas mostram "Fora do catálogo" (selo em `/produtos`, selo e aviso em `/skus/[id]`).
+- **Quem é julgado.** Só o SKU PRODUTO que já veio numa planilha de produtos APLICADA (`products_batch_absent_sku_ids`). O criado pela invoice (D-792) e o kit do arquivo de kits nunca entram. "Presente" é qualquer linha OK da planilha nova com a mesma `sku_key`: a linha de produto só deixa de ser OK quando não tem SKU, e essa não diz de qual produto se trata.
+- **Quem decide é quem confirma.** A conferência de uma planilha de produtos mostra quantos ficariam fora (com saldo, com anúncio vinculado, já marcados, que voltam) e uma caixa "esta planilha é o catálogo completo". Ela vem marcada até 10% do catálogo conhecido e desmarcada acima disso, com o aviso de exportação parcial: um filtro ou uma página exportada por engano desativaria produtos que existem. A escolha segue no corpo de `POST /v1/erp-imports/:id/apply` (`markAbsent`) e no payload do job, e não numa coluna: vale para aquela aplicação só.
+- **Volta sozinho.** O SKU marcado PELA PLANILHA que reaparece numa planilha posterior perde a marca, com ou sem a caixa; o `is_active` volta a ser o que o UpSeller manda, porque a própria aplicação o grava antes da marcação rodar.
+- **O saldo não vira zero.** Ausência de dado não é zero: o saldo continua o último que veio, e a página do SKU diz isso. A Reposição deixa o marcado de fora por uma linha em `get_purchase_suggestions` (`and sk.erp_absent_since is null`), que `get_replenishment_overview`, `get_purchase_analysis` e as sugestões do pedido de compra herdam.
+- **Idempotente.** `apply_products_batch_absences(lote, marcar)` (só `service_role`) marca só quem ainda não tem marca e acumula `absent_marked`/`absent_cleared` no lote; a reentrega do job soma zero. `absent_marked` nulo quer dizer "não pedido", diferente de zero marcado. Marcação pedida que falha deixa o lote em APPLYING e pede nova tentativa; sem marcação pedida, a falha de tirar a marca de quem voltou só é registrada em log.
+- **Marca à mão em Produtos (pedido do dono no mesmo dia: "seleciono a categoria e eu mesmo marco").** O dono recusou arquivar e excluir em lote e pediu a mesma etiqueta, posta por ele. A barra de lote de `/produtos` ganhou o menu **Catálogo** ("Marcar fora do catálogo" e "Voltar ao catálogo"), com o painel de conferência que diz a consequência e o Desfazer do marcar. A escrita é `set_skus_out_of_catalog(org, ids, fora)`, no desenho de `set_skus_supplier_brand` (D-133): até 500 por vez, ADMIN e GESTOR, desfecho por linha (migration `20261124110000`). A marca ganhou origem (`erp_absent_source`: PLANILHA ou MANUAL) e guarda o `is_active` de antes (`erp_absent_was_active`). A marca MANUAL não sai com a planilha: o produto que o UpSeller ainda lista continua fora, e `apply_products_batch_absences` reafirma o `is_active` falso depois que a aplicação o regrava; a prévia não o conta como volta. Tirar a marca à mão devolve o `is_active` guardado, e marcar à mão o que a planilha já marcou não troca a origem (JA_DECIDIDO). Devolver ao catálogo não tem Desfazer: marcar de novo trocaria uma marca da planilha por manual.
+
+**Ordem de publicação:** migration de produção → worker → api → web. A web e a api toleram a migration ausente (sem prévia, a conferência fica como era e a confirmação sai sem corpo, lida como "não marcar"). O worker antigo descartaria o `markAbsent` em silêncio, por isso vai antes da api.
+
+**Alternativas rejeitadas:** apagar o SKU (quebra pedidos, vínculos e ledger); arquivar ou excluir em lote na tela de Produtos (o dono preferiu a mesma etiqueta à mão; excluir de vez só serviria ao SKU sem histórico nenhum); zerar o saldo do ausente (ausência de dado não é zero, e a planilha de estoque é outro arquivo); reaproveitar só o `is_active` sem coluna nova (perderia a diferença entre "inativo no UpSeller" e "saiu da exportação", e a volta automática não saberia quem tirar); marcar sempre, sem a caixa (uma exportação parcial desativaria o catálogo inteiro); estender a regra a kits e ao arquivo de estoque nesta fatia (cada arquivo tem o seu sentido de ausência e fica para depois, como o aviso na Central de Ações de produto fora do catálogo com anúncio ativo).
+
+**Numeração:** registrada como D-795 no PR #383 (23/11) e renumerada para D-860 em 24/11, porque o Gemini Sentinel usa D-795 no candidato #378. As migrations passaram de `20261123150000`/`160000` para `20261124100000`/`110000`, depois da `20261123180000` da main; nenhuma tinha sido aplicada.

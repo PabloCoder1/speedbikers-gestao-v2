@@ -227,7 +227,7 @@ describe("receiveUpload", () => {
  * Banco falso para `confirmApply`: só a cadeia `select().eq().eq().maybeSingle()`
  * e `update().eq().eq()`, que é o que o comando usa.
  */
-function applyDb(options: { status?: string; missing?: boolean; updateFails?: boolean }): {
+function applyDb(options: { status?: string; kind?: string; missing?: boolean; updateFails?: boolean }): {
   db: ImportDeps["db"];
   updates: Record<string, unknown>[];
 } {
@@ -240,7 +240,10 @@ function applyDb(options: { status?: string; missing?: boolean; updateFails?: bo
           eq: () => ({
             maybeSingle: () =>
               Promise.resolve({
-                data: options.missing === true ? null : { id: "batch-1", status: options.status ?? "PARSED" },
+                data:
+                  options.missing === true
+                    ? null
+                    : { id: "batch-1", status: options.status ?? "PARSED", kind: options.kind ?? "PRODUCTS" },
                 error: null,
               }),
           }),
@@ -265,14 +268,21 @@ function applyDb(options: { status?: string; missing?: boolean; updateFails?: bo
 }
 
 function applyDeps(
-  options: { status?: string; missing?: boolean; updateFails?: boolean } = {},
-): { deps: ImportDeps; enqueued: { dedupeKey: string; jobType: string }[]; updates: Record<string, unknown>[] } {
+  options: { status?: string; kind?: string; missing?: boolean; updateFails?: boolean } = {},
+): {
+  deps: ImportDeps;
+  enqueued: { dedupeKey: string; jobType: string }[];
+  payloads: unknown[];
+  updates: Record<string, unknown>[];
+} {
   const { db, updates } = applyDb(options);
   const enqueued: { dedupeKey: string; jobType: string }[] = [];
+  const payloads: unknown[] = [];
 
   return {
     updates,
     enqueued,
+    payloads,
     deps: {
       db,
       logger: createLogger({}, { sink: () => undefined }),
@@ -280,6 +290,7 @@ function applyDeps(
       enqueuer: {
         enqueue: (request) => {
           enqueued.push({ dedupeKey: request.dedupeKey, jobType: request.jobType });
+          payloads.push(request.payload);
 
           return Promise.resolve({
             taskName: "t",
@@ -345,6 +356,34 @@ describe("confirmApply", () => {
     const outcome = await confirmApply(ctx.deps, CALLER, "batch-1");
 
     expect(outcome).toMatchObject({ status: "rejected" });
+    expect(ctx.enqueued).toHaveLength(0);
+  });
+
+  // D-860: a confirmação diz se a planilha de produtos é o catálogo completo.
+  it("sem a opção, o job sai como sempre: só o batchId", async () => {
+    const ctx = applyDeps();
+
+    await confirmApply(ctx.deps, CALLER, "batch-1");
+
+    expect(ctx.payloads).toEqual([{ batchId: "batch-1" }]);
+  });
+
+  it("markAbsent num lote de produtos segue no payload do job", async () => {
+    const ctx = applyDeps();
+
+    const outcome = await confirmApply(ctx.deps, CALLER, "batch-1", { markAbsent: true });
+
+    expect(outcome).toEqual({ status: "queued", batchId: "batch-1" });
+    expect(ctx.payloads).toEqual([{ batchId: "batch-1", markAbsent: true }]);
+  });
+
+  it("markAbsent fora da planilha de produtos é recusado sem tocar no lote", async () => {
+    const ctx = applyDeps({ kind: "STOCK" });
+
+    const outcome = await confirmApply(ctx.deps, CALLER, "batch-1", { markAbsent: true });
+
+    expect(outcome).toMatchObject({ status: "rejected" });
+    expect(ctx.updates).toHaveLength(0);
     expect(ctx.enqueued).toHaveLength(0);
   });
 });

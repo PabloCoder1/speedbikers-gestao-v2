@@ -23,6 +23,7 @@
     "@sb/shopee": "workspace:*",
     "fast-xml-parser": "5.12.0",
     "hono": "4.13.18",
+    "nodemailer": "10.3.1",
     "read-excel-file": "9.3.10",
     "zod": "4.6.6"
   },
