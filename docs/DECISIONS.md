@@ -20477,3 +20477,18 @@ são ignorados e a assinatura ativa continua exibindo avisos.
 Os testes de navegação passaram a localizar o cartão de não lidas
 pelo rótulo e a confirmar o filtro no destino. A CI de 20b6e4c8 havia
 reprovado três casos que buscavam a URL antiga sem o filtro de D-855.
+
+## D-858 - Preflight da VM vincula o plano ao commit do candidato
+
+**24/11/2026 · Publicação na VM.** As duas etapas do roteiro usam
+`--bind-head` para incluir o HEAD verificado no manifesto do plano.
+O mesmo catálogo e conteúdo SQL passam a gerar outro ID quando muda
+o commit. O preflight recusa alterações e arquivos SQL sem rastreamento,
+inclusive os ignorados. A opção preserva o modo anterior da CLI para
+comparações locais. Identificar a origem do catálogo ainda faz parte
+do roteiro.
+
+Testes locais cobriram o commit inalterado, outro commit com SQL
+idêntico e arquivos alterados, preparados ou ignorados. O ensaio
+com as 324 versões lidas do Git base manteve as quatro lacunas
+temporárias bloqueadas, sem consultar a VM.

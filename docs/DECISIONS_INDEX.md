@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **697** (D-001 a D-857).
+Decisões registradas: **698** (D-001 a D-858).
 
 ## Por domínio
 
@@ -419,7 +419,7 @@ Decisões registradas: **697** (D-001 a D-857).
 - **D-782** — Endurecimento da API em convites (corrida 23505), webhook ML (`user_id`/`questionId`/enqueue), cotação de frete e resposta do SAC
 - **D-791** — O cliente usa o endpoint bulk de anúncios do Mercado Livre
 
-### outros (119)
+### outros (120)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -540,6 +540,7 @@ Decisões registradas: **697** (D-001 a D-857).
 - **D-854** — Emblema de notificações usa visibilidade da Central e consulta limitada a 100
 - **D-855** — Contagem das notificações na Home segue a visibilidade da Central
 - **D-856** — Atividade recente da Home limita a lista aos eventos visíveis
+- **D-858** — Preflight da VM vincula o plano ao commit do candidato
 
 ### processo/docs (1)
 
