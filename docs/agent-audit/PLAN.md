@@ -13,6 +13,12 @@ Há 124 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou mediçõe
 | P2 | Desempenho, manutenção e limpeza. Remover apenas com dependências conferidas e exigir medição de ganho quando a mudança é motivada por custo ou latência. |
 | P3 | Tipos e ajustes pontuais com baixo impacto operacional. Aproveitar cobertura existente para evitar trabalho duplicado. |
 
+## Prioridades em 24/11
+
+1. Validar a CI do #378 com D-785–D-789, D-793–D-806 e a correção de D-882. Manter V01 aberto até o registro das quatro versões definitivas no Dev e a validação do upgrade contra uma cópia recente da VM.
+2. Levar M05 à revisão de publicação por #377, que é independente das quatro migrations. Depois de conferir a revisão em tráfego, comparar seis horas equivalentes de backlog, falhas 403 e sucessos dos jobs de catálogo.
+3. Revisar o aumento de volume de `sync_runs` e a leitura do arquivo na Central em ambiente isolado (D04). Manter a política efetiva e as passagens operacionais de Auth/estoque sujeitas à decisão do responsável.
+
 ## Frentes de execução
 
 | Grupo e prioridade | Problema, módulos e abordagem | Dependências, verificação e estado |

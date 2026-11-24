@@ -169,15 +169,15 @@ Aceite técnico do inventário = status **Testado localmente**, **Publicado** ou
 | Backend e APIs | 21/21 | 100.0% | 0.0% | 3/3 |
 | Integrações dos marketplaces | 16/34 | 47.1% | 52.9% | 2/5 |
 | Banco de dados | 18/21 | 85.7% | 14.3% | 4/5 |
-| Google Cloud e infraestrutura | 13/29 | 44.8% | 55.2% | 2/6 |
+| Google Cloud e infraestrutura | 18/29 | 62.1% | 37.9% | 3/6 |
 | Segurança e autenticação | 18/26 | 69.2% | 30.8% | 3/5 |
-| Performance | 8/16 | 50.0% | 50.0% | 1/3 |
-| Testes e qualidade | 13/23 | 56.5% | 43.5% | 2/4 |
+| Performance | 16/16 | 100.0% | 0.0% | 3/3 |
+| Testes e qualidade | 18/23 | 78.3% | 21.7% | 3/4 |
 | Limpeza técnica | 5/10 | 50.0% | 50.0% | 2/4 |
 | Publicação e validação | 0/21 | 0.0% | 100.0% | 0/3 |
 <!-- closure-table:end -->
 
-**Geral em 19/11 muda para 137/226 (60,6%), com 39,4% restante. Por contagem simples, 24/43 (55,8%).** F05 publicada somou cinco pontos e D03 testado localmente somou três. Cálculo reproduzível em `node scripts/report-closure-progress.mjs`.
+**Geral em 24/11: 155/226 (68,58%), com 31,42% restante. São 28/43 entregas (65,12%).** O corte histórico de 19/11 tinha 137/226. I03, P02, P03 e Q03 atingiram o critério técnico desde então. Cálculo em `node scripts/report-closure-progress.mjs`.
 
 O aceite operacional depende da publicação e validação do conjunto final. D03 tem evidência local.
 

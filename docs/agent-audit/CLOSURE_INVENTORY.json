@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-23, candidato #378, ensaios de Full e Cloud Tasks e preflight da VM",
+  "corte": "2026-11-24, candidato #378, integração Gemini até D-806 e conferência de produção em leitura",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -219,7 +219,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Infra/Dono",
-      "evidencia": "Sondagem externa do backup ativa, com incidente e e-mail confirmados (#372). Métrica de disco conferida e política versionada (#370/#374). Faltam ativação e ensaio de disco e monitoramento de indisponibilidade.",
+      "evidencia": "Em 24/11 o Cloud Monitoring lista uma política habilitada para falha do backup diário e zero uptime checks. Incidente e e-mail foram confirmados no ensaio #372. Política de disco preparada em #370/#374. Faltam ativação e ensaio de disco e de indisponibilidade.",
       "fase": 2
     },
     {
@@ -229,7 +229,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Infra/Database",
-      "evidencia": "Preflight do catálogo e hash do plano aprovados na CI (#366/#374). O workflow oficial ainda aponta para o hosted. Faltam integração com a VM e ensaio do rollback.",
+      "evidencia": "O candidato D-880/D-881 inclui preflight vinculado ao SHA e ao manifesto, com workflow da VM. #375 registra ensaio isolado de rollback. Faltam registro definitivo no Dev e novo upgrade com o catálogo reconciliado da VM.",
       "fase": 2
     },
     {
@@ -239,7 +239,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Infra/Dono",
-      "evidencia": "Billing429; ArtifactRegistry1.33GB; consumo não medido",
+      "evidencia": "Em 24/11 o billing do projeto está habilitado. VM sb-db e2-standard-2 em execução e disco pd-balanced de 50 GB associado. Falta atribuir custo efetivo e validar dimensionamento e retenção.",
       "fase": 2
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "Quatro checks, inclusive Playwright e Postgres real, verdes no #378 em fb8b8ffe (45386471796). Upgrade isolado com as versões temporárias. Falta ordem definitiva e registro oficial no Dev, seguido de CI do novo SHA.",
+      "evidencia": "Candidato incorpora D-785 a D-806 do #343 e preserva a evidência de upgrade isolado com versões temporárias. Dev hospedado INACTIVE em 24/11. Faltam ordem definitiva, registro oficial no Dev e CI do SHA com as versões definitivas.",
       "fase": 5
     },
     {

@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **701** (D-001 a D-882).
+Decisões registradas: **720** (D-001 a D-882).
 
 ## Por domínio
 
-### atendimento (69)
+### atendimento (71)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -87,6 +87,8 @@ Decisões registradas: **701** (D-001 a D-882).
 - **D-770** — Edição de itens de NF-e e saída manual separam erro transitório, exigem linha afetada e fatiamento em lotes na API
 - **D-778** — Autorização no servidor em `claimAction`, fail-closed em Server Actions/Caixa de Entrada e escape de curingas `ILIKE`
 - **D-781** — Encerra últimos `getSession()` diretos em clientes web e valida corpo `200 OK` em aplicação, republicação e narração IA
+- **D-788** — Invariantes de tempo e finitude em `@sb/domain` (`remote-transition`, `support-events`, `sales-anomaly`, `calculadora-preco`)
+- **D-805** — Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
 
 ### banco/rls (51)
 
@@ -142,7 +144,7 @@ Decisões registradas: **701** (D-001 a D-882).
 - **D-790** — Um índice único atende a timeline do Full
 - **D-881** — Workflow de migrations de produção gera o plano da VM
 
-### estoque (59)
+### estoque (62)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -202,9 +204,12 @@ Decisões registradas: **701** (D-001 a D-882).
 - **D-776** — Captura de estoque Full fatia `.in(inventory_id)` em lotes de 100 e elimina varredura histórica completa de `fulfillment_stock_snapshots`
 - **D-783** — Server Components falham fechado em erro de contas/organização (`/precos`, `/full`, `/atendimento/perguntas`), escapam `ILIKE` e limitam `.in()` em `/atendimento`
 - **D-792** — Receber o pedido de compra dá entrada no estoque, e a conferência da invoice cria o SKU que falta
+- **D-799** — Domínio e web: calendário real em datas de negócio e períodos, PDFs/NF-e, preflight/corpo de republicação, cobertura, saúde e CSV
+- **D-802** — Domínio, API e Web: ledger/UpSeller, diretório de contas e indicadores/saúde fail-closed
+- **D-803** — Domínio, API e Web: reversões de estoque, enqueue, filtros ABC, paginação RPC e utilitários web
 - **D-850** — Full mantém 30 dias de capturas brutas online e permite recuperar o arquivo
 
-### interface (76)
+### interface (78)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -282,8 +287,10 @@ Decisões registradas: **701** (D-001 a D-882).
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
+- **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
+- **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
 
-### mercado-livre (134)
+### mercado-livre (141)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -418,7 +425,14 @@ Decisões registradas: **701** (D-001 a D-882).
 - **D-772** — Paginação, fatiamento `.in()` e liberação garantida de trava no estoque Shopee, catálogo ML e hidratação Shopee do worker
 - **D-780** — Worker falha fechado em erro de gravação de visitas, registra `sync_runs` no backfill financeiro e protege unlock de refresh ML/Shopee
 - **D-782** — Endurecimento da API em convites (corrida 23505), webhook ML (`user_id`/`questionId`/enqueue), cotação de frete e resposta do SAC
+- **D-789** — Hardening em `@sb/mercado-livre` e `@sb/shopee` (cifra AES-GCM 128-bit, paginação Ads, mensagens pós-venda, HTTP 200 não-JSON, OAuth retry e parsers Shopee)
 - **D-791** — O cliente usa o endpoint bulk de anúncios do Mercado Livre
+- **D-793** — Isolamento de falhas de enqueue em agendadores/relist, validação de epoch TikTok e hardening OAuth/push na API
+- **D-795** — Worker: telemetria best-effort (`sync_runs`/`domain_events`) e `sync-central-alerts` blindados contra transporte, IDs seguros ML e proteção de janelas/datas Shopee e Ads
+- **D-796** — Marketplaces e worker: limite de TTL OAuth, evento de relist blindado contra transporte, datas/checkpoints de pedidos ML e reconciliação SAC
+- **D-797** — Worker: proteção contra Flate zip bomb em PDF, isolamento de ZodError/transporte em visitas e Full, guardas de backfill e parse NF-e
+- **D-800** — API, Worker e Web: hardening de Copiloto, OAuth Shopee, logística/pacote/anomalias e helpers de métricas
+- **D-801** — Domínio, Worker e Web: finitude em eventos/inventário/suporte, estoque Full no preflight de relist e parsers/filtros web
 
 ### outros (120)
 
@@ -547,7 +561,7 @@ Decisões registradas: **701** (D-001 a D-882).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (72)
+### vendas/métricas (73)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -619,10 +633,11 @@ Decisões registradas: **701** (D-001 a D-882).
 - **D-720** — Margem por SKU em todos os marketplaces, com o consolidado pela soma dos valores
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
+- **D-798** — Contratos, API e Worker: janelas de datas no Copiloto, lookup de ferramenta/NF-e/suspensão blindados, papéis/dedupe de claims, cauda de pedidos e `attempt` do worker
 - **D-858** — Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
 - **D-882** — Agendamento de margem percorre todas as organizações com alerta ativo
 
-### worker/infra (119)
+### worker/infra (123)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -742,5 +757,9 @@ Decisões registradas: **701** (D-001 a D-882).
 - **D-760** — O pedido feito fora do sistema é um pedido de compra comum, com origem e referência externa
 - **D-761** — "Já fiz o pedido" passa pelo caminho canônico e devolve os candidatos a duplicidade em vez de criar
 - **D-779** — Logger estruturado redige `message`, protege referências circulares e serializa `Error` em qualquer profundidade
+- **D-785** — Tentar de novo preserva o recorte da URL via `mesmaUrl` e as 10 telas operacionais restantes separam `membership.error`
+- **D-786** — Worker verifica erro ao avançar checkpoint de `backfill.orders`, registra `sync_runs` em `sync.order-financials`, pagina `order_items` em `backfill.order-user-products` e preserva retry em `sync-central-alerts`
+- **D-787** — Hardening do worker em persistência/varredura do SAC (`claims`, `messages`, `reply`) e erro transitório na recusa de `nfe.import.apply`
+- **D-794** — Telemetria `@sb/db` (`recordJobRun`/`recordAiRun`) blindada contra transporte e isolamento de enqueue nos 13 agendadores/backfills restantes da API
 - **D-857** — Avisos em tempo real respeitam o ciclo da sessão
 

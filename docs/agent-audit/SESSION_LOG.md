@@ -908,3 +908,14 @@ O candidato combina a base `a81f5235`, #336, D-782 a D-784 do #343, as sete corr
 No PostgreSQL 17 isolado, o histórico inicial tinha 324 migrations até `20261119180000`. O dry-run com os nomes originais recusou as quatro anteriores à base. A cópia temporária `20261119180001` a `20261119180004` aplicou NF-e, ERP, índice de Full e retenção, nesta ordem, e chegou a 328 versões. O dry-run final ficou limpo. Os nomes originais seguem no Git enquanto o Dev hospedado estiver inativo e o catálogo-alvo não for reconciliado.
 
 A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da notificação e a publicação coordenada ficam pendentes.
+
+### 24/11/2026 · Retomada do candidato #378
+
+- O candidato `2ae7a4b4` integra `origin/main` em `5a49133b` e está empilhado em #364 (`fcaf257d`). A worktree isolada `codex/sentinel-integracao-20261124` preserva o trabalho staged e unstaged do checkout histórico `v3` (`9642d921`).
+- D-882 reproduzido na rota com HTTP 200. A correção `9f0fc8ef` marcou a falha de enqueue como retentável, seguiu para a segunda organização e verificou recuperação e deduplicação na mesma hora. D-881 usa o catálogo com quebras de linha preservadas pela CLI.
+- O ensaio regional `9d0af86b` e as 19 fatias do Gemini foram incorporados. Quatro conflitos entre os documentos de decisão foram reconciliados. A Curva ABC já tinha o ajuste local e o merge preservou as contribuições de saúde da sincronização. Sem diff de migrations contra `2ae7a4b4`.
+- Claude: #329 permanece draft. #384 de margem foi integrado na main. #347 de compras e #383 de catálogo continuam com seus responsáveis. A presença de worktrees não confirma atividade de sessões. #377 reúne #368 e #376 para M05.
+- Cloud Run confirmou 100% de tráfego em `api-00042-7bl` e `worker-00060-z8h`, ambos no SHA `5a49133b`. Scheduler de métricas ativo com duas retentativas. Secret Manager confirmou somente o estado ENABLED das cinco referências SMTP. Supabase Dev confirmou INACTIVE. Quatro migrations definitivas, publicação e aceite continuam pendentes.
+- O inventário calculou 155/226 (68,58%), 28/43 entregas. V01 segue condicionado ao registro definitivo e ao ensaio de upgrade da VM com o novo SHA.
+
+- Verificação integrada local em `de846564`: check 37/37 (4 tarefas de cache), build 10/10 (7 de cache), seis testes do preflight e documentação com 720 decisões indexadas. A CI do SHA anterior `2ae7a4b4` concluiu os quatro jobs e omitiu o apply Dev. Cloud Monitoring listou apenas a política habilitada de backup, com zero uptime checks. A VM estava ativa com `e2-standard-2` e disco de 50 GB.

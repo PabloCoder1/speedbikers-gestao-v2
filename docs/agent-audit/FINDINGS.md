@@ -185,3 +185,10 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 - A11 · [Uso de getSession no Supabase Auth](https://supabase.com/docs/reference/javascript/auth-getsession).
 - A12 · [Hono](https://github.com/advisories/GHSA-5r4p-p66f-jhc7), [adaptador Node](https://github.com/advisories/GHSA-rmxm-3fg6-px4f) e [fast-xml-parser](https://github.com/advisories/GHSA-474x-hrwr-fgx4).
 - [CI da base auditada](https://github.com/PabloCoder1/speedbikers-gestao-v2/actions/runs/39819868730) e [workflow de migrations de produção observado](https://github.com/PabloCoder1/speedbikers-gestao-v2/actions/runs/39817649217).
+
+## Revisão do candidato em 24/11
+
+- **P2 · D-882.** O endpoint respondia HTTP 200 após uma falha de fila interromper os alertas das organizações seguintes. A regressão verifica avanço, log individual, HTTP 503 e retentativa deduplicada. O Scheduler ativo tem duas retentativas com backoff de 30 a 120 s.
+- **P2 · D-881.** O runbook orienta enviar o catálogo pela CLI via JSON. O procedimento preserva as linhas do arquivo e a validação de SHA, histórico e hashes.
+- **M05.** O worker em tráfego está no SHA `5a49133b`, cujo multiget usa `/items`. A janela posterior começa quando o SHA com `/items/bulk` estiver em tráfego.
+- **SMTP.** A versão mais recente das cinco referências de D-858 está habilitada. O worker atual carrega host, usuário, senha e porta. O remetente é opcional e usa o usuário SMTP quando ausente. Entrega e Auth da VM seguem pendentes.

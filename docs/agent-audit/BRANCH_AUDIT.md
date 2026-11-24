@@ -227,3 +227,9 @@ Os heads #338, #342 e #343 aparecem com conflito contra a `main`. A
 integração pelo candidato preserva o trabalho correspondente e tem CI do
 conjunto. Mantenha os PRs e as worktrees até concluir a revisão e a
 integração do candidato. Nenhuma ref ou PR foi removido nesta rodada.
+
+## Triagem do candidato em 24/11
+
+- A `main` está em `5a49133b`. `#342`, `#368`, `#376` e `#377` são alcançáveis a partir de `2ae7a4b4` (#378), com zero commits exclusivos contra o candidato. Preservar #377 para a revisão independente de M05 e as refs de origem para rastreabilidade.
+- #364 é a base da pilha e não tem commits exclusivos contra #378. #343 preserva a frente Gemini e o histórico de validação. Os 19 commits de código foram incorporados seletivamente e as reservas seguintes seguem na origem.
+- #347 e #383 têm, respectivamente, um e dois commits exclusivos ao candidato. Preservar até a revisão conjunta das respectivas frentes. #384 é ancestral da main. O checkout antigo `v3` tem trabalho local separado. A lista de worktrees incluiu 56 registros, inclusive caminhos históricos. Contagem de registros não comprova atividade nem elegibilidade para descarte.
