@@ -137,6 +137,17 @@ build_and_deploy() {
       api_url="https://placeholder.invalid"
     fi
   else
+    if [[ -n "${worker_url}" && -z "${MARGIN_ALERT_EMAIL_ENABLED:-}" ]]; then
+      local worker_env_names
+      if ! worker_env_names="$(gc run services describe worker --region "${REGION}" \
+        --flatten='spec.template.spec.containers[0].env[]' \
+        --format='value(spec.template.spec.containers[0].env.name)' | tr -d '\r')"; then
+        fail "Não foi possível conferir as variáveis da revisão do worker."
+      fi
+      if grep -Eq '^(SMTP_HOST|SMTP_USER|SMTP_PASSWORD|SMTP_PORT|ALERT_EMAIL_FROM)$' <<< "${worker_env_names}"; then
+        fail "O worker já tem SMTP. Defina MARGIN_ALERT_EMAIL_ENABLED=sim para manter ou nao para desativar."
+      fi
+    fi
     worker_url="${worker_url:-https://placeholder.invalid}"
   fi
 
@@ -292,8 +303,8 @@ YAML
       --concurrency 4 \
       --timeout 900s \
       --cpu 1 --memory 512Mi \
-      --set-env-vars "NODE_ENV=production,APP_COMMIT=${TAG},SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,DOCUMENTS_BUCKET=${PROJECT_ID}-documents,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${worker_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}"),AI_MONTHLY_BUDGET_USD=${AI_MONTHLY_BUDGET_USD}${shopee_env}" \
-      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest${shopee_secret}" \
+      --set-env-vars "NODE_ENV=production,APP_COMMIT=${TAG},SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,DOCUMENTS_BUCKET=${PROJECT_ID}-documents,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${worker_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}"),AI_MONTHLY_BUDGET_USD=${AI_MONTHLY_BUDGET_USD}${shopee_env}${margin_alert_env}" \
+      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest${shopee_secret}${margin_alert_secrets}" \
       --quiet
 
     if [ "${worker_url}" = "https://placeholder.invalid" ]; then
@@ -341,16 +352,51 @@ if [ "${AMBIENTE}" = "prod" ]; then
   info "saída: ${VPC_NETWORK}/${VPC_SUBNET}, todo o tráfego pelo Cloud NAT ${NAT_GATEWAY}"
 fi
 shopee_push_secret=""
+margin_alert_env=""
+margin_alert_secrets=""
+check_shopee_push=false
+check_margin_alert=false
 if [[ -n "${SHOPEE_PARTNER_ID}" && "${1:-api}" = api ]]; then
-  # D-453: uma falha de leitura pode ocultar a chave dedicada e trocar a
-  # validação da assinatura. Resolva a montagem antes de qualquer build.
+  check_shopee_push=true
+fi
+if [[ "${1:-worker}" = worker ]]; then
+  case "${MARGIN_ALERT_EMAIL_ENABLED:-nao}" in
+    sim) check_margin_alert=true ;;
+    nao) ;;
+    *) fail "MARGIN_ALERT_EMAIL_ENABLED deve ser sim ou nao." ;;
+  esac
+fi
+
+# Resolva os vínculos antes do Cloud Build. Uma falha de leitura do inventário
+# pode ocultar a chave dedicada da Shopee (D-453) ou a configuração de SMTP.
+if [[ "${check_shopee_push}" = true || "${check_margin_alert}" = true ]]; then
   if ! secret_names="$(gc secrets list --format='value(name.basename())' | tr -d '\r')"; then
-    fail "Não foi possível listar os segredos para confirmar a chave de push da Shopee."
+    fail "Não foi possível listar os segredos para confirmar os vínculos do deploy."
   fi
+fi
+if [[ "${check_shopee_push}" = true ]]; then
   if grep -Fxq -- "${SECRET_SHOPEE_PUSH_PARTNER_KEY}" <<< "${secret_names}"; then
     shopee_push_secret=",SHOPEE_PUSH_PARTNER_KEY=${SECRET_SHOPEE_PUSH_PARTNER_KEY}:latest"
     info "push da Shopee com chave própria: ${SECRET_SHOPEE_PUSH_PARTNER_KEY}"
   fi
+fi
+if [[ "${check_margin_alert}" = true ]]; then
+  for smtp_secret in SMTP_HOST SMTP_USER SMTP_PASSWORD SMTP_PORT ALERT_EMAIL_FROM; do
+    if ! grep -Fxq -- "${smtp_secret}" <<< "${secret_names}"; then
+      case "${smtp_secret}" in
+        SMTP_PORT|ALERT_EMAIL_FROM) continue ;;
+        *) fail "Segredo obrigatório do alerta de margem ausente: ${smtp_secret}." ;;
+      esac
+    fi
+    if ! smtp_version="$(gc secrets versions describe latest --secret="${smtp_secret}" \
+      --format='csv[no-heading](name.basename(),state)' | tr -d '\r')" ||
+      [[ ! "${smtp_version}" =~ ^[1-9][0-9]*,ENABLED$ ]]; then
+      fail "Não foi possível confirmar uma versão mais recente habilitada para ${smtp_secret}."
+    fi
+    margin_alert_secrets+=",${smtp_secret}=${smtp_secret}:${smtp_version%,*}"
+  done
+  margin_alert_env=",WEB_APP_URL=${ORIGENS_WEB[0]}"
+  info "Alerta de margem por e-mail configurado para o worker."
 fi
 
 info "registry: ${REGISTRY}"

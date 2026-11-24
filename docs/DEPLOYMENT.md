@@ -115,7 +115,9 @@ Como toda task usa `v3-tasks-invoker` no token OIDC, os dois produtores (`v3-api
 | `MERCADO_LIVRE_CLIENT_SECRET` | Secret Manager | `api` (troca o `code`), `worker` (renova por `refresh_token`) |
 | `ML_TOKEN_ENCRYPTION_KEY` (AES-256, D-046) | Secret Manager | `api`, `worker` |
 | `ANTHROPIC_API_KEY` (Claude Haiku 4.5, D-082) | Secret Manager | `api` (Copiloto — o `worker` nunca chama a Anthropic) |
-| `SMTP_PASSWORD` (alerta de margem, D-858) | Secret Manager | `worker`. Junto vão `SMTP_HOST`, `SMTP_USER`, `SMTP_PORT` (465), `ALERT_EMAIL_FROM` e `WEB_APP_URL` como variáveis comuns. Sem host, usuário e senha, o worker sobe e o alerta fica só no sino |
+| `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_PORT`, `ALERT_EMAIL_FROM` (D-858) | Secret Manager | Somente o `worker`. Porta e remetente são opcionais e usam 465 e o usuário SMTP como padrões. |
+
+No deploy do worker, `MARGIN_ALERT_EMAIL_ENABLED=sim` vincula as versões numéricas mais recentes dos segredos SMTP e usa a primeira origem de `WEB_ORIGINS` para o link do e-mail. As versões precisam estar habilitadas e a identidade do worker precisa de `roles/secretmanager.secretAccessor` nos segredos vinculados. A conta que executa o script consulta somente os metadados. Se o worker já tiver variáveis SMTP, o script exige `sim` para manter o envio ou `nao` para voltar ao alerta no sino. Em um worker sem SMTP, o alerta no sino é o padrão.
 | `NEXT_PUBLIC_SUPABASE_URL` e chave publicável | Vercel env | `web` |
 
 Regras:

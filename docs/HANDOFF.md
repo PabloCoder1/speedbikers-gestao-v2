@@ -19,7 +19,7 @@
 | **Sentinel: próximo passo** | #378 com CI verde em 8bf37e2f (45234620372). D04 tem restore e ensaios SQL/PostgREST. Registro separado preservou a FK tardia com custo de espaço; priorizar leitura do arquivo na Central. Central, emblema e Home usam a visibilidade dos eventos (D-851 a D-856). D-857 corrige avisos tardios e seletores E2E após o filtro de não lidas. Preflight da VM vincula plano ao commit (D-880). VM aguarda quatro versões definitivas no Dev e adequação do workflow. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo, com 2,0 GB acima do limite gratuito. Google Cloud segue como ambiente atual. Lembrete para retomar em 01/12, condicionado ao Dev ativo. Rotinas Dev pausadas (D-350). |
 | **Supabase** | Produção usa a VM `sb-db` (`speedbikers-prod`). O antigo projeto hosted `imvjfgnaprqsfjlnsyev` estava `INACTIVE` em 18/11. Convite, SMTP e recuperação Auth seguem pendentes. [VM](../infra/vm/README.md). |
-| **Produção** | Cloud Run em leitura de 20/11: API `api-00041-8m8` e worker `worker-00059-mjc`, 100% de tráfego nas respectivas revisões. A validação do alias web do catálogo de compras está registrada no #333. |
+| **Produção** | Cloud Run em leitura de 24/11: API `api-00042-7bl` e worker `worker-00060-z8h`, 100% do tráfego nas respectivas revisões. A validação do alias web do catálogo de compras está registrada no #333. |
 | **Migrations** | Preflight em 24/11: 325 versões até 20261123180000. Plano de publicação aprovado. Quatro migrations temporárias anteriores bloqueiam a publicação do candidato. [VM](../infra/vm/README.md). |
 | **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | Compras inteligentes, importação anterior e invoice/proforma entregues. D-792 acrescenta entrada no LOCAL e criação do SKU na conferência. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
 | **Notas (D-765, D-766)** | #334 registrou saída para Full. #335 incorporou Saída Manual e edição de itens. O aceite operacional de ponta a ponta segue no fechamento. |
@@ -198,7 +198,7 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
-13. **Alerta de margem (D-858):** VM tem `20261123180000`. Em 24/11, há versões habilitadas dos segredos SMTP, mas o worker em tráfego não usa essas variáveis. Faltam vincular SMTP e validar a entrega após a publicação. O responsável define os destinatários em `/central/limites`.
+13. **Alerta de margem (D-858):** VM tem `20261123180000`. Em 24/11 às 08:21 BRT, a API enfileirou o job e o worker registrou 50 alertas sem envio por falta de destinatários. O candidato aceita `MARGIN_ALERT_EMAIL_ENABLED=sim` para vincular versões habilitadas no deploy e exige escolha explícita quando o serviço já tem SMTP. Falta validar a entrega após o responsável definir os destinatários em `/central/limites`.
 
 ---
 

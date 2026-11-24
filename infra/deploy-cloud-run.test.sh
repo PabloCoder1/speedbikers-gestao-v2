@@ -13,6 +13,11 @@ case "$1 $2" in
   'auth list') echo runner@example.test ;;
   'projects describe') echo speedbikers-gestao-v3 ;;
   'secrets list')
+    case "${SMTP_FIXTURE:-}" in
+      required|full|disabled) printf 'SMTP_HOST\r\nSMTP_USER\r\nSMTP_PASSWORD\r\n' ;;
+      incomplete) printf 'SMTP_HOST\r\nSMTP_USER\r\nSMTP_PASSWORD-copy\r\n' ;;
+    esac
+    if [[ "${SMTP_FIXTURE:-}" = full ]]; then printf 'SMTP_PORT\r\nALERT_EMAIL_FROM\r\n'; fi
     case "${PUSH_INVENTORY:-unexpected}" in
       denied) echo 'PERMISSION_DENIED simulado' >&2; exit 1 ;;
       present) printf 'SHOPEE_TEST_PUSH_PARTNER_KEY\r\n' ;;
@@ -22,6 +27,14 @@ case "$1 $2" in
     ;;
   'secrets describe')
     [[ "${PUSH_INVENTORY:-}" = present ]]
+    ;;
+  'secrets versions')
+    [[ "$3 $4" = 'describe latest' && "$6" = "--format=csv[no-heading](name.basename(),state)" ]]
+    if [[ "$5" = --secret=SMTP_PASSWORD && "${SMTP_FIXTURE:-}" = disabled ]]; then
+      printf '7,DISABLED\r\n'
+    else
+      printf '7,ENABLED\r\n'
+    fi
     ;;
   'run services')
     inventory="${RUN_INVENTORY:-existing}"
@@ -47,6 +60,9 @@ case "$1 $2" in
         ;;
       describe)
         case "$*" in
+          *env.name*)
+            if [[ "${SMTP_FIXTURE:-}" = deployed ]]; then printf 'SMTP_PASSWORD\r\n'; fi
+            ;;
           *latestCreatedRevisionName*) echo worker-00001-fixture ;;
           *status.traffic*)
             suffix="$(sed -n 's/^--revision-suffix=//p' "${DEPLOY_ARGS_FIXTURE}")"
@@ -136,6 +152,7 @@ rodar_push() (
   cd "${fixture}"
   env -i PATH="${fixture}:$PATH" GCLOUD_BIN="${fixture}/gcloud" MERCADO_LIVRE_CLIENT_ID=123 \
     SHOPEE_PARTNER_ID=456 PUSH_INVENTORY="$local_inventory" BUILD_ARGS_FIXTURE="${fixture}/build-args" \
+    MARGIN_ALERT_EMAIL_ENABLED="${MARGIN_ALERT_EMAIL_ENABLED:-}" SMTP_FIXTURE="${SMTP_FIXTURE:-}" \
     NESTED_DEPLOY_SCRIPT="${NESTED_DEPLOY_SCRIPT:-}" \
     RUN_INVENTORY="${RUN_INVENTORY:-existing}" DEPLOY_ARGS_FIXTURE="${fixture}/deploy-args" bash "$script" "$@"
 )
@@ -155,6 +172,46 @@ rodar_push denied worker >/dev/null || codigo=$?
 [[ "$codigo" = 42 && -s "${fixture}/build-args" && ! -s "${fixture}/deploy-args" ]]
 printf 'ok    worker isolado não depende da chave de push da API
 '
+
+for smtp_fixture in required full; do
+  codigo=0
+  MARGIN_ALERT_EMAIL_ENABLED=sim SMTP_FIXTURE="$smtp_fixture" rodar_push present worker >/dev/null || codigo=$?
+  [[ "$codigo" = 43 ]]
+  grep -Fq 'WEB_APP_URL=http://localhost:3000' "${fixture}/deploy-args"
+  grep -Fq 'SMTP_HOST=SMTP_HOST:7,SMTP_USER=SMTP_USER:7,SMTP_PASSWORD=SMTP_PASSWORD:7' "${fixture}/deploy-args"
+  if [[ "$smtp_fixture" = full ]]; then
+    grep -Fq 'SMTP_PORT=SMTP_PORT:7,ALERT_EMAIL_FROM=ALERT_EMAIL_FROM:7' "${fixture}/deploy-args"
+  else
+    if grep -Eq 'SMTP_PORT=|ALERT_EMAIL_FROM=' "${fixture}/deploy-args"; then exit 1; fi
+  fi
+done
+printf 'ok    worker fixa versões SMTP e aceita o padrão sem porta ou remetente\n'
+
+for target in worker api; do
+  enabled=nao
+  if [[ "$target" = api ]]; then enabled=sim; fi
+  codigo=0
+  MARGIN_ALERT_EMAIL_ENABLED="$enabled" SMTP_FIXTURE=full rodar_push present "$target" >/dev/null || codigo=$?
+  [[ "$codigo" = 43 ]]
+  if grep -Eq 'SMTP_|ALERT_EMAIL_FROM|WEB_APP_URL' "${fixture}/deploy-args"; then exit 1; fi
+done
+printf 'ok    SMTP desligado no worker e ausente no deploy isolado da API\n'
+
+if saida="$(SMTP_FIXTURE=deployed rodar_push present worker 2>&1)" ||
+  [[ -s "${fixture}/build-args" || "$saida" != *'O worker já tem SMTP'* ]]; then
+  printf 'FALHA: configuração SMTP existente exige uma escolha explícita antes do build\n%s\n' "$saida" >&2
+  exit 1
+fi
+printf 'ok    SMTP existente não é removido por omissão da configuração\n'
+
+for smtp_fixture in incomplete disabled; do
+  if saida="$(MARGIN_ALERT_EMAIL_ENABLED=sim SMTP_FIXTURE="$smtp_fixture" rodar_push present 2>&1)" ||
+    [[ -s "${fixture}/build-args" || -s "${fixture}/deploy-args" || "$saida" != *'SMTP_PASSWORD'* ]]; then
+    printf 'FALHA: SMTP %s deve parar antes do build combinado\n%s\n' "$smtp_fixture" "$saida" >&2
+    exit 1
+  fi
+done
+printf 'ok    SMTP obrigatório ausente ou desabilitado bloqueia o build combinado\n'
 
 for inventory in present missing; do
   codigo=0
