@@ -421,6 +421,11 @@ test("custo do pedido: resposta perdida avisa, relê a lista e não deixa o form
   expect(error).toBeNull();
   expect(data?.map((linha) => linha.amount)).toEqual([150]);
   await expect(page.getByRole("cell", { name: "R$ 150,00" })).toBeVisible();
+
+  // Com o primeiro custo, a releitura troca o `<details>` pelo painel e monta
+  // outro formulário: o aviso tem de continuar na tela (a CI do #394 pegou a
+  // releitura apagando o aviso antes da conferência).
+  await expect(page.getByText("Não foi possível confirmar o lançamento do custo.")).toBeVisible();
 });
 
 test("previsão do pedido: falha de transporte avisa e libera o botão (D-865)", async ({ page }) => {

@@ -270,6 +270,31 @@ export interface CustoLinha {
   readonly status: string;
 }
 
+/*
+  O aviso de falha de transporte dos custos precisa sobreviver à releitura que
+  ele mesmo pede. Sem nenhum custo, a página mostra a seção num `<details>`;
+  quando a primeira inclusão grava (ou a exclusão do último custo apaga), a
+  releitura troca de ramo e monta OUTRO `CustosDoPedido`, e o estado local se
+  perde com o aviso. Por isso o aviso fica guardado por pedido, só enquanto é
+  recente, e o componente novo começa com ele.
+*/
+const AVISO_DE_CUSTO_VALIDO_MS = 60_000;
+const avisosDeCusto = new Map<string, { texto: string; em: number }>();
+
+function avisoDeCustoRecente(purchaseOrderId: string): string | null {
+  const aviso = avisosDeCusto.get(purchaseOrderId);
+
+  if (aviso === undefined) return null;
+
+  if (Date.now() - aviso.em > AVISO_DE_CUSTO_VALIDO_MS) {
+    avisosDeCusto.delete(purchaseOrderId);
+
+    return null;
+  }
+
+  return aviso.texto;
+}
+
 /** Os custos adicionais do pedido: listar, incluir e excluir. */
 export function CustosDoPedido({
   purchaseOrderId,
@@ -288,7 +313,18 @@ export function CustosDoPedido({
   const [status, setStatus] = useState<"ESTIMADO" | "REALIZADO">("ESTIMADO");
   const [descricao, setDescricao] = useState("");
   const [busy, setBusy] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
+  const [erro, setErroLocal] = useState<string | null>(() => avisoDeCustoRecente(purchaseOrderId));
+
+  function setErro(texto: string | null): void {
+    avisosDeCusto.delete(purchaseOrderId);
+    setErroLocal(texto);
+  }
+
+  /** Falha de transporte: o aviso segue para o componente que a releitura montar. */
+  function avisarFalhaDeTransporte(texto: string): void {
+    avisosDeCusto.set(purchaseOrderId, { texto, em: Date.now() });
+    setErroLocal(texto);
+  }
 
   async function incluir(): Promise<void> {
     const amount = Number(valor.replace(",", "."));
@@ -319,7 +355,7 @@ export function CustosDoPedido({
       // Lançar custo NÃO é idempotente (`id: null` cria uma linha nova): se a
       // primeira tentativa gravou, repetir lança o custo duas vezes e infla o
       // custo de importação. Por isso a tela relê a lista e manda conferir.
-      setErro(
+      avisarFalhaDeTransporte(
         "Não foi possível confirmar o lançamento do custo. Confira a lista antes de lançar de novo: repetir pode lançar o mesmo custo duas vezes.",
       );
       setBusy(false);
@@ -382,7 +418,7 @@ export function CustosDoPedido({
                             else router.refresh();
                           },
                           () => {
-                            setErro("Não foi possível confirmar a exclusão do custo. Confira a lista antes de excluir de novo.");
+                            avisarFalhaDeTransporte("Não foi possível confirmar a exclusão do custo. Confira a lista antes de excluir de novo.");
                             reler(router);
                           },
                         );
