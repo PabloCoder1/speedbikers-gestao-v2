@@ -192,3 +192,5 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 - **P2 · D-881.** O runbook orienta enviar o catálogo pela CLI via JSON. O procedimento preserva as linhas do arquivo e a validação de SHA, histórico e hashes.
 - **M05.** O worker em tráfego está no SHA `5a49133b`, cujo multiget usa `/items`. A janela posterior começa quando o SHA com `/items/bulk` estiver em tráfego.
 - **SMTP.** A versão mais recente das cinco referências de D-858 está habilitada. O worker atual carrega host, usuário, senha e porta. O remetente é opcional e usa o usuário SMTP quando ausente. Entrega e Auth da VM seguem pendentes.
+
+- **P1 · D-803.** A integração convertia `Infinity` em lista vazia antes da primeira chamada. Os leitores ML e Shopee do SKU dependem desse valor para paginar até o fim. Reproduzido com 1.002 linhas e corrigido no leitor comum. Passaram 52 testes focados. O Playwright completo valida o efeito nas jornadas.

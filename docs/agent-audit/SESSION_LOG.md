@@ -919,3 +919,8 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - O inventário calculou 155/226 (68,58%), 28/43 entregas. V01 segue condicionado ao registro definitivo e ao ensaio de upgrade da VM com o novo SHA.
 
 - Verificação integrada local em `de846564`: check 37/37 (4 tarefas de cache), build 10/10 (7 de cache), seis testes do preflight e documentação com 720 decisões indexadas. A CI do SHA anterior `2ae7a4b4` concluiu os quatro jobs e omitiu o apply Dev. Cloud Monitoring listou apenas a política habilitada de backup, com zero uptime checks. A VM estava ativa com `e2-standard-2` e disco de 50 GB.
+
+### 24/11/2026 · Regressão da composição e validação independente
+
+- O Playwright de `f9b9ec26` (45395072874) passou 367 testes e falhou 15. D-803 tratava `Infinity` como zero, apesar de os leitores ML e Shopee do SKU usarem esse teto para ler todos os anúncios. A regressão de 1.002 linhas falhou antes do ajuste. O teste de Contas depende do estado que a jornada de vínculo Shopee restaura ao terminar. O novo corte precisa validar os dois fluxos em conjunto.
+- O #377 foi reconciliado com a main em `87636bf9`. Os quatro checks passaram (45396006316), com aplicação de migrations no Dev omitida. Issue #367 tem a janela de 63 HTTP 403 em seis horas e o requisito de preservação do SMTP. A publicação isolada depende de autorização.
