@@ -15,8 +15,8 @@ Há 124 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou mediçõe
 
 ## Prioridades em 24/11
 
-1. Validar a CI do #378 com D-785–D-789, D-793–D-806 e a correção de D-882. Manter V01 aberto até o registro das quatro versões definitivas no Dev e a validação do upgrade contra uma cópia recente da VM.
-2. Levar M05 à revisão de publicação por #377, que é independente das quatro migrations. Depois de conferir a revisão em tráfego, comparar seis horas equivalentes de backlog, falhas 403 e sucessos dos jobs de catálogo.
+1. Validar a CI do SHA atualizado do #378 com D-863 e D-807–D-811. O Gemini conserva a reserva D-812 (contratos de jobs TikTok). Manter V01 aberto até registrar as quatro versões definitivas em Dev e validar o upgrade em cópia da VM.
+2. Conferir a CI de `0f7a98de` no #377. Após a autorização do dono, preparar e validar a revisão isolada do worker, com SMTP preservado. Depois da promoção, comparar janelas equivalentes de backlog, falhas 403 e sucessos dos jobs de catálogo.
 3. Revisar o aumento de volume de `sync_runs` e a leitura do arquivo na Central em ambiente isolado (D04). Manter a política efetiva e as passagens operacionais de Auth/estoque sujeitas à decisão do responsável.
 
 ## Frentes de execução

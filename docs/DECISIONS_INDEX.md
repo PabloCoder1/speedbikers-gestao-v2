@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **725** (D-001 a D-882).
+Decisões registradas: **730** (D-001 a D-882).
 
 ## Por domínio
 
-### atendimento (71)
+### atendimento (72)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -89,6 +89,7 @@ Decisões registradas: **725** (D-001 a D-882).
 - **D-781** — Encerra últimos `getSession()` diretos em clientes web e valida corpo `200 OK` em aplicação, republicação e narração IA
 - **D-788** — Invariantes de tempo e finitude em `@sb/domain` (`remote-transition`, `support-events`, `sales-anomaly`, `calculadora-preco`)
 - **D-805** — Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
+- **D-808** — API: receptor autenticado `POST /push/tiktok-shop` (`M04`, fatia 3)
 
 ### banco/rls (51)
 
@@ -144,7 +145,7 @@ Decisões registradas: **725** (D-001 a D-882).
 - **D-790** — Um índice único atende a timeline do Full
 - **D-881** — Workflow de migrations de produção gera o plano da VM
 
-### estoque (63)
+### estoque (64)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -207,6 +208,7 @@ Decisões registradas: **725** (D-001 a D-882).
 - **D-799** — Domínio e web: calendário real em datas de negócio e períodos, PDFs/NF-e, preflight/corpo de republicação, cobertura, saúde e CSV
 - **D-802** — Domínio, API e Web: ledger/UpSeller, diretório de contas e indicadores/saúde fail-closed
 - **D-803** — Domínio, API e Web: reversões de estoque, enqueue, filtros ABC, paginação RPC e utilitários web
+- **D-809** — Domínio TikTok Shop: projeção de pedidos, margem oficial V3 e plano de baixa de estoque com guarda D-497 (`M04`)
 - **D-850** — Full mantém 30 dias de capturas brutas online e permite recuperar o arquivo
 - **D-862** — O kit que leva um componente fora do catálogo conta no aviso da Central
 
@@ -291,7 +293,7 @@ Decisões registradas: **725** (D-001 a D-882).
 - **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
 - **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
 
-### mercado-livre (142)
+### mercado-livre (143)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -434,9 +436,10 @@ Decisões registradas: **725** (D-001 a D-882).
 - **D-797** — Worker: proteção contra Flate zip bomb em PDF, isolamento de ZodError/transporte em visitas e Full, guardas de backfill e parse NF-e
 - **D-800** — API, Worker e Web: hardening de Copiloto, OAuth Shopee, logística/pacote/anomalias e helpers de métricas
 - **D-801** — Domínio, Worker e Web: finitude em eventos/inventário/suporte, estoque Full no preflight de relist e parsers/filtros web
+- **D-807** — TikTok Shop: camada transacional de leitura, webhook e coordenador de refresh em `@sb/tiktok-shop` (`M04`)
 - **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
-### outros (121)
+### outros (122)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -551,6 +554,7 @@ Decisões registradas: **725** (D-001 a D-882).
 - **D-775** — Autenticação da API recusa múltiplas organizações e separa 503 de 401/403; OIDC exige `email_verified`; unlock de `shopee.orders.sync` protegido no `finally`
 - **D-777** — Backfills internos respondem 503 em erro de banco, rotas D-766 usam `erroInterno` com `request_id` e callback Shopee exige inteiro seguro positivo
 - **D-784** — Demais Server Components web falham fechado em erro de contas/organização e BuscaSku trata rejeição de transporte
+- **D-811** — Web: falha fechada em `removeMember`, hardening de `POST /api/vitals` e busca de SKU em NF-e/Saída Manual
 - **D-851** — Central de Notificações usa ID para desempatar horários iguais
 - **D-852** — Cartões da Central de Notificações contam e abrem o mesmo escopo
 - **D-853** — Marcar todas como lidas usa o escopo visível da Central
@@ -564,7 +568,7 @@ Decisões registradas: **725** (D-001 a D-882).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (74)
+### vendas/métricas (75)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -637,6 +641,7 @@ Decisões registradas: **725** (D-001 a D-882).
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
 - **D-798** — Contratos, API e Worker: janelas de datas no Copiloto, lookup de ferramenta/NF-e/suspensão blindados, papéis/dedupe de claims, cauda de pedidos e `attempt` do worker
+- **D-810** — API TikTok Shop: agendador paginado de pedidos e adaptador Supabase de refresh de token (`M04`)
 - **D-858** — Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
 - **D-859** — O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
 - **D-882** — Agendamento de margem percorre todas as organizações com alerta ativo

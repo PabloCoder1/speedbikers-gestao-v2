@@ -66,10 +66,14 @@ import type { ShopeePushDeps } from "./shopee-push.js";
 import { receiveShopeePush } from "./shopee-push.js";
 import type { ShopeeShopsDeps } from "./shopee-shops.js";
 import { completeShopeeConnect, startShopeeConnect } from "./shopee-shops.js";
+import type { TikTokPushDeps } from "./tiktok-push.js";
+import { receiveTikTokPush } from "./tiktok-push.js";
 import type { TikTokShopsDeps } from "./tiktok-shops.js";
 import { completeTikTokConnect, startTikTokConnect } from "./tiktok-shops.js";
 import type { ShopeeOrdersScheduleDeps } from "./shopee-orders-schedule.js";
 import { triggerShopeeOrdersSync } from "./shopee-orders-schedule.js";
+import type { TikTokOrdersScheduleDeps } from "./tiktok-orders-schedule.js";
+import { triggerTikTokOrdersSync } from "./tiktok-orders-schedule.js";
 import type { NfeImportDeps } from "./nfe-import.js";
 import { confirmNfeApply, receiveNfeUpload } from "./nfe-import.js";
 import { comandoDeItemSchema, editDocumentItem } from "./document-items.js";
@@ -126,8 +130,12 @@ export interface AppDependencies {
   tiktokShops?: TikTokShopsDeps;
   /** D-453: o push da Shopee (webhook), autenticado pela assinatura do corpo. */
   shopeePush?: ShopeePushDeps;
+  /** D-808: o webhook do TikTok Shop, autenticado por HMAC-SHA256(app_key + corpo bruto). */
+  tiktokPush?: TikTokPushDeps;
   /** D-426: o gatilho horário dos pedidos da Shopee; `undefined` sem a Shopee configurada. */
   shopeeOrdersSchedule?: ShopeeOrdersScheduleDeps;
+  /** D-810: o gatilho horário dos pedidos e catálogo do TikTok Shop; `undefined` até handlers no worker. */
+  tiktokOrdersSchedule?: TikTokOrdersScheduleDeps;
   copilot?: CopilotDeps;
   reconcile?: ReconcileDeps;
   fulfillmentSchedule?: FulfillmentScheduleDeps;
@@ -442,6 +450,32 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
   });
 
   // --------------------------------------------------------------------
+  // Webhook do TikTok Shop (D-808, docs/TIKTOK_SHOP.md §10). Público: a
+  // autenticação é o HMAC-SHA256 de `app_key + corpo bruto` no cabeçalho
+  // `Authorization` (sem Bearer), conferido em tempo constante antes do parse.
+  // Assinatura inválida responde 401; falha transitória de banco/fila responde
+  // 503 para retentativa; demais casos respondem 200 com corpo vazio em <= 3 s.
+  // --------------------------------------------------------------------
+  app.post("/push/tiktok-shop", async (context) => {
+    const tiktokPush = dependencies.tiktokPush;
+
+    if (tiktokPush === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await receiveTikTokPush(tiktokPush, {
+      rawBody: await context.req.text(),
+      authorization: context.req.header("authorization"),
+    });
+
+    if (outcome.status === "invalid_signature") {
+      return context.json({ error: { code: "unauthorized" } }, 401);
+    }
+
+    return context.body(null, outcome.status === "unavailable" ? 503 : 200);
+  });
+
+  // --------------------------------------------------------------------
   // Rotas internas: Cloud Scheduler e Cloud Tasks, autenticadas por OIDC.
   //
   // A `api` é pública no Cloud Run por causa do webhook do Mercado Livre, que
@@ -647,6 +681,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerShopeeOrdersSync(shopeeOrdersSchedule);
+
+    return respostaDoAgendador(context, outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Pedidos e catálogo do TikTok Shop (D-810, M04) — por LOJA CONNECTED, com
+  // paginação por chave e isolamento de falhas de enqueue. Responde 503
+  // not_configured até ser ligado no bootstrap com os handlers do worker.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/tiktok-orders", async (context) => {
+    const tiktokOrdersSchedule = dependencies.tiktokOrdersSchedule;
+
+    if (tiktokOrdersSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerTikTokOrdersSync(tiktokOrdersSchedule);
 
     return respostaDoAgendador(context, outcome);
   });

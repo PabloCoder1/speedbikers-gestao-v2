@@ -208,3 +208,20 @@ describe("D-785 — Tentar de novo preserva recorte da URL (mesmaUrl) e demais t
     }
   });
 });
+
+describe("D-811 — Busca de SKU em notas-fiscais/saida-manual sanitiza antes do mínimo de 2 caracteres e trata rejeição", () => {
+  it("document-item-row valida tamanho mínimo após termoSeguroParaOr, invalida busca pendente e protege rejeição com try/catch", () => {
+    const codigo = lerPagina("app/(app)/notas-fiscais/[id]/document-item-row.tsx");
+
+    expect(codigo).toMatch(/const seguro = termoSeguroParaOr\(termo\);\s*if \(selected !== null \|\| seguro\.length < 2\)/);
+    expect(codigo).toMatch(/if \(selected !== null \|\| seguro\.length < 2\) \{[\s\S]*?ultimaBusca\.current \+= 1;/);
+    expect(codigo).toMatch(/try\s*\{[\s\S]*from\("skus"\)[\s\S]*\}\s*catch/);
+  });
+
+  it("saida-manual-form valida tamanho mínimo após termoSeguroParaOr e invalida busca pendente", () => {
+    const codigo = lerPagina("app/(app)/notas-fiscais/saida-manual/saida-manual-form.tsx");
+
+    expect(codigo).toMatch(/const seguro = termoSeguroParaOr\(termo\);\s*if \(seguro\.length < 2\)/);
+    expect(codigo).toMatch(/if \(seguro\.length < 2\) \{[\s\S]*?ultimaBusca\.current \+= 1;/);
+  });
+});

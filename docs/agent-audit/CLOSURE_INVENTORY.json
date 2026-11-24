@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-24, candidato #378 composto com main 9670cde3 e conferência de produção em leitura",
+  "corte": "2026-11-24, candidato #378 com D-863 e D-807 a D-811, catálogo #377 reconciliado",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -119,7 +119,7 @@
       "peso": 8,
       "status": "Em andamento",
       "responsavel": "Multicanal/Dono",
-      "evidencia": "ROADMAP 796–797; conexão sem pedidos/webhook completo",
+      "evidencia": "#378 incorpora D-807 a D-810: cliente, webhook de observação, projeções de domínio, agendador e persistência do token. Faltam contratos D-812, handlers, tabelas transacionais e validação da loja.",
       "fase": 3
     },
     {
@@ -129,7 +129,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Backend",
-      "evidencia": "Cloud Logging confirmou ResourceDeprecated no multiget. D-791/#342 validou a migração local para /items/bulk. Faltam publicação, verificação em produção e recuperação do atraso.",
+      "evidencia": "#377 em 0f7a98de, sobre d21fb902. O diff do worker, cliente e migrations desde 2d9a06d2 é vazio. Faltam publicação isolada, verificação em produção e recuperação do atraso.",
       "fase": 1
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "Candidato incorpora D-785 a D-806 do #343 e preserva a evidência de upgrade isolado com versões temporárias. Dev hospedado INACTIVE em 24/11. Faltam ordem definitiva, registro oficial no Dev e CI do SHA com as versões definitivas.",
+      "evidencia": "#378 combina a main d21fb902 e D-807 a D-811 do #343. A CI anterior (45439871885) passou os quatro jobs. Faltam CI do novo corte e ordem, registro oficial no Dev e prova de upgrade das quatro migrations definitivas.",
       "fase": 5
     },
     {
