@@ -20121,3 +20121,25 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 - O POST é bloqueado antes do servidor, então nada é gravado e a sugestão do SKU do seed fica intacta para as outras specs. A repetição segura de registrar já é provada por `pedido-ja-feito.spec.ts`.
 - Vermelho/verde: com os componentes da `main`, os 2 testes falham esperando o aviso.
 - **Não exercitado em e2e:** vincular referência, acrescentar ao pedido externo e o produto do fornecedor. Os três recebem o mesmo `try`, conferido por leitura e pelo typecheck.
+
+## D-867 - A importação de pedidos anteriores sobrevive à Server Action que não responde
+
+**Contexto:** o último ponto da varredura da D-865 nas frentes de compras é a importação de planilha (`/compras/importar`), com seis chamadas sem `try`. São o envio da planilha e, na conferência, corrigir a linha, buscar SKU, criar o SKU da linha, criar os SKUs do lote e registrar a referência. Quando a ação não respondia, o botão ficava em "Enviando…" ou "Criando…" para sempre. No envio, recarregar perdia a planilha já lida no navegador. A busca de SKU deixava a rejeição escapar sem aviso.
+
+**Decisão:**
+
+- **Toda falha de transporte vira aviso, botão liberado e campos preservados.**
+- **As seis ações aceitam a repetição, e o aviso diz isso:**
+  - **Envio:** `create_purchase_import_batch` reconhece o arquivo pelo SHA-256 (com trava por empresa e arquivo). Se a primeira tentativa criou o lote, a repetição abre esse lote ("existente"), sem duplicar as linhas.
+  - **Corrigir linha:** regrava os mesmos campos.
+  - **Criar SKU (da linha ou do lote):** o código que já existe só é vinculado (D-792), então a repetição não cria um segundo SKU.
+  - **Registrar a referência:** `commit_purchase_import_group` usa um `requestId` fixo por lote e referência, e as linhas registradas saem do grupo. A repetição volta "nada novo a registrar", nunca um segundo pedido. A tela também relê o lote.
+  - **Buscar SKU:** é só leitura; o aviso pede para buscar de novo.
+- **Sem migration e sem mudança de contrato.**
+
+**Verificação (`importacao-transporte.spec.ts`, stack local isolada, `db reset` e seed):**
+- A planilha tem só um código novo, fora do catálogo: nenhum pedido é registrado, e o saldo e a sugestão do SKU do seed não mudam.
+- Envio com a resposta cortada depois de o servidor gravar: aviso e botão liberado. A nova tentativa abre o mesmo lote, com `?existente=1` e o aviso "Este arquivo já tinha sido importado". A chave de serviço não lê `purchase_import_rows` (sem GRANT, de propósito), então a prova é a da tela.
+- Criar os SKUs do lote com a resposta cortada: aviso e botão liberado. A nova tentativa só vincula, e existe um SKU só com aquele código.
+- Vermelho/verde: com os componentes da `main`, o teste falha esperando o aviso do envio. Com a correção, as 13 specs de importação, compras, estoque, fornecedores e reposição rodaram juntas: 48 passaram, e este teste falhou só na leitura direta de `purchase_import_rows` (42501), trocada pelo aviso da tela. Ele passou na rodada seguinte, na mesma base.
+- **Não exercitado em e2e:** corrigir linha, buscar SKU, criar o SKU de uma linha e registrar a referência. Recebem o mesmo `try`, conferido por leitura, lint e typecheck. A repetição segura do registro é a do banco, já provada por `importar-pedidos-anteriores.spec.ts` ("não duplicar").
