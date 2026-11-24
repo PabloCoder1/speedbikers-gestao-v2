@@ -194,3 +194,5 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 - **SMTP.** A versão mais recente das cinco referências de D-858 está habilitada. O worker atual carrega host, usuário, senha e porta. O remetente é opcional e usa o usuário SMTP quando ausente. Entrega e Auth da VM seguem pendentes.
 
 - **P1 · D-803.** A integração convertia `Infinity` em lista vazia antes da primeira chamada. Os leitores ML e Shopee do SKU dependem desse valor para paginar até o fim. Reproduzido com 1.002 linhas e corrigido no leitor comum. Passaram 52 testes focados. O Playwright completo valida o efeito nas jornadas.
+
+- **P2 · D-883.** A CI 45395072874 perdeu os traces de falha ao buscar o diretório do repórter HTML. A reprodução local com o repórter de lista gerou o ZIP em `test-results`. Ajustado no #378.

@@ -20974,3 +20974,9 @@ Auditoria focada em segurança, integridade de dados e falhas silenciosas em rot
 3. **`apps/web/app/(app)/notas-fiscais/[id]/document-item-row.tsx` e `apps/web/app/(app)/notas-fiscais/saida-manual/saida-manual-form.tsx`:** passam a avaliar o mínimo de 2 caracteres **após** `termoSeguroParaOr(termo)` (impedindo termos como `"%%"` ou `"(("` de virarem `""` e consultarem `.or("sku_key.ilike.%%,...")` retornando SKUs arbitrários), incrementam `ultimaBusca.current` ao limpar termos curtos para descartar respostas atrasadas e envolvem a busca de `document-item-row.tsx` em `try/catch` para não travar `searching = true` em erro de transporte.
 
 TDD RED (`3 failed`, `16 failed | 28 passed (44)`) -> GREEN (`3 passed`, `44 passed (44)`). Verificação completa do monorepo pós-`4241b18a`: `pnpm run check` (`37/37`, `356` arquivos / `4.556` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree` confirmando **zero conflito** para os 5 commits (`30319b7c 43ccb988 f2c4c50c 2e778a02 4241b18a`) em sequência sobre `#378` (`034ffb34`).
+
+## D-883 - Preservar os traces das falhas Playwright na CI
+
+A suíte usa o repórter de lista e retém traces em `apps/web/test-results`. A coleta apontava para `playwright-report`, que exige um repórter HTML. A CI 45395072874 registrou que o diretório estava ausente.
+
+Uma falha sintética no Chromium 1.62.1 gerou `test-results/.../trace.zip` sem criar `playwright-report`. A CI guarda os resultados por sete dias quando a etapa Playwright falha. O job usa a stack local e dados de teste.

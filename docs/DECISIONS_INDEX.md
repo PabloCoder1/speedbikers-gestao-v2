@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **730** (D-001 a D-882).
+Decisões registradas: **731** (D-001 a D-883).
 
 ## Por domínio
 
@@ -646,7 +646,7 @@ Decisões registradas: **730** (D-001 a D-882).
 - **D-859** — O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
 - **D-882** — Agendamento de margem percorre todas as organizações com alerta ativo
 
-### worker/infra (124)
+### worker/infra (125)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -772,4 +772,5 @@ Decisões registradas: **730** (D-001 a D-882).
 - **D-794** — Telemetria `@sb/db` (`recordJobRun`/`recordAiRun`) blindada contra transporte e isolamento de enqueue nos 13 agendadores/backfills restantes da API
 - **D-857** — Avisos em tempo real respeitam o ciclo da sessão
 - **D-863** — "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
+- **D-883** — Preservar os traces das falhas Playwright na CI
 
