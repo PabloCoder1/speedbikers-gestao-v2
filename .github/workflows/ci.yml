@@ -134,6 +134,9 @@ jobs:
       - name: Budget de contexto dos agentes
         run: pnpm run docs:check
 
+      - name: Guarda do histórico de migrations
+        run: node --test infra/vm/check-migration-catalog.test.mjs
+
       - name: Build
         run: pnpm run build
 
