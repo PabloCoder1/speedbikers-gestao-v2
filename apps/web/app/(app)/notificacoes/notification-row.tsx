@@ -95,6 +95,8 @@ function iconeDaFamilia(eventType: string): NomeDoIcone {
       return "lampada";
     case "central":
       return "alvo";
+    case "sale":
+      return "cifrao";
     default:
       return "pulso";
   }

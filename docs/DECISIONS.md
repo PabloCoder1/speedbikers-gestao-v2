@@ -20492,3 +20492,20 @@ Testes locais cobriram o commit inalterado, outro commit com SQL
 idêntico e arquivos alterados, preparados ou ignorados. O ensaio
 com as 324 versões lidas do Git base manteve as quatro lacunas
 temporárias bloqueadas, sem consultar a VM.
+
+## D-858 - Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
+
+**Contexto:** o dono quer saber de cada venda que sai abaixo da margem, sem abrir a Curva ABC. A margem é a de 5F e da regra 5X: (recebido − custo) ÷ preço, com o custo na data da venda. As marcas importadas (Navetec, Off Racer, Off Volt) custam mais para repor e têm meta maior.
+
+**Decisão (do dono, 23/11):**
+
+- **Metas:** 40% para as marcas importadas, 30% para o resto. Ficam em `margin_alert_settings` (uma linha por empresa, editável por ADMIN e GESTOR em `/central/limites`), com a lista de marcas e até 20 e-mails. A meta é estrita: margem exatamente igual à meta não avisa.
+- **Marca é a do fornecedor.** Vale `skus.supplier_brand`, comparada por `private.chave_da_marca` (maiúsculas, só letras e dígitos). `skus.brand` é a CATEGORIA do UpSeller e é ignorada. O kit é importado quando algum componente for. SKU sem marca do fornecedor é julgado pela meta dos demais.
+- **Só a venda coberta é julgada**, como na 5X: no ML, pedido de uma linha, com comissão e frete observados e custo conhecido; na Shopee, o pedido coberto de SKU único de `get_shopee_faturamento_pedidos`. Pedido sem frete ainda não é julgado e entra na rodada em que o frete chegar. Venda sem custo não vira alerta.
+- **Um alerta por pedido.** `detectar_vendas_abaixo_da_margem` (só `service_role`) varre os últimos 7 dias desde `active_since`, grava `sale_margin_alerts` (único por empresa, canal e pedido) e um `domain_events` `sale.margin.below` (importante). O sino sai do fan-out de sempre, pela conta ou loja. Venda anterior à ativação nunca avisa.
+- **E-mail fora da transação.** O job `diagnostics.detect-low-margin-sales` roda de hora em hora pela rota `/internal/schedule/metrics-refresh`, sem job novo de Scheduler. Ele manda **um** e-mail por rodada com as vendas novas (destinatários em cópia oculta, por SMTP). Falha de SMTP não desfaz o alerta: tenta de novo até 5 vezes; SMTP sem configurar deixa o e-mail pendente, e pendente há mais de 48 h vira `skipped`. O sino nunca depende do e-mail.
+- **E-mail é a exceção ao "in-app apenas" de `NOTIFICATIONS.md` §8**, restrita a este alerta. Os endereços vivem só no banco, nunca no repositório.
+
+**Consequência:** o worker ganha `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (Secret Manager), `SMTP_PORT` (465), `ALERT_EMAIL_FROM` e `WEB_APP_URL`. Sem as três primeiras, o worker sobe e o alerta fica só no sino. Pedido de várias linhas no ML e de vários SKUs na Shopee não é julgado, porque o frete não se divide por produto (5E).
+
+**Alternativas rejeitadas:** usar `skus.brand`, que é a categoria do UpSeller e marcaria produto errado como importado; um e-mail por venda, que enche a caixa num dia de promoção; disparar e-mail dentro do trigger do banco, que prenderia a escrita do pedido à disponibilidade do SMTP; avisar com custo desconhecido como zero, que mostraria margem cheia em vez de "não sei".

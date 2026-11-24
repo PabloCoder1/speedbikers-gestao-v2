@@ -419,7 +419,7 @@
       "peso": 8,
       "status": "Bloqueado",
       "responsavel": "Dono/Infra",
-      "evidencia": "Plano de publicação na VM aprovado. Preflight de 23/11: 324 versões até 20261119180000 e quatro temporárias anteriores no candidato sem correspondência no catálogo. Faltam ordem definitiva, adequação do workflow e publicação do SHA aprovado.",
+      "evidencia": "Plano de publicação na VM aprovado. Preflight de 24/11: 325 versões até 20261123180000. #384 integrado e quatro temporárias anteriores continuam pendentes. Faltam ordem definitiva, adequação do workflow e publicação do SHA aprovado.",
       "fase": 5
     },
     {

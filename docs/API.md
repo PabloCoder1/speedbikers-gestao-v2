@@ -192,6 +192,7 @@ Todo job registra em `job_runs`: início, fim, resultado, erro, itens processado
 | Evento | Severidade padrão | Origem |
 |---|---|---|
 | `listing.price.changed` | informativo (fixo nesta etapa) | diff — **implementado em 2026-08-24 (D-072)**. Elevar por magnitude fica para quando houver dado real de variação de preço — ver `packages/domain/src/events/listing-events.ts` |
+| `sale.margin.below` | importante | venda coberta com margem abaixo da meta da empresa (D-858): `detectar_vendas_abaixo_da_margem`, entity `sku`; `after` traz pedido, canal, preço, recebido, custo, margem e meta. Também vai por e-mail |
 | `listing.title.changed` | informativo | diff — **implementado em 2026-08-24 (D-072)** |
 | `listing.picture.changed` | informativo | diff |
 | `listing.description.changed` | informativo | diff |

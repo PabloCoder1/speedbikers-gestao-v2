@@ -189,10 +189,10 @@ catálogo na revisão.
 
 ### Publicação do candidato #378 e aceite
 
-O plano de publicação na VM foi aprovado em 23/11. O catálogo consultado
-em leitura tinha 324 versões até `20261119180000`. O preflight do candidato
-retornou `blocked` porque as quatro versões temporárias aparecem antes
-da última aplicada na VM. O fluxo oficial ainda aponta ao hosted.
+O plano de publicação na VM foi aprovado em 23/11. A consulta em
+leitura de 24/11 encontrou 325 versões até `20261123180000`. O SQL do
+#384 foi incorporado ao candidato. As quatro versões temporárias
+são anteriores à última aplicada. O fluxo oficial ainda aponta ao hosted.
 
 1. Registrar no Dev as versões definitivas dos quatro SQLs, regenerar os
    tipos e repetir a CI no SHA candidato. Conferir o destino da esteira

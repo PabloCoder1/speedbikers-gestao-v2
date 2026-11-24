@@ -14,13 +14,13 @@
 |---|---|
 | **Atualizado em** | 2026-11-24 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | Base do candidato `a81f5235`. A `main` avançou para `5a49133b` (#384), com uma migration nova a conferir na VM e integrar ao candidato. [Checkpoint](agent-audit/SESSION_LOG.md). |
+| **HEAD conhecido** | O candidato integra a main em 5a49133b (#384). A migration do alerta de margem consta no catálogo da VM. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Fechamento da V3** | 155/226 pontos (68,58%), 28/43 entregas. [Inventário Sentinel](agent-audit/CLOSURE_INVENTORY.json). [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7107161168). |
 | **Sentinel: próximo passo** | #378 com CI verde em 8bf37e2f (45234620372). D04 tem restore e ensaios SQL/PostgREST. Registro separado preservou a FK tardia com custo de espaço; priorizar leitura do arquivo na Central. Central, emblema e Home usam a visibilidade dos eventos (D-851 a D-856). D-857 corrige avisos tardios e seletores E2E após o filtro de não lidas. Preflight da VM vincula plano ao commit (D-880). VM aguarda quatro versões definitivas no Dev e adequação do workflow. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo, com 2,0 GB acima do limite gratuito. Google Cloud segue como ambiente atual. Lembrete para retomar em 01/12, condicionado ao Dev ativo. Rotinas Dev pausadas (D-350). |
 | **Supabase** | Produção usa a VM `sb-db` (`speedbikers-prod`). O antigo projeto hosted `imvjfgnaprqsfjlnsyev` estava `INACTIVE` em 18/11. Convite, SMTP e recuperação Auth seguem pendentes. [VM](../infra/vm/README.md). |
 | **Produção** | Cloud Run em leitura de 20/11: API `api-00041-8m8` e worker `worker-00059-mjc`, 100% de tráfego nas respectivas revisões. A validação do alias web do catálogo de compras está registrada no #333. |
-| **Migrations** | Preflight da VM em 23/11: 324 versões até 20261119180000. Plano de publicação aprovado. Quatro migrations temporárias anteriores bloqueiam a publicação do candidato. [VM](../infra/vm/README.md). |
+| **Migrations** | Preflight em 24/11: 325 versões até 20261123180000. Plano de publicação aprovado. Quatro migrations temporárias anteriores bloqueiam a publicação do candidato. [VM](../infra/vm/README.md). |
 | **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | Compras inteligentes, importação anterior e invoice/proforma entregues. D-792 acrescenta entrada no LOCAL e criação do SKU na conferência. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
 | **Notas (D-765, D-766)** | #334 registrou saída para Full. #335 incorporou Saída Manual e edição de itens. O aceite operacional de ponta a ponta segue no fechamento. |
 | **UX (Agente 3)** | Central integrada até D-519. [Escopo e evidências](UX_SYSTEM.md). |
@@ -198,6 +198,7 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
+13. **Alerta de margem (D-858):** VM tem `20261123180000`. Em 24/11, há versões habilitadas dos segredos SMTP, mas o worker em tráfego não usa essas variáveis. Faltam vincular SMTP e validar a entrega após a publicação. O responsável define os destinatários em `/central/limites`.
 
 ---
 

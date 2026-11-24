@@ -134,6 +134,8 @@ Granularidade: por usuário, por `event_type`, por severidade mínima e por cont
 
 Sem e-mail, sem push de navegador, sem WhatsApp, sem SMS. **In-app apenas.**
 
+**Exceção única: D-858.** O alerta de venda abaixo da margem (`sale.margin.below`) também vai por e-mail, para a lista de `margin_alert_settings`. O sino continua sendo a fonte; o e-mail é cópia, mandado fora da transação, e falhar não desfaz o alerta. Nenhum outro evento ganha e-mail sem decisão própria.
+
 Notificação por canal externo traz um universo próprio de problemas — bounce, opt-out, rate limit de provedor, conformidade — e não está nos requisitos.
 
 ---
