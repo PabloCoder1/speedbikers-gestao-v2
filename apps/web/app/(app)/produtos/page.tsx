@@ -395,7 +395,7 @@ export default async function ProdutosPage({
     );
   }
 
-  // D-795: o inativo marcado FORA DO CATÁLOGO (pela planilha ou à mão nesta
+  // D-860: o inativo marcado FORA DO CATÁLOGO (pela planilha ou à mão nesta
   // tela) ganha selo próprio. Só os inativos da página, numa leitura tolerante:
   // antes da migration de produção as colunas não existem, e o selo continua
   // "inativo" como antes.

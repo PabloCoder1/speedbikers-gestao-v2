@@ -133,7 +133,7 @@ interface Pendente {
   readonly consequencia: string;
 }
 
-/** D-795: a marca de fora do catálogo de um SKU inativo da página. */
+/** D-860: a marca de fora do catálogo de um SKU inativo da página. */
 export interface ForaDoCatalogo {
   readonly desde: string;
   /** Posta à mão nesta tela (não sai com a planilha), ou pela planilha. */
@@ -149,7 +149,7 @@ export function CurationTable({
 }: {
   organizationId: string;
   rows: readonly CurationRow[];
-  /** D-795: SKU inativo marcado fora do catálogo → desde quando e por quem. */
+  /** D-860: SKU inativo marcado fora do catálogo → desde quando e por quem. */
   foraDoCatalogo?: ReadonlyMap<string, ForaDoCatalogo>;
   /** Alimenta o `<datalist>`: as marcas que já existem, vindas do summary. */
   marcasConhecidas: string[];
@@ -267,7 +267,7 @@ export function CurationTable({
     },
   ] as const;
 
-  /** D-795: marcar e devolver, com a consequência de cada um. */
+  /** D-860: marcar e devolver, com a consequência de cada um. */
   const catalogo = [
     {
       rotulo: "Marcar fora do catálogo",
@@ -353,7 +353,7 @@ export function CurationTable({
           </details>
 
           {/*
-            D-795: a marca de fora do catálogo, à mão. Nunca apaga: o SKU é
+            D-860: a marca de fora do catálogo, à mão. Nunca apaga: o SKU é
             referenciado por pedidos e pelo ledger de estoque.
           */}
           <details className="sb-menu">

@@ -136,7 +136,7 @@ export default async function ConferenciaPage({
   // seria so gasto.
   const working = info.status === "UPLOADED" || info.status === "PARSING" || info.status === "APPLYING";
 
-  // D-795: na planilha de produtos, quem ficaria fora do catálogo. Duas
+  // D-860: na planilha de produtos, quem ficaria fora do catálogo. Duas
   // leituras à parte, e tolerantes: antes da migration de produção a função
   // e as colunas não existem, e a conferência tem de continuar igual a antes
   // (sem a caixa, e a api lendo "não marcar"). Só a prévia espera o lote --
@@ -181,7 +181,7 @@ export default async function ConferenciaPage({
           ["Pendentes", formatCount(info.unresolved_rows)],
         ] as const)
       : []),
-    // D-795: só depois de aplicada, e só com a marcação pedida (nulo = não pedida,
+    // D-860: só depois de aplicada, e só com a marcação pedida (nulo = não pedida,
     // que é diferente de zero marcado).
     ...(marcados !== null && marcados.absent_marked !== null
       ? ([["Fora do catálogo", formatCount(marcados.absent_marked)]] as const)

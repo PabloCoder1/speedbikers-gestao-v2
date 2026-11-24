@@ -2098,6 +2098,57 @@ export type Database = {
           },
         ]
       }
+      margin_alert_settings: {
+        Row: {
+          active_since: string
+          default_min_margin: number
+          email_recipients: string[]
+          enabled: boolean
+          imported_brands: string[]
+          imported_min_margin: number
+          organization_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          active_since?: string
+          default_min_margin?: number
+          email_recipients?: string[]
+          enabled?: boolean
+          imported_brands?: string[]
+          imported_min_margin?: number
+          organization_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          active_since?: string
+          default_min_margin?: number
+          email_recipients?: string[]
+          enabled?: boolean
+          imported_brands?: string[]
+          imported_min_margin?: number
+          organization_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "margin_alert_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "margin_alert_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_accounts: {
         Row: {
           backfill_covered_until: string | null
@@ -3664,6 +3715,116 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sale_margin_alerts: {
+        Row: {
+          brand: string | null
+          cost_is_current: boolean
+          detected_at: string
+          email_attempts: number
+          email_error: string | null
+          email_sent_at: string | null
+          email_status: string
+          id: string
+          imported: boolean
+          margin: number
+          marketplace: string
+          min_margin: number
+          ml_account_id: string | null
+          net_received: number
+          order_ref: string
+          organization_id: string
+          product_cost: number
+          quantity: number | null
+          sale_value: number
+          shopee_shop_id: string | null
+          sku: string | null
+          sku_id: string | null
+          sold_at: string
+          title: string | null
+        }
+        Insert: {
+          brand?: string | null
+          cost_is_current?: boolean
+          detected_at?: string
+          email_attempts?: number
+          email_error?: string | null
+          email_sent_at?: string | null
+          email_status?: string
+          id?: string
+          imported: boolean
+          margin: number
+          marketplace: string
+          min_margin: number
+          ml_account_id?: string | null
+          net_received: number
+          order_ref: string
+          organization_id: string
+          product_cost: number
+          quantity?: number | null
+          sale_value: number
+          shopee_shop_id?: string | null
+          sku?: string | null
+          sku_id?: string | null
+          sold_at: string
+          title?: string | null
+        }
+        Update: {
+          brand?: string | null
+          cost_is_current?: boolean
+          detected_at?: string
+          email_attempts?: number
+          email_error?: string | null
+          email_sent_at?: string | null
+          email_status?: string
+          id?: string
+          imported?: boolean
+          margin?: number
+          marketplace?: string
+          min_margin?: number
+          ml_account_id?: string | null
+          net_received?: number
+          order_ref?: string
+          organization_id?: string
+          product_cost?: number
+          quantity?: number | null
+          sale_value?: number
+          shopee_shop_id?: string | null
+          sku?: string | null
+          sku_id?: string | null
+          sold_at?: string
+          title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sale_margin_alerts_ml_account_id_fkey"
+            columns: ["ml_account_id"]
+            isOneToOne: false
+            referencedRelation: "ml_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_margin_alerts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_margin_alerts_shopee_shop_id_fkey"
+            columns: ["shopee_shop_id"]
+            isOneToOne: false
+            referencedRelation: "shopee_shops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_margin_alerts_sku_id_fkey"
+            columns: ["sku_id"]
+            isOneToOne: false
+            referencedRelation: "skus"
             referencedColumns: ["id"]
           },
         ]
@@ -6678,6 +6839,10 @@ export type Database = {
           p_id: string
         }
         Returns: undefined
+      }
+      detectar_vendas_abaixo_da_margem: {
+        Args: { p_agora?: string; p_organization_id: string }
+        Returns: Json
       }
       get_erp_stock_cutoffs: {
         Args: { p_organization_id: string; p_sku_ids: string[] }

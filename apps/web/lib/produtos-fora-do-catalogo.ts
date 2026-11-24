@@ -1,5 +1,5 @@
 /**
- * D-795 — a prévia dos produtos que ficariam FORA DO CATÁLOGO com a planilha
+ * D-860 — a prévia dos produtos que ficariam FORA DO CATÁLOGO com a planilha
  * de produtos em conferência (`get_products_batch_absences`).
  *
  * O SQL conta; aqui só se lê o jsonb com cuidado e se decide o padrão da
@@ -33,7 +33,7 @@ export interface PreviaForaDoCatalogo {
 /**
  * Acima desta fração do catálogo conhecido, a planilha parece exportação
  * PARCIAL (um filtro, uma página): a caixa vem desmarcada e a tela avisa.
- * Decisão do dono em D-795.
+ * Decisão do dono em D-860.
  */
 export const LIMITE_EXPORTACAO_PARCIAL = 0.1;
 

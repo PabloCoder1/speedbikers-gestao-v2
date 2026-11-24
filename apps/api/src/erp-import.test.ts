@@ -359,7 +359,7 @@ describe("confirmApply", () => {
     expect(ctx.enqueued).toHaveLength(0);
   });
 
-  // D-795: a confirmação diz se a planilha de produtos é o catálogo completo.
+  // D-860: a confirmação diz se a planilha de produtos é o catálogo completo.
   it("sem a opção, o job sai como sempre: só o batchId", async () => {
     const ctx = applyDeps();
 

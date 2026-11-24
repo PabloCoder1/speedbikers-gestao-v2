@@ -136,7 +136,7 @@ export async function setSupplierBrand(
 }
 
 /**
- * D-795: marca (`fora` verdadeiro) ou tira à mão a marca de FORA DO CATÁLOGO.
+ * D-860: marca (`fora` verdadeiro) ou tira à mão a marca de FORA DO CATÁLOGO.
  * Nada é apagado: o SKU fica inativo, sai da Reposição e das sugestões de
  * compra, e o histórico continua. A marca manual não sai com a planilha.
  */
@@ -164,7 +164,7 @@ export async function setForaDoCatalogo(
   const outcome = summarizeCuration(data ?? []);
 
   revalidatePath("/produtos");
-  // A Reposição deixa de fora o SKU marcado (D-795): é onde a marca pesa.
+  // A Reposição deixa de fora o SKU marcado (D-860): é onde a marca pesa.
   revalidatePath("/reposicao");
 
   return { ok: true, message: null, outcome };

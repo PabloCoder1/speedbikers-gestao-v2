@@ -4,7 +4,7 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
- * D-795 — o produto que sai da planilha de produtos do UpSeller fica FORA DO
+ * D-860 — o produto que sai da planilha de produtos do UpSeller fica FORA DO
  * CATÁLOGO, nunca apagado. Provado contra o Postgres real.
  *
  * O que só o banco prova: o conjunto de `products_batch_absent_sku_ids` (só o
@@ -189,7 +189,7 @@ beforeAll(async () => {
                              confirmation_token, recovery_token, email_change, email_change_token_new,
                              email_change_token_current, phone_change, phone_change_token, reauthentication_token)
      values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, 'x', now(),
-             '{"full_name":"Admin D-795"}', now(), now(), '', '', '', '', '', '', '', '')`,
+             '{"full_name":"Admin D-860"}', now(), now(), '', '', '', '', '', '', '', '')`,
     [ADMIN, `${PREFIXO}@d793.test`],
   );
   await client.query(`insert into public.organizations (id, name, slug) values ($1, $2, $3)`, [ORG, PREFIXO, PREFIXO]);

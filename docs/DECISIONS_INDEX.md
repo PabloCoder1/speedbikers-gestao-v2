@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **637** (D-001 a D-795).
+Decisões registradas: **638** (D-001 a D-860).
 
 ## Por domínio
 
@@ -493,13 +493,13 @@ Decisões registradas: **637** (D-001 a D-795).
 - **D-718** — O diálogo de remover vínculo do SKU recupera os controles após falha da ação
 - **D-762** — A previsão de chegada se edita com histórico
 - **D-767** — A invoice do fornecedor entra pela mesma importação, lida como lista, com preço e documento guardados
-- **D-795** — O produto que sai da planilha de produtos do UpSeller fica fora do catálogo, nunca apagado
+- **D-860** — O produto que sai da planilha de produtos do UpSeller fica fora do catálogo, nunca apagado
 
 ### processo/docs (1)
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (70)
+### vendas/métricas (71)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -571,6 +571,7 @@ Decisões registradas: **637** (D-001 a D-795).
 - **D-720** — Margem por SKU em todos os marketplaces, com o consolidado pela soma dos valores
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
+- **D-858** — Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
 
 ### worker/infra (105)
 

@@ -10,7 +10,7 @@ import {
 } from "../../../../lib/produtos-fora-do-catalogo";
 
 /**
- * D-795 — os produtos da planilha anterior que NÃO vieram nesta.
+ * D-860 — os produtos da planilha anterior que NÃO vieram nesta.
  *
  * Só aparece na conferência de uma planilha de produtos. Mostra quantos
  * ficariam fora do catálogo e quantos destes ainda têm saldo, vínculo com

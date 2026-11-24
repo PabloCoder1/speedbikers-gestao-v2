@@ -1,4 +1,4 @@
--- D-795: o produto que sai da planilha de produtos do UpSeller fica marcado
+-- D-860: o produto que sai da planilha de produtos do UpSeller fica marcado
 -- como FORA DO CATÁLOGO, nunca apagado.
 --
 -- Até aqui a aplicação de um lote PRODUCTS só criava e atualizava os SKUs que
@@ -33,9 +33,9 @@ alter table public.skus
   check (erp_absent_batch_id is null or erp_absent_since is not null);
 
 comment on column public.skus.erp_absent_since is
-  'D-795: quando o SKU saiu da planilha de produtos do UpSeller (nulo = veio na última planilha aplicada com a marcação, ou nunca foi julgado). Junto com is_active falso.';
+  'D-860: quando o SKU saiu da planilha de produtos do UpSeller (nulo = veio na última planilha aplicada com a marcação, ou nunca foi julgado). Junto com is_active falso.';
 comment on column public.skus.erp_absent_batch_id is
-  'D-795: o lote PRODUCTS que não trouxe o SKU e o marcou como fora do catálogo.';
+  'D-860: o lote PRODUCTS que não trouxe o SKU e o marcou como fora do catálogo.';
 
 create index skus_erp_absent_idx
   on public.skus (organization_id)
@@ -46,9 +46,9 @@ alter table public.erp_import_batches
   add column absent_cleared integer check (absent_cleared is null or absent_cleared >= 0);
 
 comment on column public.erp_import_batches.absent_marked is
-  'D-795: quantos SKUs este lote PRODUCTS marcou como fora do catálogo. Nulo = a marcação não foi pedida (ou o lote não é de produtos).';
+  'D-860: quantos SKUs este lote PRODUCTS marcou como fora do catálogo. Nulo = a marcação não foi pedida (ou o lote não é de produtos).';
 comment on column public.erp_import_batches.absent_cleared is
-  'D-795: quantos SKUs marcados antes voltaram nesta planilha e perderam a marca.';
+  'D-860: quantos SKUs marcados antes voltaram nesta planilha e perderam a marca.';
 
 
 -- ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ as $$
 $$;
 
 comment on function public.products_batch_absent_sku_ids(uuid) is
-  'D-795: SKUs PRODUTO que já vieram numa planilha de produtos aplicada e NÃO estão (linha OK) no lote p_batch_id. Vazio para lote que não é PRODUCTS. security invoker.';
+  'D-860: SKUs PRODUTO que já vieram numa planilha de produtos aplicada e NÃO estão (linha OK) no lote p_batch_id. Vazio para lote que não é PRODUCTS. security invoker.';
 
 revoke all on function public.products_batch_absent_sku_ids(uuid) from public, anon;
 grant execute on function public.products_batch_absent_sku_ids(uuid) to authenticated, service_role;
@@ -199,7 +199,7 @@ as $$
 $$;
 
 comment on function public.get_products_batch_absences(uuid, integer) is
-  'D-795: a prévia da conferência de um lote PRODUCTS: quantos SKUs conhecidos (já vieram numa planilha de produtos aplicada), quantos ficariam fora do catálogo, quantos destes já estavam marcados, têm saldo LOCAL positivo ou vínculo com anúncio, quantos marcados voltam, e uma amostra ordenada por SKU. Nulo para lote que não é PRODUCTS ou que a RLS esconde. security invoker.';
+  'D-860: a prévia da conferência de um lote PRODUCTS: quantos SKUs conhecidos (já vieram numa planilha de produtos aplicada), quantos ficariam fora do catálogo, quantos destes já estavam marcados, têm saldo LOCAL positivo ou vínculo com anúncio, quantos marcados voltam, e uma amostra ordenada por SKU. Nulo para lote que não é PRODUCTS ou que a RLS esconde. security invoker.';
 
 revoke all on function public.get_products_batch_absences(uuid, integer) from public, anon;
 grant execute on function public.get_products_batch_absences(uuid, integer) to authenticated;
@@ -278,7 +278,7 @@ end;
 $$;
 
 comment on function public.apply_products_batch_absences(uuid, boolean) is
-  'D-795: no fim da aplicação de um lote PRODUCTS, tira a marca de fora do catálogo de quem voltou e, com p_mark, marca (is_active falso + erp_absent_since) os SKUs de products_batch_absent_sku_ids. Idempotente; acumula absent_marked/absent_cleared no lote. Só service_role.';
+  'D-860: no fim da aplicação de um lote PRODUCTS, tira a marca de fora do catálogo de quem voltou e, com p_mark, marca (is_active falso + erp_absent_since) os SKUs de products_batch_absent_sku_ids. Idempotente; acumula absent_marked/absent_cleared no lote. Só service_role.';
 
 revoke all on function public.apply_products_batch_absences(uuid, boolean) from public, anon, authenticated;
 grant execute on function public.apply_products_batch_absences(uuid, boolean) to service_role;
@@ -486,7 +486,7 @@ begin
     -- Full atual positivo também torna o SKU elegível, mesmo sem linha em
     -- inventory_balances nem venda na janela. A recusa por falta de amostra permanece.
     where sk.organization_id = p_organization_id
-      -- D-795: o SKU fora do catálogo do UpSeller não entra na Reposição.
+      -- D-860: o SKU fora do catálogo do UpSeller não entra na Reposição.
       and sk.erp_absent_since is null
       and (c.sku_id is not null or fp.full_quantity > 0)
       and (p_supplier_brand is null or sk.supplier_brand = p_supplier_brand)

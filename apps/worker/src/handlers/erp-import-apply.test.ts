@@ -42,7 +42,7 @@ function createFakeDb(
   rpcCalls: RpcCall[];
 } {
   const tables: Record<string, FakeRow[]> = seed;
-  // D-795: a marcação de fora do catálogo é SQL (apply_products_batch_absences);
+  // D-860: a marcação de fora do catálogo é SQL (apply_products_batch_absences);
   // aqui só importa QUANDO e COM QUE argumento o handler a chama.
   const rpcCalls: RpcCall[] = [];
   let counter = 0;
@@ -282,12 +282,12 @@ describe("aplicação — produtos", () => {
 });
 
 /**
- * D-795: o produto que sai da planilha fica fora do catálogo, nunca apagado.
+ * D-860: o produto que sai da planilha fica fora do catálogo, nunca apagado.
  * O conjunto e a marcação são SQL (provados na integração do @sb/db); aqui a
  * trava é o contrato do handler: só PRODUCTS chama, a marcação só vai quando
  * a confirmação pediu, e marcação pedida que falha não vira APPLIED.
  */
-describe("aplicação — produtos fora do catálogo (D-795)", () => {
+describe("aplicação — produtos fora do catálogo (D-860)", () => {
   it("sem pedido de marcação, chama com p_mark falso (só tira a marca de quem voltou)", async () => {
     const { db, rpcCalls, tables } = createFakeDb({
       erp_import_batches: [batch()],

@@ -18645,7 +18645,7 @@ describe("guarda de GRANTs (D-066/D-098/D-130)", () => {
     // D-721: has_org_role(ADMIN) na organizacao pedida.
     "set_purchase_review_settings",
     "set_shopee_sku_link",
-    // D-795: check_sku_curation_writer (membro + ADMIN/GESTOR) na organizacao
+    // D-860: check_sku_curation_writer (membro + ADMIN/GESTOR) na organizacao
     // pedida; so toca SKU dessa organizacao; a origem MANUAL e literal.
     "set_skus_out_of_catalog",
     "set_skus_stock_virtual",

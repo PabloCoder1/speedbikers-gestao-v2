@@ -2027,7 +2027,7 @@ describe("rotas /v1: id de caminho e erro interno (auditoria de 28/09)", () => {
     expect(enqueued).toHaveLength(0);
   });
 
-  // D-795: o corpo da confirmação é opcional, mas o presente e malformado nunca
+  // D-860: o corpo da confirmação é opcional, mas o presente e malformado nunca
   // vira "não marcar" em silêncio -- e a recusa vem antes de ir ao banco.
   it.each([["isto não é json"], [JSON.stringify({ markAbsent: "sim" })], [JSON.stringify([true])]])(
     "confirmação com corpo malformado (%s): 400, sem ir ao banco",

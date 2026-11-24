@@ -159,7 +159,7 @@ export async function receiveUpload(
  * decidiu. A constraint `erp_import_batches_applied_coherent` exige que ele já
  * esteja preenchido quando o worker marcar o lote como `APPLIED`.
  *
- * `markAbsent` (D-795): quem confirma diz que a planilha de PRODUTOS é o
+ * `markAbsent` (D-860): quem confirma diz que a planilha de PRODUTOS é o
  * catálogo completo, e o worker marca como fora do catálogo o SKU que já veio
  * numa planilha anterior e não veio nesta. Vai no payload do job, e não numa
  * coluna, para valer exatamente para esta aplicação.

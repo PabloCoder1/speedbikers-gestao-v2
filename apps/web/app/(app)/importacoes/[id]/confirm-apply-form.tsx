@@ -21,7 +21,7 @@ import { createClient } from "../../../../lib/supabase/browser";
  * quantas linhas entram, e só o segundo clique chama a `api`. O texto dizia
  * "as linhas OK acima", e a tabela fica ABAIXO desta caixa.
  *
- * D-795: na planilha de produtos, a caixa ganha o "marcar fora do catálogo"
+ * D-860: na planilha de produtos, a caixa ganha o "marcar fora do catálogo"
  * dos SKUs que não vieram. O padrão vem da prévia (`sugereMarcar`); sem
  * prévia (`foraDoCatalogo` nulo) a confirmação sai sem corpo, como antes --
  * e a api lê isso como "não marcar".

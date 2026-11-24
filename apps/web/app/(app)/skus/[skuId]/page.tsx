@@ -297,11 +297,11 @@ export default async function SkuDashboardPage({
     notFound();
   }
 
-  // D-795: o inativo por ter saído da planilha de produtos diz por quê. Leitura
+  // D-860: o inativo por ter saído da planilha de produtos diz por quê. Leitura
   // à parte e tolerante, só para o inativo: antes da migration de produção a
   // coluna não existe, e a página fica como era.
   let foraDoCatalogoDesde: string | null = null;
-  // D-795: a marca posta à mão em Produtos não sai com a planilha.
+  // D-860: a marca posta à mão em Produtos não sai com a planilha.
   let foraDoCatalogoManual = false;
 
   if (!sku.data.is_active) {

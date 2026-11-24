@@ -1,4 +1,4 @@
--- D-795, segunda parte: o operador marca à mão o produto FORA DO CATÁLOGO.
+-- D-860, segunda parte: o operador marca à mão o produto FORA DO CATÁLOGO.
 --
 -- A planilha só tira do catálogo o que sumiu da exportação do UpSeller. O
 -- produto com que a loja não vai mais trabalhar, mas que o UpSeller ainda
@@ -37,15 +37,15 @@ alter table public.skus
   );
 
 comment on column public.skus.erp_absent_source is
-  'D-795: quem pôs a marca de fora do catálogo. PLANILHA = a aplicação de um lote PRODUCTS (sai quando o SKU volta numa planilha); MANUAL = o operador na tela de Produtos (só sai à mão). Nulo junto com erp_absent_since.';
+  'D-860: quem pôs a marca de fora do catálogo. PLANILHA = a aplicação de um lote PRODUCTS (sai quando o SKU volta numa planilha); MANUAL = o operador na tela de Produtos (só sai à mão). Nulo junto com erp_absent_since.';
 comment on column public.skus.erp_absent_was_active is
-  'D-795: o is_active do SKU no momento da marca, para tirar a marca à mão devolver o valor de antes. Nulo = sem marca, ou marca anterior a esta coluna.';
+  'D-860: o is_active do SKU no momento da marca, para tirar a marca à mão devolver o valor de antes. Nulo = sem marca, ou marca anterior a esta coluna.';
 
 
 -- ---------------------------------------------------------------------------
 -- 1. A prévia da conferência: "voltam" é só a marca da planilha
 -- ---------------------------------------------------------------------------
--- Republicação de 20261123150000 com um filtro a mais em `voltam`: a marca
+-- Republicação de 20261124100000 com um filtro a mais em `voltam`: a marca
 -- MANUAL não volta com a planilha, então não pode ser anunciada como volta.
 
 create or replace function public.get_products_batch_absences(p_batch_id uuid, p_sample integer default 50)
@@ -144,7 +144,7 @@ as $$
 $$;
 
 comment on function public.get_products_batch_absences(uuid, integer) is
-  'D-795: a prévia da conferência de um lote PRODUCTS: quantos SKUs conhecidos (já vieram numa planilha de produtos aplicada), quantos ficariam fora do catálogo, quantos destes já estavam marcados, têm saldo LOCAL positivo ou vínculo com anúncio, quantos marcados PELA PLANILHA voltam (a marca manual não volta), e uma amostra ordenada por SKU. Nulo para lote que não é PRODUCTS ou que a RLS esconde. security invoker.';
+  'D-860: a prévia da conferência de um lote PRODUCTS: quantos SKUs conhecidos (já vieram numa planilha de produtos aplicada), quantos ficariam fora do catálogo, quantos destes já estavam marcados, têm saldo LOCAL positivo ou vínculo com anúncio, quantos marcados PELA PLANILHA voltam (a marca manual não volta), e uma amostra ordenada por SKU. Nulo para lote que não é PRODUCTS ou que a RLS esconde. security invoker.';
 
 
 -- ---------------------------------------------------------------------------
@@ -241,7 +241,7 @@ end;
 $$;
 
 comment on function public.apply_products_batch_absences(uuid, boolean) is
-  'D-795: no fim da aplicação de um lote PRODUCTS, tira a marca de fora do catálogo POSTA PELA PLANILHA de quem voltou, reafirma is_active falso de quem tem marca MANUAL e veio no arquivo e, com p_mark, marca (is_active falso + erp_absent_since, origem PLANILHA) os SKUs de products_batch_absent_sku_ids. Idempotente; acumula absent_marked/absent_cleared no lote. Só service_role.';
+  'D-860: no fim da aplicação de um lote PRODUCTS, tira a marca de fora do catálogo POSTA PELA PLANILHA de quem voltou, reafirma is_active falso de quem tem marca MANUAL e veio no arquivo e, com p_mark, marca (is_active falso + erp_absent_since, origem PLANILHA) os SKUs de products_batch_absent_sku_ids. Idempotente; acumula absent_marked/absent_cleared no lote. Só service_role.';
 
 revoke all on function public.apply_products_batch_absences(uuid, boolean) from public, anon, authenticated;
 grant execute on function public.apply_products_batch_absences(uuid, boolean) to service_role;
@@ -329,7 +329,7 @@ end;
 $$;
 
 comment on function public.set_skus_out_of_catalog(uuid, uuid[], boolean) is
-  'D-795: marca (p_out verdadeiro) ou tira (falso) a marca de fora do catálogo de até 500 SKUs, à mão. Marcar grava origem MANUAL, guarda o is_active de antes e o põe falso; tirar devolve o is_active guardado. O SKU já no estado pedido sai JA_DECIDIDO (marcar não troca a origem PLANILHA). Só ADMIN e GESTOR. Devolve o desfecho por linha.';
+  'D-860: marca (p_out verdadeiro) ou tira (falso) a marca de fora do catálogo de até 500 SKUs, à mão. Marcar grava origem MANUAL, guarda o is_active de antes e o põe falso; tirar devolve o is_active guardado. O SKU já no estado pedido sai JA_DECIDIDO (marcar não troca a origem PLANILHA). Só ADMIN e GESTOR. Devolve o desfecho por linha.';
 
 -- `alter default privileges` concede EXECUTE a anon e authenticated em toda
 -- função nova de `public` (D-041, D-130): o revoke explícito é obrigatório.

@@ -73,7 +73,7 @@ Uma recusa de consentimento, falha de PKCE ou falha na troca de código marca `E
 | `/v1/tiktok-shop/connect` | POST | ADMIN | Inicia a autorização de loja do TikTok Shop (D-645), sem corpo: grava o `state` da organização (15 minutos) e devolve `{ authorizationUrl }`, o link com o `service_id`. 503 sem as variáveis do TikTok |
 | `/v1/sync/run` | POST | GESTOR | Dispara sincronização manual — **enfileira e responde** |
 | `/v1/erp-imports` | POST | GESTOR | Recebe o arquivo do UpSeller, guarda no bucket, registra o lote e **enfileira** o parse |
-| `/v1/erp-imports/:id/apply` | POST | GESTOR | Confirmação humana da conferência: move o lote `PARSED` para `APPLYING`, grava quem confirmou e **enfileira** a aplicação. Corpo opcional `{ "markAbsent": boolean }` (D-795): só na planilha de produtos (em outro arquivo, 409), segue no payload do job para marcar fora do catálogo os SKUs que não vieram. Sem corpo = não marcar; corpo malformado = 400 |
+| `/v1/erp-imports/:id/apply` | POST | GESTOR | Confirmação humana da conferência: move o lote `PARSED` para `APPLYING`, grava quem confirmou e **enfileira** a aplicação. Corpo opcional `{ "markAbsent": boolean }` (D-860): só na planilha de produtos (em outro arquivo, 409), segue no payload do job para marcar fora do catálogo os SKUs que não vieram. Sem corpo = não marcar; corpo malformado = 400 |
 | `/v1/nfe-imports` | POST | GESTOR | **Implementado em 2026-08-22** — recebe o XML da NF-e, guarda no bucket, registra o documento e **enfileira** o parse. Substitui o par `/v1/documents/nfe/preview`/`commit` do desenho original: mesmo papel mínimo do UpSeller (GESTOR, não OPERADOR — NF-e também reescreve o ledger), mesmo padrão de nomes (`erp-imports`) |
 | `/v1/nfe-imports/:id/apply` | POST | GESTOR | **Implementado em 2026-08-22** — confirmação humana: move o documento `PARSED` para `APPLYING` e **enfileira** a aplicação. Recusa se `resolved_items < total_items` — diferente do UpSeller, não tolera aplicação parcial (`apps/api/src/nfe-import.ts`, `confirmNfeApply`) |
 | `/v1/purchase-orders/:id/approve` | POST | GESTOR | Transição de ciclo |
@@ -192,6 +192,7 @@ Todo job registra em `job_runs`: início, fim, resultado, erro, itens processado
 | Evento | Severidade padrão | Origem |
 |---|---|---|
 | `listing.price.changed` | informativo (fixo nesta etapa) | diff — **implementado em 2026-08-24 (D-072)**. Elevar por magnitude fica para quando houver dado real de variação de preço — ver `packages/domain/src/events/listing-events.ts` |
+| `sale.margin.below` | importante | venda coberta com margem abaixo da meta da empresa (D-858): `detectar_vendas_abaixo_da_margem`, entity `sku`; `after` traz pedido, canal, preço, recebido, custo, margem e meta. Também vai por e-mail |
 | `listing.title.changed` | informativo | diff — **implementado em 2026-08-24 (D-072)** |
 | `listing.picture.changed` | informativo | diff |
 | `listing.description.changed` | informativo | diff |
