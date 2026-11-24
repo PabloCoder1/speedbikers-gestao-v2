@@ -289,7 +289,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Infra/Dono",
-      "evidencia": "24/11: main com PR, quatro checks obrigatórios, force-push e exclusão bloqueados, com bypass administrativo. Build isolado 6e12a79b do worker no SHA fb8b8ffe passou com v3-builder e publicou digest no Artifact Registry. Dez builds globais anteriores e seis regionais usaram a Compute padrão. Falta adoção e revisão do vínculo roles/editor.",
+      "evidencia": "24/11: main com PR, quatro checks obrigatórios, force-push e exclusão bloqueados, com bypass administrativo. Build isolado 6e12a79b publicou o worker com v3-builder. O teste regional bff60fa4 registrou o marcador 139 s após a concessão de IAM. Não há triggers em global ou southamerica-east1. Falta adoção nos builds regulares e revisão de roles/editor.",
       "fase": 2
     },
     {

@@ -86,6 +86,12 @@ Os vínculos temporários do ensaio foram removidos. Os metadados e a trilha de
 auditoria estavam disponíveis, e a consulta aos logs detalhados não retornou
 saída. [Execução](https://console.cloud.google.com/cloud-build/builds/6e12a79b-114a-4807-bcda-227969f31d3a?project=speedbikers-prod).
 
+Em um teste regional com a mesma conta e sem código-fonte, a etapa
+começou seis segundos após a concessão de IAM e só apareceu na auditoria.
+A repetição começou 139 segundos após a concessão e registrou o marcador no
+Cloud Logging. Antes de adotar a conta, aguarde a propagação e confira a
+saída do build completo na mesma região. [Teste regional](https://console.cloud.google.com/cloud-build/builds;region=southamerica-east1/bff60fa4-319e-4265-82d4-fafd172de213?project=speedbikers-prod).
+
 ---
 
 ## 4. Filas
