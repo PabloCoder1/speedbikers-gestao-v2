@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **638** (D-001 a D-858).
+Decisões registradas: **642** (D-001 a D-862).
 
 ## Por domínio
 
@@ -131,7 +131,7 @@ Decisões registradas: **638** (D-001 a D-858).
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 - **D-766** — Saída Manual e itens editáveis na conferência, sem migration
 
-### estoque (54)
+### estoque (55)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -187,6 +187,7 @@ Decisões registradas: **638** (D-001 a D-858).
 - **D-763** — A reposição mostra o que já está encomendado, sem recalcular a sugestão
 - **D-765** — O envio ao Full conferido dá saída no estoque da loja
 - **D-792** — Receber o pedido de compra dá entrada no estoque, e a conferência da invoice cria o SKU que falta
+- **D-862** — O kit que leva um componente fora do catálogo conta no aviso da Central
 
 ### interface (75)
 
@@ -266,7 +267,7 @@ Decisões registradas: **638** (D-001 a D-858).
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 
-### mercado-livre (128)
+### mercado-livre (129)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -396,8 +397,9 @@ Decisões registradas: **638** (D-001 a D-858).
 - **D-715** — O painel Shopee do SKU lê todos os anúncios em páginas
 - **D-719** — O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
 - **D-791** — O cliente usa o endpoint bulk de anúncios do Mercado Livre
+- **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
-### outros (95)
+### outros (96)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -494,12 +496,13 @@ Decisões registradas: **638** (D-001 a D-858).
 - **D-718** — O diálogo de remover vínculo do SKU recupera os controles após falha da ação
 - **D-762** — A previsão de chegada se edita com histórico
 - **D-767** — A invoice do fornecedor entra pela mesma importação, lida como lista, com preço e documento guardados
+- **D-860** — O produto que sai da planilha de produtos do UpSeller fica fora do catálogo, nunca apagado
 
 ### processo/docs (1)
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (71)
+### vendas/métricas (72)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -572,6 +575,7 @@ Decisões registradas: **638** (D-001 a D-858).
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
 - **D-858** — Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
+- **D-859** — O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
 
 ### worker/infra (105)
 

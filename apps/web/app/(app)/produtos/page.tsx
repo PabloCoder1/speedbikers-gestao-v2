@@ -46,7 +46,7 @@ import { currentMembership } from "../../../lib/request-membership";
 import { mesmaUrl } from "../../../lib/mesma-url";
 import { createClient } from "../../../lib/supabase/server";
 
-import { CurationTable } from "./curation-table";
+import { CurationTable, type ForaDoCatalogo } from "./curation-table";
 
 export const metadata = { title: "Produtos — Speed Bikers Gestão" };
 
@@ -395,6 +395,27 @@ export default async function ProdutosPage({
     );
   }
 
+  // D-860: o inativo marcado FORA DO CATÁLOGO (pela planilha ou à mão nesta
+  // tela) ganha selo próprio. Só os inativos da página, numa leitura tolerante:
+  // antes da migration de produção as colunas não existem, e o selo continua
+  // "inativo" como antes.
+  const inativosDaPagina = linhas.filter((l) => l.situacao === "INATIVO").map((l) => l.sku_id);
+  const foraDoCatalogo = new Map<string, ForaDoCatalogo>();
+
+  if (inativosDaPagina.length > 0) {
+    const marcados = await supabase
+      .from("skus")
+      .select("id, erp_absent_since, erp_absent_source")
+      .in("id", inativosDaPagina)
+      .not("erp_absent_since", "is", null);
+
+    if (marcados.error === null) {
+      for (const m of marcados.data) {
+        foraDoCatalogo.set(m.id, { desde: m.erp_absent_since, manual: m.erp_absent_source === "MANUAL" });
+      }
+    }
+  }
+
   const porMarca = ((resumoMarcas.data ?? []) as SummaryRow[]).filter((l) => !l.is_total);
   const marcasConhecidas = porMarca
     .map((l) => l.supplier_brand)
@@ -716,6 +737,7 @@ export default async function ProdutosPage({
           <CurationTable
             organizationId={organizationId}
             rows={linhas}
+            foraDoCatalogo={foraDoCatalogo}
             marcasConhecidas={marcasConhecidas}
             cabecalho={[
               `${formatCount(linhas.length)} de ${formatCount(total)} neste recorte`,
