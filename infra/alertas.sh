@@ -31,20 +31,69 @@ API="https://monitoring.googleapis.com/v3/projects/${PROJECT_ID}"
 
 rest() { # método caminho [arquivo-json]
   if [ -n "${3:-}" ]; then
-    curl -sS -X "$1" "${API}$2" -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' -d @"$3"
+    curl -fsS -X "$1" "${API}$2" -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' -d @"$3"
   else
-    curl -sS -X "$1" "${API}$2" -H "Authorization: Bearer ${TOKEN}"
+    curl -fsS -X "$1" "${API}$2" -H "Authorization: Bearer ${TOKEN}"
   fi
 }
 
-# Primeiro `name` cujo displayName é o pedido, na listagem do recurso.
+# Confirma a ausência ou a identidade única antes de permitir a criação.
 achar() { # recurso displayName
-  rest GET "/$1" | python -c "
-import json,sys
-d=json.load(sys.stdin)
-for x in d.get('$1', []):
-    if x.get('displayName') == sys.argv[1]:
-        print(x['name']); break" "$2"
+  local caminho="/$1" pagina='' resposta campos_serializados nome encontrado=''
+  local -a campos
+  local -A tokens_vistos=()
+
+  while :; do
+    resposta="$(rest GET "${caminho}${pagina:+?pageToken=${pagina}}")" || return 1
+    campos_serializados="$(python -c '
+import json
+import sys
+from urllib.parse import quote
+
+recurso, display_name = sys.argv[1:]
+dados = json.load(sys.stdin)
+if not isinstance(dados, dict) or "error" in dados:
+    sys.exit(f"Resposta inválida ao listar {recurso}")
+itens = dados.get(recurso, [])
+token = dados.get("nextPageToken", "")
+if not isinstance(itens, list) or not isinstance(token, str):
+    sys.exit(f"Paginação inválida ao listar {recurso}")
+
+nomes = set()
+for item in itens:
+    if not isinstance(item, dict):
+        sys.exit(f"Recurso inválido ao listar {recurso}")
+    if item.get("displayName") == display_name:
+        nome = item.get("name")
+        if not isinstance(nome, str) or not nome or "\n" in nome or "\r" in nome:
+            sys.exit(f"Identidade inválida ao listar {recurso}")
+        nomes.add(nome)
+
+if len(nomes) > 1:
+    sys.exit(f"Mais de um recurso com o nome solicitado em {recurso}")
+pagina = quote(token, safe="")
+nome = next(iter(nomes), "")
+sys.stdout.buffer.write(f"{pagina}\n{nome}\n".encode())
+' "$1" "$2" <<< "${resposta}")" || return 1
+    mapfile -t campos <<< "${campos_serializados}"
+    pagina="${campos[0]}"
+    nome="${campos[1]:-}"
+
+    if [ -n "${nome}" ]; then
+      if [ -n "${encontrado}" ] && [ "${encontrado}" != "${nome}" ]; then
+        printf 'Mais de um recurso com o nome solicitado em %s\n' "$1" >&2
+        return 1
+      fi
+      encontrado="${nome}"
+    fi
+    [ -n "${pagina}" ] || break
+    if [[ -n ${tokens_vistos[$pagina]:-} ]]; then
+      printf 'Token repetido ao listar %s\n' "$1" >&2
+      return 1
+    fi
+    tokens_vistos["${pagina}"]=1
+  done
+  printf '%s\n' "${encontrado}"
 }
 
 tmp="$(mktemp -d)"
@@ -79,7 +128,8 @@ else
 fi
 CHECK_ID="${UPTIME##*/}"
 
-if [ -z "$(achar alertPolicies 'api fora do ar')" ]; then
+POLITICA_UPTIME="$(achar alertPolicies 'api fora do ar')"
+if [ -z "${POLITICA_UPTIME}" ]; then
   cat > "${tmp}/p-uptime.json" <<JSON
 {"displayName":"api fora do ar","combiner":"OR","notificationChannels":["${CANAL}"],
  "documentation":{"content":"A api de produção não respondeu ao /health em mais de uma região por 10 minutos. Conferir revisão e logs do Cloud Run (docs/DEPLOYMENT.md).","mimeType":"text/markdown"},
@@ -96,7 +146,8 @@ else
 fi
 
 # 3. Política por log: 403 do Mercado Livre no worker
-if [ -z "$(achar alertPolicies 'Mercado Livre 403 no worker')" ]; then
+POLITICA_ML="$(achar alertPolicies 'Mercado Livre 403 no worker')"
+if [ -z "${POLITICA_ML}" ]; then
   cat > "${tmp}/p-403.json" <<'JSON'
 {"displayName":"Mercado Livre 403 no worker","combiner":"OR","notificationChannels":["__CANAL__"],
  "documentation":{"content":"O Mercado Livre recusou uma chamada do worker com 403 (D-414: bloqueio por instância/IP de saída). Ver instanceId no Cloud Logging; se for uma instância só, revisão nova do worker com a mesma imagem.","mimeType":"text/markdown"},

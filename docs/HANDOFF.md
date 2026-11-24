@@ -50,6 +50,8 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   (6429063609355665) ainda deve notificar o `.vercel.app` excluído: tirar a URL no painel.
 - **`frete_anomalo` passa de 8 s a frio** (D-404): na rodada de 25/09, 9,7 s na 1ª tentativa e 2,4 s na repetição do
   Cloud Tasks, que fechou o ciclo. Atacado em D-409 (migration `20260923195958`): conferir o tempo a frio depois dela.
+- **Alertas externos.** O provisionador percorre as páginas e recusa nomes ambíguos.
+
 - **Um só app do Mercado Livre para Dev e produção** (D-350). A URL de notificação é
   uma só e está em produção desde 2026-09-14 17:30 UTC; o Dev ficou sem webhooks e
   está **pausado** (15 jobs e 7 filas). Retomá-lo sem app próprio volta a disputar a
@@ -62,20 +64,18 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   `--project`; e no Windows `--format=value()` termina a linha com `\r` — em laço,
   `tr -d '\r'`, senão só o último item funciona.
 
+- **Disco da VM:** Ops Agent publica utilização. Política em revisão, pendente de canal de alerta e ativação.
+
 - **As 22 RPCs foram varridas; sobra vigilância, não suspeita (D-305→D-307).** Duas tinham
   plano genérico, uma tinha desperdício e 16 estavam saudáveis. **A lição que fica é sobre a
   FONTE:** `get_stock_coverage` aparecia com 89 ms no `pg_stat_statements` e custava **27 s** na
   forma que a tela usa. Toda RPC nova pede ensaio deliberado como `authenticated`, em cada forma
   de chamada (detalhe no arquivo de 2026-09-17 e em `docs/PERFORMANCE.md`).
-- **`supabase start` da CI falha as vezes, e a falha nao se distingue de
-  defeito de migration pelo que a interface mostra** — aconteceu em `8dfea93`
-  (09/09): reprovou em *Subir Supabase local*, ANTES de migration ou teste, e a
-  anotação publica diz so `exit code 1`. **Baixar o log do job exige ADMIN**, e
-  um agente nao tem. Sem o log, o roteiro: o job de e2e roda `supabase start`
-  identico (`ci.yml` 100 e 153) — se passou no MESMO run, a stack sobe; e
-  reproduzir com `supabase stop --no-backup && supabase start`, que aplica as
-  migrations do zero como o runner. Os dois verdes e a CI vermelha = **re-run
-  do job**, nao correcao de codigo.
+- **CI:** o E2E da Shopee usa datas de São Paulo. Os jobs de testes usam
+  Actions com Node 24. Em falha ao subir a stack, confira o log e reproduza
+  com um projeto Supabase local isolado. [Testes](TESTING.md).
+
+- **Backup da VM:** sondagem diária às 04:25 BRT. Scheduler, incidente e entrega do alerta confirmados. [Detalhes](../infra/vm/README.md).
 
 - **Nada avisa quando o que está no ar ficou velho** (D-070). O deploy do
   Cloud Run é MANUAL; entre um e outro chegaram a se acumular 66 commits, e a
@@ -206,7 +206,7 @@ Nada disto pode ser feito por um agente.
 
 | | |
 |---|---|
-| backup e restore **verificados** | a metade do SCHEMA é provada todo dia (CI recria as migrations). A do DADO: **backup medido** (diário, ~7 dias) e **ensaio pronto** (D-332) — o comparador `check:restore` foi provado contra dano simulado, e o roteiro foi conferido e corrigido (D-347). Falta o restore real num projeto novo, que é ato humano |
+| backup e restore **verificados** | Dumps diários de 19 e 22/11 restaurados em isolamento. A sondagem automática passou em 21 e 22/11 e o alerta chegou no teste controlado. [VM](../infra/vm/README.md) |
 | ~~revisão de segurança e de secrets~~ | ✅ **FEITA em quatro fatias**: segredos e dependências (D-328); superfície de entrada conferida ao vivo, D-045 fechada e cabeçalhos da `web` confirmados na Vercel (D-329); redação de log por VALOR (D-330); CSP completa com nonce, com e2e que exige zero violações (D-331). **Sem lacuna técnica aberta.** A guarda de `pnpm audit` que ficou sem dono entrou na CI em D-336 (`--prod`, corte em alta) |
 | load tests e revisão de `pg_stat_statements` | **carga real medida (D-339)**: 65,8 mil webhooks/dia, pico de 1.050/min, e o ACK passa de 7 s nos picos. **A correção de D-339 foi publicada e voltada** (D-340): esfriou as conexões e piorou `orders_v2`. O pico continua aberto. O log do webhook passou a medir cada etapa (`lookup_ms`, `enqueue_ms`; D-343) — publicado em `api-00039-9vm`. Fora de pico, a Cloud Task custa ~185 ms fixos e a consulta da conta ~50 ms, que esfria depois de pausa. **A primeira rajada medida respondeu: é a consulta da conta** — p95 de 2,8 s na rajada, contra 103 ms fora dela, com a Cloud Task igual (D-345). Em 10 dias foram 26.748 ACKs acima de 2 s, em 78 rajadas sem horário fixo. **A correção foi publicada em D-346** (contas em memória, com carga única em voo e recarga limitada; `api-00040-qrk`): depois da primeira carga, `lookup_ms` caiu para 0 ms, e na rajada de 319/s das 13:49 UTC ficou em 0, com ACK máx 190 ms numa instância (D-346 §6). **O pico do ACK fechou.** Falta também a revisão de `pg_stat_statements` (`report:health` pede a senha do Dev — ato humano) |
 | ~~Supabase e Cloud Run de **produção**~~ | ✅ **CRIADOS em 2026-09-14** (D-348, D-349, D-350): GCP, Supabase e Vercel `speedbikers-prod`; migrations por `migrations-producao.yml`, com duas aprovações; api e worker em `36a23ad`, juntado na `v3` pelo PR #2 (`da130c0`) com CI verde |
@@ -238,11 +238,14 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
-**Curva ABC em 17/09:** filtro A/B/C no SQL, 50 linhas e rolagem interna.
-
-**Estoque:** D-351 e D-352 em produção. D-362 e D-423 em produção; o histórico (365 dias, sem estoque) disparado em 07/10 por job temporário do Scheduler com o OIDC da `v3-scheduler-invoker`, apagado depois. A receita com SKU em 90 dias passou de ~83% para ~99% da receita.
-
-**Anúncios:** filtro de promoção (D-419) em produção; conferir no log a queda de `listing_promotion_fetch_failed` (~13 por rodada antes). D-420 (campanhas) em código: migration `20260929180000` antes do worker.
+**Rollout Sentinel:** o [#366](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/366)
+valida o catálogo da VM e permite conferir o mesmo plano entre aprovações.
+O backup de 20/11 contém 324 versões compatíveis com a base do candidato.
+Antes de aplicar o [#364](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/364),
+obter o catálogo atual da VM, registrar as quatro migrations no Dev e
+reconciliar o workflow com o destino VM. A correção dos anúncios ML segue
+separadamente no [#368](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/368),
+sem migration. [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351).
 
 ---
 
