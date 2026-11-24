@@ -12,9 +12,9 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-11-23 |
+| **Atualizado em** | 2026-11-24 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | `main`: `c6b45881` (#332, incluindo #330), conferido no alias Vercel Production. CI verde em `2da04c93`: 1.197 SQL e 342 E2E. Fechamento documental sem mudança de código. Página nova deve ser dinâmica (D-331). |
+| **HEAD conhecido** | `origin/main` em `d21fb902` (#389). #340 corrige o bind em porta efêmera observado na CI 45441658929. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | Faturamento GCP desativado na consulta de 11/11. Revisões configuradas `api-00042-8wd` e `worker-00053-z26`. A pausa das rotinas do Dev foi registrada em D-350. |
 | **Supabase** | Hosted Dev `nmgccyqquwxecqffsidr` e antigo prod `imvjfgnaprqsfjlnsyev`: INACTIVE (MCP, 18/11). Produção operacional na VM `sb-db` (`speedbikers-prod`), conferida via IAP/SSH em READ ONLY e web autenticada. [VM](../infra/vm/README.md). |
