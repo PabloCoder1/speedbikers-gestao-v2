@@ -20145,3 +20145,35 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 - Criar os SKUs do lote com a resposta cortada: aviso e botão liberado. A nova tentativa só vincula, e existe um SKU só com aquele código.
 - Vermelho/verde: com os componentes da `main`, o teste falha esperando o aviso do envio. Com a correção, as 13 specs de importação, compras, estoque, fornecedores e reposição rodaram juntas: 48 passaram, e este teste falhou só na leitura direta de `purchase_import_rows` (42501), trocada pelo aviso da tela. Ele passou na rodada seguinte, na mesma base.
 - **Não exercitado em e2e:** corrigir linha, buscar SKU, criar o SKU de uma linha e registrar a referência. Recebem o mesmo `try`, conferido por leitura, lint e typecheck. A repetição segura do registro é a do banco, já provada por `importar-pedidos-anteriores.spec.ts` ("não duplicar").
+
+## D-868 - Produção avisa por e-mail quando o disco da VM enche ou quando api, web ou auth saem do ar
+
+**Contexto:** o I04 do fechamento pedia vigilância externa da produção. Até 24/11, o Cloud Monitoring do `speedbikers-prod` tinha só o alerta da sondagem do backup diário (`sb-backup-check`) e nenhuma verificação de disponibilidade. Um disco cheio na VM `sb-db` derruba o Postgres. A api, a web e o Auth podem cair sem que ninguém fique sabendo antes de um usuário reclamar.
+
+**Decisão:** o dono autorizou em 24/11, e os recursos foram criados pela API do Monitoring. Tudo avisa no mesmo canal de e-mail do alerta de backup.
+
+- **Disco da `sb-db`.** A política dispara quando `agent.googleapis.com/disk/percent_used` (`state=used`) do `/dev/sda1` fica acima de 85% por 10 minutos, no máximo por minuto.
+  - O JSON saiu do gerador do Codex (`infra/vm/disk-alert-policy.mjs`, na `codex/sentinel-infra-vm-integrada`), sem nenhuma edição.
+  - `/dev/sda1` é o disco do sistema e dos dados; `/dev/sda15` é a partição de boot. Na criação, o `/dev/sda1` estava em 30%.
+  - Se o agente parar de publicar a métrica, o alerta não dispara (`NO_OP`). Essa falha aparece em outros sinais: a sondagem do backup e a verificação do auth.
+- **Três verificações de disponibilidade**, a cada 5 minutos, com 10 s de limite, por HTTPS com certificado validado:
+
+  | Verificação | Endereço | Resposta saudável |
+  |---|---|---|
+  | api | Cloud Run `api`, `/health` | 200 |
+  | web | `speedbikers-prod.vercel.app/login` | 200 |
+  | auth | Caddy da VM, `/auth/v1/health` | **401** |
+
+  - O auth responde 401 porque o Kong pede a chave. O 401 prova que o Caddy, o Kong e o certificado estão de pé, sem pôr chave nenhuma na verificação.
+  - Um 502 ou a falta de resposta é a falha.
+- **Uma política de alerta para as três**, com uma condição por verificação. Ela dispara quando mais de uma região falha na janela de 20 minutos. Uma região ruim sozinha não acorda ninguém.
+
+**Alternativas rejeitadas:**
+- Verificar o auth com a chave publicável: colocaria uma chave na configuração do Monitoring, sem ganho sobre o 401.
+- Alertar já na primeira região que falha: transforma oscilação de rede em e-mail.
+- Uma política por verificação: são três e-mails iguais para o mesmo canal; a condição no corpo do e-mail já diz qual caiu.
+
+**Verificação:**
+- Nos primeiros minutos, a série `uptime_check/check_passed` registrou 36 aprovações em 36 na api e na web e 35 em 35 no auth, sem nenhuma falha.
+- A série de disco da instância tem pontos atuais para os dois dispositivos.
+- Os alertas não foram forçados a disparar. O primeiro e-mail real só chega quando houver um incidente.

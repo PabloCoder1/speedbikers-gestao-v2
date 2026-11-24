@@ -193,6 +193,7 @@ Nada disto pode ser feito por um agente.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
 13. **Alerta de margem (D-858, D-859):** no ar desde 24/11, com o Scheduler e os e-mails cadastrados.
 14. ~~**Esqueci a senha (D-863):**~~ ligado em 24/11: SMTP real no Auth da VM, `RECUPERACAO_SENHA_POR_EMAIL=1` na Vercel, e o dono recebeu o e-mail e trocou a senha.
+15. ~~**Monitoramento de produção (D-868):**~~ criado em 24/11 com autorização do dono: alerta de disco da `sb-db` (acima de 85%) e verificações de api, web e auth, todos no e-mail do alerta de backup.
 
 ---
 
