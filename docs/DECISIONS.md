@@ -20015,3 +20015,42 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 **Correção.** O cliente usa o endpoint novo e normaliza o código por entrada. Preserva o limite de 20 e a lógica de releitura e de exclusão do worker. A busca do vendedor e as consultas singulares continuam em seus endpoints. O repositório usa `/users/me` para a leitura da conta.
 
 **Validação.** O teste local com envelope novo falhava no parser antigo. O corte passa os testes do cliente e do worker. Falta confirmar as leituras em produção após publicação autorizada.
+
+## D-863 - "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
+
+**Contexto:** no ensaio de 24/11 do S04, o dono entrou e aceitou convite, mas não achou o "Esqueci a senha". A tela nunca o teve. D-296 e D-302 decidiram que o acesso volta pelo link gerado em `/usuarios`, porque o Auth não tinha SMTP. A leitura do Auth da VM de produção, em 24/11, mostra que isso continua verdade: `GOTRUE_SMTP_HOST=supabase-mail`, o capturador de testes do Compose, com remetente `admin@example.com`. Um botão ligado hoje responderia "pedido recebido" e o e-mail não chegaria a ninguém.
+
+**Decisão:**
+
+- **O botão existe, atrás de uma chave do servidor.**
+  - "Esqueci a senha" aparece na entrada só com `RECUPERACAO_SENHA_POR_EMAIL=1`, lida pela página `/login` a cada requisição.
+  - Sem a variável, a tela fica como antes, com a nota de pedir o link a quem administra.
+- **O fim do caminho é o que já existe.**
+  - O pedido usa `resetPasswordForEmail` com volta para `/login`.
+  - O e-mail traz a sessão no fragmento com `type=recovery`, e a pessoa cai no "Crie uma nova senha" do link de `/usuarios` (`invite-hash.ts`).
+  - Não há rota nova nem endereço novo na lista de redirecionamentos.
+- **Fluxo implícito, e não PKCE.**
+  - O cliente de `@supabase/ssr` usa PKCE: o link voltaria com `?code=`, e a troca exige o verificador guardado no navegador que pediu. Quem pede no computador e abre o e-mail no celular ficaria sem acesso.
+  - O pedido sai de um cliente próprio (`createRecoveryClient`), implícito e sem sessão.
+- **A tela não diz quem tem acesso.**
+  - O Auth responde sucesso para e-mail que não existe, e a tela mostra "Pedido recebido" nos dois casos, pela mesma razão do "E-mail ou senha incorretos.".
+  - Só o limite de envios (429) tem texto próprio, porque pede outra ação: esperar.
+
+**Para ligar em produção (atos do dono):**
+1. Na VM `sb-db`, trocar o SMTP do serviço `auth` pelo servidor de e-mail do alerta de margem (segredos `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` e `SMTP_PASSWORD`). As variáveis são `GOTRUE_SMTP_HOST`, `GOTRUE_SMTP_PORT`, `GOTRUE_SMTP_USER` e `GOTRUE_SMTP_PASS`.
+2. Trocar o remetente: `GOTRUE_SMTP_ADMIN_EMAIL` para um endereço da empresa e `GOTRUE_SMTP_SENDER_NAME` para `Speed Bikers Gestão`.
+3. Recriar o container `supabase-auth` e conferir um envio real para um e-mail próprio.
+4. Na Vercel `speedbikers-prod`, criar `RECUPERACAO_SENHA_POR_EMAIL=1` em Production e publicar de novo.
+
+**Alternativas rejeitadas:**
+- Ligar o botão sem SMTP: promete um e-mail que não chega.
+- Mandar o link pelo SMTP do worker, com rota pública própria: seria um endpoint sem autenticação para proteger contra abuso, quando o Auth já tem limite e resposta neutra.
+- Tratar o `?code=` do PKCE: o link falharia em outro navegador.
+
+**Verificação:**
+- Unitários: `recuperar-senha.test.ts`, com 6 testes da chave, da volta e do desfecho.
+- e2e (`recuperar-senha.spec.ts`, 3 testes, com a suíte subindo a `web` com a chave ligada):
+  - o pedido interceptado leva o e-mail digitado na entrada, volta para `/login` e vai sem desafio PKCE;
+  - o 429 mostra o limite;
+  - o link de recuperação da Admin API leva a "Crie uma nova senha", a senha nova entra e a antiga é recusada.
+- O e-mail de verdade não é testado, porque o Supabase local não tem capturador ligado (`[local_smtp]`). O envio real é o passo 3 do dono.

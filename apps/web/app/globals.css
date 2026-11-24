@@ -6761,6 +6761,36 @@ body > .sb-atualizando-barra {
   margin-bottom: var(--sb-space-3);
 }
 
+/* D-863: o "Esqueci a senha" e a volta ficam à direita, em texto, sem disputar
+   com o botão principal. */
+.sb-text-button.sb-login-esqueci,
+.sb-text-button.sb-login-voltar {
+  justify-self: end;
+  margin-top: -0.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+  cursor: pointer;
+}
+
+.sb-text-button.sb-login-voltar {
+  justify-self: center;
+  margin-top: 0;
+}
+
+.sb-text-button.sb-login-esqueci:hover,
+.sb-text-button.sb-login-voltar:hover {
+  text-decoration: underline;
+}
+
+.sb-login-enviado p {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+}
+
 .sb-login-nota {
   margin: var(--sb-space-4) 0 0;
   padding-top: var(--sb-space-3);

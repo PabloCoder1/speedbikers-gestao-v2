@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-11-24 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | `origin/main` em `9670cde3` (#388). #377 preserva D-859 a D-862 e aguarda CI da composição. |
+| **HEAD conhecido** | `origin/main` em `d21fb902` (#389). #377 preserva D-859 a D-863 e exige CI da composição. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | Supabase Dev inativo. Rotinas pausadas (D-350). |
 | **Supabase** | Hosted Dev `nmgccyqquwxecqffsidr` e antigo prod `imvjfgnaprqsfjlnsyev`: INACTIVE (MCP, 18/11). Produção operacional na VM `sb-db` (`speedbikers-prod`), conferida via IAP/SSH em READ ONLY e web autenticada. [VM](../infra/vm/README.md). |
@@ -192,7 +192,8 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
-13. **Alerta de margem (D-858, D-859):** no ar desde 24/11 (worker `00061`, api `00043`; Scheduler `v3-low-margin-sales` às 8h e 17h e `v3-order-financials-sweep` em `30 6,16 * * *`). Falta cadastrar os e-mails em `/central/limites`.
+13. **Alerta de margem (D-858, D-859):** no ar desde 24/11, com o Scheduler e os e-mails cadastrados.
+14. **Esqueci a senha (D-863):** SMTP real no Auth da VM (hoje `supabase-mail`, de teste) e `RECUPERACAO_SENHA_POR_EMAIL=1` na Vercel; passos na D-863.
 
 ---
 
