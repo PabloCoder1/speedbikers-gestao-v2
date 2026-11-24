@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **723** (D-001 a D-824).
+Decisões registradas: **726** (D-001 a D-827).
 
 ## Por domínio
 
@@ -91,7 +91,7 @@ Decisões registradas: **723** (D-001 a D-824).
 - **D-805** — Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
 - **D-808** — API: receptor autenticado `POST /push/tiktok-shop` (`M04`, fatia 3)
 
-### banco/rls (51)
+### banco/rls (52)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -144,6 +144,7 @@ Decisões registradas: **723** (D-001 a D-824).
 - **D-767** — Um índice único atende a timeline do Full
 - **D-769** — Ordem de migrations validada por upgrade incremental
 - **D-820** — Web Server Actions: `auth.getUser()` fail-closed nas 5 telas restantes e saneamento de erro SQL na triagem
+- **D-826** — Web exportações CSV/XLSX: eliminação de vazamento de `error.message` bruto do Postgres no HTTP 502
 
 ### estoque (62)
 
@@ -291,7 +292,7 @@ Decisões registradas: **723** (D-001 a D-824).
 - **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
 - **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
 
-### mercado-livre (147)
+### mercado-livre (148)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -440,6 +441,7 @@ Decisões registradas: **723** (D-001 a D-824).
 - **D-819** — Núcleo worker e OAuth TikTok: `readAllPages` contra laço infinito em `NaN`, `delaySeconds` no `enqueue` e validação de `state`/`code`
 - **D-821** — API OAuth callbacks: padronização de `state`/`code` em branco no Mercado Livre e Shopee
 - **D-822** — Web `/contas`: painel Lojas TikTok Shop e conector OAuth (`M04`)
+- **D-825** — Worker `relist-prepare` e `relist-measurement`: isolamento multi-tenant e proteção de eventos de republicação
 
 ### outros (115)
 
@@ -563,7 +565,7 @@ Decisões registradas: **723** (D-001 a D-824).
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (72)
+### vendas/métricas (73)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -637,6 +639,7 @@ Decisões registradas: **723** (D-001 a D-824).
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
 - **D-798** — Contratos, API e Worker: janelas de datas no Copiloto, lookup de ferramenta/NF-e/suspensão blindados, papéis/dedupe de claims, cauda de pedidos e `attempt` do worker
 - **D-810** — API TikTok Shop: agendador paginado de pedidos e adaptador Supabase de refresh de token (`M04`)
+- **D-827** — Worker `persist-order`: fatiamento de `orders.in()` e escopo `organization_id` no caminho quente de pedidos
 
 ### worker/infra (125)
 

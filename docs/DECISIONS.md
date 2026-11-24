@@ -20759,3 +20759,27 @@ Fechamos a visibilidade operacional do terceiro canal também em `/sincronizacao
 2. **Leitura paralela e seção condicional (`apps/web/app/(app)/sincronizacao/page.tsx`):** lê `tiktok_shops` no mesmo `Promise.all` (zero waterfall, aprovado em `check:waterfalls`), adiciona o atalho `#tiktok` na navegação interna e renderiza a seção `Lojas TikTok Shop` apenas quando `lojasTikTok.length > 0` (100% retrocompatível com `e2e/sincronizacao.spec.ts`).
 
 TDD RED (`saude-loja-tiktok.test.ts` fail) -> GREEN (`3/3`). Verificação completa pós-`789aa4cb`: `pnpm run check` (`37/37`, `363` arquivos / `4.626` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `10/10` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-825 - Worker `relist-prepare` e `relist-measurement`: isolamento multi-tenant e proteção de eventos de republicação
+
+Fechamos duas brechas de segurança/resiliência no fluxo de republicação sob `service_role` (commit `77cc4969`):
+
+1. **`apps/worker/src/handlers/relist-prepare.ts`:** valida `account.data.organization_id !== envelope.organizationId` (`status: "failed", retryable: false`) antes de consultar `listing_relists` ou chamar o Mercado Livre, e envolve ambos os `listing_relist_events.insert` (`REQUESTED` e `PREFLIGHT_FAILED`) em `try/catch` para que falha de transporte pós-insert de `listing_relists` registre `relist_event_not_recorded` sem derrubar o job para retry com `23505`.
+2. **`apps/worker/src/handlers/relist-measurement.ts`:** restringe explicitamente as leituras `service_role` de `sku_listing_links` e `action_decisions` por `.eq("organization_id", operation.organization_id)`.
+
+TDD RED (`3 failed | 4 passed (7)`) -> GREEN (`29/29` incluindo novo `relist-prepare-hardening.test.ts` compatível com `/items` e `/items/bulk` do `#378`).
+
+## D-826 - Web exportações CSV/XLSX: eliminação de vazamento de `error.message` bruto do Postgres no HTTP 502
+
+Removemos o vazamento direto de mensagens internas do Postgres/PostgREST (`error.message`) em todos os 17 caminhos de erro HTTP `502` das 7 rotas de exportação (`anuncios/exportar`, `anuncios/shopee/exportar`, `curva-abc/export/xlsx`, `full/exportar`, `precos/export/xlsx`, `vendas/exportar`, `vendas/shopee/exportar` — commit `9db9a602`), substituindo por mensagens fixas em português nas rotas CSV e códigos estruturados sem detalhe interno nas rotas JSON XLSX.
+
+TDD RED (`1 failed | 4 passed (5)` em `apps/web/lib/export-routes.test.ts`) -> GREEN (`5/5`, cobrindo todos os 17 ramos de falha).
+
+## D-827 - Worker `persist-order`: fatiamento de `orders.in()` e escopo `organization_id` no caminho quente de pedidos
+
+Fechamos a última consulta `.in("id", orderIds)` sem lote em `apps/worker/src/handlers/persist-order.ts` (`prefetchOrders`, commit `f46c8ec1`):
+
+1. **`prefetchOrders`:** fatia `.from("orders").in("id", lote)` em lotes paralelos de `PEDIDOS_POR_CONSULTA` (`25`, mesmo padrão de `order_items`/`stock_movements`/`domain_events`) e adiciona `.eq("organization_id", context.organizationId)` em `orders` e nas duas consultas de `sku_listing_links` (`ITEM` e `USER_PRODUCT`).
+2. **`persistOrder` (sem prefetch):** adiciona `.eq("organization_id", context.organizationId)` na leitura pontual de `orders`.
+
+TDD RED (`2 failed` em novo `persist-order-hardening.test.ts`) -> GREEN (`158/158` somando `persist-order.test.ts`). Verificação completa pós-`f46c8ec1`: `pnpm run check` (`37/37`, `365` arquivos / `4.632` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` sequencial provando `13/13` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
