@@ -6,6 +6,25 @@ Estado verificado em 18/11/2026, por leitura via IAP/SSH: projeto
 O README upstream na VM descreve o Compose; este arquivo registra o estado
 específico do projeto sem copiar configurações ou credenciais.
 
+## Alerta de disco
+
+O Ops Agent da `sb-db` publicou séries de utilização para `/dev/sda1` e
+`/dev/sda15` na consulta de 20/11/2026. Confirme qual dispositivo contém
+`/opt/supabase` e o diretório de dados do Docker na VM (por exemplo, com
+`findmnt --target` para cada caminho). Use o dispositivo como aparece na
+métrica do Cloud Monitoring e o ID numérico da instância.
+
+```sh
+node infra/vm/disk-alert-policy.mjs --project "$PROJECT_ID" \
+  --instance-id "$INSTANCE_ID" --device "$DEVICE" --channel-id "$CHANNEL_ID" \
+  > disk-alert-policy.json
+```
+
+O comando só gera JSON para revisão. A proposta dispara acima de 85% de
+uso por 10 minutos. O canal precisa estar confirmado no projeto e a
+política deve ser criada e testada com aprovação. A condição mede ocupação;
+a perda da telemetria depende de monitoramento separado.
+
 ## Migrations de novembro
 
 O executor anterior relatou aplicação extraordinária por SSH em 18/11, após
