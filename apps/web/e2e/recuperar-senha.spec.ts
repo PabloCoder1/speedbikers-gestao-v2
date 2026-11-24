@@ -74,9 +74,12 @@ test("esqueci a senha: o pedido vai ao Auth com o e-mail e a volta para /login",
 
   expect(new URL(volta).pathname).toBe("/login");
 
-  // Implícito, e não PKCE: sem `code_challenge`, o link volta com a sessão no
-  // fragmento e abre em qualquer navegador (o e-mail pode ser lido no celular).
-  expect(pedidos[0]?.corpo).not.toHaveProperty("code_challenge");
+  // Implícito, e não PKCE: sem desafio (o cliente manda `code_challenge: null`),
+  // o link volta com a sessão no fragmento e abre em qualquer navegador — o
+  // e-mail pode ser lido no celular. Com PKCE viria uma string aqui.
+  const corpo = (pedidos[0]?.corpo ?? {}) as { code_challenge?: unknown };
+
+  expect(corpo.code_challenge ?? null).toBeNull();
 
   // "Voltar para a entrada" devolve o formulário de entrada.
   await page.getByRole("button", { name: "Voltar para a entrada" }).click();

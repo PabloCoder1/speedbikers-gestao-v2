@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **641** (D-001 a D-862).
+Decisões registradas: **642** (D-001 a D-863).
 
 ## Por domínio
 
@@ -576,7 +576,7 @@ Decisões registradas: **641** (D-001 a D-862).
 - **D-858** — Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
 - **D-859** — O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
 
-### worker/infra (105)
+### worker/infra (106)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -683,4 +683,5 @@ Decisões registradas: **641** (D-001 a D-862).
 - **D-725** — Importação por cima do pedido de compra: etapa logística, câmbio e custos de chegada
 - **D-760** — O pedido feito fora do sistema é um pedido de compra comum, com origem e referência externa
 - **D-761** — "Já fiz o pedido" passa pelo caminho canônico e devolve os candidatos a duplicidade em vez de criar
+- **D-863** — "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
 
