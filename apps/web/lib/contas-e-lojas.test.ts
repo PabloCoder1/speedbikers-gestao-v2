@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { autorizacaoVencendo, celulasDeContasELojas, lojaRequerAtencao, type LojaShopeeDaFaixa } from "./contas-e-lojas";
+import {
+  autorizacaoTikTokVencendo,
+  autorizacaoVencendo,
+  celulasDeContasELojas,
+  isTikTokSchemaMissing,
+  lojaRequerAtencao,
+  lojaTikTokRequerAtencao,
+  rotuloTipoVendedorTikTok,
+  type LojaShopeeDaFaixa,
+  type LojaTikTokDaFaixa,
+} from "./contas-e-lojas";
 
 const AGORA = new Date("2026-10-19T12:00:00Z");
 const emDias = (dias: number): string => new Date(AGORA.getTime() + dias * 86_400_000).toISOString();
@@ -56,5 +66,64 @@ describe("celulasDeContasELojas (D-600)", () => {
     }
 
     expect(resumo(null)[0]?.[1]).toBe("5");
+  });
+
+  it("D-822 (M04): inclui lojas TikTok Shop na faixa quando presentes, preserva texto com lista vazia e sinaliza falha de leitura sem fingir zero", () => {
+    const shopee = [loja()];
+    const semTikTok = celulasDeContasELojas(contas, shopee, AGORA, []).map((c) => [c.label, c.value, c.ressalva ?? null]);
+
+    expect(semTikTok[0]).toEqual(["Contas e lojas cadastradas", "6", "5 do Mercado Livre · 1 da Shopee"]);
+
+    const tiktok: LojaTikTokDaFaixa[] = [
+      { status: "CONNECTED", auth_expires_at: emDias(60) },
+      { status: "CONNECTED", auth_expires_at: emDias(15) },
+      { status: "ERROR", auth_expires_at: null },
+    ];
+    const comTikTok = celulasDeContasELojas(contas, shopee, AGORA, tiktok).map((c) => [
+      c.label,
+      c.value,
+      c.ressalva ?? null,
+    ]);
+
+    expect(comTikTok).toEqual([
+      ["Contas e lojas cadastradas", "9", "5 do Mercado Livre · 1 da Shopee · 3 do TikTok Shop"],
+      ["Conectadas", "5", "2 do Mercado Livre · 1 da Shopee · 2 do TikTok Shop"],
+      ["Aguardando conexão", "1", null],
+      ["Requerem atenção", "4", "2 do Mercado Livre · 0 da Shopee · 2 do TikTok Shop"],
+    ]);
+
+    const erroTikTok = celulasDeContasELojas(contas, shopee, AGORA, null).map((c) => [
+      c.label,
+      c.value,
+      c.ressalva ?? null,
+    ]);
+
+    expect(erroTikTok[0]).toEqual([
+      "Contas e lojas cadastradas",
+      "6",
+      "5 do Mercado Livre · 1 da Shopee · as lojas TikTok não carregaram",
+    ]);
+  });
+});
+
+describe("TikTok Shop helpers (D-822 / M04)", () => {
+  it("avisa a 30 dias do vencimento no TikTok Shop e classifica atenção, schema ausente e tipo de vendedor", () => {
+    expect(autorizacaoTikTokVencendo({ status: "CONNECTED", auth_expires_at: emDias(31) }, AGORA)).toBe(false);
+    expect(autorizacaoTikTokVencendo({ status: "CONNECTED", auth_expires_at: emDias(30) }, AGORA)).toBe(true);
+    expect(autorizacaoTikTokVencendo({ status: "CONNECTED", auth_expires_at: null }, AGORA)).toBe(false);
+    expect(autorizacaoTikTokVencendo({ status: "CONNECTED", auth_expires_at: "invalida" }, AGORA)).toBe(false);
+
+    expect(lojaTikTokRequerAtencao({ status: "ERROR", auth_expires_at: null }, AGORA)).toBe(true);
+    expect(lojaTikTokRequerAtencao({ status: "CONNECTED", auth_expires_at: emDias(10) }, AGORA)).toBe(true);
+    expect(lojaTikTokRequerAtencao({ status: "CONNECTED", auth_expires_at: emDias(90) }, AGORA)).toBe(false);
+
+    expect(isTikTokSchemaMissing({ code: "PGRST205" })).toBe(true);
+    expect(isTikTokSchemaMissing({ code: "42P01" })).toBe(true);
+    expect(isTikTokSchemaMissing({ code: "42501" })).toBe(false);
+    expect(isTikTokSchemaMissing(null)).toBe(false);
+
+    expect(rotuloTipoVendedorTikTok("LOCAL")).toBe("Nacional");
+    expect(rotuloTipoVendedorTikTok("CROSS_BORDER")).toBe("Internacional");
+    expect(rotuloTipoVendedorTikTok(null)).toBe("—");
   });
 });
