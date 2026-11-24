@@ -20731,3 +20731,13 @@ Alinhamos os callbacks OAuth de Mercado Livre (`apps/api/src/ml-accounts.ts`) e 
 2. **`code` em branco (`trim() === ""`) e normalização:** `completeConnect` (`ml-accounts.ts`) recusa `code` só com espaços antes de chamar `exchangeCodeForToken`, e ambos os callbacks enviam `code.trim()`.
 
 TDD RED (`2 failed | 33 passed (35)`) -> GREEN (`35/35`). Verificação completa do monorepo pós-`26fb2bf7`: `pnpm run check` (`37/37`, `362` arquivos / `4.618` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `7/7` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-822 - Web `/contas`: painel Lojas TikTok Shop e conector OAuth (`M04`)
+
+Fechamos a lacuna de interface da fatia 1 do TikTok Shop (`D-645`), expondo na tela `/contas` (`Contas e lojas`) a visualização e o conector OAuth sobre `tiktok_shops` e `POST /v1/tiktok-shop/connect` (commit `dec79edd`):
+
+1. **Conector OAuth (`apps/web/app/(app)/contas/tiktok-connect-button.tsx`):** espelha `ShopeeConnectButton` reutilizando `iniciarConexaoOAuth({ caminho: "/v1/tiktok-shop/connect" })`, visível apenas para `ADMIN`, sem expor App Key/App Secret no navegador e com proteção contra `503`, JSON inválido em `200 OK` e falha de rede.
+2. **Faixa e helpers (`apps/web/lib/contas-e-lojas.{ts,test.ts}`):** adiciona `autorizacaoTikTokVencendo` (aviso oficial de 30 dias de `docs/TIKTOK_SHOP.md` §4), `lojaTikTokRequerAtencao`, `isTikTokSchemaMissing`, `rotuloTipoVendedorTikTok` (`LOCAL`/`CROSS_BORDER`) e estende `celulasDeContasELojas` com 4º argumento opcional `lojasTikTok` — preservando 100% da compatibilidade com a suíte E2E existente quando a lista está vazia e exibindo `· N do TikTok Shop` (ou aviso de falha sem fingir zero) quando há lojas conectadas.
+3. **Leitura paralela e painel em `/contas` (`apps/web/app/(app)/contas/page.tsx`):** consulta `tiktok_shops` no mesmo `Promise.all` (zero waterfall, aprovado em `check:waterfalls`) e renderiza o painel `Lojas TikTok Shop` com tabela `.sb-table` e `TikTokConnectButton`.
+
+TDD RED (`2 failed | 5 passed (7)`) -> GREEN (`7/7`). Verificação completa pós-`dec79edd`: `pnpm run check` (`37/37`, `362` arquivos / `4.620` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` (`check:waterfalls` 115, `check:control-styles` 543, `check:navegacao-suave` 207), `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `8/8` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
