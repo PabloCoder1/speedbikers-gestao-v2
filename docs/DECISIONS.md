@@ -20177,3 +20177,33 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 - Nos primeiros minutos, a série `uptime_check/check_passed` registrou 36 aprovações em 36 na api e na web e 35 em 35 no auth, sem nenhuma falha.
 - A série de disco da instância tem pontos atuais para os dois dispositivos.
 - Os alertas não foram forçados a disparar. O primeiro e-mail real só chega quando houver um incidente.
+
+## D-869 - Lançar custo no pedido de compra é idempotente pela requisição
+
+**Contexto:** `upsert_purchase_order_cost` com `p_id` nulo sempre inseria. Se a resposta da Server Action se perdia depois de o banco gravar, repetir lançava o mesmo custo duas vezes, e o custo de chegada e a margem subiam. A D-865 só avisava ("confira a lista antes de lançar de novo"), e o #395 fez o aviso sobreviver à releitura. O dono aprovou a correção no banco em 24/11.
+
+**Decisão:**
+
+- **A inclusão aceita `p_request_id`.** O navegador gera esse identificador por intenção de lançamento, como no pedido (D-722).
+  - A mesma requisição no mesmo pedido devolve o custo já lançado, sem linha nova e sem evento `COSTS_UPDATED` novo.
+  - A coluna `purchase_order_costs.request_id` é única por pedido. Linhas antigas ficam nulas.
+- **A mesma requisição com outros dados é recusada.** A repetição nunca pode esconder um valor diferente do que foi gravado.
+  - A tela gera uma requisição nova quando a pessoa muda qualquer campo.
+- **`p_request_id` é só da inclusão.** Junto com `p_id` (edição), é recusado. Editar já regrava os mesmos campos.
+- **Compatível com a tela anterior.** O parâmetro é opcional, e a chamada sem ele insere como antes. A função de 8 argumentos sai, para o PostgREST não ter duas assinaturas candidatas para a mesma chamada.
+- **Publicação em duas partes**, para a produção nunca ficar quebrada:
+  1. a migration (`20261124140000_custo_do_pedido_idempotente.sql`) entra na `main` e é aplicada em produção;
+  2. só depois a tela passa a mandar o `requestId`. Mandar um parâmetro que a função de produção não tem dá PGRST202 e derruba o lançamento.
+
+**Alternativas rejeitadas:**
+- Deduplicar por conteúdo (mesmo tipo, valor e moeda num intervalo curto): bloquearia dois custos legítimos iguais, como dois fretes de mesmo valor.
+- Devolver o custo já gravado mesmo com dados diferentes: esconderia da pessoa que o valor gravado não é o que ela vê no formulário.
+- Manter as duas assinaturas: a chamada sem `p_request_id` casaria com as duas.
+
+**Verificação:** `compras-inteligentes.integration.test.ts` cobre:
+- a repetição devolve o mesmo custo, com uma linha e um evento;
+- outro valor com a mesma requisição é recusado;
+- sem requisição, cada chamada lança um custo, como antes;
+- a requisição na edição é recusada;
+- a mesma requisição em outro pedido é outra inclusão;
+- o analista não lança.

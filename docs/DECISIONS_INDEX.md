@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **647** (D-001 a D-868).
+Decisões registradas: **648** (D-001 a D-869).
 
 ## Por domínio
 
@@ -189,7 +189,7 @@ Decisões registradas: **647** (D-001 a D-868).
 - **D-792** — Receber o pedido de compra dá entrada no estoque, e a conferência da invoice cria o SKU que falta
 - **D-862** — O kit que leva um componente fora do catálogo conta no aviso da Central
 
-### interface (75)
+### interface (76)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -266,6 +266,7 @@ Decisões registradas: **647** (D-001 a D-868).
 - **D-673** — Séries diárias encerram na primeira página quando a contagem confirma o total
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
+- **D-869** — Lançar custo no pedido de compra é idempotente pela requisição
 
 ### mercado-livre (128)
 

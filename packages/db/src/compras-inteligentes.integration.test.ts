@@ -507,6 +507,56 @@ describe("ciclo do pedido (D-722 a D-725)", () => {
     expect(comCambio.l.itens.find((i) => i.sku === "D720-A")?.custo_chegada_estimado_brl).toBeCloseTo(104.5455, 3);
   });
 
+  it("lançar custo é idempotente por request_id: a repetição devolve o mesmo, e outros dados são recusados (D-869)", async () => {
+    const po = await one<{ id: string }>(GESTOR, `select id from public.create_purchase_order('${ORG}', ${ITENS()})`, true);
+    const req = "22222222-3333-4444-8555-666666666666";
+    const lancar = (valor: string) =>
+      `select id from public.upsert_purchase_order_cost('${po.id}', 'FRETE_INTERNACIONAL', ${valor}, p_description => ' Frete ', p_request_id => '${req}')`;
+    const custos = async () =>
+      (await client.query<{ n: number }>("select count(*)::int as n from public.purchase_order_costs where purchase_order_id = $1", [po.id])).rows[0]?.n;
+    const eventos = async () =>
+      (
+        await client.query<{ n: number }>(
+          "select count(*)::int as n from public.purchase_order_events where purchase_order_id = $1 and event_type = 'COSTS_UPDATED'",
+          [po.id],
+        )
+      ).rows[0]?.n;
+
+    const a = await one<{ id: string }>(GESTOR, lancar("150"), true);
+    // A resposta se perdeu e a tela repetiu: mesmo custo, sem linha nem evento novos.
+    const b = await one<{ id: string }>(GESTOR, lancar("150.00"), true);
+
+    expect(b.id).toBe(a.id);
+    expect(await custos()).toBe(1);
+    expect(await eventos()).toBe(1);
+
+    // A mesma requisição com outro valor não esconde a diferença.
+    await expect(asUser(GESTOR, lancar("200"))).rejects.toThrow(/ja lancou um custo com outros dados/);
+
+    // Sem request_id continua como antes: cada chamada lança um custo novo.
+    await asUser(GESTOR, `select public.upsert_purchase_order_cost('${po.id}', 'SEGURO', 10)`, true);
+    await asUser(GESTOR, `select public.upsert_purchase_order_cost('${po.id}', 'SEGURO', 10)`, true);
+    expect(await custos()).toBe(3);
+
+    // request_id é da inclusão; na edição, recusado.
+    await expect(
+      asUser(GESTOR, `select public.upsert_purchase_order_cost('${po.id}', 'FRETE_INTERNACIONAL', 1, p_id => '${a.id}', p_request_id => '${req}')`),
+    ).rejects.toThrow(/vale so para incluir/);
+
+    // A mesma requisição em OUTRO pedido é outra inclusão.
+    const outro = await one<{ id: string }>(GESTOR, `select id from public.create_purchase_order('${ORG}', ${ITENS()})`, true);
+    const c = await one<{ id: string }>(
+      GESTOR,
+      `select id from public.upsert_purchase_order_cost('${outro.id}', 'FRETE_INTERNACIONAL', 150, p_description => 'Frete', p_request_id => '${req}')`,
+      true,
+    );
+
+    expect(c.id).not.toBe(a.id);
+
+    // O analista não lança, nem repetindo a requisição de quem pode.
+    await expect(asUser(ANALISTA, lancar("150"))).rejects.toThrow(/sem permissao/);
+  });
+
   it("fornecedor × SKU: um preferido por SKU, e o analista não grava", async () => {
     const outro = (
       await client.query<{ id: string }>(
