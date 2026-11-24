@@ -122,8 +122,10 @@ export function SaidaManualForm({ desabilitado }: { desabilitado: boolean }): Re
 
   useEffect(() => {
     const termo = busca.trim();
+    const seguro = termoSeguroParaOr(termo);
 
-    if (termo.length < 2) {
+    if (seguro.length < 2) {
+      ultimaBusca.current += 1;
       setResultados([]);
       setBuscando(false);
 
@@ -138,7 +140,6 @@ export function SaidaManualForm({ desabilitado }: { desabilitado: boolean }): Re
     const espera = setTimeout(() => {
       void (async () => {
         try {
-          const seguro = termoSeguroParaOr(termo);
           const { data, error } = await createClient()
             .from("skus")
             .select("id, sku, title")
