@@ -12,7 +12,7 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-11-18 |
+| **Atualizado em** | 2026-11-23 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | `main`: `c6b45881` (#332, incluindo #330), conferido no alias Vercel Production. CI verde em `2da04c93`: 1.197 SQL e 342 E2E. Fechamento documental sem mudança de código. Página nova deve ser dinâmica (D-331). |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
@@ -21,7 +21,8 @@
 | **Produção** | Vercel `c6b45881`, deployment `dpl_CHapXyGvMR73VtV4Gxsq1yMPa5bF` READY, alias principal confirmado. Compras/importação/reposição conferidas sem escrita; runtime sem error/fatal na janela consultada. API/worker não revalidados nesta frente. |
 | **Migrations** | VM até `20261123180000` (D-858 por SSH em 23/11); antes, 17 versões verificadas após `20261022170000`, sem reaplicação. SSH relatado em 18/11, não workflow. Snapshot READY; restore completo do dump + 17 SQLs ensaiados; 64 objetos sem divergência de definição. Workflow hosted pausado. [VM](../infra/vm/README.md). |
 | **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | No ar: compras inteligentes, pedido já feito, importação anterior (#332) e invoice/proforma com preço e documento (D-767). D-792: receber dá entrada no LOCAL (ENTRADA_COMPRA), a conferência cria o SKU que falta e a fila mostra a moeda do pedido; migration `20261119180000`. Pendente: workflow de banco. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
-| **Notas (D-765, D-766)** | D-765 no ar (web `f243b7c1`; api `api-00040-fr5` e worker `worker-00059-mjc` em `7a93bf70`). D-766 (Saída Manual e item editável, sem migration) na `feat/saida-manual`: a api nova vai antes do merge da web. |
+| **Notas (D-765, D-766)** | D-765 no ar (api `api-00040-fr5`, worker `worker-00059-mjc`). D-766 na main (#335), api não reconferida. |
+| **Catálogo (D-860)** | #383: migrations `20261124100000`/`110000` → worker → api → web. |
 | **UX (Agente 3)** | D-500 a D-518 no ar (a Central, blocos 1 a 3, pelos #255 e #258). Bloco 4 da Central (D-519, frete e Ads da `/central` no `EstadoDaTela`) integrado pelo #261. Auditoria em `docs/UX_SYSTEM.md` §6. |
 | **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): dados E1–E7c no ar (D-432 a D-451; migrations até `20261015100000`, worker e api de 15/10 saindo pelo IP fixo, D-457); E7d (push, D-453) no ar e conferido (chave de push própria); telas T4–T6c, T5b–T5d, T6b/T6b2, T-R6 e devoluções no ar; Go Live da Shopee em análise (15/10); C-65 (D-459) e D-455 em produção; desempenho (medição do A3, `docs/PERFORMANCE.md`): D-461, D-463 e D-465 no ar (15/10); C-57 (busca universal com a Shopee, D-467) no ar com a T7 (15/10); C-66 (metas por marketplace, D-473) no ar (16/10); telas T0 a T11 e D-484 a D-632 no ar (21/10; a última, a D-632, a divergência de estoque da Shopee na Central de Ações), com as quatro opções do item 4 do dono feitas: o SKU com a Shopee (D-618), o cancelamento e o hoje (D-620), a marca (D-622, D-624) e os detectores da Shopee (D-626, D-632) — lista na seção do Agente 2 de `docs/MULTICHANNEL_HANDOFF.md`; 5 (estoque) no Go Live. A 5J segue com o detector de frete (D-405). |
 

@@ -1440,7 +1440,31 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
     }
 
-    const outcome = await confirmApply(importDeps, authorized.caller, batchId);
+    // Corpo opcional (D-860): a web antiga confirma sem corpo, e isso continua
+    // valendo como "não marcar fora do catálogo". Corpo presente e malformado
+    // é recusado -- nunca vira falso em silêncio.
+    const rawBody = await context.req.text();
+    let markAbsent = false;
+
+    if (rawBody.trim() !== "") {
+      let parsedBody: unknown;
+
+      try {
+        parsedBody = JSON.parse(rawBody);
+      } catch {
+        return context.json({ error: { code: "invalid_payload", message: "corpo inválido" } }, 400);
+      }
+
+      const body = z.object({ markAbsent: z.boolean().optional() }).safeParse(parsedBody);
+
+      if (!body.success) {
+        return context.json({ error: { code: "invalid_payload", message: "corpo inválido" } }, 400);
+      }
+
+      markAbsent = body.data.markAbsent === true;
+    }
+
+    const outcome = await confirmApply(importDeps, authorized.caller, batchId, { markAbsent });
 
     if (outcome.status === "not_found") {
       return context.json({ error: { code: "not_found" } }, 404);

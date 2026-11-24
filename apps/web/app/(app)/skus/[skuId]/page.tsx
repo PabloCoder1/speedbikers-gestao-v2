@@ -297,6 +297,20 @@ export default async function SkuDashboardPage({
     notFound();
   }
 
+  // D-860: o inativo por ter saído da planilha de produtos diz por quê. Leitura
+  // à parte e tolerante, só para o inativo: antes da migration de produção a
+  // coluna não existe, e a página fica como era.
+  let foraDoCatalogoDesde: string | null = null;
+  // D-860: a marca posta à mão em Produtos não sai com a planilha.
+  let foraDoCatalogoManual = false;
+
+  if (!sku.data.is_active) {
+    const fora = await supabase.from("skus").select("erp_absent_since, erp_absent_source").eq("id", skuId).maybeSingle();
+
+    foraDoCatalogoDesde = fora.error === null ? (fora.data?.erp_absent_since ?? null) : null;
+    foraDoCatalogoManual = fora.error === null && fora.data?.erp_absent_source === "MANUAL";
+  }
+
   const now = new Date();
   const { from: dateFrom, to: dateTo } = lastBusinessDays(LOOKBACK_DAYS, now);
   // A curva ABC tem janela PRÓPRIA de 90 dias (D-140): classificação precisa
@@ -812,7 +826,9 @@ export default async function SkuDashboardPage({
       ? { label: "Descontinuado", tom: "perigo" as const }
       : sku.data.is_active
         ? { label: "Ativo", tom: "ok" as const }
-        : { label: "Inativo", tom: "neutro" as const },
+        : foraDoCatalogoDesde !== null
+          ? { label: "Fora do catálogo", tom: "atencao" as const }
+          : { label: "Inativo", tom: "neutro" as const },
     // Classe ABC, como no frame ("Curva A"), na posição do frame — mas chega
     // DEPOIS do resto da tela (D-505): é a leitura mais cara da página e só
     // alimenta este selo. O esqueleto reserva o lugar com a largura do rótulo.
@@ -915,6 +931,23 @@ export default async function SkuDashboardPage({
         }))}
       >
 
+      {foraDoCatalogoDesde !== null && (
+        <p role="status" className="sb-note sb-note-atencao sb-skud-fora">
+          {foraDoCatalogoManual ? (
+            <>
+              Este produto foi marcado fora do catálogo em Produtos em {formatDateTime(foraDoCatalogoDesde)}. Está
+              inativo e fora da Reposição; o histórico continua. Uma planilha nova do UpSeller não o traz de volta: para
+              isso, use Voltar ao catálogo em Produtos.
+            </>
+          ) : (
+            <>
+              Este produto não veio na planilha de produtos do UpSeller aplicada em{" "}
+              {formatDateTime(foraDoCatalogoDesde)}. Está inativo e fora da Reposição; o saldo mostrado é o último que
+              chegou. Se ele voltar numa planilha, volta ao catálogo sozinho.
+            </>
+          )}
+        </p>
+      )}
       {tab === "visao-geral" && (
         <>
           {dashboardResult.error !== null && (

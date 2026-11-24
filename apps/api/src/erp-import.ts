@@ -158,7 +158,16 @@ export async function receiveUpload(
  * `applied_by` é gravado AQUI, não no worker: é o momento em que um humano
  * decidiu. A constraint `erp_import_batches_applied_coherent` exige que ele já
  * esteja preenchido quando o worker marcar o lote como `APPLIED`.
+ *
+ * `markAbsent` (D-860): quem confirma diz que a planilha de PRODUTOS é o
+ * catálogo completo, e o worker marca como fora do catálogo o SKU que já veio
+ * numa planilha anterior e não veio nesta. Vai no payload do job, e não numa
+ * coluna, para valer exatamente para esta aplicação.
  */
+
+export interface ConfirmApplyOptions {
+  markAbsent?: boolean;
+}
 
 export type ConfirmApplyOutcome =
   | { status: "queued"; batchId: string }
@@ -169,10 +178,13 @@ export async function confirmApply(
   deps: ImportDeps,
   caller: Caller,
   batchId: string,
+  options: ConfirmApplyOptions = {},
 ): Promise<ConfirmApplyOutcome> {
+  const markAbsent = options.markAbsent === true;
+
   const batch = await deps.db
     .from("erp_import_batches")
-    .select("id, status")
+    .select("id, status, kind")
     .eq("id", batchId)
     .eq("organization_id", caller.organizationId)
     .maybeSingle();
@@ -185,6 +197,12 @@ export async function confirmApply(
     // `APPLYING`/`APPLIED` reentregues aqui reiniciariam uma aplicação em
     // curso ou já concluída; os demais estados não têm conferência pronta.
     return { status: "rejected", reason: `lote em ${batch.data.status}, não está pronto para aplicação` };
+  }
+
+  if (markAbsent && batch.data.kind !== "PRODUCTS") {
+    // Só a planilha de produtos diz o que é o catálogo: kits, vínculos e
+    // estoque ausentes não querem dizer produto que deixou de existir.
+    return { status: "rejected", reason: "marcar fora do catálogo só vale para a planilha de produtos" };
   }
 
   const updated = await deps.db
@@ -205,10 +223,14 @@ export async function confirmApply(
     // Uma aplicação por lote. Reconfirmar não duplica trabalho.
     dedupeKey: `erp-apply:${batchId}`,
     queue: "maintenance",
-    payload: { batchId },
+    payload: markAbsent ? { batchId, markAbsent: true } : { batchId },
   });
 
-  deps.logger.info("erp_apply_confirmed", { batch_id: batchId, confirmed_by: caller.userId });
+  deps.logger.info("erp_apply_confirmed", {
+    batch_id: batchId,
+    confirmed_by: caller.userId,
+    mark_absent: markAbsent,
+  });
 
   return { status: "queued", batchId };
 }

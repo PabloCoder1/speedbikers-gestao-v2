@@ -2080,6 +2080,30 @@ describe("rotas /v1: id de caminho e erro interno (auditoria de 28/09)", () => {
     expect(enqueued).toHaveLength(0);
   });
 
+  // D-860: o corpo da confirmação é opcional, mas o presente e malformado nunca
+  // vira "não marcar" em silêncio -- e a recusa vem antes de ir ao banco.
+  it.each([["isto não é json"], [JSON.stringify({ markAbsent: "sim" })], [JSON.stringify([true])]])(
+    "confirmação com corpo malformado (%s): 400, sem ir ao banco",
+    async (corpo) => {
+      const enqueued: EnqueueRequest[] = [];
+      const app = createApp({
+        logger: createLogger({}, { sink: () => undefined }),
+        auth: admin,
+        relist: relistComBancoQueFalha(enqueued),
+        importDeps: {} as never,
+      });
+
+      const response = await app.request(`/v1/erp-imports/${RELIST_ID}/apply`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: corpo,
+      });
+
+      expect(response.status).toBe(400);
+      expect(enqueued).toHaveLength(0);
+    },
+  );
+
   it("erro interno não devolve a mensagem do banco, só o request_id", async () => {
     const linhas: string[] = [];
     const app = createApp({
