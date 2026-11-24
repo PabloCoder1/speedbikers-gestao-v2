@@ -919,15 +919,25 @@ export async function prefetchOrders(
 
   // 1 + N idas, com N = lotes de item. As cinco primeiras nao dependem umas
   // das outras.
-  const [statusResult, linkResults, linhasGravadas, recordedByOrderId, saleTransitionByOrderId] = await Promise.all([
+  const [statusResults, linkResults, linhasGravadas, recordedByOrderId, saleTransitionByOrderId] = await Promise.all([
     // D-352: a logistica gravada vem na MESMA leitura do status — ela e a
     // decisao ja tomada, e releitura nunca a reescreve (R5).
-    db.from("orders").select("id, status, logistic_type, logistic_captured_at").in("id", orderIds),
+    // D-827: fatia `orderIds` em lotes de `PEDIDOS_POR_CONSULTA` e restringe a `organization_id`.
+    Promise.all(
+      emLotes([...new Set(orderIds)], PEDIDOS_POR_CONSULTA).map((lote) =>
+        db
+          .from("orders")
+          .select("id, status, logistic_type, logistic_captured_at")
+          .eq("organization_id", context.organizationId)
+          .in("id", lote),
+      ),
+    ),
     Promise.all(
       emLotes(itemIds, ITENS_POR_CONSULTA).map((lote) =>
         db
           .from("sku_listing_links")
           .select(SKU_LINK_WITH_KIND_SELECT)
+          .eq("organization_id", context.organizationId)
           .eq("ml_account_id", context.mlAccountId)
           .eq("ref_kind", "ITEM")
           .in("item_id", lote),
@@ -951,12 +961,14 @@ export async function prefetchOrders(
     ),
   ]);
 
-  for (const row of linhasDe(statusResult, "orders.status")) {
-    previousStatusById.set(String(row.id), row.status);
-    logisticByOrderId.set(String(row.id), {
-      logisticType: row.logistic_type,
-      capturedAt: row.logistic_captured_at,
-    });
+  for (const statusResult of statusResults) {
+    for (const row of linhasDe(statusResult, "orders.status")) {
+      previousStatusById.set(String(row.id), row.status);
+      logisticByOrderId.set(String(row.id), {
+        logisticType: row.logistic_type,
+        capturedAt: row.logistic_captured_at,
+      });
+    }
   }
 
   const linksPorAnuncio = new Map<string, SkuLinkWithKindRow[]>();
@@ -1017,6 +1029,7 @@ export async function prefetchOrders(
       db
         .from("sku_listing_links")
         .select(SKU_LINK_WITH_KIND_SELECT)
+        .eq("organization_id", context.organizationId)
         .eq("ml_account_id", context.mlAccountId)
         .eq("ref_kind", "USER_PRODUCT")
         .in("user_product_id", lote),
@@ -1244,7 +1257,12 @@ export async function persistOrder(
   } else {
     const [existing, links, recorded, transicoes] = await Promise.all([
       // D-352: a logistica gravada na mesma leitura do status.
-      db.from("orders").select("status, logistic_type, logistic_captured_at").eq("id", order.id).maybeSingle(),
+      db
+        .from("orders")
+        .select("status, logistic_type, logistic_captured_at")
+        .eq("organization_id", context.organizationId)
+        .eq("id", order.id)
+        .maybeSingle(),
       Promise.all(
         order.order_items.map((item, index) =>
           resolveSku(
