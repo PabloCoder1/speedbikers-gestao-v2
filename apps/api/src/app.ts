@@ -544,10 +544,10 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await triggerMetricsRefresh(metricsRefreshSchedule);
 
-    // D-858: a mesma hora enfileira o alerta de venda abaixo da margem. Falhar
-    // aqui (a tabela antes da migration, a fila) não derruba o piso: a resposta
-    // continua sendo a do piso, e o alerta diz o que houve no corpo e no log.
-    let alertaDeMargem: LowMarginSalesScheduleOutcome | { failed: true; reason: string };
+    // O piso roda primeiro. Uma falha de fila no alerta pede retentativa da
+    // rota, aproveitando as chaves horárias de deduplicação dos dois fluxos.
+    // A indisponibilidade da tabela continua sinalizada no resultado do alerta.
+    let alertaDeMargem: LowMarginSalesScheduleOutcome | { failed: true; reason: string; retryable?: never };
 
     try {
       alertaDeMargem = await triggerLowMarginSalesDetection(metricsRefreshSchedule);
@@ -558,7 +558,11 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       alertaDeMargem = { failed: true, reason };
     }
 
-    const resposta = { ...outcome, alertaDeMargem };
+    const resposta = {
+      ...outcome,
+      alertaDeMargem,
+      ...(alertaDeMargem.retryable === true ? { failed: true as const } : {}),
+    };
 
     return respostaDoAgendador(context, resposta);
   });

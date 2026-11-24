@@ -20528,3 +20528,9 @@ A consulta do agendamento de margem passa a paginar pela chave primária
 `organization_id` e termina a leitura antes de enfileirar. Uma página com
 erro faz o agendamento retornar falha. A chave de deduplicação horária é
 preservada. Testes cobrem 1.001 organizações e erro na segunda página.
+
+Na fila, cada organização tem tratamento próprio. Uma falha registra o ID
+no log, preserva a contagem dos jobs aceitos e permite tentar os próximos.
+A rota executa o recálculo de métricas e devolve 503 se a fila do alerta
+falhar. Na retentativa dentro da hora, as chaves horárias deduplicam os jobs
+aceitos na rodada anterior. A regressão exercita a rota nas duas rodadas.

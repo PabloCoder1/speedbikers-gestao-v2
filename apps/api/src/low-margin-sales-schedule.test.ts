@@ -1,6 +1,7 @@
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
+import { createApp } from "./app.js";
 import type { EnqueueRequest } from "./enqueue.js";
 import type { LowMarginSalesScheduleDeps } from "./low-margin-sales-schedule.js";
 import { triggerLowMarginSalesDetection } from "./low-margin-sales-schedule.js";
@@ -9,7 +10,12 @@ import { triggerLowMarginSalesDetection } from "./low-margin-sales-schedule.js";
 
 const ORGS = [{ organization_id: "org-1" }, { organization_id: "org-2" }];
 
-function deps(options: { falha?: boolean; deduplicaTudo?: boolean; organizations?: typeof ORGS; falhaDepoisDaPrimeiraPagina?: boolean } = {}): {
+function deps(options: {
+  falha?: boolean;
+  deduplicaTudo?: boolean;
+  organizations?: typeof ORGS;
+  falhaDepoisDaPrimeiraPagina?: boolean;
+} = {}): {
   deps: LowMarginSalesScheduleDeps;
   enqueued: EnqueueRequest[];
   filtros: [string, unknown][];
@@ -21,6 +27,12 @@ function deps(options: { falha?: boolean; deduplicaTudo?: boolean; organizations
       select: () => ({
         eq: (coluna: string, valor: unknown) => {
           filtros.push([`${tabela}.${coluna}`, valor]);
+          if (tabela === "ml_accounts") {
+            return Promise.resolve({
+              data: [{ id: "acc-1", organization_id: "org-1", slug: "loja-1" }],
+              error: null,
+            });
+          }
 
           let cursor: string | undefined;
           const readPage = (limit: number) => {
@@ -97,6 +109,52 @@ describe("triggerLowMarginSalesDetection (D-858)", () => {
     const { deps: d } = deps({ deduplicaTudo: true });
 
     expect(await triggerLowMarginSalesDetection(d)).toEqual({ organizationsScanned: 2, enqueued: 0, deduplicated: 2 });
+  });
+
+  it("continua após falha parcial, responde 503 e deduplica a retentativa na mesma hora", async () => {
+    const { deps: d, enqueued } = deps();
+    const records: string[] = [];
+    d.logger = createLogger({}, { sink: (line) => records.push(line) });
+    const enqueue = d.enqueuer.enqueue;
+    const accepted = new Set<string>();
+    let failFirstOrg = true;
+
+    d.enqueuer.enqueue = async (request) => {
+      if (request.jobType === "diagnostics.detect-low-margin-sales" && request.organizationId === "org-1" && failFirstOrg) {
+        failFirstOrg = false;
+        throw new Error("fila indisponível");
+      }
+      const result = await enqueue(request);
+      const deduplicated = accepted.has(request.dedupeKey);
+      accepted.add(request.dedupeKey);
+      return { ...result, deduplicated };
+    };
+
+    const app = createApp({
+      logger: d.logger,
+      metricsRefreshSchedule: d,
+      oidc: { verify: () => Promise.resolve({ ok: true, email: "scheduler@exemplo.com" }) },
+    });
+    const run = () => app.request("/internal/schedule/metrics-refresh", { method: "POST" });
+
+    const first = await run();
+    expect(first.status).toBe(503);
+    expect(await first.json()).toMatchObject({
+      failed: true,
+      enqueued: 2,
+      alertaDeMargem: { organizationsScanned: 2, enqueued: 1, deduplicated: 0, failed: true },
+    });
+    expect(records.some((line) => line.includes("low_margin_sales_enqueue_failed") && line.includes("org-1"))).toBe(true);
+
+    const retry = await run();
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toMatchObject({
+      enqueued: 0,
+      deduplicated: 2,
+      alertaDeMargem: { organizationsScanned: 2, enqueued: 1, deduplicated: 1 },
+    });
+    expect(enqueued.filter((request) => request.jobType === "diagnostics.detect-low-margin-sales")
+      .map((request) => request.organizationId)).toEqual(["org-2", "org-1", "org-2"]);
   });
 
   it("sem conseguir listar, diz que falhou e não enfileira", async () => {

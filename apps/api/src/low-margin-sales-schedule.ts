@@ -28,6 +28,7 @@ export interface LowMarginSalesScheduleDeps {
 
 export interface LowMarginSalesScheduleOutcome {
   failed?: true;
+  retryable?: true;
   organizationsScanned: number;
   enqueued: number;
   deduplicated: number;
@@ -61,27 +62,40 @@ export async function triggerLowMarginSalesDetection(deps: LowMarginSalesSchedul
   let enqueued = 0;
   let deduplicated = 0;
 
-  for (const organizationId of organizationIds) {
-    const result = await deps.enqueuer.enqueue({
-      jobType: "diagnostics.detect-low-margin-sales",
-      organizationId,
-      dedupeKey: `low-margin-sales:${organizationId}:${hourBucket}`,
-      queue: "maintenance",
-      payload: { organizationId },
-    });
+  let enqueueFailed = false;
 
-    if (result.deduplicated) {
-      deduplicated += 1;
-    } else {
-      enqueued += 1;
+  for (const organizationId of organizationIds) {
+    try {
+      const result = await deps.enqueuer.enqueue({
+        jobType: "diagnostics.detect-low-margin-sales",
+        organizationId,
+        dedupeKey: `low-margin-sales:${organizationId}:${hourBucket}`,
+        queue: "maintenance",
+        payload: { organizationId },
+      });
+
+      if (result.deduplicated) {
+        deduplicated += 1;
+      } else {
+        enqueued += 1;
+      }
+    } catch (error) {
+      enqueueFailed = true;
+      deps.logger.error("low_margin_sales_enqueue_failed", {
+        organization_id: organizationId,
+        reason: error instanceof Error ? error.message : "falha ao enfileirar alerta de margem",
+      });
     }
   }
+
+  const failure = enqueueFailed ? { failed: true, retryable: true } as const : {};
 
   deps.logger.info("low_margin_sales_schedule_triggered", {
     organizations_scanned: organizationIds.length,
     enqueued,
     deduplicated,
+    ...failure,
   });
 
-  return { organizationsScanned: organizationIds.length, enqueued, deduplicated };
+  return { organizationsScanned: organizationIds.length, enqueued, deduplicated, ...failure };
 }
