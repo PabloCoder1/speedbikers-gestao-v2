@@ -51,6 +51,7 @@ export function createSyncListingVisitsSnapshotHandler(
       logger: context.logger,
       missingEvent: "sync_listing_visits_snapshot_account_missing",
       mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
     });
 
     if ("outcome" in resolvedAccount) {

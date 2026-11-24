@@ -137,6 +137,7 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
       logger: context.logger,
       missingEvent: "webhook_fast_path_account_missing",
       mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
     });
 
     if ("outcome" in resolvedAccount) {
@@ -144,10 +145,6 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
     }
 
     const account = resolvedAccount.account;
-
-    if (account.organization_id !== envelope.organizationId) {
-      return { status: "failed", retryable: false, reason: "conta não pertence à organização do job" };
-    }
 
     if (account.status !== "CONNECTED") {
       // Desconectada entre o webhook e a execução — corrida benigna, mesmo

@@ -69,6 +69,7 @@ export function createSyncFulfillmentSnapshotHandler(deps: SyncFulfillmentSnapsh
       logger: context.logger,
       missingEvent: "sync_fulfillment_snapshot_account_missing",
       mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
     });
 
     if ("outcome" in resolvedAccount) {

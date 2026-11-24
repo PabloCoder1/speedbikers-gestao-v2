@@ -75,6 +75,7 @@ export function createSyncSupportMessagesReconcileHandler(
       logger: context.logger,
       missingEvent: "sync_support_messages_reconcile_account_missing",
       mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
     });
 
     if ("outcome" in resolvedAccount) {
