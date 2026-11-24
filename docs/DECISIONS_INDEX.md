@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **701** (D-001 a D-802).
+Decisões registradas: **702** (D-001 a D-803).
 
 ## Por domínio
 
@@ -142,7 +142,7 @@ Decisões registradas: **701** (D-001 a D-802).
 - **D-767** — Um índice único atende a timeline do Full
 - **D-769** — Ordem de migrations validada por upgrade incremental
 
-### estoque (59)
+### estoque (60)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -203,6 +203,7 @@ Decisões registradas: **701** (D-001 a D-802).
 - **D-783** — Server Components falham fechado em erro de contas/organização (`/precos`, `/full`, `/atendimento/perguntas`), escapam `ILIKE` e limitam `.in()` em `/atendimento`
 - **D-799** — Domínio e web: calendário real em datas de negócio e períodos, PDFs/NF-e, preflight/corpo de republicação, cobertura, saúde e CSV
 - **D-802** — Domínio, API e Web: ledger/UpSeller, diretório de contas e indicadores/saúde fail-closed
+- **D-803** — Domínio, API e Web: reversões de estoque, enqueue, filtros ABC, paginação RPC e utilitários web
 
 ### interface (76)
 
