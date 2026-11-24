@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-24, integração local e0bedddf + continuidade Gemini D-770–D-789 e D-793–D-806 (7da209dd, PR #343)",
+  "corte": "2026-11-24, integração local e0bedddf + continuidade Gemini D-770–D-789, D-793–D-808 e hotfix rpc-pages (43ccb988, PR #343)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -119,7 +119,7 @@
       "peso": 8,
       "status": "Em andamento",
       "responsavel": "Multicanal/Dono",
-      "evidencia": "ROADMAP 796–797; conexão sem pedidos/webhook completo",
+      "evidencia": "ROADMAP 796–797; conexão (D-645), SDK transacional completo e refresh coordenado em @sb/tiktok-shop (D-807) e webhook POST /push/tiktok-shop (D-808) em código com 40 novos testes; faltam tabelas transacionais (bloqueadas no Dev INACTIVE), handlers do worker, telas e validação em loja real",
       "fase": 3
     },
     {

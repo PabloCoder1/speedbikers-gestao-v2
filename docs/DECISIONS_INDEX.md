@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **705** (D-001 a D-806).
+Decisões registradas: **707** (D-001 a D-808).
 
 ## Por domínio
 
-### atendimento (71)
+### atendimento (72)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -89,6 +89,7 @@ Decisões registradas: **705** (D-001 a D-806).
 - **D-781** — Encerra últimos `getSession()` diretos em clientes web e valida corpo `200 OK` em aplicação, republicação e narração IA
 - **D-788** — Invariantes de tempo e finitude em `@sb/domain` (`remote-transition`, `support-events`, `sales-anomaly`, `calculadora-preco`)
 - **D-805** — Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
+- **D-808** — API: receptor autenticado `POST /push/tiktok-shop` (`M04`, fatia 3)
 
 ### banco/rls (50)
 
@@ -287,7 +288,7 @@ Decisões registradas: **705** (D-001 a D-806).
 - **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
 - **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
 
-### mercado-livre (140)
+### mercado-livre (141)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -429,6 +430,7 @@ Decisões registradas: **705** (D-001 a D-806).
 - **D-797** — Worker: proteção contra Flate zip bomb em PDF, isolamento de ZodError/transporte em visitas e Full, guardas de backfill e parse NF-e
 - **D-800** — API, Worker e Web: hardening de Copiloto, OAuth Shopee, logística/pacote/anomalias e helpers de métricas
 - **D-801** — Domínio, Worker e Web: finitude em eventos/inventário/suporte, estoque Full no preflight de relist e parsers/filtros web
+- **D-807** — TikTok Shop: camada transacional de leitura, webhook e coordenador de refresh em `@sb/tiktok-shop` (`M04`)
 
 ### outros (112)
 
