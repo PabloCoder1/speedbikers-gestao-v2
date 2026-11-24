@@ -17,7 +17,21 @@ import {
  * atualizar a etapa logística e lançar os custos de importação. Cada ação vai
  * por uma RPC que refaz a autorização e a regra de estado no banco; aqui só se
  * coleta a intenção e se mostra o erro em português.
+ *
+ * FALHA DE TRANSPORTE (D-865): a Server Action pode não responder. Sem o
+ * `try`, o botão ficava em "Registrando…"/"Salvando…" para sempre. Agora a
+ * tela avisa, libera o botão, mantém o que foi digitado e relê o pedido, para a
+ * pessoa ver se a primeira tentativa chegou antes de repetir.
  */
+
+/** Relê o pedido depois de uma falha de transporte, sem deixar a rejeição escapar. */
+function reler(router: ReturnType<typeof useRouter>): void {
+  try {
+    router.refresh();
+  } catch {
+    // Sem rede, a releitura também falha; o aviso já está na tela.
+  }
+}
 
 export interface ItemPendente {
   readonly id: string;
@@ -56,7 +70,21 @@ export function RecebimentoParcial({ purchaseOrderId, itens }: { purchaseOrderId
     setErro(null);
     requestId.current ??= crypto.randomUUID();
 
-    const r = await receivePurchaseOrderItems(purchaseOrderId, itensEnvio, requestId.current);
+    let r: Awaited<ReturnType<typeof receivePurchaseOrderItems>>;
+
+    try {
+      r = await receivePurchaseOrderItems(purchaseOrderId, itensEnvio, requestId.current);
+    } catch {
+      // O `requestId` fica o mesmo: se o recebimento chegou ao banco, a nova
+      // tentativa é reconhecida e não dá entrada duas vezes (D-724).
+      setErro(
+        "Não foi possível confirmar o recebimento. Confira as quantidades já recebidas e tente de novo: o mesmo envio não é registrado duas vezes.",
+      );
+      setBusy(false);
+      reler(router);
+
+      return;
+    }
 
     setBusy(false);
 
@@ -93,8 +121,8 @@ export function RecebimentoParcial({ purchaseOrderId, itens }: { purchaseOrderId
           }}
         >
           <p className="sb-pod-receber-ajuda">
-            Informe o que chegou de cada item. O trânsito baixa só essa quantidade; o pedido fica em aberto até chegar
-            tudo. O saldo do depósito continua vindo do UpSeller — receber aqui não soma estoque local.
+            Informe o que chegou de cada item. Essa quantidade sai do trânsito e entra no estoque local; o pedido fica
+            em aberto até chegar tudo. A conciliação com o UpSeller continua acertando o saldo pelo ERP.
           </p>
           <table className="sb-table">
             <thead>
@@ -187,12 +215,20 @@ export function EtapaLogistica({
         e.preventDefault();
         setBusy(true);
         setErro(null);
-        void setPurchaseOrderStage(purchaseOrderId, valor === "" ? null : valor, null).then((r) => {
-          setBusy(false);
+        void setPurchaseOrderStage(purchaseOrderId, valor === "" ? null : valor, null).then(
+          (r) => {
+            setBusy(false);
 
-          if (!r.ok) setErro(r.message);
-          else router.refresh();
-        });
+            if (!r.ok) setErro(r.message);
+            else router.refresh();
+          },
+          () => {
+            // Repetir a mesma etapa é inofensivo: a nova tentativa só grava de novo o mesmo valor.
+            setBusy(false);
+            setErro("Não foi possível confirmar a etapa. Tente de novo.");
+            reler(router);
+          },
+        );
       }}
     >
       <label className="sb-form-campo">
@@ -267,15 +303,30 @@ export function CustosDoPedido({
     setBusy(true);
     setErro(null);
 
-    const r = await upsertPurchaseOrderCost(purchaseOrderId, {
-      id: null,
-      kind,
-      description: descricao.trim() === "" ? null : descricao.trim(),
-      amount,
-      currency: moeda.trim().toUpperCase() || "BRL",
-      exchangeRate: moeda.trim().toUpperCase() === "BRL" ? null : rate,
-      status,
-    });
+    let r: Awaited<ReturnType<typeof upsertPurchaseOrderCost>>;
+
+    try {
+      r = await upsertPurchaseOrderCost(purchaseOrderId, {
+        id: null,
+        kind,
+        description: descricao.trim() === "" ? null : descricao.trim(),
+        amount,
+        currency: moeda.trim().toUpperCase() || "BRL",
+        exchangeRate: moeda.trim().toUpperCase() === "BRL" ? null : rate,
+        status,
+      });
+    } catch {
+      // Lançar custo NÃO é idempotente (`id: null` cria uma linha nova): se a
+      // primeira tentativa gravou, repetir lança o custo duas vezes e infla o
+      // custo de importação. Por isso a tela relê a lista e manda conferir.
+      setErro(
+        "Não foi possível confirmar o lançamento do custo. Confira a lista antes de lançar de novo: repetir pode lançar o mesmo custo duas vezes.",
+      );
+      setBusy(false);
+      reler(router);
+
+      return;
+    }
 
     setBusy(false);
 
@@ -325,10 +376,16 @@ export function CustosDoPedido({
                       type="button"
                       className="sb-button"
                       onClick={() => {
-                        void deletePurchaseOrderCost(purchaseOrderId, c.id).then((r) => {
-                          if (!r.ok) setErro(r.message);
-                          else router.refresh();
-                        });
+                        void deletePurchaseOrderCost(purchaseOrderId, c.id).then(
+                          (r) => {
+                            if (!r.ok) setErro(r.message);
+                            else router.refresh();
+                          },
+                          () => {
+                            setErro("Não foi possível confirmar a exclusão do custo. Confira a lista antes de excluir de novo.");
+                            reler(router);
+                          },
+                        );
                       }}
                     >
                       Excluir

@@ -20068,3 +20068,32 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 - Edição: o POST é bloqueado antes do servidor. O aviso aparece, o botão volta, e a nova tentativa grava a quantidade nova.
 - Vermelho/verde: sem o `try`, os 2 testes falham esperando o aviso. Com o `try`, a spec inteira passa (6 testes).
 - Os itens dos testes novos têm custo: um pedido sem custo entraria na contagem "1 de 1 sem custo" que `compras.spec.ts` afirma. As specs de compras, reposição e fornecedores passam juntas (31 testes).
+
+## D-865 - O detalhe do pedido de compra sobrevive à Server Action que não responde
+
+**Contexto:** a varredura das Server Actions sem `try` nas telas de compras (24/11), feita na `main` e no candidato #378, achou o detalhe `/compras/[id]` inteiro desprotegido. São sete chamadas: as quatro transições do painel (aprovar, marcar como enviado, receber tudo, cancelar), o recebimento parcial, a etapa logística, lançar e excluir custo, previsão e referência. Quando a ação não respondia, o botão ficava em "Registrando…" ou "Salvando…" para sempre. Nas duas chamadas com `.then` sem tratamento de erro (etapa e excluir custo), a rejeição escapava sem aviso nenhum. A saída era recarregar a tela e perder o que tinha sido digitado. Na mesma tela, o texto do recebimento parcial ainda dizia que "receber aqui não soma estoque local", o que deixou de ser verdade com a D-792.
+
+**Decisão:**
+
+- **Toda falha de transporte vira aviso, botão liberado e campos preservados.** Onde a repetição pode não ser inofensiva, a tela também relê o pedido, para a pessoa ver se a primeira tentativa chegou.
+- **O texto de cada aviso segue o que a nova tentativa faz no banco:**
+  - **Transições do painel:** as quatro RPCs conferem o status. Se a primeira gravou, a repetição é recusada ("não está em trânsito"), sem receber nem cancelar duas vezes. O aviso manda conferir a situação do pedido.
+  - **Recebimento parcial:** idempotente pelo `requestId` (D-724), que só muda depois de um sucesso. A repetição é reconhecida e não dá entrada duas vezes no estoque.
+  - **Lançar custo NÃO é idempotente.** `upsert_purchase_order_cost` com `id: null` cria uma linha nova, e repetir depois de uma resposta perdida lança o custo duas vezes, inflando o custo de chegada e a margem. O aviso diz isso, e a releitura mostra o custo já gravado.
+  - **Etapa e previsão:** repetir grava o mesmo valor de novo. A previsão pode ganhar um segundo registro no histórico, sem efeito no número.
+  - **Referência externa:** só grava quando o pedido ainda não tem uma, então a repetição seria recusada. O aviso manda conferir.
+  - **Excluir custo:** o aviso manda conferir a lista antes de excluir de novo.
+- **O recebimento parcial passa a dizer a verdade:** a quantidade sai do trânsito e entra no estoque local, e a conciliação com o UpSeller continua acertando o saldo pelo ERP (D-792, D-029).
+- **Sem migration e sem mudança de contrato.**
+
+**Alternativas rejeitadas:**
+- Tornar o custo idempotente com `requestId` agora: exige migration e mudança da RPC, e a publicação no banco da VM depende do dono. Fica registrado como próximo passo possível. O aviso e a releitura já impedem a duplicação às cegas.
+- Repetir sozinho depois da falha: no custo, duplicaria. Nas transições, a repetição recusada mostraria um erro sem contexto.
+
+**Verificação (`pedido-compra.spec.ts`, stack local isolada, `db reset` e seed):**
+- Quatro testes novos, com itens em texto livre para não mexer no saldo do SKU do seed:
+  - aprovar com o POST bloqueado: aviso, botão liberado, e a nova tentativa aprova;
+  - recebimento parcial com a resposta cortada depois de o servidor gravar: aviso, quantidade preservada, `quantity_received` igual a 2. Na nova tentativa continua 2, com um único evento de recebimento;
+  - custo com a resposta cortada: aviso, botão liberado, um custo só no banco, e a releitura mostra o valor na lista;
+  - previsão com o POST bloqueado: aviso, data preservada, e a nova tentativa salva.
+- Vermelho/verde: com os três componentes da `main`, os 4 testes falham esperando o aviso. Com a correção, as specs de compras, estoque, fornecedores e reposição passam juntas (38 testes).
