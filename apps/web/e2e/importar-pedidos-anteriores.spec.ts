@@ -15,6 +15,8 @@ import { login } from "./helpers.js";
  */
 
 const REFERENCIA = `E2E-IMP-${String(Date.now()).slice(-6)}`;
+// Código novo a cada execução: o SKU criado pela conferência (D-792) fica no catálogo.
+const NOVO = `NOVO-${REFERENCIA}`;
 
 // PNG 1×1 transparente: o bastante para o .xlsx carregar uma imagem em xl/media.
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
@@ -25,7 +27,7 @@ async function planilha(): Promise<Buffer> {
 
   pecas.addRow(["CÓDIGO", "DESCRIÇÃO", REFERENCIA, "", "OBS"]);
   pecas.addRow([E2E_SKU_CODE, "Produto de teste E2E", 7, "200 + 200", "NÃO VENDE"]);
-  pecas.addRow(["NAO-EXISTE-E2E", "Item fora do catálogo", 3, "", ""]);
+  pecas.addRow([NOVO, "Item fora do catálogo", 3, "", ""]);
   // O tipo do exceljs ainda é o Buffer antigo do Node: o conteúdo é o mesmo.
   pecas.addImage(wb.addImage({ buffer: PNG as unknown as ExcelJS.Buffer, extension: "png" }), "G2:H4");
 
@@ -109,4 +111,11 @@ test("importar pedidos anteriores: ler, conferir, registrar uma referência e n�
   await page.getByRole("button", { name: "Cancelar pedido" }).click();
   await page.getByRole("button", { name: "Confirmar cancelamento" }).click();
   await expect(page.getByText(/Cancelado/).first()).toBeVisible();
+
+  // D-792: o produto que não existe nasce da própria linha, com o código e o nome dela.
+  await page.goto(lote);
+  await page.getByRole("button", { name: "Criar SKU das 1 não encontradas" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "1 SKU(s) criados" })).toBeVisible();
+  await expect(cartao("Não encontradas")).toHaveText("0");
+  await expect(page.locator("tr", { hasText: NOVO }).getByRole("button", { name: /^Criar SKU/ })).toHaveCount(0);
 });

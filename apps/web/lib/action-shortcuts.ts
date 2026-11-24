@@ -88,6 +88,15 @@ export function actionShortcuts(input: {
     shortcuts.push({ label: "Estoque do SKU", href: `/skus/${input.skuId}?aba=estoque` });
   }
 
+  // D-861: o SKU fora do catálogo com anúncio ativo. Os anúncios do SKU dizem
+  // quais pausar; Produtos é onde a marca sai, quando o produto ainda é vendido.
+  if (input.kind === "fora_do_catalogo_anunciado" && input.skuId !== null) {
+    shortcuts.push({ label: "Anúncios do SKU", href: `/skus/${input.skuId}?aba=anuncios` });
+    if (input.sku !== null) {
+      shortcuts.push({ label: "Produtos", href: `/produtos?busca=${encodeURIComponent(input.sku)}` });
+    }
+  }
+
   // O ranking abre nos últimos 30 dias até ontem: a mesma janela do alerta.
   if (input.kind === "produto_prejuizo") {
     shortcuts.push({ label: "Ranking: no prejuízo", href: "/central/produtos?ordem=prejuizo" });

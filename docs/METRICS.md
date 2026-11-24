@@ -360,6 +360,8 @@ total e um quarto do faturamento some sem explicação.
 
 **Pedido coberto** tem três coisas: frete observado, custo conhecido e **uma** linha de item. O **desconto do vendedor não entra na conta**: é contra o preço de tabela e já está dentro do preço vendido — medido em D-356, a comissão é cobrada sobre `unit_price` (10,63%, contra 8,16% sobre preço + desconto), e há desconto maior que o próprio preço. A tela o mostra como informação. A última é a regra de 5E — um pedido tem um frete, e só dá para atribuí-lo ao produto quando o pedido tem um produto. Medido: zero pedidos com mais de uma linha em 340 mil; os que aparecerem saem da margem e são contados.
 
+> **Alerta de venda abaixo da margem (D-858):** usa esta mesma `margem_venda`, por pedido coberto e com o custo na data da venda, contra a meta de `margin_alert_settings` (importadas pela marca do fornecedor, demais). O que não é coberto não é julgado; não vira margem zero.
+
 **Grão de SKU existe** para as cinco, pela mesma razão: com uma linha por pedido, frete, desconto e custo do pedido são os do produto. **Não há recorte de marca** na tela de faturamento: a marca é do item, e o frete não decompõe (5E).
 
 ---
@@ -508,11 +510,13 @@ z robusto = (frete − mediana) ÷ (1,4826 × desvio absoluto mediano); com desv
 
 ## 5N. Ranking de produtos (D-402) — DEFINIDAS E IMPLEMENTADAS
 
-> A tela `/central/produtos` ordena os produtos vendidos no período por receita, resultado, margem, volume, frete, prejuízo, crescimento ou queda de margem, contra o período anterior da central (5I). Tudo sai de `get_ranking_produtos`; as frases do resumo são montadas em `apps/web/lib/ranking-produtos.ts` só com os números da RPC.
+> A tela `/central/produtos` ordena os produtos vendidos no período por receita, resultado, margem, volume, frete, prejuízo, crescimento ou queda de margem, contra o período anterior da central (5I). A ordenação e o resumo saem de `get_ranking_produtos`; as frases do resumo são montadas em `apps/web/lib/ranking-produtos.ts` só com os números da RPC.
 
 **Os números de cada produto são os de `get_faturamento` (5F):** receita bruta, comissão, frete do vendedor, custo na data da venda; resultado e margem só nos pedidos cobertos (frete observado, custo conhecido, uma linha de item). Imposto por SKU só quando todo pedido coberto dele tem alíquota (5K). **Ads por produto não existe** na API (D-363).
 
 **Quem entra em cada ordem:** receita e volume, todo SKU vendido; lucro e menor margem, os com resultado; maior margem, 3 pedidos cobertos ou mais; frete, os com frete; prejuízo, resultado < 0; crescimento, 5 pedidos ou mais nos dois períodos; queda de margem, 5 cobertos nos dois e margem menor que antes.
+
+Na tabela, “na margem do ranking” indica a receita e a comissão usadas nessa margem quando só parte dos pedidos está coberta. A variação de receita usa a receita bruta total. A coluna **Margem de venda** consulta os SKUs da página em `get_sku_margins` (5X), com o período e a conta do Ranking no Mercado Livre, em janelas de até 366 dias.
 
 | ID | Nome | Fórmula | Ressalva obrigatória na tela |
 |---|---|---|---|
@@ -632,6 +636,8 @@ Lidas por `get_shopee_repasse_overview`, `get_shopee_repasse_daily`, `get_shopee
 ## 5X. Margem por SKU entre marketplaces (D-720) — DEFINIDAS E IMPLEMENTADAS
 
 Lidas por `get_sku_margins` para uma lista de SKUs (até 500) e um período (até 366 dias): uma linha por conta do ML, por loja da Shopee, por marketplace e o consolidado. Os somatórios vêm do SQL; a razão, de `evaluateSkuMargin` (`@sb/domain`).
+
+A Curva ABC usa essa leitura para os SKUs da página, no período e no canal selecionados, com cobertura em pedidos e indicação de custo atual. A margem aparece para uma conta ou para o recorte consolidado e em janelas de até 366 dias.
 
 | Id | Definição |
 |---|---|

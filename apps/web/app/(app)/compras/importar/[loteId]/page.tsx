@@ -10,7 +10,7 @@ import { formatCount, formatDateTime } from "../../../../../lib/format";
 import { podeOperarCompras } from "../../../../../lib/purchase-order-permission";
 import { currentMembership } from "../../../../../lib/request-membership";
 import { createClient } from "../../../../../lib/supabase/server";
-import { GrupoRegistro, LinhaConferencia, type GrupoLote, type LinhaLote } from "./conferencia";
+import { CriarSkusDoLote, GrupoRegistro, LinhaConferencia, type GrupoLote, type LinhaLote } from "./conferencia";
 
 export const metadata = { title: "Conferir importação — Speed Bikers Gestão" };
 export const dynamic = "force-dynamic";
@@ -142,6 +142,8 @@ export default async function LoteImportacaoPage({
           </div>
         ))}
       </section>
+
+      <CriarSkusDoLote loteId={loteId} naoEncontradas={r.nao_encontradas ?? 0} />
 
       <Panel
         title="Pedidos encontrados"

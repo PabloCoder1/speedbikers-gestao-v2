@@ -29,6 +29,8 @@ import { createShopeeReturnsSyncHandler } from "./handlers/shopee-returns-sync.j
 import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js";
 import { createSyncAdsCampaignsHandler } from "./handlers/sync-ads-campaigns.js";
 import { createSyncCentralAlertsHandler } from "./handlers/sync-central-alerts.js";
+import { createDetectLowMarginSalesHandler, createSupabaseMarginAlertStore } from "./handlers/detect-low-margin-sales.js";
+import { createSmtpSender } from "./margin-alert-email.js";
 import { createListingSalesDropHandler } from "./handlers/listing-sales-drop.js";
 import { createSyncListingItemHandler } from "./handlers/sync-listing-item.js";
 import { createSyncFulfillmentSnapshotHandler } from "./handlers/sync-fulfillment-snapshot.js";
@@ -124,6 +126,18 @@ const nfeHandlers =
         "nfe.import.apply": createNfeImportApplyHandler({ db }),
       }
     : {};
+
+// D-858: o e-mail do alerta de margem só existe com o SMTP configurado; sem ele, o sino funciona igual.
+const marginAlertEmail =
+  env.SMTP_HOST !== undefined && env.SMTP_USER !== undefined && env.SMTP_PASSWORD !== undefined
+    ? createSmtpSender({
+        host: env.SMTP_HOST,
+        port: env.SMTP_PORT,
+        user: env.SMTP_USER,
+        password: env.SMTP_PASSWORD,
+        from: env.ALERT_EMAIL_FROM ?? env.SMTP_USER,
+      })
+    : null;
 
 const sendSupportReply = createSendSupportReplyHandler({ db, mercadoLivre, oauth, encryptionKey });
 
@@ -246,6 +260,12 @@ const app = createWorkerApp({
     // D-629 (C-79): a queda nas vendas por anúncio, do mesmo gatilho diário.
     "diagnostics.listing-sales-drop": createListingSalesDropHandler({ db }),
     "diagnostics.measure-decision-outcomes": createMeasureDecisionOutcomesHandler({ db }),
+    // D-858: a venda abaixo da margem, de hora em hora (o piso de métricas a enfileira).
+    "diagnostics.detect-low-margin-sales": createDetectLowMarginSalesHandler({
+      store: createSupabaseMarginAlertStore(db),
+      email: marginAlertEmail,
+      appUrl: env.WEB_APP_URL,
+    }),
     ...nfeHandlers,
     ...shopeeHandlers,
   }),

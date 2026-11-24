@@ -81,7 +81,10 @@ test("/produtos: a curadoria em lote só escreve depois de dizer a consequência
   await expect(page.getByRole("button", { name: "Desfazer" })).toBeVisible({ timeout: 15000 });
 
   // E a tela reflete a escrita: o SKU deixou de estar "não classificado".
-  await expect(page.getByText("não classificado", { exact: true })).toHaveCount(0);
+  // Na linha dele: outros specs criam SKU novo (D-792), que nasce não classificado.
+  await expect(
+    page.locator("tbody tr", { hasText: E2E_SKU_CODE }).getByText("não classificado", { exact: true }),
+  ).toHaveCount(0);
 
   /*
     5. E DESFAZER desfaz — clicar aqui não é limpeza de cortesia.
@@ -93,7 +96,10 @@ test("/produtos: a curadoria em lote só escreve depois de dizer a consequência
     pior do que não existir.
   */
   await page.getByRole("button", { name: "Desfazer" }).click();
-  await expect(page.getByText("não classificado", { exact: true }).first()).toBeVisible({ timeout: 15000 });
+  // Na linha dele: com outro SKU não classificado na tela, `.first()` passava antes do desfazer gravar.
+  await expect(page.locator("tbody tr", { hasText: E2E_SKU_CODE }).getByText("não classificado", { exact: true })).toBeVisible({
+    timeout: 15000,
+  });
 });
 
 /**

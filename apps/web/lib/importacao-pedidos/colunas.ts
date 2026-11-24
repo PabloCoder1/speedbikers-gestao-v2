@@ -1,4 +1,4 @@
-import { detectarLista, numeroDeInvoice, referenciaPadrao, resumoDoDocumento, textoLimpo, type DocumentoFornecedor } from "./invoice";
+import { detectarLista, ehMoedaSolta, numeroDeInvoice, referenciaPadrao, resumoDoDocumento, textoLimpo, type DocumentoFornecedor } from "./invoice";
 import { colunaDe, indiceDaColuna, type Aba, type Celula } from "./xlsx";
 
 /**
@@ -358,20 +358,41 @@ function colunasDaLista(aba: Aba, layout: NonNullable<ReturnType<typeof detectar
 
   for (const n of layout.itens) for (const c of aba.grade.get(n)?.keys() ?? []) colunas.add(c);
 
-  return [...colunas]
-    .sort((a, b) => indiceDaColuna(a) - indiceDaColuna(b))
-    .map((coluna) => {
-      const valores = layout.itens.map((n) => aba.grade.get(n)?.get(coluna)).filter((c): c is Celula => c !== undefined);
+  for (const c of cabecalho?.keys() ?? []) colunas.add(c);
 
-      return {
-        coluna,
-        cabecalho: textoLimpo(cabecalho?.get(coluna)),
-        papel: papelDe.get(coluna) ?? "IGNORAR",
-        referencia: null,
-        preenchidas: valores.length,
-        numericas: valores.filter((c) => numeroDeInvoice(c.texto) !== null).length,
-      };
+  const valoresDe = (coluna: string): Celula[] =>
+    layout.itens.map((n) => aba.grade.get(n)?.get(coluna)).filter((c): c is Celula => c !== undefined);
+  const resultado: ColunaClassificada[] = [];
+  // Título impresso numa célula mesclada ("Unit Price" sobre I:J) fica na
+  // primeira coluna; o número está na seguinte. O título sem dado embaixo
+  // passa para a coluna de dado logo ao lado, se ela não tem título próprio.
+  let tituloSolto = { texto: "", indice: -1 };
+
+  for (const coluna of [...colunas].sort((a, b) => indiceDaColuna(a) - indiceDaColuna(b))) {
+    const valores = valoresDe(coluna);
+    const proprio = textoLimpo(cabecalho?.get(coluna));
+    // Só o "$" ao lado do preço, ou nenhum item: não é coluna de dado.
+    const semDado = valores.length === 0 || valores.every((c) => ehMoedaSolta(c.texto));
+
+    if (semDado) {
+      tituloSolto = { texto: proprio, indice: indiceDaColuna(coluna) };
+      continue;
+    }
+
+    const herdado = indiceDaColuna(coluna) - tituloSolto.indice === 1 ? tituloSolto.texto : "";
+
+    resultado.push({
+      coluna,
+      cabecalho: proprio !== "" ? proprio : herdado,
+      papel: papelDe.get(coluna) ?? "IGNORAR",
+      referencia: null,
+      preenchidas: valores.length,
+      numericas: valores.filter((c) => numeroDeInvoice(c.texto) !== null).length,
     });
+    tituloSolto = { texto: "", indice: -1 };
+  }
+
+  return resultado;
 }
 
 /**

@@ -573,6 +573,8 @@ Levantadas pela pesquisa da documentação oficial que fecha a lista de verifica
 
 ## D-055 — TRANSITO nasce ao marcar o pedido de compra `ORDERED`, fecha em `RECEIVED`/`CANCELLED`; nunca gera LOCAL
 
+> **Revista em parte por D-792 (19/11/2026):** receber passa a gravar ENTRADA_COMPRA no LOCAL junto com o RECEBIMENTO_TRANSITO. Cancelar continua sem LOCAL.
+
 **Contexto:** o ciclo do pedido de compra (`suppliers`/`purchase_orders`/`purchase_order_items`/`purchase_order_events`, D-040) existia desde 2026-08-22, mas não tocava o ledger — `docs/ROADMAP.md` registrava explicitamente a pergunta em aberto: "falta decidir QUANDO nasce TRANSITO (aprovação? confirmação de envio pelo fornecedor, que a V3 não tem como saber sem integração?)".
 
 **Decisão:** TRANSITO nasce quando o pedido é marcado `ORDERED` (`mark_purchase_order_ordered`) — o compromisso de compra assumido pela própria organização, NÃO uma confirmação de despacho do fornecedor. Fecha (`RECEBIMENTO_TRANSITO`, `qty_delta` negativo) em duas situações: recebimento total (`receive_purchase_order`) ou cancelamento enquanto `ORDERED` (`cancel_purchase_order`, se `status = 'ORDERED'` no momento da chamada) — do ponto de vista do ledger, "o trânsito encerrou" é o fato relevante; o motivo (chegou vs. cancelado) já fica no histórico de `purchase_order_events`, que tem `event_type` próprio para cada caso. Pedido cancelado em `DRAFT`/`APPROVED` nunca abriu TRANSITO, então não gera reversão. Os dois `stock_movements` são gravados na MESMA transação SQL das RPCs (`security definer`, mesmo mecanismo que já grava `purchase_order_events`), não por um job assíncrono do worker.
@@ -19875,7 +19877,7 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 **Decisão:** a aba que é invoice é reconhecida pelo conteúdo, não pelo nome: há colunas numéricas em que quantidade × preço = valor em pelo menos duas linhas (tolerância de meio por cento). Quantidade e preço se separam pelo título acima (Quantity / Unit Price), depois pelos decimais. Os outros papéis vêm do conteúdo: 8 dígitos é NCM, PCS/SETS/PRS é unidade, código parecido com o S/C do cabeçalho é a referência, token com dígito e quase sem repetição é o código, o texto mais longo é a descrição. O resto vira observação. O cabeçalho do documento (tipo, número, data, S/C, B/L, contêiner, entrega) é guardado por linha; data só vira ISO quando não é ambígua.
 
 - **Referência:** a coluna do pedido; sem ela, o S/C único do cabeçalho; sem S/C, o número da proforma (a proforma é o pedido); vários S/C sem coluna deixam "a informar". Nunca inventada; o usuário pode trocar o padrão da aba.
-- **Moeda:** USD só com "$" ou "USD" no documento; sem marca, desconhecida.
+- **Moeda:** USD só com "$" ou "USD" no documento; sem marca, desconhecida. *Nota de 19/11:* a marca também vale quando está só no formato numérico da célula (`\$#,##0.0`, `[$$-409]`, `"US$"`; `R$` dá BRL). Há proforma real que mostra o "$" apenas pela formatação e saía sem moeda. O leitor de .xlsx abre `styles.xml` e o de .xls lê FORMAT/XF só para isso. O texto do documento continua mandando sobre o formato; `[$-409]` (idioma sem símbolo) e os formatos internos do Excel, que dependem do idioma do computador, não declaram moeda.
 - **Lista de embalagem** repete a invoice: quando o arquivo tem aba de invoice, a PL começa desmarcada.
 - **Conferência:** a soma lida é comparada ao TOTAL do documento e a diferença vira aviso (há proforma real cujo TOTAL impresso não fecha com os próprios itens; o sistema não corrige o documento).
 - **.xls:** leitor BIFF8 próprio no navegador (CFB, SST com CONTINUE, LABELSST, NUMBER, RK, MULRK, FORMULA com valor em cache). Arquivo protegido por senha ou BIFF5 é recusado com mensagem.
@@ -19883,3 +19885,164 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 **Banco** (`20261119120000_importacao_invoices.sql`): `purchase_import_rows` ganha `source_unit_price`, `source_amount`, `source_currency`, `source_unit` e `source_document` (só as chaves conhecidas). Ao gravar, o mesmo SKU da mesma referência é somado num item (a invoice parte o item em várias linhas) em vez de bloquear; o custo unitário só é preenchido com uma moeda e um preço iguais em todas as linhas do SKU, e, ao acrescentar a um pedido existente, só na moeda dele. A pré-visualização mostra quanto do SKU já está no pedido de mesma referência ("já no pedido"), e acrescentar um SKU que já está nele continua recusado (D-761): invoice é embarque do pedido, não pedido novo. A etapa sugerida é "embarcado" quando há B/L ou contêiner, a previsão vem da entrega, e a data do pedido da proforma; a situação continua escolha do usuário. A mesma migration corrige o `'s+'` sem barra de `get_purchase_import_batch`.
 
 **Alternativas rejeitadas:** ler as invoices com a API do Claude -- todas as invoices reais recebidas foram lidas de forma determinística, e um modelo pode inventar referência ou quantidade, o que D-764 proíbe; fica como reserva para um layout que a regra não reconheça. Converter a moeda para real na importação -- o câmbio do dia do pedido não está no documento.
+
+## D-792 - Receber o pedido de compra dá entrada no estoque, e a conferência da invoice cria o SKU que falta
+
+**Contexto:** D-055 deixava o recebimento do pedido só fechar o TRANSITO: a entrada no LOCAL vinha da nota fiscal (ENTRADA_NFE) ou da planilha do UpSeller. Na operação real o pedido importado (invoice em dólar, sem nota de entrada no sistema) era recebido, o trânsito zerava e a unidade sumia, e a sugestão de compra voltava a pedir o que já tinha chegado. Na conferência da invoice, o produto que ainda não existia no catálogo só podia ser ignorado: o código e o nome estavam na linha, mas não havia como criá-lo ali. E a fila de pedidos mostrava pedido em dólar com R$.
+
+**Decisão (do dono, 19/11):**
+
+- **Receber dá entrada.** `receive_purchase_order` e `receive_purchase_order_items` gravam, na mesma transação, o RECEBIMENTO_TRANSITO negativo e um ENTRADA_COMPRA positivo no LOCAL, com a mesma chave idempotente por item e requisição. O vocabulário fechado ganha ENTRADA_COMPRA (D-055 cede só nesse ponto; cancelar continua fechando o trânsito sem LOCAL). A conciliação com o UpSeller (D-029) continua acertando o LOCAL pelo saldo do ERP: se o UpSeller não receber a mesma entrada, a conciliação desfaz a diferença. A nota de entrada do mesmo pedido não deve ser lançada de novo.
+- **Criar SKU na conferência.** `create_skus_from_import_rows(lote, linhas?)` cria o SKU com o código, a descrição e o NCM (só com 8 dígitos) da própria linha e vincula. Sem lista, todas as NÃO ENCONTRADAS sem vínculo do lote; ambígua e provável só uma a uma. Código que já existe só vincula; o mesmo código em várias linhas cria um SKU só. Código parecido com um do catálogo (sem pontuação e sem zero à esquerda de número: KC30 × KC0030) não é criado e volta como aviso, para o usuário vincular pela busca. O antes e o depois vão para `purchase_import_row_events`.
+- **Moeda na fila.** `get_purchase_orders_overview` traz a moeda de cada pedido e a tela formata o valor nela; os cartões somam em reais pelo câmbio do pedido, e pedido estrangeiro sem câmbio conta como valor desconhecido (D-254), nunca o número em dólar lido como real.
+
+**Consequência:** o SKU criado aqui só se junta ao produto do UpSeller se o código for idêntico (a importação do ERP casa por `sku_key`); o dono cria lá com o mesmo código.
+
+**Alternativas rejeitadas:** vincular sozinho o código parecido -- D-764 só aceita vínculo exato automático, e KC30 pode ser outro produto; esperar a NF-e para dar entrada -- é o que deixava a sugestão errada, e o pedido importado não tem nota no sistema.
+
+## D-858 - Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
+
+**Contexto:** o dono quer saber de cada venda que sai abaixo da margem, sem abrir a Curva ABC. A margem é a de 5F e da regra 5X: (recebido − custo) ÷ preço, com o custo na data da venda. As marcas importadas (Navetec, Off Racer, Off Volt) custam mais para repor e têm meta maior.
+
+**Decisão (do dono, 23/11):**
+
+- **Metas:** 40% para as marcas importadas, 30% para o resto. Ficam em `margin_alert_settings` (uma linha por empresa, editável por ADMIN e GESTOR em `/central/limites`), com a lista de marcas e até 20 e-mails. A meta é estrita: margem exatamente igual à meta não avisa.
+- **Marca é a do fornecedor.** Vale `skus.supplier_brand`, comparada por `private.chave_da_marca` (maiúsculas, só letras e dígitos). `skus.brand` é a CATEGORIA do UpSeller e é ignorada. O kit é importado quando algum componente for. SKU sem marca do fornecedor é julgado pela meta dos demais.
+- **Só a venda coberta é julgada**, como na 5X: no ML, pedido de uma linha, com comissão e frete observados e custo conhecido; na Shopee, o pedido coberto de SKU único de `get_shopee_faturamento_pedidos`. Pedido sem frete ainda não é julgado e entra na rodada em que o frete chegar. Venda sem custo não vira alerta.
+- **Um alerta por pedido.** `detectar_vendas_abaixo_da_margem` (só `service_role`) varre os últimos 7 dias desde `active_since`, grava `sale_margin_alerts` (único por empresa, canal e pedido) e um `domain_events` `sale.margin.below` (importante). O sino sai do fan-out de sempre, pela conta ou loja. Venda anterior à ativação nunca avisa.
+- **E-mail fora da transação.** O job `diagnostics.detect-low-margin-sales` roda de hora em hora pela rota `/internal/schedule/metrics-refresh`, sem job novo de Scheduler. Ele manda **um** e-mail por rodada com as vendas novas (destinatários em cópia oculta, por SMTP). Falha de SMTP não desfaz o alerta: tenta de novo até 5 vezes; SMTP sem configurar deixa o e-mail pendente, e pendente há mais de 48 h vira `skipped`. O sino nunca depende do e-mail.
+- **E-mail é a exceção ao "in-app apenas" de `NOTIFICATIONS.md` §8**, restrita a este alerta. Os endereços vivem só no banco, nunca no repositório.
+
+**Consequência:** o worker ganha `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (Secret Manager), `SMTP_PORT` (465), `ALERT_EMAIL_FROM` e `WEB_APP_URL`. Sem as três primeiras, o worker sobe e o alerta fica só no sino. Pedido de várias linhas no ML e de vários SKUs na Shopee não é julgado, porque o frete não se divide por produto (5E).
+
+**Alternativas rejeitadas:** usar `skus.brand`, que é a categoria do UpSeller e marcaria produto errado como importado; um e-mail por venda, que enche a caixa num dia de promoção; disparar e-mail dentro do trigger do banco, que prenderia a escrita do pedido à disponibilidade do SMTP; avisar com custo desconhecido como zero, que mostraria margem cheia em vez de "não sei".
+
+## D-859 - O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
+
+**Contexto:** D-858 julgava as vendas de hora em hora, pela rota do piso de métricas. Na primeira rodada de produção, a Shopee pôs dezenas de vendas no sino de uma vez, e o dono prefere receber o resumo em horário fixo. O ML, além disso, só ficava julgável depois da varredura diária do frete das 9h30.
+
+**Decisão (do dono, 24/11):**
+
+- **Duas rodadas por dia, às 8h e às 17h de Brasília, todos os dias.** O job `v3-low-margin-sales` (`0 8,17 * * *`) chama `/internal/schedule/low-margin-sales`. Cada rodada julga as vendas novas, cria os avisos do sino e manda o e-mail. A rota do piso de métricas volta a pedir só o recálculo (D-304).
+- **O frete do ML chega antes de cada rodada.** `v3-order-financials-sweep` passa de `30 9 * * *` para `30 6,16 * * *`. A varredura pula o pedido já capturado, então a segunda rodada só lê o que entrou depois da primeira; 6h30 fica antes das visitas das 7h, que disputam o mesmo rate limit.
+- **E-mail em lotes de 200 vendas, até 5 por rodada.** Meio dia junta mais vendas que as 50 de um e-mail de D-858. O que passar de mil fica para a rodada seguinte.
+- **A conta não muda:** margem = (valor líquido recebido − custo do produto) × 100 ÷ valor de venda, com as metas de D-858 (40% importadas, 30% demais).
+
+**Consequência:** a venda do ML feita depois das 16h30 só aparece na rodada das 8h do dia seguinte; a da Shopee, na rodada seguinte à sincronização do pedido. A saúde do job passa a esperar até 15 h entre rodadas.
+
+**Alternativas rejeitadas:** julgar de hora em hora e só segurar o e-mail, que deixaria o sino tocando o dia todo; manter a varredura do frete às 9h30, que deixaria o ML da noite fora da rodada das 8h.
+
+## D-860 - O produto que sai da planilha de produtos do UpSeller fica fora do catálogo, nunca apagado
+
+**Contexto:** a aplicação de um lote PRODUCTS só criava e atualizava os SKUs que estavam no arquivo. O produto que o dono tirou do UpSeller continuava ativo na V3, com o último saldo da planilha de estoque, e seguia na Reposição pedindo compra de algo que não existe mais. O dono perguntou se uma planilha nova apagaria os que sumiram, e achava que deveria.
+
+**Decisão (do dono, 23/11, sobre o desenho apresentado):**
+
+- **Marcar, não apagar.** O SKU é referenciado por pedidos, vínculos, pedidos de compra e pelo ledger de estoque; apagar quebraria esse histórico. O ausente ganha `is_active` falso e `erp_absent_since`/`erp_absent_batch_id` (migration `20261124100000`). O `is_active` falso leva o produto para "Inativo" em toda tela que já trata a situação; a coluna nova diz por quê, e as telas mostram "Fora do catálogo" (selo em `/produtos`, selo e aviso em `/skus/[id]`).
+- **Quem é julgado.** Só o SKU PRODUTO que já veio numa planilha de produtos APLICADA (`products_batch_absent_sku_ids`). O criado pela invoice (D-792) e o kit do arquivo de kits nunca entram. "Presente" é qualquer linha OK da planilha nova com a mesma `sku_key`: a linha de produto só deixa de ser OK quando não tem SKU, e essa não diz de qual produto se trata.
+- **Quem decide é quem confirma.** A conferência de uma planilha de produtos mostra quantos ficariam fora (com saldo, com anúncio vinculado, já marcados, que voltam) e uma caixa "esta planilha é o catálogo completo". Ela vem marcada até 10% do catálogo conhecido e desmarcada acima disso, com o aviso de exportação parcial: um filtro ou uma página exportada por engano desativaria produtos que existem. A escolha segue no corpo de `POST /v1/erp-imports/:id/apply` (`markAbsent`) e no payload do job, e não numa coluna: vale para aquela aplicação só.
+- **Volta sozinho.** O SKU marcado PELA PLANILHA que reaparece numa planilha posterior perde a marca, com ou sem a caixa; o `is_active` volta a ser o que o UpSeller manda, porque a própria aplicação o grava antes da marcação rodar.
+- **O saldo não vira zero.** Ausência de dado não é zero: o saldo continua o último que veio, e a página do SKU diz isso. A Reposição deixa o marcado de fora por uma linha em `get_purchase_suggestions` (`and sk.erp_absent_since is null`), que `get_replenishment_overview`, `get_purchase_analysis` e as sugestões do pedido de compra herdam.
+- **Idempotente.** `apply_products_batch_absences(lote, marcar)` (só `service_role`) marca só quem ainda não tem marca e acumula `absent_marked`/`absent_cleared` no lote; a reentrega do job soma zero. `absent_marked` nulo quer dizer "não pedido", diferente de zero marcado. Marcação pedida que falha deixa o lote em APPLYING e pede nova tentativa; sem marcação pedida, a falha de tirar a marca de quem voltou só é registrada em log.
+- **Marca à mão em Produtos (pedido do dono no mesmo dia: "seleciono a categoria e eu mesmo marco").** O dono recusou arquivar e excluir em lote e pediu a mesma etiqueta, posta por ele. A barra de lote de `/produtos` ganhou o menu **Catálogo** ("Marcar fora do catálogo" e "Voltar ao catálogo"), com o painel de conferência que diz a consequência e o Desfazer do marcar. A escrita é `set_skus_out_of_catalog(org, ids, fora)`, no desenho de `set_skus_supplier_brand` (D-133): até 500 por vez, ADMIN e GESTOR, desfecho por linha (migration `20261124110000`). A marca ganhou origem (`erp_absent_source`: PLANILHA ou MANUAL) e guarda o `is_active` de antes (`erp_absent_was_active`). A marca MANUAL não sai com a planilha: o produto que o UpSeller ainda lista continua fora, e `apply_products_batch_absences` reafirma o `is_active` falso depois que a aplicação o regrava; a prévia não o conta como volta. Tirar a marca à mão devolve o `is_active` guardado, e marcar à mão o que a planilha já marcou não troca a origem (JA_DECIDIDO). Devolver ao catálogo não tem Desfazer: marcar de novo trocaria uma marca da planilha por manual.
+
+**Ordem de publicação:** migration de produção → worker → api → web. A web e a api toleram a migration ausente (sem prévia, a conferência fica como era e a confirmação sai sem corpo, lida como "não marcar"). O worker antigo descartaria o `markAbsent` em silêncio, por isso vai antes da api.
+
+**Alternativas rejeitadas:** apagar o SKU (quebra pedidos, vínculos e ledger); arquivar ou excluir em lote na tela de Produtos (o dono preferiu a mesma etiqueta à mão; excluir de vez só serviria ao SKU sem histórico nenhum); zerar o saldo do ausente (ausência de dado não é zero, e a planilha de estoque é outro arquivo); reaproveitar só o `is_active` sem coluna nova (perderia a diferença entre "inativo no UpSeller" e "saiu da exportação", e a volta automática não saberia quem tirar); marcar sempre, sem a caixa (uma exportação parcial desativaria o catálogo inteiro); estender a regra a kits e ao arquivo de estoque nesta fatia (cada arquivo tem o seu sentido de ausência e fica para depois, como o aviso na Central de Ações de produto fora do catálogo com anúncio ativo).
+
+**Numeração:** registrada como D-795 no PR #383 (23/11) e renumerada para D-860 em 24/11, porque o Gemini Sentinel usa D-795 no candidato #378. As migrations passaram de `20261123150000`/`160000` para `20261124100000`/`110000`, depois da `20261123180000` da main; nenhuma tinha sido aplicada.
+
+## D-861 - O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
+
+**Contexto:** a D-860 tira da Reposição o SKU fora do catálogo, mas deixou para depois o aviso de quem ainda tem anúncio ativo. Esse anúncio continua vendendo um produto que a empresa tirou do UpSeller ou marcou à mão como fora. A prévia da conferência só conta quantos têm vínculo, e só no momento de aplicar a planilha.
+
+**Decisão:**
+
+- **A fonte:** `sincronizar_alertas_central` ganha `fora_do_catalogo_anunciado` (seção 4.8, migration `20261124120000`). O corpo é o da `20261021150000` (D-627), que era a última definição na main, no candidato #378 e na branch do Gemini em 24/11.
+- **O sinal:** SKU com `erp_absent_since` (planilha ou à mão) que tem pelo menos um anúncio ativo vinculado.
+  - **Mercado Livre:** o vínculo de `get_sku_listings` (o SKU resolvido em `listings` e o vínculo ITEM), com o anúncio `active` e `deleted_at` nulo (D-631 b).
+  - **Shopee:** a unidade de anúncio NORMAL, de loja live, vinculada ao SKU.
+- **A ação:** uma por SKU (`subject_key` = id do SKU, `sku_id` preenchido, sem conta nem loja, porque o SKU pode estar em várias).
+  - Severidade média, sem notificação. Confiança alta, porque o fato é certo. Impacto nulo.
+  - O saldo de quem saiu da planilha para de se atualizar, por isso não serve para graduar a severidade. Ausência não vira zero: sem saldo registrado, a evidência diz isso.
+- **A evidência:** desde quando e por quê o SKU está fora, quantos anúncios ativos em cada canal, o último saldo local e a lista dos 20 primeiros anúncios.
+- **A recomendação** segue a origem da marca. Para a da planilha: pausar o anúncio, ou cadastrar o produto de novo no UpSeller (a próxima planilha tira a marca). Para a manual: pausar o anúncio, ou voltar o SKU ao catálogo em Produtos.
+- **Encerramento:** o ciclo de vida comum (5.4). Quem volta ao catálogo, ou fica sem anúncio ativo, encerra 3 dias depois, com o motivo escrito.
+- **Tela:** o rótulo "Fora do catálogo com anúncio ativo" (problema) em `packages/domain`. Os atalhos são o Dashboard do SKU, "Anúncios do SKU" (`/skus/[id]?aba=anuncios`) e "Produtos" pela busca do código.
+- **Worker:** `FONTES_ALERTAS` ganha a fonte, por último.
+
+**Fora desta fatia:** o kit cujo componente saiu do catálogo, e o anúncio que não está vinculado a SKU nenhum (esse já é a Central de Vinculações).
+
+**Ordem de publicação:** depende das migrations da D-860 (`20261124100000` e `20261124110000`). A ordem é: migration `20261124120000` → worker → web. O worker antigo não pede a fonte, e nada quebra. O worker novo antes da migration teria só essa fonte recusada a cada rodada, e o job voltaria para a fila. A web sozinha só ganha o rótulo e os atalhos.
+
+**Alternativas rejeitadas:** severidade alta com notificação (o dono já decidiu ao marcar, e um aviso por SKU no sino viraria ruído); uma ação por anúncio (o mesmo SKU em várias contas abriria várias ações para uma decisão só); julgar pelo saldo (congelado para quem saiu da planilha); pausar o anúncio sozinho (escrita visível ao cliente é decisão do dono).
+
+**Verificação:**
+- Integração (`fora-do-catalogo-na-central.integration.test.ts`, 7 testes):
+  - só A e B são detectados;
+  - não entram o anúncio pausado, o excluído, o SKU no catálogo, o SKU sem anúncio e a Shopee fora do ar;
+  - a evidência e a recomendação seguem a origem da marca;
+  - a mesma rodada no mesmo dia não duplica;
+  - quem volta ao catálogo encerra no 3º dia com o motivo;
+  - a função continua sem grant para `authenticated` e `anon`.
+- Unitários: o rótulo, os atalhos e as 8 chamadas do worker.
+
+## D-862 - O kit que leva um componente fora do catálogo conta no aviso da Central
+
+**Contexto:** a D-861 deixou de fora o kit cujo componente saiu do catálogo. A venda do kit baixa o estoque dos componentes (`sku_components`), então o anúncio ativo do kit também vende o produto que a empresa deixou de ter. O kit nunca recebe a marca: a D-860 só marca PRODUTO.
+
+**Decisão:**
+
+- **Mesma fonte e mesma ação.** `fora_do_catalogo_anunciado` passa a contar, para cada SKU fora do catálogo, os anúncios ativos dele e os anúncios ativos de todo kit que o leva como componente. A regra do anúncio é a mesma de cada canal: o vínculo de `get_sku_listings` no Mercado Livre e a unidade NORMAL de loja live na Shopee. A migration é a `20261124130000`, com o corpo da `20261124120000`; só a seção 4.8 muda.
+- **Uma ação por SKU fora do catálogo**, e não uma por kit. A decisão é uma só, a do componente. Abrir uma ação por kit espalharia a mesma decisão pela Central.
+- **Evidência:** `anuncios_de_kit` conta quantos anúncios são de kit. Cada anúncio de kit traz o código dele em `kit_sku`, e a lista põe primeiro os do próprio SKU. O texto diz quantos são de kit.
+- **Recomendação:** com anúncio de kit, ganha "No kit que leva o SKU, troque o componente no UpSeller ou pause o anúncio do kit."
+- **Sem mudança no worker nem na web:** a fonte é a mesma, e a tela já mostra a evidência e a recomendação escritas no banco.
+
+**Ordem de publicação:** depois da `20261124120000`, a migration `20261124130000`. Nada mais a publicar.
+
+**Alternativas rejeitadas:** uma ação por kit (a mesma decisão em várias linhas); marcar o kit como fora do catálogo (o kit continua existindo no UpSeller e pode trocar o componente); contar o kit só quando todos os componentes saíram (basta um faltar para o kit não poder ser montado).
+
+**Verificação:**
+- Integração (`fora-do-catalogo-na-central.integration.test.ts`, 8 testes): o H, fora do catálogo, só vende por dois kits (um no ML e um na Shopee) e é detectado com os dois. O kit que leva um componente do catálogo não entra.
+- A ordem da lista é determinística, primeiro os do próprio SKU e depois os de kit. A primeira versão ordenava pelo UUID do kit e variava entre rodadas.
+- `@sb/db test:integration`: 1.237 testes, duas rodadas com `db reset`.
+
+## D-863 - "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
+
+**Contexto:** no ensaio de 24/11 do S04, o dono entrou e aceitou convite, mas não achou o "Esqueci a senha". A tela nunca o teve. D-296 e D-302 decidiram que o acesso volta pelo link gerado em `/usuarios`, porque o Auth não tinha SMTP. A leitura do Auth da VM de produção, em 24/11, mostra que isso continua verdade: `GOTRUE_SMTP_HOST=supabase-mail`, o capturador de testes do Compose, com remetente `admin@example.com`. Um botão ligado hoje responderia "pedido recebido" e o e-mail não chegaria a ninguém.
+
+**Decisão:**
+
+- **O botão existe, atrás de uma chave do servidor.**
+  - "Esqueci a senha" aparece na entrada só com `RECUPERACAO_SENHA_POR_EMAIL=1`, lida pela página `/login` a cada requisição.
+  - Sem a variável, a tela fica como antes, com a nota de pedir o link a quem administra.
+- **O fim do caminho é o que já existe.**
+  - O pedido usa `resetPasswordForEmail` com volta para `/login`.
+  - O e-mail traz a sessão no fragmento com `type=recovery`, e a pessoa cai no "Crie uma nova senha" do link de `/usuarios` (`invite-hash.ts`).
+  - Não há rota nova nem endereço novo na lista de redirecionamentos.
+- **Fluxo implícito, e não PKCE.**
+  - O cliente de `@supabase/ssr` usa PKCE: o link voltaria com `?code=`, e a troca exige o verificador guardado no navegador que pediu. Quem pede no computador e abre o e-mail no celular ficaria sem acesso.
+  - O pedido sai de um cliente próprio (`createRecoveryClient`), implícito e sem sessão.
+- **A tela não diz quem tem acesso.**
+  - O Auth responde sucesso para e-mail que não existe, e a tela mostra "Pedido recebido" nos dois casos, pela mesma razão do "E-mail ou senha incorretos.".
+  - Só o limite de envios (429) tem texto próprio, porque pede outra ação: esperar.
+
+**Para ligar em produção (atos do dono):**
+1. Na VM `sb-db`, trocar o SMTP do serviço `auth` pelo servidor de e-mail do alerta de margem (segredos `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` e `SMTP_PASSWORD`). As variáveis são `GOTRUE_SMTP_HOST`, `GOTRUE_SMTP_PORT`, `GOTRUE_SMTP_USER` e `GOTRUE_SMTP_PASS`.
+2. Trocar o remetente: `GOTRUE_SMTP_ADMIN_EMAIL` para um endereço da empresa e `GOTRUE_SMTP_SENDER_NAME` para `Speed Bikers Gestão`.
+3. Recriar o container `supabase-auth` e conferir um envio real para um e-mail próprio.
+4. Na Vercel `speedbikers-prod`, criar `RECUPERACAO_SENHA_POR_EMAIL=1` em Production e publicar de novo.
+
+**Alternativas rejeitadas:**
+- Ligar o botão sem SMTP: promete um e-mail que não chega.
+- Mandar o link pelo SMTP do worker, com rota pública própria: seria um endpoint sem autenticação para proteger contra abuso, quando o Auth já tem limite e resposta neutra.
+- Tratar o `?code=` do PKCE: o link falharia em outro navegador.
+
+**Verificação:**
+- Unitários: `recuperar-senha.test.ts`, com 6 testes da chave, da volta e do desfecho.
+- e2e (`recuperar-senha.spec.ts`, 3 testes, com a suíte subindo a `web` com a chave ligada):
+  - o pedido interceptado leva o e-mail digitado na entrada, volta para `/login` e vai sem desafio PKCE;
+  - o 429 mostra o limite;
+  - o link de recuperação da Admin API leva a "Crie uma nova senha", a senha nova entra e a antiga é recusada.
+- O e-mail de verdade não é testado, porque o Supabase local não tem capturador ligado (`[local_smtp]`). O envio real é o passo 3 do dono.

@@ -26,6 +26,8 @@ export const MOVEMENT_TYPES = [
   "LIBERACAO_RESERVA",
   "ENTRADA_TRANSITO",
   "RECEBIMENTO_TRANSITO",
+  // D-792: o recebimento do pedido de compra dá entrada no estoque local.
+  "ENTRADA_COMPRA",
   // D-351: o par da venda que a planilha do UpSeller já tinha descontado.
   "ESTORNO_PRE_CAPTURA",
   // D-351 §12: a anulação da reversão a mais de uma venda estornada.

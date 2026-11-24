@@ -271,6 +271,33 @@ export async function corrigirLinhasImportacao(loteId: string, correcoes: Correc
   return { ok: true, message: null };
 }
 
+export interface ResultadoCriarSkus extends ResultadoAcao {
+  criados?: number;
+  vinculados?: number;
+  semCodigo?: number;
+  /** Código da invoice com um parecido no catálogo: não criado, o usuário vincula. */
+  parecidos?: { rowId: string; code: string; parecido: string }[];
+}
+
+/** D-792: cria o SKU das linhas sem vínculo com o código e o nome da invoice. */
+/** Lista vazia = todas as NÃO ENCONTRADAS do lote (D-792). */
+export async function criarSkusDaImportacao(loteId: string, linhas: string[]): Promise<ResultadoCriarSkus> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("create_skus_from_import_rows", {
+    p_batch_id: loteId,
+    ...(linhas.length > 0 ? { p_row_ids: linhas } : {}),
+  });
+  const message = traduzir(error);
+
+  if (message !== null) return { ok: false, message };
+
+  const r = (data ?? {}) as { criados?: number; vinculados?: number; semCodigo?: number; parecidos?: ResultadoCriarSkus["parecidos"] };
+
+  revalidatePath(`/compras/importar/${loteId}`);
+
+  return { ok: true, message: null, criados: r.criados ?? 0, vinculados: r.vinculados ?? 0, semCodigo: r.semCodigo ?? 0, parecidos: r.parecidos ?? [] };
+}
+
 export async function registrarReferenciaImportada(input: {
   loteId: string;
   referencia: string;

@@ -81,6 +81,10 @@ export const EVENT_SEVERITY: Readonly<Record<string, EventSeverity>> = {
   // nenhum no segundo -- "importante" avisa sem gastar o "crítico", que é de
   // dado errado ou sincronização morta.
   "central.alert.opened": "importante",
+  // D-858: a venda abaixo da margem mínima (40% nas marcas importadas, 30% no
+  // resto), uma por pedido. "importante": pede atenção ao preço ou ao custo,
+  // não é dado errado nem sincronização parada.
+  "sale.margin.below": "importante",
   // MEDIDO antes de calibrar (D-110): 17 mediações NOVAS por dia nesta
   // operação. O requisito propunha "critico" como regra conceitual a
   // calibrar com dado real — 17 críticos/dia esvaziaria o nível na primeira

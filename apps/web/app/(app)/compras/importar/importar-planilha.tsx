@@ -39,8 +39,8 @@ const PAPEIS: Record<PapelColuna, string> = {
   NCM: "NCM",
   DESCRICAO: "Descrição",
   OBSERVACAO: "Observação",
-  QUANTIDADE: "Quantidade de um pedido",
-  REFERENCIA: "Nº do pedido (por linha)",
+  QUANTIDADE: "Quantidade",
+  REFERENCIA: "Nº do pedido (S/C)",
   PRECO: "Preço unitário",
   VALOR: "Valor da linha",
   UNIDADE: "Unidade",
@@ -264,9 +264,17 @@ export function ImportarPlanilha(): ReactNode {
 
             if (c === undefined) return null;
 
-            const amostra = [...aba.grade.entries()].filter(([n]) => n > c.linhaCabecalho).slice(0, 3);
-            const temQuantidade = c.colunas.some((x) => x.papel === "QUANTIDADE");
             const lista = c.lista;
+            // Na invoice, os exemplos vêm dos itens; as linhas logo abaixo do título são B/L e contêiner.
+            const amostra =
+              lista === undefined
+                ? [...aba.grade.entries()].filter(([n]) => n > c.linhaCabecalho).slice(0, 3)
+                : lista.itens.slice(0, 3).flatMap((n) => {
+                    const linha = aba.grade.get(n);
+
+                    return linha === undefined ? [] : [[n, linha] as const];
+                  });
+            const temQuantidade = c.colunas.some((x) => x.papel === "QUANTIDADE");
             const semPedidoNaLinha = lista !== undefined && !c.colunas.some((x) => x.papel === "REFERENCIA");
             // A soma do que foi lido contra o TOTAL que o próprio documento imprime.
             const somaLida = linhas.filter((l) => l.sheet === aba.nome).reduce((s, l) => s + (l.amount ?? 0), 0);
@@ -337,7 +345,7 @@ export function ImportarPlanilha(): ReactNode {
                         <th>Cabeçalho</th>
                         <th>Exemplos</th>
                         <th>É</th>
-                        <th>Referência do pedido</th>
+                        {lista === undefined && <th>Referência do pedido</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -365,18 +373,20 @@ export function ImportarPlanilha(): ReactNode {
                               ))}
                             </select>
                           </td>
-                          <td>
-                            {col.papel === "QUANTIDADE" && lista === undefined && (
-                              <input
-                                className="sb-input sb-input-sm"
-                                value={col.referencia ?? ""}
-                                maxLength={80}
-                                placeholder="informar"
-                                aria-label={`Referência do pedido da coluna ${col.coluna}`}
-                                onChange={(e) => { trocar(aba.nome, col.coluna, { referencia: e.target.value.trim() === "" ? null : e.target.value }); }}
-                              />
-                            )}
-                          </td>
+                          {lista === undefined && (
+                            <td>
+                              {col.papel === "QUANTIDADE" && (
+                                <input
+                                  className="sb-input sb-input-sm"
+                                  value={col.referencia ?? ""}
+                                  maxLength={80}
+                                  placeholder="informar"
+                                  aria-label={`Referência do pedido da coluna ${col.coluna}`}
+                                  onChange={(e) => { trocar(aba.nome, col.coluna, { referencia: e.target.value.trim() === "" ? null : e.target.value }); }}
+                                />
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>

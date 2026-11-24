@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { classificar, classificarAba, ehListaDeEmbalagem, montarLinhas } from "./colunas";
 import { lerData, numeroDeInvoice, referenciaPadrao } from "./invoice";
 import { XlsInvalido, lerBiff, lerXls } from "./xls";
-import type { Aba, Celula } from "./xlsx";
+import { lerAba, lerEstilos, lerPlanilha, moedaDoFormato, type Aba, type Celula } from "./xlsx";
 
 /**
  * Invoice, proforma e "sales confirmation" de fornecedor (D-767). Os layouts
@@ -132,9 +132,18 @@ describe("invoice comercial", () => {
     expect([papel("A"), papel("C"), papel("D"), papel("F"), papel("G"), papel("H"), papel("J"), papel("M")]).toEqual([
       "NCM", "REFERENCIA", "CODIGO", "DESCRICAO", "QUANTIDADE", "UNIDADE", "PRECO", "VALOR",
     ]);
-    // O "$" solto e o NCM nunca viram quantidade nem EAN.
-    expect(papel("I")).toBe("IGNORAR");
-    expect(papel("L")).toBe("IGNORAR");
+    // O "$" solto nem aparece: não é coluna de dado.
+    expect(papel("I")).toBeUndefined();
+    expect(papel("L")).toBeUndefined();
+  });
+
+  it("o título mesclado vai para a coluna que tem o número", () => {
+    const cabecalho = (col: string) => cls.colunas.find((c) => c.coluna === col)?.cabecalho;
+
+    // "Unit Price" está impresso em I e "Amount" em L, mas o número está em J e M.
+    expect(cabecalho("J")).toBe("Unit Price");
+    expect(cabecalho("M")).toBe("Amount");
+    expect(cabecalho("D")).toBe("");
   });
 
   it("lê o cabeçalho do documento", () => {
@@ -266,5 +275,109 @@ describe("leitura do .xls (Excel 97–2003)", () => {
     expect(() => lerXls(new Uint8Array(600))).toThrow(XlsInvalido);
     // BOF de BIFF5 (0x0500).
     expect(() => lerBiff(new Uint8Array([0x09, 0x08, 0x04, 0x00, 0x00, 0x05, 0x05, 0x00]))).toThrow(/versão antiga/);
+  });
+});
+
+describe("moeda pelo formato numérico da célula", () => {
+  it("o código do formato declara USD ou BRL; idioma e outros símbolos não declaram", () => {
+    expect(moedaDoFormato("\\$#,##0.0;\\-\\$#,##0.0")).toBe("USD");
+    expect(moedaDoFormato("[$$-409]#,##0.00")).toBe("USD");
+    expect(moedaDoFormato("[$USD] #,##0.00")).toBe("USD");
+    expect(moedaDoFormato('"US$"0.00')).toBe("USD");
+    expect(moedaDoFormato('0.00 "USD"')).toBe("USD");
+    expect(moedaDoFormato("[$R$-416] #,##0.00")).toBe("BRL");
+    expect(moedaDoFormato('"R$" #,##0.00')).toBe("BRL");
+    // Só o idioma, sem símbolo: data em inglês, não dinheiro.
+    expect(moedaDoFormato("[$-409]mmm d, yyyy")).toBeNull();
+    expect(moedaDoFormato("[Red]#,##0.00")).toBeNull();
+    expect(moedaDoFormato("[$¥-804]#,##0.00")).toBeNull();
+    expect(moedaDoFormato("#,##0.00")).toBeNull();
+    expect(moedaDoFormato("General")).toBeNull();
+  });
+
+  it(".xlsx: o estilo da célula numérica leva a moeda do formato; texto e formato sem moeda, não", async () => {
+    const estilos = `<styleSheet><numFmts count="2"><numFmt numFmtId="167" formatCode="\\$#,##0.0;\\-\\$#,##0.0"/><numFmt numFmtId="168" formatCode="[$-409]mmm d, yyyy"/></numFmts>
+<cellXfs count="4"><xf numFmtId="0" fontId="0"/><xf numFmtId="167" fontId="0" applyNumberFormat="1"><alignment horizontal="center"/></xf><xf numFmtId="168"/><xf numFmtId="49"/></cellXfs></styleSheet>`;
+    const folha = `<worksheet><sheetData>
+<row r="1"><c r="A1" t="inlineStr" s="1"><is><t>TST-37</t></is></c><c r="B1" s="1"><v>2010</v></c><c r="C1" s="2"><v>46000</v></c><c r="D1"><v>3</v></c><c r="E1" s="3"><v>4</v></c></row>
+</sheetData></worksheet>`;
+    const partes: Record<string, string> = {
+      "xl/workbook.xml": `<workbook><sheets><sheet name="INV" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+      "xl/_rels/workbook.xml.rels": `<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`,
+      "xl/styles.xml": estilos,
+      "xl/worksheets/sheet1.xml": folha,
+    };
+    const lida = await lerPlanilha({ texto: (c) => Promise.resolve(partes[c] ?? null) });
+    const l = lida.abas[0]?.grade.get(1);
+
+    expect(lerEstilos(estilos)).toEqual([null, "USD", null, null]);
+    expect(l?.get("B")).toEqual({ texto: "2010", formula: null, numerica: true, moeda: "USD" });
+    expect(l?.get("A")?.moeda).toBeUndefined();
+    expect(l?.get("C")?.moeda).toBeUndefined();
+    expect(l?.get("D")?.moeda).toBeUndefined();
+    expect(l?.get("E")?.moeda).toBeUndefined();
+    // Sem styles.xml, nada muda.
+    expect(lerAba(folha, []).grade.get(1)?.get("B")?.moeda).toBeUndefined();
+  });
+
+  it("a proforma que mostra o $ só pela formatação sai em USD; o texto continua mandando", () => {
+    const comFormato: Aba = {
+      ...SEM_MOEDA,
+      grade: new Map(
+        [...SEM_MOEDA.grade].map(([n, linha]) => [
+          n,
+          new Map([...linha].map(([col, c]) => [col, col === "L" && c.numerica ? { ...c, moeda: "USD" } : c])),
+        ]),
+      ),
+    };
+    const cls = classificar(comFormato, "A2026C701A-.xlsx");
+
+    expect(cls.lista?.documento.moeda).toBe("USD");
+    expect(montarLinhas(comFormato, cls).map((l) => l.currency)).toEqual(["USD", "USD"]);
+    // Sem o formato, continua desconhecida (o teste da proforma sem moeda, acima).
+    expect(classificar(SEM_MOEDA, "A2026C701A-.xlsx").lista?.documento.moeda).toBeNull();
+  });
+
+  it(".xls: FORMAT + XF dão a moeda do NUMBER, do RK e do MULRK", () => {
+    const reg = (tipo: number, dados: number[]): number[] => [tipo & 0xff, tipo >> 8, dados.length & 0xff, dados.length >> 8, ...dados];
+    const u16 = (n: number): number[] => [n & 0xff, (n >> 8) & 0xff];
+    const u32 = (n: number): number[] => [...u16(n & 0xffff), ...u16(n >>> 16)];
+    const textoCurto = (t: string): number[] => [t.length, 0, ...Array.from({ length: t.length }, (_, i) => t.charCodeAt(i))];
+    const texto16 = (t: string): number[] => [...u16(t.length), 0, ...Array.from({ length: t.length }, (_, i) => t.charCodeAt(i))];
+    const f64 = (n: number): number[] => {
+      const b = new DataView(new ArrayBuffer(8));
+
+      b.setFloat64(0, n, true);
+
+      return [...new Uint8Array(b.buffer)];
+    };
+    const rk = (inteiro: number): number[] => u32(((inteiro << 2) | 0x02) >>> 0);
+    const bof = reg(0x0809, [...u16(0x0600), ...u16(0x0005), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const xf = (fmt: number): number[] => reg(0x00e0, [...u16(0), ...u16(fmt), ...new Array<number>(16).fill(0)]);
+    const globais = (posFolha: number): number[] => [
+      ...bof,
+      ...reg(0x041e, [...u16(167), ...texto16("\\$#,##0.0")]),
+      ...xf(0),
+      ...xf(167),
+      ...reg(0x0085, [...u32(posFolha), 0, 0, ...textoCurto("INV")]),
+      ...reg(0x000a, []),
+    ];
+    const tamanhoGlobais = globais(0).length;
+    const fluxo = new Uint8Array([
+      ...globais(tamanhoGlobais),
+      ...reg(0x0809, [...u16(0x0600), ...u16(0x0010), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+      ...reg(0x0203, [...u16(0), ...u16(0), ...u16(1), ...f64(2010.5)]),
+      ...reg(0x0203, [...u16(0), ...u16(1), ...u16(0), ...f64(3)]),
+      ...reg(0x027e, [...u16(1), ...u16(0), ...u16(1), ...rk(670)]),
+      ...reg(0x00bd, [...u16(2), ...u16(0), ...u16(0), ...rk(5), ...u16(1), ...rk(6), ...u16(1)]),
+      ...reg(0x000a, []),
+    ]);
+    const g = lerBiff(fluxo).abas[0]?.grade;
+
+    expect(g?.get(1)?.get("A")).toEqual({ texto: "2010.5", formula: null, numerica: true, moeda: "USD" });
+    expect(g?.get(1)?.get("B")?.moeda).toBeUndefined();
+    expect(g?.get(2)?.get("A")).toMatchObject({ texto: "670", moeda: "USD" });
+    expect(g?.get(3)?.get("A")?.moeda).toBeUndefined();
+    expect(g?.get(3)?.get("B")).toMatchObject({ texto: "6", moeda: "USD" });
   });
 });
