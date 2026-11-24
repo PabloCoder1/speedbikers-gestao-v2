@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **710** (D-001 a D-811).
+Decisões registradas: **713** (D-001 a D-814).
 
 ## Por domínio
 
@@ -144,7 +144,7 @@ Decisões registradas: **710** (D-001 a D-811).
 - **D-767** — Um índice único atende a timeline do Full
 - **D-769** — Ordem de migrations validada por upgrade incremental
 
-### estoque (61)
+### estoque (62)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -207,6 +207,7 @@ Decisões registradas: **710** (D-001 a D-811).
 - **D-802** — Domínio, API e Web: ledger/UpSeller, diretório de contas e indicadores/saúde fail-closed
 - **D-803** — Domínio, API e Web: reversões de estoque, enqueue, filtros ABC, paginação RPC e utilitários web
 - **D-809** — Domínio TikTok Shop: projeção de pedidos, margem oficial V3 e plano de baixa de estoque com guarda D-497 (`M04`)
+- **D-813** — Domínio TikTok Shop: projeção de catálogo/estoque e motor idempotente de devoluções (`M04`)
 
 ### interface (78)
 
@@ -628,7 +629,7 @@ Decisões registradas: **710** (D-001 a D-811).
 - **D-798** — Contratos, API e Worker: janelas de datas no Copiloto, lookup de ferramenta/NF-e/suspensão blindados, papéis/dedupe de claims, cauda de pedidos e `attempt` do worker
 - **D-810** — API TikTok Shop: agendador paginado de pedidos e adaptador Supabase de refresh de token (`M04`)
 
-### worker/infra (122)
+### worker/infra (124)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -752,4 +753,6 @@ Decisões registradas: **710** (D-001 a D-811).
 - **D-786** — Worker verifica erro ao avançar checkpoint de `backfill.orders`, registra `sync_runs` em `sync.order-financials`, pagina `order_items` em `backfill.order-user-products` e preserva retry em `sync-central-alerts`
 - **D-787** — Hardening do worker em persistência/varredura do SAC (`claims`, `messages`, `reply`) e erro transitório na recusa de `nfe.import.apply`
 - **D-794** — Telemetria `@sb/db` (`recordJobRun`/`recordAiRun`) blindada contra transporte e isolamento de enqueue nos 13 agendadores/backfills restantes da API
+- **D-812** — Contratos compartilhados de fila do TikTok Shop em `@sb/contracts` e alinhamento da API (`M04`)
+- **D-814** — Worker `service_role`: isolamento multi-tenant `envelope.organizationId`, escopo explícito de consultas, lotes de upsert e enqueue protegido em 7 handlers
 

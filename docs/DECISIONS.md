@@ -20635,3 +20635,33 @@ Auditoria focada em segurança, integridade de dados e falhas silenciosas em rot
 3. **`apps/web/app/(app)/notas-fiscais/[id]/document-item-row.tsx` e `apps/web/app/(app)/notas-fiscais/saida-manual/saida-manual-form.tsx`:** passam a avaliar o mínimo de 2 caracteres **após** `termoSeguroParaOr(termo)` (impedindo termos como `"%%"` ou `"(("` de virarem `""` e consultarem `.or("sku_key.ilike.%%,...")` retornando SKUs arbitrários), incrementam `ultimaBusca.current` ao limpar termos curtos para descartar respostas atrasadas e envolvem a busca de `document-item-row.tsx` em `try/catch` para não travar `searching = true` em erro de transporte.
 
 TDD RED (`3 failed`, `16 failed | 28 passed (44)`) -> GREEN (`3 passed`, `44 passed (44)`). Verificação completa do monorepo pós-`4241b18a`: `pnpm run check` (`37/37`, `356` arquivos / `4.556` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree` confirmando **zero conflito** para os 5 commits (`30319b7c 43ccb988 f2c4c50c 2e778a02 4241b18a`) em sequência sobre `#378` (`034ffb34`).
+
+## D-812 - Contratos compartilhados de fila do TikTok Shop em `@sb/contracts` e alinhamento da API (`M04`)
+
+Seguindo o mesmo padrão arquitetural de `webhook-topics.ts` (D-179), centralizamos os nomes de job, schemas de payload e geradores determinísticos de `dedupeKey` do TikTok Shop em `packages/contracts/src/tiktok-jobs.ts` (exportado em `packages/contracts/src/index.ts`, commit `ce3d2d63`), eliminando o risco de divergência entre a borda (`apps/api`) e os futuros consumidores (`apps/worker`):
+
+1. **Nomes, janelas e schemas estritos (`packages/contracts/src/tiktok-jobs.ts`):** expõe `TIKTOK_JOB_TYPES` (`tiktok.orders.sync`, `tiktok.items.sync`, `tiktok.order.fetch`, `tiktok.returns.sync`, `tiktok.financials.sync`), `TIKTOK_PUSH_WINDOW_S = 300`, `TIKTOK_ITEMS_DELAY_S = 300`, `isTikTokJobType`, schemas Zod para os 5 payloads (com `z.uuid()` em `tiktokShopId` e strings aparadas não vazias) e `parseTikTokJobPayload` com proteção `Object.hasOwn`.
+2. **Geradores determinísticos de coalescência e `dedupeKey`:** `tiktokPushWindowBucket`, `tiktokPushDedupeKey`, `tiktokScheduleDedupeKey` (com validação de calendário real no prefixo `YYYY-MM-DDTHH`) e `tiktokOrderFetchDedupeKey`, todos falhando fechado com `RangeError` em entradas inválidas e compatíveis com `toTaskName`.
+3. **Alinhamento da API (`apps/api/src/{tiktok-push,tiktok-orders-schedule}.{ts,test.ts}`):** reexportam as constantes e utilizam os geradores de `@sb/contracts`, com testes de contrato ponta a ponta validando via `parseTikTokJobPayload` todos os payloads produzidos pela API.
+
+TDD RED (`1 failed`) -> GREEN (`@sb/contracts` `3/3` arquivos / `22/22` testes; `@sb/api` `2/2` arquivos / `12/12` testes).
+
+## D-813 - Domínio TikTok Shop: projeção de catálogo/estoque e motor idempotente de devoluções (`M04`)
+
+Concluímos a camada pura de domínio do TikTok Shop em `packages/domain/src/tiktok-shop/` (commits `f5d7f7d0` e `0072e5ac`), mantendo zero migrations novas enquanto o Supabase Dev (`nmgccyqquwxecqffsidr`) permanece `INACTIVE`:
+
+1. **`catalog-projection.ts` (`classifyTikTokProductStatus`, `projectTikTokProductCatalog`):** classifica de forma total os estados oficiais de produto (`ACTIVATE`, `SELLER_DEACTIVATED`, `PLATFORM_DEACTIVATED`, `FREEZE`, `FAILED`, `DELETED`, `DRAFT`, `PENDING`) sem vazamento de `Object.prototype`; projeta variações (`skus[]`) ou unidade sintética quando sem variações; normaliza `sellerSkuKey` (`trim().toUpperCase()`); prioriza estoque de `POST /product/202309/inventory/search` com fallback na soma finita de depósitos e preserva ausência de preço/estoque como `null` (nunca `0`).
+2. **`returns-projection.ts` (`normalizeTikTokReturnStatus`, `classifyTikTokReturnKind`, `isTikTokReturnCompleted`, `projectTikTokReturn`, `tiktokReturnKeyOf`, `planTikTokReturnStockReversal`):** unifica `_CANCEL` -> `_CANCELLED`, classifica `RETORNO_FISICO` (nome compatível com a guarda `movement-type-check.test.ts` de `@sb/db`), `APENAS_REEMBOLSO` e `CANCELAMENTO`, agrega `return_line_items[]` unitários sem PII com data de negócio em `America/Sao_Paulo`, e planeja movimentos de reposição respeitando a guarda D-497 (`orderDeductionEnabled`), retorno físico concluído, exclusão de `REFUND_ONLY`/`FBT`/pré-corte UpSeller e teto físico das unidades vendidas menos cancelamentos/devoluções anteriores (excluindo `ownKey` para idempotência).
+
+TDD RED (`2 failed`) -> GREEN (`@sb/domain` `51/51` arquivos / `795/795` testes; `@sb/db` `6/6` arquivos / `30/30` testes incluindo `movement-type-check.test.ts`).
+
+## D-814 - Worker `service_role`: isolamento multi-tenant `envelope.organizationId`, escopo explícito de consultas, lotes de upsert e enqueue protegido em 7 handlers
+
+Auditoria de segurança multi-tenant e integridade em 7 handlers do worker que rodam sob `service_role` (fora das frentes do Codex/Claude, commit `fcc5010f`):
+
+1. **Guarda `envelope.organizationId` em 6 handlers organizacionais (`reconcile-balances.ts`, `verify-ledger-integrity.ts`, `check-ai-budget.ts`, `detect-support-pattern-actions.ts`, `measure-decision-outcomes.ts`, `detect-sales-anomaly-actions.ts`):** espelhando `analytics-recompute.ts`, passam a recusar com `{ status: "failed", retryable: false, reason: "organização do payload diverge do envelope" }` qualquer job cujo `payload.organizationId` divirja do envelope autenticado — impedindo leitura ou escrita cruzada sob `service_role`.
+2. **Escopo explícito de organização em `measure-decision-outcomes.ts`:** adiciona `.eq("organization_id", organizationId)` nas leituras de `action_outcomes` e `actions` (antes filtradas apenas por `.in("action_decision_id" / "id", ...)` sob `service_role`).
+3. **Lotes e finitude em `detect-support-pattern-actions.ts`:** fatia `actions.upsert` em lotes de `500` via `chunk(actionRows, 500)` e exige `typeof amount === "number" && Number.isFinite(amount)` ao somar `orders.total_amount`.
+4. **Isolamento de loja e enqueue em `shopee-order-financials-sync.ts`:** recusa com `retryable: false` quando `loja.organization_id !== envelope.organizationId` e envolve `deps.enqueuer.enqueue()` da continuação de lote cheio em `try/catch`, registrando `shopee_order_financials_enqueue_failed` e devolvendo `{ status: "failed", retryable: true }` em vez de rejeição não tratada.
+
+TDD RED (`7 failed (7)` / `7 failed | 71 passed (78)`) -> GREEN (`7 passed (7)` / `78 passed (78)`). Verificação completa do monorepo pós-`0072e5ac`: `pnpm run check` (`37/37`, `359` arquivos / `4.577` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` e `pnpm audit --prod --audit-level high` (saída `0`).
