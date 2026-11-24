@@ -46,7 +46,28 @@ export function ActionsPanel({
     setBusy(true);
     setError(null);
 
-    const result = await action();
+    let result: { ok: boolean; message: string | null };
+
+    try {
+      result = await action();
+    } catch {
+      /*
+        FALHA DE TRANSPORTE (D-865). Sem o `try`, o botão ficava preso. As quatro
+        transições conferem o status no banco: se a primeira tentativa gravou, a
+        repetição é recusada ("não está em trânsito"), nunca recebe nem cancela
+        duas vezes. A tela relê o pedido para mostrar onde ele parou.
+      */
+      setError("Não foi possível confirmar a ação. Confira a situação do pedido antes de tentar de novo.");
+      setBusy(false);
+
+      try {
+        router.refresh();
+      } catch {
+        // Sem rede, a releitura também falha; o aviso já está na tela.
+      }
+
+      return;
+    }
 
     if (!result.ok) {
       setError(result.message);

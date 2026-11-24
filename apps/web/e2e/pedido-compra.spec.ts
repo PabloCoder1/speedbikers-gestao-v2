@@ -284,3 +284,160 @@ test("editar pedido: falha de transporte ao salvar avisa, libera o botão e a no
   expect(error).toBeNull();
   expect(data?.map((linha) => linha.quantity_ordered)).toEqual([4]);
 });
+
+/*
+  FALHA DE TRANSPORTE NO DETALHE DO PEDIDO (D-865). Os itens são texto livre de
+  propósito: sem SKU do catálogo, receber não lança movimento de estoque, e as
+  specs que contam o saldo do SKU do seed ficam intactas. A idempotência do
+  recebimento aparece em `quantity_received` e nos eventos, que saem do mesmo
+  laço da RPC que grava o estoque.
+*/
+
+/**
+ * Derruba a PRIMEIRA Server Action da página `caminho`. Com `perderResposta`,
+ * o servidor recebe e grava, e só a resposta não chega ao navegador.
+ */
+async function derrubarPrimeiraAcao(page: Page, caminho: string, perderResposta: boolean): Promise<() => boolean> {
+  let derrubada = false;
+
+  await page.route(
+    (endereco) => endereco.pathname === caminho,
+    async (rota) => {
+      const pedido = rota.request();
+
+      if (!derrubada && pedido.method() === "POST" && pedido.headers()["next-action"] !== undefined) {
+        derrubada = true;
+
+        if (perderResposta) await rota.fetch();
+
+        await rota.abort("failed");
+      } else {
+        await rota.continue();
+      }
+    },
+  );
+
+  return () => derrubada;
+}
+
+/** Cria um rascunho com um item em texto livre e devolve o caminho do detalhe. */
+async function criarRascunho(page: Page, codigo: string, quantidade: string): Promise<string> {
+  await login(page, "/compras/novo");
+  await preencherItem(page, codigo, quantidade);
+  await page.getByRole("button", { name: "Criar pedido (rascunho)" }).click();
+  await expect(page).toHaveURL(/\/compras\/[0-9a-f-]{36}$/);
+
+  return new URL(page.url()).pathname;
+}
+
+test("detalhe do pedido: falha de transporte ao aprovar avisa, libera o botão e a nova tentativa aprova (D-865)", async ({
+  page,
+}) => {
+  const caminho = await criarRascunho(page, `TRANSPORTE-APROVAR-E2E-${String(Date.now())}`, "2");
+  const derrubada = await derrubarPrimeiraAcao(page, caminho, false);
+  const aprovar = page.getByRole("button", { name: "Aprovar" });
+
+  await aprovar.click();
+  await expect(page.getByText("Não foi possível confirmar a ação.")).toBeVisible();
+  await expect(aprovar).toBeEnabled();
+  expect(derrubada()).toBe(true);
+
+  await aprovar.click();
+  await expect(page.getByRole("button", { name: "Marcar como enviado pelo fornecedor" })).toBeVisible();
+});
+
+test("recebimento parcial: resposta perdida avisa, e a nova tentativa não recebe duas vezes (D-865)", async ({
+  page,
+}) => {
+  const codigo = `TRANSPORTE-RECEBER-E2E-${String(Date.now())}`;
+  const caminho = await criarRascunho(page, codigo, "5");
+  const id = caminho.split("/").pop() ?? "";
+
+  await page.getByRole("button", { name: "Aprovar" }).click();
+  await page.getByRole("button", { name: "Marcar como enviado pelo fornecedor" }).click();
+  await page.getByRole("button", { name: "Receber parte do pedido" }).click();
+  await page.getByLabel(`Quantidade recebida agora de ${codigo}`).fill("2");
+
+  const derrubada = await derrubarPrimeiraAcao(page, caminho, true);
+  const registrar = page.getByRole("button", { name: "Registrar recebimento" });
+
+  await registrar.click();
+  await expect(page.getByText("Não foi possível confirmar o recebimento.")).toBeVisible();
+  await expect(registrar).toBeEnabled();
+  await expect(page.getByLabel(`Quantidade recebida agora de ${codigo}`)).toHaveValue("2");
+  expect(derrubada()).toBe(true);
+
+  // O servidor gravou a primeira tentativa: 2 recebidas.
+  const recebido = async (): Promise<number[]> => {
+    const { data, error } = await banco()
+      .from("purchase_order_items")
+      .select("quantity_received")
+      .eq("purchase_order_id", id);
+
+    if (error !== null) throw new Error(error.message);
+
+    return data.map((linha) => linha.quantity_received);
+  };
+
+  expect(await recebido()).toEqual([2]);
+
+  // A nova tentativa leva o mesmo `requestId` (D-724): é reconhecida e não
+  // recebe de novo.
+  await registrar.click();
+  await expect(registrar).toBeHidden();
+  expect(await recebido()).toEqual([2]);
+
+  const { data: eventos, error } = await banco()
+    .from("purchase_order_events")
+    .select("event_type")
+    .eq("purchase_order_id", id)
+    .in("event_type", ["PARTIALLY_RECEIVED", "RECEIVED"]);
+
+  expect(error).toBeNull();
+  expect(eventos).toHaveLength(1);
+});
+
+test("custo do pedido: resposta perdida avisa, relê a lista e não deixa o formulário preso (D-865)", async ({
+  page,
+}) => {
+  const caminho = await criarRascunho(page, `TRANSPORTE-CUSTO-E2E-${String(Date.now())}`, "1");
+  const id = caminho.split("/").pop() ?? "";
+
+  await page.getByText("Custos adicionais (frete, seguro, tributos, desembaraço)").click();
+  await page.getByLabel("Valor", { exact: true }).fill("150");
+
+  const derrubada = await derrubarPrimeiraAcao(page, caminho, true);
+  const incluir = page.getByRole("button", { name: "Incluir custo" });
+
+  await incluir.click();
+  await expect(page.getByText("Não foi possível confirmar o lançamento do custo.")).toBeVisible();
+  await expect(incluir).toBeEnabled();
+  expect(derrubada()).toBe(true);
+
+  // O custo foi gravado uma vez, e a releitura o mostra na tela: é o que a
+  // pessoa precisa ver para NÃO lançar de novo (lançar custo não é idempotente).
+  const { data, error } = await banco().from("purchase_order_costs").select("amount").eq("purchase_order_id", id);
+
+  expect(error).toBeNull();
+  expect(data?.map((linha) => linha.amount)).toEqual([150]);
+  await expect(page.getByRole("cell", { name: "R$ 150,00" })).toBeVisible();
+});
+
+test("previsão do pedido: falha de transporte avisa e libera o botão (D-865)", async ({ page }) => {
+  const caminho = await criarRascunho(page, `TRANSPORTE-PREVISAO-E2E-${String(Date.now())}`, "1");
+
+  await page.getByRole("button", { name: "Atualizar previsão ou referência" }).click();
+  await page.getByLabel("Previsão de chegada").fill("2026-12-20");
+
+  const derrubada = await derrubarPrimeiraAcao(page, caminho, false);
+  const salvar = page.getByRole("button", { name: "Salvar previsão" });
+
+  await salvar.click();
+  await expect(page.getByText("Não foi possível confirmar se a previsão foi salva.")).toBeVisible();
+  await expect(salvar).toBeEnabled();
+  await expect(page.getByLabel("Previsão de chegada")).toHaveValue("2026-12-20");
+  expect(derrubada()).toBe(true);
+
+  await salvar.click();
+  await expect(page.getByText("Previsão atualizada.")).toBeVisible();
+});
