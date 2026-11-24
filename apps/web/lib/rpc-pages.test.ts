@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PAGINA_DO_POSTGREST, lerPaginasDaRpc } from "./rpc-pages";
+import { MAX_PAGINAS_SEM_TETO, PAGINA_DO_POSTGREST, lerPaginasDaRpc } from "./rpc-pages";
 
 /** Um "servidor" com `total` linhas que, como o PostgREST, nunca devolve mais que `maxRows`. */
 function servidor(total: number, maxRows = PAGINA_DO_POSTGREST, comContagem = false) {
@@ -72,14 +72,41 @@ describe("lerPaginasDaRpc", () => {
     await expect(lerPaginasDaRpc(lerPagina, 5_000)).resolves.toEqual({ linhas: [], error: { message: "boom", code: "PGRST202" } });
   });
 
-  it("normaliza teto não finito ou fracionário e respeita o limite mesmo se o servidor devolver além do pedido", async () => {
+  it("aceita teto Number.POSITIVE_INFINITY (contrato do Dashboard do SKU) com guarda contra laço infinito", async () => {
+    const { lerPagina, chamadas } = servidor(1_250, PAGINA_DO_POSTGREST, true);
+    const { linhas, error } = await lerPaginasDaRpc(lerPagina, Number.POSITIVE_INFINITY);
+
+    expect(error).toBeNull();
+    expect(linhas).toHaveLength(1_250);
+    expect(chamadas).toEqual([
+      { offset: 0, limite: PAGINA_DO_POSTGREST },
+      { offset: 1_000, limite: PAGINA_DO_POSTGREST },
+      { offset: 1_250, limite: PAGINA_DO_POSTGREST },
+    ]);
+
+    let paginas = 0;
+    const infinito = () => {
+      paginas += 1;
+      return Promise.resolve({ data: [paginas], error: null });
+    };
+    const travado = await lerPaginasDaRpc(infinito, Number.POSITIVE_INFINITY);
+
+    expect(travado.error).toBeNull();
+    expect(paginas).toBe(MAX_PAGINAS_SEM_TETO);
+    expect(travado.linhas).toHaveLength(MAX_PAGINAS_SEM_TETO);
+  });
+
+  it("rejeita NaN, -Infinity e teto <= 0, e trunca teto fracionário respeitando o limite", async () => {
     const chamadas: { offset: number; limite: number }[] = [];
     const lerPagina = (offset: number, limite: number) => {
       chamadas.push({ offset, limite });
       return Promise.resolve({ data: [1, 2, 3, 4, 5], error: null });
     };
 
-    expect(await lerPaginasDaRpc(lerPagina, Number.POSITIVE_INFINITY)).toEqual({ linhas: [], error: null });
+    expect(await lerPaginasDaRpc(lerPagina, Number.NaN)).toEqual({ linhas: [], error: null });
+    expect(await lerPaginasDaRpc(lerPagina, Number.NEGATIVE_INFINITY)).toEqual({ linhas: [], error: null });
+    expect(await lerPaginasDaRpc(lerPagina, 0)).toEqual({ linhas: [], error: null });
+    expect(await lerPaginasDaRpc(lerPagina, -10)).toEqual({ linhas: [], error: null });
     expect(chamadas).toEqual([]);
 
     const parcial = await lerPaginasDaRpc(lerPagina, 2.9);
