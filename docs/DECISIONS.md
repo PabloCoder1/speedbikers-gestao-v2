@@ -20207,3 +20207,10 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 - a requisição na edição é recusada;
 - a mesma requisição em outro pedido é outra inclusão;
 - o analista não lança.
+
+**Em produção (24/11):** a migration foi aplicada pela VM `sb-db` numa transação só (`psql -1`), com o registro em `schema_migrations`, depois dos 4 jobs obrigatórios verdes na `main` (`f4c0be64`). Na conferência:
+- a função tem os 9 argumentos;
+- `authenticated` executa e `anon` não;
+- a coluna `request_id` existe.
+
+A tela que manda a requisição é o #397.
