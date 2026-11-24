@@ -20478,7 +20478,7 @@ Os testes de navegação passaram a localizar o cartão de não lidas
 pelo rótulo e a confirmar o filtro no destino. A CI de 20b6e4c8 havia
 reprovado três casos que buscavam a URL antiga sem o filtro de D-855.
 
-## D-858 - Preflight da VM vincula o plano ao commit do candidato
+## D-880 - Preflight da VM vincula o plano ao commit do candidato
 
 **24/11/2026 · Publicação na VM.** As duas etapas do roteiro usam
 `--bind-head` para incluir o HEAD verificado no manifesto do plano.

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **698** (D-001 a D-858).
+Decisões registradas: **698** (D-001 a D-880).
 
 ## Por domínio
 
@@ -540,7 +540,7 @@ Decisões registradas: **698** (D-001 a D-858).
 - **D-854** — Emblema de notificações usa visibilidade da Central e consulta limitada a 100
 - **D-855** — Contagem das notificações na Home segue a visibilidade da Central
 - **D-856** — Atividade recente da Home limita a lista aos eventos visíveis
-- **D-858** — Preflight da VM vincula o plano ao commit do candidato
+- **D-880** — Preflight da VM vincula o plano ao commit do candidato
 
 ### processo/docs (1)
 
