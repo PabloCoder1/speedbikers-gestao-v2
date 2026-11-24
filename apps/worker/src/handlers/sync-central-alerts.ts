@@ -45,6 +45,9 @@ export const FONTES_ALERTAS = [
   // D-627: a divergencia de estoque da Shopee, a ultima; so depois da
   // migration 20261021150000 em producao.
   "shopee_divergencia",
+  // D-861: o produto fora do catalogo (D-860) com anuncio ativo vinculado;
+  // so depois da migration 20261124120000 em producao.
+  "fora_do_catalogo_anunciado",
 ] as const;
 
 const resultadoSchema = z.object({

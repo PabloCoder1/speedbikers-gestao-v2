@@ -19951,3 +19951,38 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 **Alternativas rejeitadas:** apagar o SKU (quebra pedidos, vínculos e ledger); arquivar ou excluir em lote na tela de Produtos (o dono preferiu a mesma etiqueta à mão; excluir de vez só serviria ao SKU sem histórico nenhum); zerar o saldo do ausente (ausência de dado não é zero, e a planilha de estoque é outro arquivo); reaproveitar só o `is_active` sem coluna nova (perderia a diferença entre "inativo no UpSeller" e "saiu da exportação", e a volta automática não saberia quem tirar); marcar sempre, sem a caixa (uma exportação parcial desativaria o catálogo inteiro); estender a regra a kits e ao arquivo de estoque nesta fatia (cada arquivo tem o seu sentido de ausência e fica para depois, como o aviso na Central de Ações de produto fora do catálogo com anúncio ativo).
 
 **Numeração:** registrada como D-795 no PR #383 (23/11) e renumerada para D-860 em 24/11, porque o Gemini Sentinel usa D-795 no candidato #378. As migrations passaram de `20261123150000`/`160000` para `20261124100000`/`110000`, depois da `20261123180000` da main; nenhuma tinha sido aplicada.
+
+## D-861 - O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
+
+**Contexto:** a D-860 tira da Reposição o SKU fora do catálogo, mas deixou para depois o aviso de quem ainda tem anúncio ativo. Esse anúncio continua vendendo um produto que a empresa tirou do UpSeller ou marcou à mão como fora. A prévia da conferência só conta quantos têm vínculo, e só no momento de aplicar a planilha.
+
+**Decisão:**
+
+- **A fonte:** `sincronizar_alertas_central` ganha `fora_do_catalogo_anunciado` (seção 4.8, migration `20261124120000`). O corpo é o da `20261021150000` (D-627), que era a última definição na main, no candidato #378 e na branch do Gemini em 24/11.
+- **O sinal:** SKU com `erp_absent_since` (planilha ou à mão) que tem pelo menos um anúncio ativo vinculado.
+  - **Mercado Livre:** o vínculo de `get_sku_listings` (o SKU resolvido em `listings` e o vínculo ITEM), com o anúncio `active` e `deleted_at` nulo (D-631 b).
+  - **Shopee:** a unidade de anúncio NORMAL, de loja live, vinculada ao SKU.
+- **A ação:** uma por SKU (`subject_key` = id do SKU, `sku_id` preenchido, sem conta nem loja, porque o SKU pode estar em várias).
+  - Severidade média, sem notificação. Confiança alta, porque o fato é certo. Impacto nulo.
+  - O saldo de quem saiu da planilha para de se atualizar, por isso não serve para graduar a severidade. Ausência não vira zero: sem saldo registrado, a evidência diz isso.
+- **A evidência:** desde quando e por quê o SKU está fora, quantos anúncios ativos em cada canal, o último saldo local e a lista dos 20 primeiros anúncios.
+- **A recomendação** segue a origem da marca. Para a da planilha: pausar o anúncio, ou cadastrar o produto de novo no UpSeller (a próxima planilha tira a marca). Para a manual: pausar o anúncio, ou voltar o SKU ao catálogo em Produtos.
+- **Encerramento:** o ciclo de vida comum (5.4). Quem volta ao catálogo, ou fica sem anúncio ativo, encerra 3 dias depois, com o motivo escrito.
+- **Tela:** o rótulo "Fora do catálogo com anúncio ativo" (problema) em `packages/domain`. Os atalhos são o Dashboard do SKU, "Anúncios do SKU" (`/skus/[id]?aba=anuncios`) e "Produtos" pela busca do código.
+- **Worker:** `FONTES_ALERTAS` ganha a fonte, por último.
+
+**Fora desta fatia:** o kit cujo componente saiu do catálogo, e o anúncio que não está vinculado a SKU nenhum (esse já é a Central de Vinculações).
+
+**Ordem de publicação:** depende das migrations da D-860 (`20261124100000` e `20261124110000`). A ordem é: migration `20261124120000` → worker → web. O worker antigo não pede a fonte, e nada quebra. O worker novo antes da migration teria só essa fonte recusada a cada rodada, e o job voltaria para a fila. A web sozinha só ganha o rótulo e os atalhos.
+
+**Alternativas rejeitadas:** severidade alta com notificação (o dono já decidiu ao marcar, e um aviso por SKU no sino viraria ruído); uma ação por anúncio (o mesmo SKU em várias contas abriria várias ações para uma decisão só); julgar pelo saldo (congelado para quem saiu da planilha); pausar o anúncio sozinho (escrita visível ao cliente é decisão do dono).
+
+**Verificação:**
+- Integração (`fora-do-catalogo-na-central.integration.test.ts`, 7 testes):
+  - só A e B são detectados;
+  - não entram o anúncio pausado, o excluído, o SKU no catálogo, o SKU sem anúncio e a Shopee fora do ar;
+  - a evidência e a recomendação seguem a origem da marca;
+  - a mesma rodada no mesmo dia não duplica;
+  - quem volta ao catálogo encerra no 3º dia com o motivo;
+  - a função continua sem grant para `authenticated` e `anon`.
+- Unitários: o rótulo, os atalhos e as 8 chamadas do worker.
