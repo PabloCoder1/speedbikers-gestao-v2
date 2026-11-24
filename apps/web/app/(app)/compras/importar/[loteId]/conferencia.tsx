@@ -139,16 +139,30 @@ export function LinhaConferencia({ loteId, linha }: { loteId: string; linha: Lin
     setErro(null);
 
     const q = Number(quantidade.replace(/\./g, "").replace(",", "."));
-    const r = await corrigirLinhasImportacao(loteId, [
-      {
-        rowId: linha.id,
-        skuId: resolution === "PENDENTE" ? null : skuId === "" ? null : skuId,
-        quantity: quantidade.trim() === "" || !Number.isFinite(q) ? null : q,
-        quantityConfirmed: confirmada && quantidade.trim() !== "",
-        externalReference: referencia.trim() === "" ? null : referencia.trim(),
-        ...(resolution === undefined ? {} : { resolution }),
-      },
-    ]);
+    /*
+      FALHA DE TRANSPORTE (D-867). As ações da conferência aceitam a repetição:
+      corrigir regrava os mesmos campos da linha, e criar o SKU só vincula o
+      código que já existe (D-792). Sem o `try`, o botão ficava preso.
+    */
+    let r: Awaited<ReturnType<typeof corrigirLinhasImportacao>>;
+
+    try {
+      r = await corrigirLinhasImportacao(loteId, [
+        {
+          rowId: linha.id,
+          skuId: resolution === "PENDENTE" ? null : skuId === "" ? null : skuId,
+          quantity: quantidade.trim() === "" || !Number.isFinite(q) ? null : q,
+          quantityConfirmed: confirmada && quantidade.trim() !== "",
+          externalReference: referencia.trim() === "" ? null : referencia.trim(),
+          ...(resolution === undefined ? {} : { resolution }),
+        },
+      ]);
+    } catch {
+      setErro("Não foi possível confirmar se a linha foi salva. Tente de novo.");
+      setBusy(false);
+
+      return;
+    }
 
     setBusy(false);
 
@@ -162,7 +176,12 @@ export function LinhaConferencia({ loteId, linha }: { loteId: string; linha: Lin
   }
 
   async function procurar(): Promise<void> {
-    setAchados(await buscarSkus(busca));
+    // Só leitura: a falha não grava nada, só precisa aparecer.
+    try {
+      setAchados(await buscarSkus(busca));
+    } catch {
+      setErro("Não foi possível buscar os SKUs. Tente de novo.");
+    }
   }
 
   // D-792: o produto que ainda não existe nasce com o código e o nome da invoice.
@@ -170,7 +189,16 @@ export function LinhaConferencia({ loteId, linha }: { loteId: string; linha: Lin
     setBusy(true);
     setErro(null);
 
-    const r = await criarSkusDaImportacao(loteId, [linha.id]);
+    let r: Awaited<ReturnType<typeof criarSkusDaImportacao>>;
+
+    try {
+      r = await criarSkusDaImportacao(loteId, [linha.id]);
+    } catch {
+      setErro("Não foi possível confirmar a criação do SKU. Tente de novo: o código que já existe só é vinculado, sem duplicar.");
+      setBusy(false);
+
+      return;
+    }
 
     setBusy(false);
 
@@ -358,7 +386,19 @@ export function CriarSkusDoLote({ loteId, naoEncontradas }: { loteId: string; na
   async function criar(): Promise<void> {
     setBusy(true);
 
-    const r = await criarSkusDaImportacao(loteId, []);
+    let r: Awaited<ReturnType<typeof criarSkusDaImportacao>>;
+
+    try {
+      r = await criarSkusDaImportacao(loteId, []);
+    } catch {
+      setBusy(false);
+      setResultado({
+        ok: false,
+        message: "Não foi possível confirmar a criação dos SKUs. Tente de novo: o código que já existe só é vinculado, sem duplicar.",
+      });
+
+      return;
+    }
 
     setBusy(false);
     setResultado(r);
@@ -453,17 +493,40 @@ export function GrupoRegistro({
     setBusy(true);
     setMsg(null);
 
-    const r: ResultadoRegistro = await registrarReferenciaImportada({
-      loteId,
-      referencia: grupo.referencia,
-      situacao: situacao === "" ? "PLANEJADO" : situacao,
-      fornecedorId: fornecedorId === "" ? null : fornecedorId,
-      previsao: previsao === "" ? null : previsao,
-      dataPedido: dataPedido === "" ? null : dataPedido,
-      etapa: situacao === "PEDIDO_REALIZADO" && etapa !== "" ? etapa : null,
-      confirmarNovo,
-      pedidoAlvoId,
-    });
+    /*
+      O registro usa um `requestId` fixo por lote e referência, e as linhas
+      registradas saem do grupo: se a primeira tentativa gravou, a repetição
+      volta "nada novo a registrar", nunca um segundo pedido. A tela relê o lote.
+    */
+    let r: ResultadoRegistro;
+
+    try {
+      r = await registrarReferenciaImportada({
+        loteId,
+        referencia: grupo.referencia,
+        situacao: situacao === "" ? "PLANEJADO" : situacao,
+        fornecedorId: fornecedorId === "" ? null : fornecedorId,
+        previsao: previsao === "" ? null : previsao,
+        dataPedido: dataPedido === "" ? null : dataPedido,
+        etapa: situacao === "PEDIDO_REALIZADO" && etapa !== "" ? etapa : null,
+        confirmarNovo,
+        pedidoAlvoId,
+      });
+    } catch {
+      setBusy(false);
+      setMsg({
+        ok: false,
+        texto: "Não foi possível confirmar o registro. Tente de novo: a mesma referência não vira dois pedidos.",
+      });
+
+      try {
+        router.refresh();
+      } catch {
+        // Sem rede, a releitura também falha; o aviso já está na tela.
+      }
+
+      return;
+    }
 
     setBusy(false);
 

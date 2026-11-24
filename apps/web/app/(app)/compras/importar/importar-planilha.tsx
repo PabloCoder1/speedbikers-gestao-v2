@@ -205,12 +205,27 @@ export function ImportarPlanilha(): ReactNode {
     setEnviando(true);
     setErro(null);
 
-    const r = await criarLoteImportacao({
-      nomeArquivo: arquivo.nome,
-      sha256: arquivo.sha,
-      abas: [...incluidas],
-      linhas,
-    });
+    /*
+      FALHA DE TRANSPORTE (D-867): sem o `try`, o botão ficava em "Enviando…"
+      para sempre e a planilha lida se perdia ao recarregar. O lote é
+      reconhecido pelo SHA-256 do arquivo: se a primeira tentativa criou, a
+      repetição abre o MESMO lote ("existente"), sem duplicar as linhas.
+    */
+    let r: Awaited<ReturnType<typeof criarLoteImportacao>>;
+
+    try {
+      r = await criarLoteImportacao({
+        nomeArquivo: arquivo.nome,
+        sha256: arquivo.sha,
+        abas: [...incluidas],
+        linhas,
+      });
+    } catch {
+      setErro("Não foi possível confirmar o envio da planilha. Tente de novo: o mesmo arquivo abre a mesma importação, sem duplicar.");
+      setEnviando(false);
+
+      return;
+    }
 
     setEnviando(false);
 
