@@ -30,4 +30,9 @@ describe("rotuloDaFerramenta (D-646)", () => {
   it("a desconhecida aparece pelo nome, em vez de sumir", () => {
     expect(rotuloDaFerramenta("ferramenta_nova")).toBe("ferramenta_nova");
   });
+
+  it("chaves herdadas de Object.prototype não vazam funções como rótulo", () => {
+    expect(rotuloDaFerramenta("toString")).toBe("toString");
+    expect(rotuloDaFerramenta("constructor")).toBe("constructor");
+  });
 });

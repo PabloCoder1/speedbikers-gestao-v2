@@ -140,12 +140,16 @@ export function anunciosShopeeParaCsv(linhas: readonly AnuncioShopeeExport[]): s
   return csvDocument(
     CABECALHO_ANUNCIOS,
     linhas.map((linha) => [
-      csvCell(String(linha.item_id)),
-      linha.model_id === null ? "" : csvCell(String(linha.model_id)),
+      Number.isFinite(linha.item_id) ? csvCell(String(linha.item_id)) : "",
+      linha.model_id === null || !Number.isFinite(linha.model_id) ? "" : csvCell(String(linha.model_id)),
       csvCell(linha.item_name ?? ""),
       csvCell(linha.model_name ?? ""),
       csvCell(linha.shop_name ?? ""),
-      csvCell(ESTADO_DO_VINCULO[linha.estado] ?? "Outro estado"),
+      csvCell(
+        Object.hasOwn(ESTADO_DO_VINCULO, linha.estado)
+          ? (ESTADO_DO_VINCULO[linha.estado] ?? "Outro estado")
+          : "Outro estado",
+      ),
       csvCell(shopeeItemStatus(linha.item_status).rotulo),
       csvCell(linha.sku_anuncio ?? ""),
       csvCell(linha.sku ?? ""),

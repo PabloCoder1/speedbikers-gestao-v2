@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { acaoDeVinculo, motivoDaRemocao, resumoDeAnuncios, type AnuncioDoSku } from "./sku-listings";
+import { acaoDeVinculo, lerAnuncio, motivoDaRemocao, resumoDeAnuncios, type AnuncioDoSku } from "./sku-listings";
 
 /**
  * O que a tela do SKU pode oferecer em cada linha (D-316).
@@ -85,6 +85,21 @@ describe("acaoDeVinculo", () => {
     expect(r.linkId).toBe("k1");
     expect(r.variosVinculos).toBe(true);
     expect(r.motivoSemAcao).toBeNull();
+  });
+
+  it("chaves herdadas de Object.prototype em vinculo_forma não vazam funções e lerAnuncio descarta links em branco ou arrays", () => {
+    const r = acaoDeVinculo({ ...BASE, vinculo_forma: "toString" });
+    expect(r.rotuloForma).toBe("toString");
+
+    const lido = lerAnuncio({
+      ...BASE,
+      links: [
+        ["nao-objeto"],
+        { id: "   ", variation_id: null, source: "MANUAL", confirmed_at: null },
+        { id: "k9", variation_id: null, source: "MANUAL", confirmed_at: null },
+      ],
+    });
+    expect(lido.links.map((l) => l.id)).toEqual(["k9"]);
   });
 });
 

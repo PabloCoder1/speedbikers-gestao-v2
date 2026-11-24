@@ -137,4 +137,17 @@ describe("anunciosShopeeParaCsv", () => {
     expect(linha).toContain("Outro estado");
     expect(linha).not.toContain("NOVO_ESTADO");
   });
+
+  it("chave herdada de Object.prototype em estado vira 'Outro estado' e ids não finitos ficam vazios", () => {
+    const [, linha] = linhas(
+      anunciosShopeeParaCsv([
+        { ...ANUNCIO, estado: "toString", item_id: Number.NaN, model_id: Number.POSITIVE_INFINITY },
+      ]),
+    );
+    const celulas = linha?.split(";") ?? [];
+
+    expect(celulas[0]).toBe("");
+    expect(celulas[1]).toBe("");
+    expect(celulas[5]).toBe("Outro estado");
+  });
 });

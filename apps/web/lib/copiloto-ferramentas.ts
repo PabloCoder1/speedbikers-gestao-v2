@@ -25,5 +25,5 @@ const ROTULO: Readonly<Record<string, string>> = {
 };
 
 export function rotuloDaFerramenta(ferramenta: string): string {
-  return ROTULO[ferramenta] ?? ferramenta;
+  return Object.hasOwn(ROTULO, ferramenta) ? (ROTULO[ferramenta] ?? ferramenta) : ferramenta;
 }

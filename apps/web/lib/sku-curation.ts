@@ -72,7 +72,7 @@ export function parseVirtualDecision(raw: string): ParseResult<VirtualDecision> 
 export const MAX_SELECAO = 500;
 
 export function parseSelecao(ids: readonly string[]): ParseResult<string[]> {
-  const unicos = [...new Set(ids.filter((id) => id !== ""))];
+  const unicos = [...new Set(ids.map((id) => id.trim()).filter((id) => id !== ""))];
 
   if (unicos.length === 0) {
     return { ok: false, message: "Selecione ao menos um SKU." };
