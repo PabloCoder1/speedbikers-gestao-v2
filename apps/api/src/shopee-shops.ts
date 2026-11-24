@@ -97,13 +97,18 @@ export async function completeShopeeConnect(
   params: ShopeeCallbackParams,
 ): Promise<ShopeeCallbackOutcome> {
   const now = deps.now?.() ?? new Date();
+  const state = params.state.trim();
+
+  if (state === "") {
+    return { status: "invalid_state" };
+  }
 
   // Consumo ATÔMICO, como em `ml-accounts.ts`: duas chamadas com o mesmo
   // `state` (aba duplicada, retry do navegador) só deixam uma passar.
   const claimed = await deps.db
     .from("shopee_oauth_states")
     .update({ consumed_at: now.toISOString() })
-    .eq("state", params.state)
+    .eq("state", state)
     .is("consumed_at", null)
     .gt("expires_at", now.toISOString())
     .select("organization_id, environment, created_by")
@@ -127,13 +132,14 @@ export async function completeShopeeConnect(
     value !== undefined && Number.isSafeInteger(value) && value > 0;
   const invalidShopId = params.shopId !== undefined && !isPositiveShopeeId(params.shopId);
   const invalidMainAccountId = params.mainAccountId !== undefined && !isPositiveShopeeId(params.mainAccountId);
+  const code = params.code?.trim() ?? "";
   const tokenRequest =
-    params.code === undefined || params.code.trim() === "" || invalidShopId || invalidMainAccountId
+    code === "" || invalidShopId || invalidMainAccountId
       ? null
       : isPositiveShopeeId(params.shopId)
-        ? { code: params.code, shopId: params.shopId }
+        ? { code, shopId: params.shopId }
         : isPositiveShopeeId(params.mainAccountId)
-          ? { code: params.code, mainAccountId: params.mainAccountId }
+          ? { code, mainAccountId: params.mainAccountId }
           : null;
 
   if (tokenRequest === null) {

@@ -151,6 +151,11 @@ export async function completeConnect(
   params: CallbackParams,
 ): Promise<CallbackOutcome> {
   const now = deps.now?.() ?? new Date();
+  const state = params.state.trim();
+
+  if (state === "") {
+    return { status: "invalid_state" };
+  }
 
   // Consumo ATÔMICO: um único UPDATE com as três condições na cláusula WHERE,
   // não um SELECT seguido de UPDATE. Duas chamadas concorrentes com o mesmo
@@ -159,7 +164,7 @@ export async function completeConnect(
   const claimed = await deps.db
     .from("ml_oauth_states")
     .update({ consumed_at: now.toISOString() })
-    .eq("state", params.state)
+    .eq("state", state)
     .is("consumed_at", null)
     .gt("expires_at", now.toISOString())
     .select("organization_id, ml_account_id, code_verifier_ciphertext")
@@ -174,8 +179,9 @@ export async function completeConnect(
     ml_account_id: mlAccountId,
     code_verifier_ciphertext: codeVerifierCiphertext,
   } = claimed.data;
+  const code = params.code?.trim() ?? "";
 
-  if (params.error !== undefined || params.code === undefined) {
+  if (params.error !== undefined || code === "") {
     await markError(deps, organizationId, mlAccountId, `autorização negada: ${params.error ?? "code ausente"}`);
 
     return { status: "rejected", reason: "autorização negada no Mercado Livre" };
@@ -206,7 +212,7 @@ export async function completeConnect(
   try {
     token = await exchangeCodeForToken(
       deps.oauth,
-      params.code,
+      code,
       deps.requestOptions ?? {},
       codeVerifier,
     );
