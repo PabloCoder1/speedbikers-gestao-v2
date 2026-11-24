@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  diasEntre,
   lerDetectorFrete,
   motivosDoAlerta,
   paraRevisar,
@@ -270,5 +271,36 @@ describe("sugestaoDoAlerta", () => {
 
   it("só proporção ou margem apontam preço e forma de envio", () => {
     expect(sugestaoDoAlerta(alerta({ sinais: { proporcao: 3, margem: 1 } }))).toContain("revisar o preço ou a forma de envio");
+  });
+
+  it("D-804: diasEntre recusa datas impossíveis, lerDetectorFrete valida janela e motivosDoAlerta descarta não finitos", () => {
+    expect(diasEntre("2026-02-31", "2026-09-22")).toBe(0);
+    expect(diasEntre("invalido", "2026-09-22")).toBe(0);
+    expect(diasEntre("2026-06-25", "2026-09-09")).toBe(76);
+
+    expect(
+      lerDetectorFrete({
+        ...RESPOSTA,
+        janela: { inicio: "2026-02-31", corte: "2026-09-09", fim: "2026-09-22" },
+      }),
+    ).toBeNull();
+
+    const motivos = motivosDoAlerta(
+      alerta({
+        frete_atual: Number.POSITIVE_INFINITY,
+        frete_antes: 10,
+        frete_irmaos: 10,
+        irmaos: 2,
+        frete_pares: 10,
+        pares: 5,
+        razao: Number.NaN,
+        razao_p95: 0.35,
+        preco_atual: 40,
+        sinais: { historico: 3, irmaos: 3, pares: 2, proporcao: 1 },
+      }),
+      detector().janela,
+    );
+
+    expect(motivos).toEqual([]);
   });
 });

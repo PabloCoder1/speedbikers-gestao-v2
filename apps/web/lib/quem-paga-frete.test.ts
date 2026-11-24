@@ -93,4 +93,24 @@ describe("as frases e a cobertura (D-412)", () => {
     expect(rotuloDaLogistica("self_service")).toBe("Flex");
     expect(rotuloDaLogistica("tipo_novo")).toBe("tipo_novo");
   });
+
+  it("D-804: rotuloDaLogistica ignora protótipo e frações/frases rejeitam entradas não finitas", () => {
+    expect(rotuloDaLogistica("toString")).toBe("toString");
+    expect(rotuloDaLogistica("constructor")).toBe("constructor");
+
+    expect(mlNoFreteDoVendedor({ frete_do_vendedor: Number.NaN, ml_bancou_vendedor: 10 })).toBeNull();
+    expect(mlNoFreteDoVendedor({ frete_do_vendedor: 100, ml_bancou_vendedor: Number.POSITIVE_INFINITY })).toBeNull();
+    expect(mlNoFreteDoVendedor({ frete_do_vendedor: Number.POSITIVE_INFINITY, ml_bancou_vendedor: 10 })).toBeNull();
+
+    expect(
+      frasesDoQuemPaga({
+        ...q,
+        frete_do_vendedor: Number.NaN,
+        ml_bancou_vendedor: 10,
+        comprador_pagou: Number.POSITIVE_INFINITY,
+        ml_bancou_comprador: 10,
+        envios_com_detalhe: 10,
+      }),
+    ).toEqual([]);
+  });
 });

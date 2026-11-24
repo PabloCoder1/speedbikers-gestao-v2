@@ -161,4 +161,19 @@ describe("facetas", () => {
     expect(facetEntries({})).toEqual([]);
     expect(facetEntries(null)).toEqual([]);
   });
+
+  it("D-804: readFacet e facetEntries rejeitam arrays, chaves de protótipo e contagens não finitas", () => {
+    expect(readFacet([10, 20], "length")).toBe(0);
+    expect(readFacet([10, 20], "0")).toBe(0);
+    expect(readFacet({}, "toString")).toBe(0);
+    expect(facetEntries([10, 20])).toEqual([]);
+    expect(
+      facetEntries({
+        valida: 3,
+        nan: Number.NaN,
+        inf: Number.POSITIVE_INFINITY,
+        negInf: Number.NEGATIVE_INFINITY,
+      }),
+    ).toEqual([{ key: "valida", count: 3 }]);
+  });
 });
