@@ -289,7 +289,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Infra/Dono",
-      "evidencia": "SA padrão Editor; main protected=false, sem checks obrigatórios ou rulesets em 18/11",
+      "evidencia": "24/11: main com PR, quatro checks obrigatórios, force-push e exclusão bloqueados. Administradores podem contornar as exigências. O Cloud Build usa a identidade Compute padrão com roles/editor, confirmada nos dez builds mais recentes. Falta validar identidade dedicada.",
       "fase": 2
     },
     {

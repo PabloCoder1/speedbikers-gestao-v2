@@ -41,7 +41,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 - **Recuperação após corte para a VM.** Navegação autenticada registrada pelo #333. Provar convite/reset, atraso de pedidos/financeiro/SAC e saldos contra ERP. Conferir os efeitos dos agendamentos no banco.
 - **Recuperação de desastre e migrations.** #333 registra restore isolado completo e ensaio dos 17 SQLs. Em 19/11 há snapshot automático READY. Prefixo `diario/` vazio na listagem. Faltam confirmar o dump recorrente, alertas e adequação do workflow à VM.
 - **Segurança: patches locais.** Next (`16.4.6`), Zod, ERP/NF-e apply e webhook Shopee corrigidos localmente; falta publicar. `pnpm audit --prod --audit-level high` passa com 1 moderado transitivo (`uuid`). [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md).
-- **Publicação sem proteção efetiva.** GitHub em 18/11: `main.protected=false`, sem checks obrigatórios ou rulesets. A07 exige ação do responsável antes de considerar os portões de publicação cumpridos.
+- **Proteção da publicação.** Em 24/11 o GitHub confirmou PR obrigatório, quatro checks de GitHub Actions e bloqueio de force-push e exclusão na `main`. A regra permite bypass de administradores. Em IAM, os dez builds recentes usaram a identidade Compute padrão com `roles/editor`. Falta ensaiar o build com conta dedicada antes de rever essa concessão.
 
 ---
 
@@ -177,12 +177,8 @@ Nada disto pode ser feito por um agente.
    2026-09-14, o que não prova que está ligada (D-350). Conferir no painel:
    Authentication → Sign In / Providers → Email → *Prevent use of leaked
    passwords*, em `nmgccyqquwxecqffsidr` e em `imvjfgnaprqsfjlnsyev`.
-7. **Branch protection da `main` — FALTA.** A proteção de 2026-09-03 (2 checks
-   obrigatórios, `typecheck, lint, test, build` e integração, D-350) ficou na
-   `v3` aposentada; a `main`, que publica produção, não tem proteção nem
-   ruleset (conferido em 2026-09-28): push direto e force-push passam. Recriar
-   a mesma regra na `main` e tirar a `v3` da política de branch do ambiente
-   `producao`.
+7. **Proteção da `main` (A07):** PR e quatro checks obrigatórios confirmados
+   em 24/11. Force-push e exclusão bloqueados. Bypass administrativo permitido.
 8. ~~Deploy de `worker`/`api` para D-229~~ — feito em 2026-09-03.
 9. ~~**O repositório está PÚBLICO.**~~ — **DECIDIDO pelo usuário em
    2026-09-03: fica público**, porque o plano gratuito do GitHub não aceita
@@ -198,7 +194,7 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
-13. **Alerta de margem (D-858):** VM tem `20261123180000`. Em 24/11 às 08:21 BRT, a API enfileirou o job e o worker registrou 50 alertas sem envio por falta de destinatários. O candidato protege o vínculo de SMTP e pagina as organizações ativas (D-882). Falta validar a entrega após o responsável definir os destinatários em `/central/limites`.
+13. **Alerta de margem (D-858):** VM tem `20261123180000`. Em 24/11, o cadastro de cinco destinatários foi confirmado em leitura e havia 46 alertas pendentes. Falta observar a entrega em rodada regular. O candidato protege o vínculo de SMTP e pagina as organizações ativas (D-882).
 
 ---
 
