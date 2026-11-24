@@ -73,6 +73,13 @@ de verificar os outros consumidores e simular o impacto da mudança. Consulte o
 [guia de contas dedicadas do Cloud Build](https://docs.cloud.google.com/build/docs/securing-builds/configure-user-specified-service-accounts)
 e a [orientação do Compute Engine](https://docs.cloud.google.com/compute/docs/access/service-accounts).
 
+Em 24/11, a conta `v3-builder` compilou o worker em `fb8b8ffe` e enviou
+o pacote isolado `worker-sentinel-iam` ao Artifact Registry. O digest
+confirmado foi `sha256:081d6ae6b1f12f20a3a604785f9dbf640e3a78a2c5f063dfcda8910a2eb5b69f`.
+Os vínculos temporários do ensaio foram removidos. Os metadados e a trilha de
+auditoria estavam disponíveis, e a consulta aos logs detalhados não retornou
+saída. [Execução](https://console.cloud.google.com/cloud-build/builds/6e12a79b-114a-4807-bcda-227969f31d3a?project=speedbikers-prod).
+
 ---
 
 ## 4. Filas

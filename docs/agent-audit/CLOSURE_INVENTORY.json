@@ -289,7 +289,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Infra/Dono",
-      "evidencia": "24/11: main com PR, quatro checks obrigatórios, force-push e exclusão bloqueados. Administradores podem contornar as exigências. O Cloud Build usa a identidade Compute padrão com roles/editor, confirmada nos dez builds mais recentes. Falta validar identidade dedicada.",
+      "evidencia": "24/11: main com PR, quatro checks obrigatórios, force-push e exclusão bloqueados, com bypass administrativo. Build isolado 6e12a79b do worker no SHA fb8b8ffe passou com v3-builder e publicou digest no Artifact Registry. Dez builds globais anteriores e seis regionais usaram a Compute padrão. Falta adoção e revisão do vínculo roles/editor.",
       "fase": 2
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "CI integral do #378 em 8bf37e2f (45234620372) e do #382 em 20e5aef1 (45164397505). Upgrade isolado 324→328 com versões temporárias. Falta ordem definitiva e registro oficial no Dev.",
+      "evidencia": "Quatro checks, inclusive Playwright e Postgres real, verdes no #378 em fb8b8ffe (45386471796). Upgrade isolado com as versões temporárias. Falta ordem definitiva e registro oficial no Dev, seguido de CI do novo SHA.",
       "fase": 5
     },
     {
