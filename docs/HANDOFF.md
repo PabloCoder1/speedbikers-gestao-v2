@@ -193,6 +193,7 @@ Nada disto pode ser feito por um agente.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
 13. **Alerta de margem (D-858, D-859):** no ar desde 24/11, com o Scheduler e os e-mails cadastrados.
 14. ~~Esqueci a senha (D-863) e monitoramento de produção (D-868)~~: ligados em 24/11.
+15. **D-869:** migration `20261124140000` em produção antes do PR da tela.
 
 ---
 
