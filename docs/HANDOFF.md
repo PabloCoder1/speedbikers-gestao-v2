@@ -36,9 +36,9 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## P0 ativos
 
-- **Catálogo ML (D-791).** #368 troca a rota desativada e valida IDs. #376 deduplica o scan e detecta truncamento. Falta publicar e medir a fila.
-- **Aceite pós-recuperação.** A API respondeu 200 e o worker grava `job_runs` na VM. Falta o aceite autenticado e a validação após publicar o multiget.
-- **Workflow de banco ainda aponta ao hosted pausado.** Dev e antigo hosted de produção continuam INACTIVE; a VM de produção e a web estão operacionais, conferidas em 18/11. O job Dev da main falhava antes desta entrega e exige reconciliação de infraestrutura; não foi desativado. Ver `infra/vm/README.md`.
+- **Catálogo ML (D-791).** #377 consolida #368 e #376. Falta publicar o worker com SMTP preservado e medir a fila. [Baseline](PERFORMANCE.md#referência-de-produção-para-m05-24112026).
+- **Aceite pós-recuperação.** Confirmar jornada autenticada e processamento após publicar o multiget.
+- **Workflow de banco.** O Dev está inativo e a VM é a produção operacional. O pipeline da VM aguarda reconciliação. [Roteiro](../infra/vm/README.md).
 - **Avisos críticos do Next.js.** A branch local atualiza Next.js e Zod e passa a auditoria no corte alto. A publicação segue o fluxo da `main` e os deploys da API e do worker. [Achados](agent-audit/FINDINGS.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
 
 ---
@@ -192,6 +192,7 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
+13. **Alerta de margem (D-858):** segredo `SMTP_PASSWORD` e variáveis do worker, migration `20261123180000` em produção, deploy de worker, api e web, e-mails em `/central/limites`.
 
 ---
 

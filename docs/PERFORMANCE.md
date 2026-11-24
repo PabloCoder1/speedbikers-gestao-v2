@@ -2242,3 +2242,17 @@ Ensaio no Chromium com build de produção e Supabase local isolado. A fixture t
 | RPC e paginação da web após D-715 | 1.002 |
 
 A regressão conferiu o conteúdo inteiro, o vínculo manual, o vínculo pelo SKU do anúncio, as 500 linhas da loja sandbox com o selo Teste e a ausência dos dois itens apagados. A ordem usa nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. O trace registrou 1.000, 2 e zero linhas nos offsets 0, 1.000 e 1.002, com HTTP 206 na primeira página (`Content-Range: 0-999/1002`) e 200 nas seguintes. As duas leituras de SKU com só um anúncio terminaram na primeira chamada. A migration `20261117173152` foi aplicada apenas localmente. A leitura completa acrescenta chamadas quando ultrapassa uma página. Latência e frequência com dados reais seguem pendentes.
+
+### Referência de produção para M05 (24/11/2026)
+
+O Cloud Logging contou 63 respostas finais HTTP 403 com
+`ResourceDeprecated` no multiget `/items` nas seis horas até 09h39
+(horário de Brasília). Foram 27 na revisão `worker-00059-mjc` e 36
+na `worker-00060-z8h`. O último worker recebia 100% do tráfego em
+`5a49133b`. O filtro usa `ml_http_failure`, status 403 e rota do
+multiget. O número conta respostas HTTP, que podem incluir retentativas.
+
+Após publicação autorizada, confira o SHA em tráfego e repita a medição
+em seis horas equivalentes nas duas rotas, `/items` e `/items/bulk`.
+Compare também sucesso dos jobs de catálogo, atraso do backlog e
+continuidade do agendamento.

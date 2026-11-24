@@ -360,6 +360,8 @@ total e um quarto do faturamento some sem explicação.
 
 **Pedido coberto** tem três coisas: frete observado, custo conhecido e **uma** linha de item. O **desconto do vendedor não entra na conta**: é contra o preço de tabela e já está dentro do preço vendido — medido em D-356, a comissão é cobrada sobre `unit_price` (10,63%, contra 8,16% sobre preço + desconto), e há desconto maior que o próprio preço. A tela o mostra como informação. A última é a regra de 5E — um pedido tem um frete, e só dá para atribuí-lo ao produto quando o pedido tem um produto. Medido: zero pedidos com mais de uma linha em 340 mil; os que aparecerem saem da margem e são contados.
 
+> **Alerta de venda abaixo da margem (D-858):** usa esta mesma `margem_venda`, por pedido coberto e com o custo na data da venda, contra a meta de `margin_alert_settings` (importadas pela marca do fornecedor, demais). O que não é coberto não é julgado; não vira margem zero.
+
 **Grão de SKU existe** para as cinco, pela mesma razão: com uma linha por pedido, frete, desconto e custo do pedido são os do produto. **Não há recorte de marca** na tela de faturamento: a marca é do item, e o frete não decompõe (5E).
 
 ---

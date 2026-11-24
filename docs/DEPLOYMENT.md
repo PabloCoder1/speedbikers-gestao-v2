@@ -99,6 +99,9 @@ Como toda task usa `v3-tasks-invoker` no token OIDC, os dois produtores (`v3-api
 | `MERCADO_LIVRE_CLIENT_SECRET` | Secret Manager | `api` (troca o `code`), `worker` (renova por `refresh_token`) |
 | `ML_TOKEN_ENCRYPTION_KEY` (AES-256, D-046) | Secret Manager | `api`, `worker` |
 | `ANTHROPIC_API_KEY` (Claude Haiku 4.5, D-082) | Secret Manager | `api` (Copiloto — o `worker` nunca chama a Anthropic) |
+| `SMTP_PASSWORD` (alerta de margem, D-858) | Secret Manager | `worker`. Junto vão `SMTP_HOST`, `SMTP_USER`, `SMTP_PORT` (465), `ALERT_EMAIL_FROM` e `WEB_APP_URL` como variáveis comuns. Sem host, usuário e senha, o worker sobe e o alerta fica só no sino |
+
+Para publicar o worker do catálogo (D-791, #377), preserve a configuração da revisão em tráfego, inclusive as referências SMTP. O script padrão desta branch substitui as listas do ambiente e dos segredos do worker. Use o procedimento aprovado de atualização da imagem e do `APP_COMMIT` com as demais configurações preservadas. Confira o SHA, a revisão anterior para rollback e os nomes das variáveis da nova revisão antes de mover o tráfego.
 | `NEXT_PUBLIC_SUPABASE_URL` e chave publicável | Vercel env | `web` |
 
 Regras:

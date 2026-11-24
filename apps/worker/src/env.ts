@@ -96,6 +96,21 @@ export const envSchema = z.object({
    * vezes no projeto) não derruba o boot.
    */
   AI_MONTHLY_BUDGET_USD: z.coerce.number().positive().default(18),
+
+  /**
+   * SMTP do alerta de venda abaixo da margem (D-858). As três primeiras juntas
+   * ligam o e-mail; faltando qualquer uma, o alerta continua no sino e o e-mail
+   * espera (mesmo interruptor da Shopee). Funciona com o Gmail e uma senha de
+   * app (smtp.gmail.com, 465) ou com qualquer provedor SMTP. A senha é segredo
+   * (Secret Manager). `ALERT_EMAIL_FROM` cai no usuário do SMTP; `WEB_APP_URL`,
+   * quando presente, põe no e-mail o link para o produto e para as notificações.
+   */
+  SMTP_HOST: z.string().min(1).optional(),
+  SMTP_USER: z.string().min(1).optional(),
+  SMTP_PASSWORD: z.string().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(465),
+  ALERT_EMAIL_FROM: z.string().min(3).optional(),
+  WEB_APP_URL: z.url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
