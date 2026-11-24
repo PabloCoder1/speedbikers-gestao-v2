@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **702** (D-001 a D-803).
+Decisões registradas: **703** (D-001 a D-804).
 
 ## Por domínio
 
@@ -205,7 +205,7 @@ Decisões registradas: **702** (D-001 a D-803).
 - **D-802** — Domínio, API e Web: ledger/UpSeller, diretório de contas e indicadores/saúde fail-closed
 - **D-803** — Domínio, API e Web: reversões de estoque, enqueue, filtros ABC, paginação RPC e utilitários web
 
-### interface (76)
+### interface (77)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -283,6 +283,7 @@ Decisões registradas: **702** (D-001 a D-803).
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
+- **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
 
 ### mercado-livre (140)
 
