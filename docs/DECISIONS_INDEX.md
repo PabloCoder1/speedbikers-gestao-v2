@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **734** (D-001 a D-883).
+Decisões registradas: **735** (D-001 a D-883).
 
 ## Por domínio
 
@@ -440,7 +440,7 @@ Decisões registradas: **734** (D-001 a D-883).
 - **D-807** — TikTok Shop: camada transacional de leitura, webhook e coordenador de refresh em `@sb/tiktok-shop` (`M04`)
 - **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
-### outros (122)
+### outros (123)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -563,6 +563,7 @@ Decisões registradas: **734** (D-001 a D-883).
 - **D-855** — Contagem das notificações na Home segue a visibilidade da Central
 - **D-856** — Atividade recente da Home limita a lista aos eventos visíveis
 - **D-860** — O produto que sai da planilha de produtos do UpSeller fica fora do catálogo, nunca apagado
+- **D-864** — O formulário de pedido de compra sobrevive à Server Action que não responde
 - **D-880** — Preflight da VM vincula o plano ao commit do candidato
 
 ### processo/docs (1)

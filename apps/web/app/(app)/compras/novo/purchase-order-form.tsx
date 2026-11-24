@@ -684,8 +684,33 @@ export function PurchaseOrderForm({
       expectedUpdatedAt: isEditing ? (initial?.updatedAt ?? null) : null,
     };
 
+    /*
+      FALHA DE TRANSPORTE (D-864). A Server Action pode não responder — rede
+      caída, servidor reiniciando — e, sem o `try`, o botão ficava em
+      "Salvando…" para sempre, sem aviso: a saída era recarregar e perder o
+      rascunho. Agora o formulário volta a responder, com o que foi digitado.
+
+      As duas mensagens dizem coisas diferentes porque as ações são diferentes:
+      - CRIAR é idempotente pelo `requestId` (D-722), que fica o mesmo na
+        nova tentativa: se o pedido chegou a ser criado, a repetição abre ESSE
+        pedido, sem duplicar;
+      - SALVAR a edição confere o `updated_at` lido (D-722): se a primeira
+        tentativa gravou, a repetição é recusada como alteração no meio. Por
+        isso o texto manda conferir o pedido antes.
+    */
     if (isEditing) {
-      const result = await updatePurchaseOrderDraft(orderId, input);
+      let result: Awaited<ReturnType<typeof updatePurchaseOrderDraft>>;
+
+      try {
+        result = await updatePurchaseOrderDraft(orderId, input);
+      } catch {
+        setError(
+          "Não foi possível confirmar se as alterações foram salvas. Abra o pedido para conferir antes de salvar de novo.",
+        );
+        setBusy(false);
+
+        return;
+      }
 
       if (!result.ok) {
         setError(result.message ?? "Não foi possível salvar as alterações.");
@@ -699,7 +724,18 @@ export function PurchaseOrderForm({
       return;
     }
 
-    const result = await createPurchaseOrder(input);
+    let result: Awaited<ReturnType<typeof createPurchaseOrder>>;
+
+    try {
+      result = await createPurchaseOrder(input);
+    } catch {
+      setError(
+        "Não foi possível confirmar a criação do pedido. Tente de novo: se ele já tiver sido criado, o mesmo pedido é aberto, sem duplicar.",
+      );
+      setBusy(false);
+
+      return;
+    }
 
     if (!result.ok || result.id === undefined) {
       setError(result.message ?? "Não foi possível criar o pedido.");
