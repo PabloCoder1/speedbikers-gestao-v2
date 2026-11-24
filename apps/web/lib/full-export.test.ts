@@ -37,4 +37,10 @@ describe("fullRowsToCsv", () => {
   it("recorte vazio ainda tem o cabeçalho", () => {
     expect(fullRowsToCsv([]).split("\r\n").filter((l) => l !== "")).toHaveLength(1);
   });
+
+  it("coverage_days não finito sai como 'sem venda', consistente com formatCoverage", () => {
+    const csv = fullRowsToCsv([{ ...linha, coverage_days: Number.NaN }]);
+
+    expect(csv).toContain(";12;sem venda;3;");
+  });
 });

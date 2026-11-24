@@ -161,6 +161,16 @@ describe("recusa antes do banco, e não pelo banco", () => {
     expect(readKitComponent({ kitSkuKey: "K", componentSkuKey: "C", quantity: 0 }).ok).toBe(false);
     expect(readKitComponent({ kitSkuKey: "K", componentSkuKey: "C", quantity: -1 }).ok).toBe(false);
     expect(readKitComponent({ kitSkuKey: "K", componentSkuKey: "K", quantity: 1 }).ok).toBe(false);
+    expect(readKitComponent({ kitSkuKey: "K", componentSkuKey: " K ", quantity: 1 }).ok).toBe(false);
+  });
+
+  it("apara espaços nas bordas de textos e ignora propriedades herdadas do protótipo", () => {
+    const trimmed = readSkuUpsert({ sku: "  ABC-1  ", supplierBrand: "  OFF RACER  " });
+
+    expect(trimmed).toMatchObject({ ok: true, value: { sku: "ABC-1", supplier_brand: "OFF RACER" } });
+
+    const herdado = Object.create({ sku: "HACK", isActive: false }) as Record<string, unknown>;
+    expect(readSkuUpsert(herdado).ok).toBe(false);
   });
 
   it("estoque sem saldo é pendência; sem reservado apenas vira zero", () => {

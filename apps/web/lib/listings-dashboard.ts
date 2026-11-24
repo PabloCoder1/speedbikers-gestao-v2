@@ -282,11 +282,16 @@ export function nextOrder(current: ListingsOrder, column: OrderColumn): Listings
  * atual, com "…" onde pula. `1 … 4 5 6 … 89` — nunca 89 botões.
  */
 export function pageNumbers(current: number, totalPages: number): (number | "…")[] {
-  if (totalPages <= 7) {
-    return Array.from({ length: totalPages }, (_, indice) => indice + 1);
+  if (!Number.isFinite(totalPages) || totalPages < 1) return [];
+
+  const total = Math.floor(totalPages);
+  const atual = Number.isFinite(current) ? Math.min(Math.max(Math.floor(current), 1), total) : 1;
+
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, indice) => indice + 1);
   }
 
-  const vizinhas = new Set([1, totalPages, current - 1, current, current + 1].filter((p) => p >= 1 && p <= totalPages));
+  const vizinhas = new Set([1, total, atual - 1, atual, atual + 1].filter((p) => p >= 1 && p <= total));
   const ordenadas = [...vizinhas].sort((a, b) => a - b);
   const saida: (number | "…")[] = [];
 

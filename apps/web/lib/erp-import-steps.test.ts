@@ -90,4 +90,19 @@ describe("etapas do lote de importação (D-278)", () => {
     expect(etapas[1]).toEqual({ label: "Leitura da planilha", estado: "atual", nota: "na fila" });
     expect(etapas[2]?.estado).toBe("pendente");
   });
+
+  it("contagens não finitas ou negativas caem em zero em vez de exibir NaN ou Infinity", () => {
+    const etapas = erpImportEtapas({
+      status: "APPLIED",
+      parsedAt: "2026-08-20T16:09:00Z",
+      totalRows: Number.NaN,
+      okRows: -5,
+      appliedRows: Number.POSITIVE_INFINITY,
+      unresolvedRows: Number.POSITIVE_INFINITY,
+    });
+
+    expect(etapas[1]?.nota).toBe("0 linhas lidas");
+    expect(etapas[2]?.nota).toBe("0 aprovadas");
+    expect(etapas[3]?.nota).toBe("0 de 0");
+  });
 });
