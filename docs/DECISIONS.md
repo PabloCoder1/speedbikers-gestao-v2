@@ -20046,3 +20046,25 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
   - o 429 mostra o limite;
   - o link de recuperação da Admin API leva a "Crie uma nova senha", a senha nova entra e a antiga é recusada.
 - O e-mail de verdade não é testado, porque o Supabase local não tem capturador ligado (`[local_smtp]`). O envio real é o passo 3 do dono.
+
+## D-864 - O formulário de pedido de compra sobrevive à Server Action que não responde
+
+**Contexto:** em `/compras/novo` e `/compras/[id]/editar`, o `submit()` chamava `createPurchaseOrder` e `updatePurchaseOrderDraft` sem `try`. Se a Server Action falhava no transporte (rede caída, servidor reiniciando, resposta perdida), a promessa rejeitava, `setBusy(false)` nunca rodava e o botão ficava em "Salvando…" para sempre, sem aviso. A única saída era recarregar a tela, e o rascunho digitado se perdia. Na varredura de falha de transporte do PLAN, este era o arquivo de compras que faltava.
+
+**Decisão:**
+
+- **A falha de transporte libera o formulário, com o que foi digitado.** As duas chamadas ficam num `try`. No `catch` a tela mostra um aviso, devolve o botão e não apaga nada.
+- **Cada ação tem a sua mensagem, porque a nova tentativa se comporta de jeitos diferentes.**
+  - **Criar:** "Não foi possível confirmar a criação do pedido. Tente de novo: se ele já tiver sido criado, o mesmo pedido é aberto, sem duplicar." A criação é idempotente pelo `requestId` (D-722), e o formulário manda o mesmo `requestId` na nova tentativa. Se a primeira chegou ao banco, a repetição abre esse pedido.
+  - **Salvar a edição:** "Não foi possível confirmar se as alterações foram salvas. Abra o pedido para conferir antes de salvar de novo." A edição confere o `updated_at` lido (D-722). Se a primeira tentativa gravou, a repetição é recusada como alteração no meio, então o texto manda conferir antes.
+- **Sem migration e sem mudança de contrato.** As RPCs e as Server Actions ficam como estão.
+
+**Alternativas rejeitadas:**
+- Mensagem genérica única: na edição, ela faria a pessoa repetir e receber a recusa de alteração no meio sem entender por quê.
+- Tentar de novo automaticamente: na edição, a repetição seria recusada se a primeira tivesse gravado, e a tela não tem como saber.
+
+**Verificação (`pedido-compra.spec.ts`, stack local isolada, depois de `db reset` e seed):**
+- Novo pedido: o servidor recebe o POST e a resposta é cortada antes de chegar à tela. O aviso aparece, o botão volta, o código digitado continua, e existe exatamente 1 pedido. A nova tentativa abre esse pedido, e continua existindo só 1.
+- Edição: o POST é bloqueado antes do servidor. O aviso aparece, o botão volta, e a nova tentativa grava a quantidade nova.
+- Vermelho/verde: sem o `try`, os 2 testes falham esperando o aviso. Com o `try`, a spec inteira passa (6 testes).
+- Os itens dos testes novos têm custo: um pedido sem custo entraria na contagem "1 de 1 sem custo" que `compras.spec.ts` afirma. As specs de compras, reposição e fornecedores passam juntas (31 testes).

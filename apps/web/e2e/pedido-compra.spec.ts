@@ -1,4 +1,6 @@
-import { expect, test } from "@playwright/test";
+import type { Database } from "@sb/db";
+import { createClient } from "@supabase/supabase-js";
+import { expect, test, type Page } from "@playwright/test";
 
 import { E2E_SUPPLIER } from "./constants.js";
 import { factValue, login } from "./helpers.js";
@@ -139,4 +141,146 @@ test("novo pedido: voltar como botão e a coluna Sugestão responde pelo SKU esc
 
   await expect(sugestao).toHaveText(/sem sugestão|coberto|\d+ un/, { timeout: 15_000 });
   await expect(sugestao).not.toContainText("indisponível");
+});
+
+/*
+  FALHA DE TRANSPORTE NA SERVER ACTION (D-864). Sem o `try`, o botão ficava em
+  "Salvando…" para sempre quando a ação não respondia, e a saída era recarregar
+  a tela e perder o rascunho.
+*/
+
+function banco(): ReturnType<typeof createClient<Database>> {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+
+  return createClient<Database>(url.href, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", {
+    auth: { persistSession: false },
+  });
+}
+
+/** Os pedidos que têm um item com este código — o código é único por execução. */
+async function pedidosCom(codigo: string): Promise<string[]> {
+  const { data, error } = await banco()
+    .from("purchase_order_items")
+    .select("purchase_order_id")
+    .eq("sku_snapshot", codigo);
+
+  if (error !== null) throw new Error(error.message);
+
+  return [...new Set(data.map((linha) => linha.purchase_order_id))];
+}
+
+/**
+ * Item COM custo de propósito: um pedido sem custo entraria na contagem
+ * "N de N sem custo" que `compras.spec.ts` afirma sobre a fila.
+ */
+async function preencherItem(page: Page, codigo: string, quantidade: string): Promise<void> {
+  const linha = page.locator("tbody tr").first();
+
+  await linha.getByPlaceholder("SKU ou nome…").fill(codigo);
+  await linha.locator('input[type="number"]').first().fill(quantidade);
+  await linha.locator('input[type="number"]').nth(1).fill("12.5");
+}
+
+test("novo pedido: resposta perdida libera o formulário, e a nova tentativa abre o MESMO pedido (D-864)", async ({
+  page,
+}) => {
+  const codigo = `TRANSPORTE-E2E-${String(Date.now())}`;
+
+  await login(page, "/compras/novo");
+  await preencherItem(page, codigo, "3");
+
+  let perdida = false;
+
+  // O servidor RECEBE e cria o pedido; a resposta é que não chega ao navegador.
+  // É o caso que importa para a idempotência: o pedido existe e a tela não sabe.
+  await page.route(
+    (endereco) => endereco.pathname === "/compras/novo",
+    async (rota) => {
+      const pedido = rota.request();
+
+      if (!perdida && pedido.method() === "POST" && pedido.headers()["next-action"] !== undefined) {
+        perdida = true;
+        await rota.fetch();
+        await rota.abort("failed");
+      } else {
+        await rota.continue();
+      }
+    },
+  );
+
+  const criar = page.getByRole("button", { name: "Criar pedido (rascunho)" });
+
+  await criar.click();
+  await expect(page.getByText("Não foi possível confirmar a criação do pedido.")).toBeVisible();
+  await expect(criar).toBeEnabled();
+  await expect(page.locator("tbody tr").first().getByPlaceholder("SKU ou nome…")).toHaveValue(codigo);
+  expect(perdida).toBe(true);
+  expect(await pedidosCom(codigo)).toHaveLength(1);
+
+  // A nova tentativa leva o mesmo `requestId` (D-722): abre o pedido que já
+  // existe, e não cria um segundo.
+  await criar.click();
+  await expect(page).toHaveURL(/\/compras\/[0-9a-f-]{36}$/);
+
+  const pedidos = await pedidosCom(codigo);
+
+  expect(pedidos).toHaveLength(1);
+  expect(page.url()).toContain(pedidos[0] ?? "sem-pedido");
+});
+
+test("editar pedido: falha de transporte ao salvar avisa, libera o botão e a nova tentativa grava (D-864)", async ({
+  page,
+}) => {
+  const codigo = `TRANSPORTE-EDICAO-E2E-${String(Date.now())}`;
+
+  await login(page, "/compras/novo");
+  await preencherItem(page, codigo, "2");
+  await page.getByRole("button", { name: "Criar pedido (rascunho)" }).click();
+  await expect(page).toHaveURL(/\/compras\/[0-9a-f-]{36}$/);
+
+  const id = new URL(page.url()).pathname.split("/").pop() ?? "";
+  const destino = `/compras/${id}/editar`;
+
+  await page.goto(destino);
+
+  const salvar = page.getByRole("button", { name: "Salvar alterações" });
+
+  await expect(salvar).toBeVisible();
+  await page.locator("tbody tr").first().locator('input[type="number"]').first().fill("4");
+
+  let bloqueada = false;
+
+  // Aqui a ação NÃO chega ao servidor: a nova tentativa grava normalmente.
+  await page.route(
+    (endereco) => endereco.pathname === destino,
+    async (rota) => {
+      const pedido = rota.request();
+
+      if (!bloqueada && pedido.method() === "POST" && pedido.headers()["next-action"] !== undefined) {
+        bloqueada = true;
+        await rota.abort("failed");
+      } else {
+        await rota.continue();
+      }
+    },
+  );
+
+  await salvar.click();
+  await expect(page.getByText("Não foi possível confirmar se as alterações foram salvas.")).toBeVisible();
+  await expect(salvar).toBeEnabled();
+  expect(bloqueada).toBe(true);
+
+  await salvar.click();
+  await expect(page).toHaveURL(new RegExp(`/compras/${id}$`));
+
+  const { data, error } = await banco()
+    .from("purchase_order_items")
+    .select("quantity_ordered")
+    .eq("purchase_order_id", id)
+    .eq("sku_snapshot", codigo);
+
+  expect(error).toBeNull();
+  expect(data?.map((linha) => linha.quantity_ordered)).toEqual([4]);
 });
