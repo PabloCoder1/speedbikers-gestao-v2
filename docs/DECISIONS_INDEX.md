@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **715** (D-001 a D-816).
+Decisões registradas: **718** (D-001 a D-819).
 
 ## Por domínio
 
@@ -290,7 +290,7 @@ Decisões registradas: **715** (D-001 a D-816).
 - **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
 - **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
 
-### mercado-livre (143)
+### mercado-livre (145)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -435,6 +435,8 @@ Decisões registradas: **715** (D-001 a D-816).
 - **D-807** — TikTok Shop: camada transacional de leitura, webhook e coordenador de refresh em `@sb/tiktok-shop` (`M04`)
 - **D-815** — Worker `service_role`: isolamento multi-tenant `envelope.organizationId` em 7 handlers críticos de escrita, importação, relist, logística e webhook
 - **D-816** — Worker `service_role`: `expectedOrganizationId` centralizado em `resolveMlAccountRead` e isolamento em 9 handlers do Mercado Livre
+- **D-817** — Worker `service_role`: isolamento multi-tenant e proteção de continuação `enqueue()` em 3 handlers financeiros/backfill ML
+- **D-819** — Núcleo worker e OAuth TikTok: `readAllPages` contra laço infinito em `NaN`, `delaySeconds` no `enqueue` e validação de `state`/`code`
 
 ### outros (113)
 
@@ -631,7 +633,7 @@ Decisões registradas: **715** (D-001 a D-816).
 - **D-798** — Contratos, API e Worker: janelas de datas no Copiloto, lookup de ferramenta/NF-e/suspensão blindados, papéis/dedupe de claims, cauda de pedidos e `attempt` do worker
 - **D-810** — API TikTok Shop: agendador paginado de pedidos e adaptador Supabase de refresh de token (`M04`)
 
-### worker/infra (124)
+### worker/infra (125)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -757,4 +759,5 @@ Decisões registradas: **715** (D-001 a D-816).
 - **D-794** — Telemetria `@sb/db` (`recordJobRun`/`recordAiRun`) blindada contra transporte e isolamento de enqueue nos 13 agendadores/backfills restantes da API
 - **D-812** — Contratos compartilhados de fila do TikTok Shop em `@sb/contracts` e alinhamento da API (`M04`)
 - **D-814** — Worker `service_role`: isolamento multi-tenant `envelope.organizationId`, escopo explícito de consultas, lotes de upsert e enqueue protegido em 7 handlers
+- **D-818** — Worker `service_role`: `expectedOrganizationId` centralizado em `lerLojaConectada` e proteção de `enqueue()` em 5 handlers Shopee
 

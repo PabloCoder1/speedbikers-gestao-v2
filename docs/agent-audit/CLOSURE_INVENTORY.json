@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-24, integração local e0bedddf + continuidade Gemini D-770–D-789, D-793–D-816 e hotfix rpc-pages (ce980cdc, PR #343)",
+  "corte": "2026-11-24, integração local e0bedddf + continuidade Gemini D-770–D-789, D-793–D-819 e hotfix rpc-pages (570b6e45, PR #343)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -69,7 +69,7 @@
       "peso": 8,
       "status": "Publicado",
       "responsavel": "Backend",
-      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776, D-779, D-780, D-786, D-787, D-794 a D-804 e D-814 a D-816 testados localmente com paginação, isolamento multi-tenant envelope.organizationId em 22 handlers service_role + resolveMlAccountRead, lotes de upsert, guardas por versão, lotes .in() Full/Shopee, proteção Flate zip bomb PDF (CWE-409), visitas/Full/relist/backfills/pedidos/cauda/logística/pacote/anomalias/claims/SAC/NF-e/documentos/eventos/inventário/ledger/reversões/UpSeller/datas/cobertura/attempt endurecidos, telemetria blindada contra transporte, IDs seguros ML, janelas/datas Shopee e Ads, clientes HTTP/OAuth resilientes, unlock protegido e logger blindado (1.183 worker + 795 domain + 30 db + 38 observability)",
+      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776, D-779, D-780, D-786, D-787, D-794 a D-804 e D-814 a D-819 testados localmente com paginação (readAllPages blindado contra NaN), isolamento multi-tenant envelope.organizationId em 30 handlers service_role + resolveMlAccountRead + lerLojaConectada, continuação enqueue() protegida, delaySeconds validado, lotes de upsert, guardas por versão, lotes .in() Full/Shopee, proteção Flate zip bomb PDF (CWE-409), visitas/Full/relist/backfills/pedidos/cauda/logística/pacote/anomalias/claims/SAC/NF-e/documentos/eventos/inventário/ledger/reversões/UpSeller/datas/cobertura/attempt endurecidos, telemetria blindada contra transporte, IDs seguros ML, janelas/datas Shopee e Ads, clientes HTTP/OAuth resilientes, unlock protegido e logger blindado (1.202 worker + 795 domain + 30 db + 38 observability)",
       "fase": 3
     },
     {

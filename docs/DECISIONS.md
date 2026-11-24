@@ -20684,3 +20684,32 @@ Centralizamos a guarda de fronteira multi-tenant para leitura de `ml_accounts` n
 2. **Adoção em 9 handlers ML intocados pelo `#378` (`backfill-orders.ts`, `sync-ads-campaigns.ts`, `sync-fulfillment-snapshot.ts`, `sync-listing-visits-snapshot.ts`, `sync-orders-window.ts`, `sync-support-claims-reconcile.ts`, `sync-support-messages-reconcile.ts`, `sync-support-questions-reconcile.ts`, `webhook-received.ts`):** todos passam `expectedOrganizationId: envelope.organizationId` em `resolveMlAccountRead`, bloqueando qualquer acesso `service_role` cross-tenant antes de token refresh, chamadas à API ML ou persistência.
 
 TDD RED (`9 failed | 21 passed (30)` em `ml-account-read.test.ts`) -> GREEN (`69/69` arquivos / `1.183/1.183` testes no `@sb/worker`). Verificação completa do monorepo pós-`ce980cdc`: `pnpm run check` (`37/37`, `359` arquivos / `4.594` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `6/6` commits pendentes com `0` conflitos sobre `#378` (`c1ef6afd`).
+
+## D-817 - Worker `service_role`: isolamento multi-tenant e proteção de continuação `enqueue()` em 3 handlers financeiros/backfill ML
+
+Fechamos o isolamento multi-tenant e a resiliência da continuação de fila em 3 handlers ML sob `service_role` (fora do diff do `#378`, commit `e895084c`):
+
+1. **Guarda `account.organization_id !== envelope.organizationId` (`retryable: false`) em `backfill-order-financials.ts`, `backfill-order-user-products.ts` e `sync-order-financials.ts`:** impede leitura externa, gravação de `order_financials`/`order_items` ou enfileiramento de continuação quando a conta ML pertence a outra organização.
+2. **Proteção `try/catch` no `enqueuer.enqueue()` de continuação em `backfill-order-financials.ts` e `backfill-order-user-products.ts`:** registra `backfill_order_financials_enqueue_failed` / `backfill_order_user_products_enqueue_failed` e devolve `{ status: "failed", retryable: true }` em falha transitória do Cloud Tasks em vez de lançar rejeição não tratada após `recordSyncRunSuccess`.
+
+TDD RED (`3 failed (3)` / `5 failed | 31 passed (36)`) -> GREEN (`36/36` testes), com `@sb/worker` `tsc`/`eslint`/`build` aprovados.
+
+## D-818 - Worker `service_role`: `expectedOrganizationId` centralizado em `lerLojaConectada` e proteção de `enqueue()` em 5 handlers Shopee
+
+Centralizamos o isolamento multi-tenant Shopee em `apps/worker/src/handlers/shopee-comum.ts` mantendo retrocompatibilidade com `shopee-orders-sync.ts` no `#378` (commit `5dfeeebf`):
+
+1. **`lerLojaConectada(..., expectedOrganizationId?: string)` (`shopee-comum.ts` + novo `shopee-comum.test.ts`):** recusa com `{ outcome: { status: "failed", retryable: false, reason: "loja da Shopee pertence a outra organização" } }` quando `expectedOrganizationId` é informado e diverge de `loja.organization_id`.
+2. **Adoção em 5 handlers Shopee (`shopee-ads-sync.ts`, `shopee-escrow-releases-sync.ts`, `shopee-items-hydrate.ts`, `shopee-items-sync.ts`, `shopee-returns-sync.ts`):** todos propagam `envelope.organizationId` para `lerLojaConectada`.
+3. **Proteção `try/catch` no `enqueuer.enqueue()` de continuação em 4 handlers (`shopee-escrow-releases-sync.ts`, `shopee-returns-sync.ts`, `shopee-items-sync.ts`, `shopee-items-hydrate.ts`):** registram log `*_enqueue_failed` e devolvem `{ status: "failed", retryable: true }` em falha transitória do Cloud Tasks.
+
+TDD RED (`4 failed (4)` / `10 failed | 16 passed (26)`) -> GREEN (`5/5` arquivos / `44/44` testes incluindo `shopee-catalogo.test.ts`).
+
+## D-819 - Núcleo worker e OAuth TikTok: `readAllPages` contra laço infinito em `NaN`, `delaySeconds` no `enqueue` e validação de `state`/`code`
+
+Corrigimos três falhas de borda no núcleo do worker e no callback OAuth do TikTok Shop (commit `570b6e45`):
+
+1. **`apps/worker/src/read-all-pages.ts`:** exige `Number.isFinite(requested) && requested >= 1` e aplica `Math.floor(requested)` antes do `Math.min(..., POSTGREST_MAX_ROWS)` — eliminando laço infinito real reproduzido com `pageSize: Number.NaN` (`Math.min(NaN, 1000)` era `NaN` e `NaN < 1` era `false`) e `.range()` fracionário.
+2. **`apps/worker/src/enqueue.ts` (+ novo `enqueue.test.ts`):** espelha `apps/api/src/enqueue.ts` (`D-803`), rejeitando `delaySeconds` negativo, `NaN` ou `Infinity` com `RangeError` antes do Cloud Tasks e truncando valores fracionários com `Math.floor`.
+3. **`apps/api/src/tiktok-shops.ts`:** recusa `state` em branco (`trim() === ""`) com `{ status: "invalid_state" }` sem consultar `tiktok_oauth_states` e recusa `code` em branco antes de chamar `getAccessToken`.
+
+TDD RED (`3/3` arquivos / `4 failed`) -> GREEN (`10/10` worker + `10/10` API). Verificação completa do monorepo pós-`570b6e45`: `pnpm run check` (`37/37`, `361` arquivos / `4.614` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `5/5` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
