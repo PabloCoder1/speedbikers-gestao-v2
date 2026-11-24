@@ -202,8 +202,8 @@ function colunasDoItem(item: ShopeeItem, pendente: { shopee_updated_at: string }
 }
 
 export function createShopeeItemsHydrateHandler(deps: ShopeeItemsHydrateDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
-    const aberta = await lerLojaConectada(deps, context, "shopee_items_hydrate_skipped");
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
+    const aberta = await lerLojaConectada(deps, context, "shopee_items_hydrate_skipped", envelope.organizationId);
 
     if ("outcome" in aberta) return aberta.outcome;
 
@@ -250,13 +250,24 @@ export function createShopeeItemsHydrateHandler(deps: ShopeeItemsHydrateDeps): J
     }
 
     if (resultado.temMais) {
-      await deps.enqueuer.enqueue({
-        jobType: "shopee.items.hydrate",
-        organizationId: loja.organization_id,
-        dedupeKey: `shopee-items-hydrate:${loja.id}:mais:${String(Math.floor((deps.now?.() ?? new Date()).getTime() / 1000))}`,
-        queue: "backfill",
-        payload: { shopeeShopId: loja.id },
-      });
+      try {
+        await deps.enqueuer.enqueue({
+          jobType: "shopee.items.hydrate",
+          organizationId: loja.organization_id,
+          dedupeKey: `shopee-items-hydrate:${loja.id}:mais:${String(Math.floor((deps.now?.() ?? new Date()).getTime() / 1000))}`,
+          queue: "backfill",
+          payload: { shopeeShopId: loja.id },
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "erro desconhecido ao enfileirar continuação";
+
+        context.logger.error("shopee_items_hydrate_enqueue_failed", {
+          shopee_shop_id: loja.id,
+          reason,
+        });
+
+        return { status: "failed", retryable: true, reason: `falha ao enfileirar continuação de detalhes: ${reason}` };
+      }
     }
 
     return resultado.outcome;

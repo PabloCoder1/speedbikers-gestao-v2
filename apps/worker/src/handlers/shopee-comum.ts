@@ -36,6 +36,7 @@ export async function lerLojaConectada(
   deps: ShopeeJobDeps,
   context: HandlerContext,
   evento: string,
+  expectedOrganizationId?: string,
 ): Promise<{ loja: LojaConectada } | { outcome: JobOutcome }> {
   const parsed = shopeeShopPayloadSchema.safeParse(context.payload);
 
@@ -64,6 +65,10 @@ export async function lerLojaConectada(
     });
 
     return { outcome: { status: "done", processed: 0 } };
+  }
+
+  if (expectedOrganizationId !== undefined && loja.organization_id !== expectedOrganizationId) {
+    return { outcome: { status: "failed", retryable: false, reason: "loja da Shopee pertence a outra organização" } };
   }
 
   return { loja };

@@ -71,7 +71,7 @@ export function pedacos(de: string, ate: string): { startDate: string; endDate: 
 
 export function createShopeeAdsSyncHandler(deps: ShopeeAdsSyncDeps): JobHandler {
   return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
-    const aberta = await lerLojaConectada(deps, context, "shopee_ads_sync_skipped");
+    const aberta = await lerLojaConectada(deps, context, "shopee_ads_sync_skipped", envelope.organizationId);
 
     if ("outcome" in aberta) return aberta.outcome;
 
