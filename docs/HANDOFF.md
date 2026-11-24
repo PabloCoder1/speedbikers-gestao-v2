@@ -14,12 +14,12 @@
 |---|---|
 | **Atualizado em** | 2026-11-24 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | Candidato em composição com `origin/main` `9670cde3`. A CI do corte anterior `034ffb34` passou 402 E2E e 1.229 testes SQL. [Checkpoint](agent-audit/SESSION_LOG.md). |
+| **HEAD conhecido** | `origin/main` em `d21fb902` (#389). O #378 está empilhado no #364. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Fechamento da V3** | 155/226 pontos (68,58%), 28/43 entregas. [Inventário Sentinel](agent-audit/CLOSURE_INVENTORY.json). [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7107161168). |
-| **Sentinel: próximo passo** | O #378 incorpora D-807–D-811 e D-863. Conferir a CI do novo SHA. O Dev inativo bloqueia quatro versões definitivas. D04 tem restore e ensaios SQL/PostgREST. Falta leitura do arquivo na Central. |
+| **Sentinel: próximo passo** | O #378 incorpora D-807–D-814 e D-863. Validar a CI do último SHA. O Dev inativo bloqueia quatro versões definitivas. D04 tem restore e ensaios SQL/PostgREST. Falta leitura do arquivo na Central. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo, com 2,0 GB acima do limite gratuito. Google Cloud segue como ambiente atual. Lembrete para retomar em 01/12, condicionado ao Dev ativo. Rotinas Dev pausadas (D-350). |
-| **Supabase** | Produção usa a VM `sb-db` (`speedbikers-prod`). O antigo projeto hosted `imvjfgnaprqsfjlnsyev` estava `INACTIVE` em 18/11. Convite, SMTP e recuperação Auth seguem pendentes. [VM](../infra/vm/README.md). |
-| **Produção** | D-859 a D-862 estão registrados no [handoff de publicação #388](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/388). A correção do multiget segue no #377. |
+| **Supabase** | Produção usa a VM `sb-db`. O antigo hosted `imvjfgnaprqsfjlnsyev` segue inativo em 24/11. SMTP real do Auth pendente. [VM](../infra/vm/README.md). |
+| **Produção** | D-859 a D-862 no [#388](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/388). Vercel READY em `d21fb902`, com ativação de D-863 condicionada ao SMTP. Multiget no #377. |
 | **Migrations** | Última versão registrada na VM `20261124130000` (D-862). Quatro migrations provisórias do candidato exigem registro definitivo. [VM](../infra/vm/README.md). |
 | **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | Compras inteligentes, importação anterior e invoice/proforma entregues. #347 integrado para ler a moeda da invoice. D-792 acrescenta entrada no LOCAL e criação do SKU na conferência. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
 | **Notas (D-765, D-766)** | #334 registrou saída para Full. #335 incorporou Saída Manual e edição de itens. O aceite operacional de ponta a ponta segue no fechamento. |

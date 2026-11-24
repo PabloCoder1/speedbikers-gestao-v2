@@ -41,11 +41,13 @@ function fakeDeps(options: {
   lines: string[];
   rpcCalls: string[];
   inBatchSizes: number[];
+  orgScopedQueries: string[];
 } {
   const upserted: Record<string, unknown>[] = [];
   const lines: string[] = [];
   const rpcCalls: string[] = [];
   const inBatchSizes: number[] = [];
+  const orgScopedQueries: string[] = [];
 
   const decisions =
     options.decisions ??
@@ -112,45 +114,67 @@ function fakeDeps(options: {
       }
 
       if (table === "actions") {
+        const eqs: [string, unknown][] = [];
+        const runActions = (ids: string[]) => {
+          inBatchSizes.push(ids.length);
+          if (eqs.some(([c, v]) => c === "organization_id" && v === ORG_ID)) {
+            orgScopedQueries.push("actions");
+          }
+
+          if (options.actionsFails === true) {
+            return Promise.resolve({ data: null, error: { message: "boom" } });
+          }
+
+          const idSet = new Set(ids);
+
+          return Promise.resolve({
+            data: actions.filter((a) => idSet.has(a.id)).slice(0, 1000),
+            error: null,
+          });
+        };
+
         return {
           select: () => ({
-            in: (_col: string, ids: string[]) => {
-              inBatchSizes.push(ids.length);
+            eq: (col: string, val: unknown) => {
+              eqs.push([col, val]);
 
-              if (options.actionsFails === true) {
-                return Promise.resolve({ data: null, error: { message: "boom" } });
-              }
-
-              const idSet = new Set(ids);
-
-              return Promise.resolve({
-                data: actions.filter((a) => idSet.has(a.id)).slice(0, 1000),
-                error: null,
-              });
+              return { in: (_c: string, ids: string[]) => runActions(ids) };
             },
+            in: (_col: string, ids: string[]) => runActions(ids),
           }),
         };
       }
 
       if (table === "action_outcomes") {
+        const eqs: [string, unknown][] = [];
+        const runOutcomes = (ids: string[]) => {
+          inBatchSizes.push(ids.length);
+          if (eqs.some(([c, v]) => c === "organization_id" && v === ORG_ID)) {
+            orgScopedQueries.push("action_outcomes");
+          }
+
+          return pagedChain(() => {
+            if (options.outcomesFails === true) {
+              return { data: null, error: { message: "boom" } };
+            }
+
+            const idSet = new Set(ids);
+
+            return {
+              data: outcomes.filter((o) => idSet.has(o.action_decision_id)),
+              error: null,
+            };
+          });
+        };
+
         return {
           select: () => ({
-            in: (_col: string, ids: string[]) => {
-              inBatchSizes.push(ids.length);
+            eq: (col: string, val: unknown) => {
+              eqs.push([col, val]);
 
-              return pagedChain(() => {
-                if (options.outcomesFails === true) {
-                  return { data: null, error: { message: "boom" } };
-                }
-
-                const idSet = new Set(ids);
-
-                return {
-                  data: outcomes.filter((o) => idSet.has(o.action_decision_id)),
-                  error: null,
-                };
-              });
+              return { in: (_c: string, ids: string[]) => runOutcomes(ids) };
             },
+            in: (_col: string, ids: string[]) => runOutcomes(ids),
           }),
           upsert: (rows: Record<string, unknown>[]) => {
             upserted.push(...rows);
@@ -166,7 +190,7 @@ function fakeDeps(options: {
     },
   } as unknown as MeasureDecisionOutcomesDeps["db"];
 
-  return { upserted, lines, rpcCalls, inBatchSizes, deps: { db, now: () => NOW } };
+  return { upserted, lines, rpcCalls, inBatchSizes, orgScopedQueries, deps: { db, now: () => NOW } };
 }
 
 function ctx(lines: string[], payload: unknown): { logger: ReturnType<typeof createLogger>; payload: unknown } {
@@ -365,5 +389,25 @@ describe("measure-decision-outcomes", () => {
     expect(outcome).toEqual({ status: "done", processed: 0 });
     expect(upserted).toHaveLength(0);
     expect(Math.max(...inBatchSizes)).toBeLessThanOrEqual(200);
+  });
+
+  it("D-814: recusa divergência entre organizationId do payload e do envelope e filtra action_outcomes/actions por organization_id", async () => {
+    const outraOrg = "22222222-0000-4000-8000-000000000002";
+    const { deps: depsMismatch, upserted: upMismatch, lines: linesMismatch } = fakeDeps({});
+
+    const mismatch = await createMeasureDecisionOutcomesHandler(depsMismatch)(
+      ENVELOPE,
+      ctx(linesMismatch, { organizationId: outraOrg }),
+    );
+
+    expect(mismatch).toMatchObject({ status: "failed", retryable: false });
+    expect(upMismatch).toHaveLength(0);
+
+    const { deps, lines, orgScopedQueries } = fakeDeps({});
+    const ok = await createMeasureDecisionOutcomesHandler(deps)(ENVELOPE, ctx(lines, { organizationId: ORG_ID }));
+
+    expect(ok).toEqual({ status: "done", processed: 2 });
+    expect(orgScopedQueries).toContain("action_outcomes");
+    expect(orgScopedQueries).toContain("actions");
   });
 });

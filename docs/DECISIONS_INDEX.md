@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **731** (D-001 a D-883).
+Decisões registradas: **734** (D-001 a D-883).
 
 ## Por domínio
 
@@ -145,7 +145,7 @@ Decisões registradas: **731** (D-001 a D-883).
 - **D-790** — Um índice único atende a timeline do Full
 - **D-881** — Workflow de migrations de produção gera o plano da VM
 
-### estoque (64)
+### estoque (65)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -209,6 +209,7 @@ Decisões registradas: **731** (D-001 a D-883).
 - **D-802** — Domínio, API e Web: ledger/UpSeller, diretório de contas e indicadores/saúde fail-closed
 - **D-803** — Domínio, API e Web: reversões de estoque, enqueue, filtros ABC, paginação RPC e utilitários web
 - **D-809** — Domínio TikTok Shop: projeção de pedidos, margem oficial V3 e plano de baixa de estoque com guarda D-497 (`M04`)
+- **D-813** — Domínio TikTok Shop: projeção de catálogo/estoque e motor idempotente de devoluções (`M04`)
 - **D-850** — Full mantém 30 dias de capturas brutas online e permite recuperar o arquivo
 - **D-862** — O kit que leva um componente fora do catálogo conta no aviso da Central
 
@@ -646,7 +647,7 @@ Decisões registradas: **731** (D-001 a D-883).
 - **D-859** — O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
 - **D-882** — Agendamento de margem percorre todas as organizações com alerta ativo
 
-### worker/infra (125)
+### worker/infra (127)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -770,6 +771,8 @@ Decisões registradas: **731** (D-001 a D-883).
 - **D-786** — Worker verifica erro ao avançar checkpoint de `backfill.orders`, registra `sync_runs` em `sync.order-financials`, pagina `order_items` em `backfill.order-user-products` e preserva retry em `sync-central-alerts`
 - **D-787** — Hardening do worker em persistência/varredura do SAC (`claims`, `messages`, `reply`) e erro transitório na recusa de `nfe.import.apply`
 - **D-794** — Telemetria `@sb/db` (`recordJobRun`/`recordAiRun`) blindada contra transporte e isolamento de enqueue nos 13 agendadores/backfills restantes da API
+- **D-812** — Contratos compartilhados de fila do TikTok Shop em `@sb/contracts` e alinhamento da API (`M04`)
+- **D-814** — Worker `service_role`: isolamento multi-tenant `envelope.organizationId`, escopo explícito de consultas, lotes de upsert e enqueue protegido em 7 handlers
 - **D-857** — Avisos em tempo real respeitam o ciclo da sessão
 - **D-863** — "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
 - **D-883** — Preservar os traces das falhas Playwright na CI

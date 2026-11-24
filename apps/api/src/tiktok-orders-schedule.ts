@@ -1,12 +1,14 @@
+import { TIKTOK_ITEMS_DELAY_S, TIKTOK_JOB_TYPES, tiktokScheduleDedupeKey } from "@sb/contracts";
 import type { AdminClient } from "@sb/db";
 import type { Logger } from "@sb/observability";
 
 import type { Enqueuer } from "./enqueue.js";
 
 /**
- * Gatilho periódico do TikTok Shop (D-810, `M04`) — espelha
- * `shopee-orders-schedule.ts` (D-426/D-428) com paginação por chave (`> 1.000`
- * lojas seguro) e isolamento de falha de enqueue por loja (D-793/D-794/D-882).
+ * Gatilho periódico do TikTok Shop (D-810, contratos compartilhados D-812, `M04`) —
+ * espelha `shopee-orders-schedule.ts` (D-426/D-428) com paginação por chave
+ * (`> 1.000` lojas seguro) e isolamento de falha de enqueue por loja
+ * (D-793/D-794/D-882).
  *
  * Para cada loja `CONNECTED` em `tiktok_shops`, enfileira:
  * - `tiktok.orders.sync` imediato (renova o token primeiro);
@@ -14,7 +16,7 @@ import type { Enqueuer } from "./enqueue.js";
  *   disputa pela trava de renovação do token.
  */
 
-export const TIKTOK_ITEMS_DELAY_S = 300;
+export { TIKTOK_ITEMS_DELAY_S };
 export const TIKTOK_SHOPS_PAGE_SIZE = 500;
 const MAX_SHOPS_PAGES = 100;
 
@@ -93,15 +95,15 @@ export async function triggerTikTokOrdersSync(deps: TikTokOrdersScheduleDeps): P
   let enqueueFailed = false;
 
   for (const loja of listed.shops) {
-    for (const [jobType, prefixo, atraso] of [
-      ["tiktok.orders.sync", "tiktok-orders", undefined],
-      ["tiktok.items.sync", "tiktok-items", TIKTOK_ITEMS_DELAY_S],
+    for (const [jobType, atraso] of [
+      [TIKTOK_JOB_TYPES.ordersSync, undefined],
+      [TIKTOK_JOB_TYPES.itemsSync, TIKTOK_ITEMS_DELAY_S],
     ] as const) {
       try {
         const result = await deps.enqueuer.enqueue({
           jobType,
           organizationId: loja.organization_id,
-          dedupeKey: `${prefixo}:${loja.id}:hora:${hora}`,
+          dedupeKey: tiktokScheduleDedupeKey(jobType, loja.id, hora),
           queue: "backfill",
           payload: { tiktokShopId: loja.id },
           ...(atraso === undefined ? {} : { delaySeconds: atraso }),

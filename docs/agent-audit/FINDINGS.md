@@ -196,3 +196,6 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 - **P1 · D-803.** A integração convertia `Infinity` em lista vazia antes da primeira chamada. Os leitores ML e Shopee do SKU dependem desse valor para paginar até o fim. Reproduzido com 1.002 linhas e corrigido no leitor comum. Passaram 52 testes focados. O Playwright completo valida o efeito nas jornadas.
 
 - **P2 · D-883.** A CI 45395072874 perdeu os traces de falha ao buscar o diretório do repórter HTML. A reprodução local com o repórter de lista gerou o ZIP em `test-results`. Ajustado no #378.
+
+- **M04 · D-812 e D-813.** #378 integra contratos compartilhados dos jobs e projeções de catálogo, estoque e devoluções. Persistência, handlers e primeira validação com loja continuam em aberto.
+- **P1 · D-814.** #378 inclui as guardas de organização e a retomada de falha transitória na fila dos handlers revisados no #343.

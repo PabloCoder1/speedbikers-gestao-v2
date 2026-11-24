@@ -943,3 +943,13 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - Fechamento em 155/226 (68,58%), 28/43 entregas. Aceite M04 depende de persistência e jornadas integradas. O Dev pausado impede os quatro registros definitivos. M05 aguarda aprovação do rollout isolado; V02 e V03 aguardam a esteira e o aceite do dono. Próxima etapa: verificar os quatro jobs de cada SHA e, em seguida, revisar os contratos D-812 quando publicados.
 - O batch Gemini foi registrado em `5fb20839`. D-883 corrige a coleta de traces no mesmo #378. O ensaio Chromium 1.62.1, com uma asserção intencionalmente vermelha e página sintética, produziu um ZIP de 6.441 bytes. A investigação do bind da porta 60022 foi encaminhada para o PR já existente #340.
 - O primeiro dispatch de `e2c7b8dc` recusou o ID `playwright` duplicado com a etapa de versão. O reparo usa `playwright_e2e` para os testes e preserva a chave de cache.
+
+### 24/11/2026 · Segundo batch Gemini D-812–D-814
+
+- O primeiro batch está em `c1ef6afd`, CI 45446906931. Gemini publicou novo corte `eb2eb34e` no #343 durante essa execução.
+- Origem da segunda integração: `ce3d2d63`, `f5d7f7d0`, `fcc5010f` e `0072e5ac`. Inclui os contratos de fila TikTok, as projeções de catálogo e devolução e sete guardas de escopo do worker. Nenhuma alteração de migrations ou lockfile.
+- D-815 fica na frente Gemini. D-863 continua sob Claude com SMTP real como dependência. O Codex mantém #377, #378 e #340. O #340 foi reconciliado em `8edf669d` com dois testes do alocador de portas, check, build e docs:check aprovados. CI 45446867460.
+- Check 37/37 (16 em cache), build 10/10 (7 em cache) e docs:check. O check somou 4.699 testes, com 22 nos contratos, 796 no domínio, 639 na API, 1.193 no worker e 1.727 na web.
+- As correções Shopee #379 e #380 e a fixture #373 já estão no histórico do candidato. #381 e #382 seguem como evidências de P02 e Q03 referenciadas no inventário.
+- M04 ainda precisa de tabelas versionadas, handlers, ligação da fila e teste integrado da loja. V01 aguarda as quatro versões definitivas e o ensaio de upgrade da VM. O inventário permanece em 155/226 (68,58%), 28/43 entregas.
+- CI externa concluída com quatro jobs verdes em `c1ef6afd` (45446906931), `0f7a98de` (45444838540) e `8edf669d` (45446867460). Os dois PRs isolados tiveram 346 E2E cada. O runner Linux do #340 escolheu 61021/61022. O dispatch seguinte do #378 valida o segundo batch inteiro no SHA final.

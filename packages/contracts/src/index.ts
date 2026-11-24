@@ -72,3 +72,32 @@ export type { JobEnvelope } from "./job.js";
 
 export { WEBHOOK_TOPICS_WITH_CONSUMER, hasWebhookConsumer } from "./webhook-topics.js";
 export type { WebhookTopicWithConsumer } from "./webhook-topics.js";
+
+export {
+  TIKTOK_ITEMS_DELAY_S,
+  TIKTOK_JOB_TYPES,
+  TIKTOK_JOB_TYPE_LIST,
+  TIKTOK_PUSH_WINDOW_S,
+  isTikTokJobType,
+  parseTikTokJobPayload,
+  tiktokFinancialsSyncPayloadSchema,
+  tiktokItemsSyncPayloadSchema,
+  tiktokOrderFetchDedupeKey,
+  tiktokOrderFetchPayloadSchema,
+  tiktokOrdersSyncPayloadSchema,
+  tiktokPushDedupeKey,
+  tiktokPushWindowBucket,
+  tiktokReturnsSyncPayloadSchema,
+  tiktokScheduleDedupeKey,
+} from "./tiktok-jobs.js";
+export type {
+  TikTokFinancialsSyncPayload,
+  TikTokItemsSyncPayload,
+  TikTokJobParseResult,
+  TikTokJobPayloadMap,
+  TikTokJobType,
+  TikTokOrderFetchPayload,
+  TikTokOrdersSyncPayload,
+  TikTokPushWindowBucket,
+  TikTokReturnsSyncPayload,
+} from "./tiktok-jobs.js";

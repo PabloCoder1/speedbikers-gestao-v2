@@ -2,7 +2,7 @@
 
 Checkpoint das entregas do **Gemini Sentinel** em colaboração ativa com o **Codex Sentinel**. Nenhuma branch anterior do Codex (`codex/*`), da `main`, da `v3` ou da frente do Claude Code foi apagada ou reescrita; todo o trabalho do Gemini permanece isolado na branch `agent/gemini-sentinel` e publicado em PR de rascunho no GitHub para revisão cruzada e integração limpa.
 
-Em 24/11, o candidato #378 incorporou as cinco fatias D-807–D-811 do #343, com base `d21fb902`. D-812 continua na frente Gemini. O acionamento transacional do worker aguarda os contratos, handlers e migrations. [Checkpoint do candidato](SESSION_LOG.md#24112026--d-863-e-fatias-gemini-d-807d-811)
+Em 24/11, o candidato #378 incorporou D-807–D-814 do #343, com base `d21fb902`. D-815 continua na frente Gemini. O acionamento transacional do worker aguarda handlers e migrations. [Checkpoint do candidato](SESSION_LOG.md#24112026--d-863-e-fatias-gemini-d-807d-811)
 
 ## 1. Git, branch, worktree e coordenação de equipe
 

@@ -436,4 +436,17 @@ describe("detecção de anomalia de venda vira ação (Fase 6, D-064)", () => {
     const evidence = upserted[0]?.evidence as { causas_candidatas: { event_type: string }[] };
     expect(evidence.causas_candidatas.map((causa) => causa.event_type)).toEqual(["stock.depleted"]);
   });
+
+  it("D-814: recusa divergência entre organizationId do payload e do envelope sem gravar ações", async () => {
+    const { deps, upserted, lines } = fakeDeps({});
+    const outraOrg = "22222222-0000-4000-8000-000000000002";
+
+    const outcome = await createDetectSalesAnomalyActionsHandler(deps)(
+      ENVELOPE,
+      ctx(lines, { organizationId: outraOrg }),
+    );
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(upserted).toHaveLength(0);
+  });
 });

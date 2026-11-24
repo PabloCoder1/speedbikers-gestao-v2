@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-24, candidato #378 com D-863 e D-807 a D-811, catálogo #377 reconciliado",
+  "corte": "2026-11-24, candidato #378 com D-863 e D-807 a D-814, catálogo #377 reconciliado",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -119,7 +119,7 @@
       "peso": 8,
       "status": "Em andamento",
       "responsavel": "Multicanal/Dono",
-      "evidencia": "#378 incorpora D-807 a D-810: cliente, webhook de observação, projeções de domínio, agendador e persistência do token. Faltam contratos D-812, handlers, tabelas transacionais e validação da loja.",
+      "evidencia": "#378 incorpora D-807 a D-810 e D-812/D-813: cliente, API de observação, renovação, contratos de jobs e projeções de pedidos, catálogo, estoque e devoluções. Faltam handlers, tabelas transacionais e validação de uma loja.",
       "fase": 3
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "#378 combina a main d21fb902 e D-807 a D-811 do #343. A CI anterior (45439871885) passou os quatro jobs. Faltam CI do novo corte e ordem, registro oficial no Dev e prova de upgrade das quatro migrations definitivas.",
+      "evidencia": "#378 combina main d21fb902 e D-807 a D-814 do #343. A CI 45446906931 tem o primeiro batch em c1ef6afd. Faltam CI do último corte e ordem, registro oficial no Dev e prova de upgrade das quatro migrations definitivas.",
       "fase": 5
     },
     {
