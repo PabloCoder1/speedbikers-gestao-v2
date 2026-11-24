@@ -20741,3 +20741,12 @@ Fechamos a lacuna de interface da fatia 1 do TikTok Shop (`D-645`), expondo na t
 3. **Leitura paralela e painel em `/contas` (`apps/web/app/(app)/contas/page.tsx`):** consulta `tiktok_shops` no mesmo `Promise.all` (zero waterfall, aprovado em `check:waterfalls`) e renderiza o painel `Lojas TikTok Shop` com tabela `.sb-table` e `TikTokConnectButton`.
 
 TDD RED (`2 failed | 5 passed (7)`) -> GREEN (`7/7`). Verificação completa pós-`dec79edd`: `pnpm run check` (`37/37`, `362` arquivos / `4.620` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` (`check:waterfalls` 115, `check:control-styles` 543, `check:navegacao-suave` 207), `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `8/8` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-823 - Web `/integracoes`: cartão TikTok Shop na Central de Integrações (`M04`)
+
+Adicionamos o terceiro canal (`tiktok_shop`) à Central de Integrações (`/integracoes`, commit `8e439358`), respeitando todas as invariantes de `D-232`:
+
+1. **Adaptador puro (`apps/web/lib/integrations.{ts,test.ts}`):** adiciona `TikTokShopInput` e o cartão `tiktok_shop` (8ª região): `connection` nunca fica `ok` apenas pela flag `CONNECTED` (fica `observado` sem sincronização, `atencao` quando `auth_expires_at` vence em até 30 dias, `erro` com `last_error` sanitizado, `nao_configurado` para `ADMIN` sem lojas e `nao_verificavel` em erro de leitura ou não-`ADMIN`); `sync` acompanha os 4 jobs canônicos (`tiktok.{orders,items,returns,financials}.sync`, ficando `sem_atividade` até rodarem); `configuration` é sempre `nao_verificavel` (Secret Manager / Partner Center); aponta para `/contas`.
+2. **Leitura paralela e E2E (`apps/web/app/(app)/integracoes/page.tsx`, `apps/web/e2e/integracoes.spec.ts`):** lê `tiktok_shops` no mesmo `Promise.all` (zero waterfall, aprovado em `check:waterfalls`) e atualiza `integracoes.spec.ts` para `toHaveCount(8)` com asserções explícitas no cartão `TikTok Shop`.
+
+TDD RED (`3 failed | 36 passed (39)`) -> GREEN (`39/39`, incluindo todas as invariantes adversas de D-232). Verificação completa pós-`8e439358`: `pnpm run check` (`37/37`, `362` arquivos / `4.623` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `9/9` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).

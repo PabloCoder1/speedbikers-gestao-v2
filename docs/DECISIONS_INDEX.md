@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **721** (D-001 a D-822).
+Decisões registradas: **722** (D-001 a D-823).
 
 ## Por domínio
 
@@ -441,7 +441,7 @@ Decisões registradas: **721** (D-001 a D-822).
 - **D-821** — API OAuth callbacks: padronização de `state`/`code` em branco no Mercado Livre e Shopee
 - **D-822** — Web `/contas`: painel Lojas TikTok Shop e conector OAuth (`M04`)
 
-### outros (113)
+### outros (114)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -556,6 +556,7 @@ Decisões registradas: **721** (D-001 a D-822).
 - **D-777** — Backfills internos respondem 503 em erro de banco, rotas D-766 usam `erroInterno` com `request_id` e callback Shopee exige inteiro seguro positivo
 - **D-784** — Demais Server Components web falham fechado em erro de contas/organização e BuscaSku trata rejeição de transporte
 - **D-811** — Web: falha fechada em `removeMember`, hardening de `POST /api/vitals` e busca de SKU em NF-e/Saída Manual
+- **D-823** — Web `/integracoes`: cartão TikTok Shop na Central de Integrações (`M04`)
 
 ### processo/docs (1)
 
