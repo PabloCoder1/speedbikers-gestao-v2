@@ -5,16 +5,15 @@ import type { Enqueuer } from "./enqueue.js";
 
 /**
  * Gatilho do alerta de venda abaixo da margem (D-858): um
- * `diagnostics.detect-low-margin-sales` por organização, de HORA EM HORA.
+ * `diagnostics.detect-low-margin-sales` por organização.
  *
- * **Sem job novo no Cloud Scheduler.** A rota do piso de métricas
- * (`/internal/schedule/metrics-refresh`, "35 * * * *") já é chamada toda hora;
- * ela passa a chamar também esta função, que tem módulo e teste próprios —
- * o piso continua pedindo só `analytics.recompute` (D-304). Um agendador novo
- * seria um ato do dono na infraestrutura para o mesmo minuto do relógio.
+ * **Duas vezes por dia (D-859).** O dono quer o aviso às 8h e às 17h de
+ * Brasília: o job `v3-low-margin-sales` do Cloud Scheduler ("0 8,17 * * *")
+ * chama `/internal/schedule/low-margin-sales`. A varredura do frete do ML roda
+ * antes (6h30 e 16h30), para a rodada já julgar o pedido do ML.
  *
- * A hora cheia na chave, como as varreduras horárias desta casa: chamar duas
- * vezes na mesma hora não duplica, e a hora seguinte sempre roda.
+ * A hora cheia na chave: o Scheduler repetir a chamada na mesma hora não
+ * duplica, e a rodada seguinte sempre roda.
  */
 
 export interface LowMarginSalesScheduleDeps {

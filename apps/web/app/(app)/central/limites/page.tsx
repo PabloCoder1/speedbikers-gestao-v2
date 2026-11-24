@@ -193,7 +193,7 @@ const STATUS_DO_EMAIL: Record<string, string> = {
 /**
  * D-858 — o alerta de venda abaixo da margem: a meta por marca, os e-mails e as
  * últimas vendas que dispararam. A margem é a da Curva ABC (5X), pedido a
- * pedido; o julgamento é do banco, de hora em hora.
+ * pedido; o julgamento é do banco, às 8h e às 17h (D-859).
  */
 async function AlertaDeMargem({ organizationId, podeEditar }: { organizationId: string; podeEditar: boolean }): Promise<ReactNode> {
   const supabase = await createClient();
@@ -231,7 +231,7 @@ async function AlertaDeMargem({ organizationId, podeEditar }: { organizationId: 
   return (
     <Panel
       title="Alerta de venda abaixo da margem"
-      subtitle={`Cada venda com margem abaixo da meta avisa no sino e por e-mail: ${pct(atual.imported_min_margin)} para as marcas importadas, ${pct(atual.default_min_margin)} para os demais.`}
+      subtitle={`Duas vezes por dia, às 8h e às 17h, as vendas com margem abaixo da meta avisam no sino e por e-mail: ${pct(atual.imported_min_margin)} para as marcas importadas, ${pct(atual.default_min_margin)} para os demais.`}
       aside={<StatePill tone={situacao === "ligado" ? { tom: "info", label: situacao } : { tom: "neutro", label: situacao }} />}
     >
       <div className="sb-panel-body">

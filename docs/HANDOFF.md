@@ -19,7 +19,7 @@
 | **Deploy Dev** | Faturamento GCP desativado na consulta de 11/11. Revisões configuradas `api-00042-8wd` e `worker-00053-z26`. A pausa das rotinas do Dev foi registrada em D-350. |
 | **Supabase** | Hosted Dev `nmgccyqquwxecqffsidr` e antigo prod `imvjfgnaprqsfjlnsyev`: INACTIVE (MCP, 18/11). Produção operacional na VM `sb-db` (`speedbikers-prod`), conferida via IAP/SSH em READ ONLY e web autenticada. [VM](../infra/vm/README.md). |
 | **Produção** | Vercel `c6b45881`, deployment `dpl_CHapXyGvMR73VtV4Gxsq1yMPa5bF` READY, alias principal confirmado. Compras/importação/reposição conferidas sem escrita; runtime sem error/fatal na janela consultada. API/worker não revalidados nesta frente. |
-| **Migrations** | VM até `20261118211000`: 17 versões verificadas após `20261022170000`, sem reaplicação. SSH relatado em 18/11, não workflow. Snapshot READY; restore completo do dump + 17 SQLs ensaiados; 64 objetos sem divergência de definição. Workflow hosted pausado. [VM](../infra/vm/README.md). |
+| **Migrations** | VM até `20261123180000` (D-858 por SSH em 23/11); antes, 17 versões verificadas após `20261022170000`, sem reaplicação. SSH relatado em 18/11, não workflow. Snapshot READY; restore completo do dump + 17 SQLs ensaiados; 64 objetos sem divergência de definição. Workflow hosted pausado. [VM](../infra/vm/README.md). |
 | **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | No ar: compras inteligentes, pedido já feito, importação anterior (#332) e invoice/proforma com preço e documento (D-767). D-792: receber dá entrada no LOCAL (ENTRADA_COMPRA), a conferência cria o SKU que falta e a fila mostra a moeda do pedido; migration `20261119180000`. Pendente: workflow de banco. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
 | **Notas (D-765, D-766)** | D-765 no ar (web `f243b7c1`; api `api-00040-fr5` e worker `worker-00059-mjc` em `7a93bf70`). D-766 (Saída Manual e item editável, sem migration) na `feat/saida-manual`: a api nova vai antes do merge da web. |
 | **UX (Agente 3)** | D-500 a D-518 no ar (a Central, blocos 1 a 3, pelos #255 e #258). Bloco 4 da Central (D-519, frete e Ads da `/central` no `EstadoDaTela`) integrado pelo #261. Auditoria em `docs/UX_SYSTEM.md` §6. |
@@ -36,7 +36,6 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## P0 ativos
 
-- **API indisponível no endpoint verificado.** Faturamento de `speedbikers-prod` desativado, `/health` retornou 503 e as consultas ao Scheduler e ao Tasks retornaram `BILLING_DISABLED`. Incidente com o responsável. A auditoria segue no ambiente local. Validar `job_runs` e o backlog após a reativação.
 - **Workflow de banco ainda aponta ao hosted pausado.** Dev e antigo hosted de produção continuam INACTIVE; a VM de produção e a web estão operacionais, conferidas em 18/11. O job Dev da main falhava antes desta entrega e exige reconciliação de infraestrutura; não foi desativado. Ver `infra/vm/README.md`.
 - **Avisos críticos do Next.js.** A branch local atualiza Next.js e Zod e passa a auditoria no corte alto. A publicação segue o fluxo da `main` e os deploys da API e do worker. [Achados](agent-audit/FINDINGS.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
 
@@ -191,7 +190,7 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
-13. **Alerta de margem (D-858):** segredo `SMTP_PASSWORD` e variáveis do worker, migration `20261123180000` em produção, deploy de worker, api e web, e-mails em `/central/limites`.
+13. **Alerta de margem (D-858, D-859):** no ar desde 24/11 (worker `00060` com SMTP, api `00042`); falta cadastrar os e-mails em `/central/limites`.
 
 ---
 
