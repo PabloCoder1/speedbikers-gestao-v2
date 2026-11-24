@@ -99,7 +99,7 @@ function parsePositiveSafeId(raw: string | undefined): string | null {
 }
 
 export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -144,6 +144,10 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
     }
 
     const account = resolvedAccount.account;
+
+    if (account.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "conta não pertence à organização do job" };
+    }
 
     if (account.status !== "CONNECTED") {
       // Desconectada entre o webhook e a execução — corrida benigna, mesmo

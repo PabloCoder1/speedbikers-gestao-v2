@@ -656,4 +656,15 @@ describe("parse: a venda de marketplace e a gravação recusada (D-497)", () => 
     expect(captured.updates.at(-1)).toMatchObject({ status: "FAILED", last_error: "estrutura XML corrompida" });
     expect(lines.join("\n")).toContain("documento_parse_invalido");
   });
+
+  it("D-815: recusa documento pertencente a outra organização sem alterar status", async () => {
+    const { deps, captured, lines } = fakeDeps({});
+    const outroEnvelope = { ...ENVELOPE, organizationId: "22222222-0000-4000-8000-000000000002" };
+
+    const outcome = await createNfeImportParseHandler(deps)(outroEnvelope, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(captured.updates).toHaveLength(0);
+    expect(captured.inserted).toHaveLength(0);
+  });
 });

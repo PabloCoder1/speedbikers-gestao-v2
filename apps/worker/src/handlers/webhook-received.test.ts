@@ -417,4 +417,17 @@ describe("sync.webhook.received — Fast Path", () => {
       ]);
     });
   });
+
+  it("D-815: recusa conta ML pertencente a outra organização sem chamar o Mercado Livre", async () => {
+    const { deps: d, requests, lines } = deps({});
+    const outroEnvelope = { ...ENVELOPE, organizationId: "22222222-0000-4000-8000-000000000002" };
+
+    const outcome = await createWebhookReceivedHandler(d)(outroEnvelope, {
+      logger: createLogger({}, { sink: (line) => lines.push(line) }),
+      payload: { mlAccountId: ML_ACCOUNT_ID, resource: "/orders/2000003508426396", topic: "orders_v2" },
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(requests).toEqual([]);
+  });
 });

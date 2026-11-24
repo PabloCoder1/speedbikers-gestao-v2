@@ -1574,4 +1574,24 @@ describe("relist.execute — o POST /relist sai com UMA tentativa no cliente rea
     expect(lines.join("\n")).toContain("relist_event_not_recorded");
     expect(lines.join("\n")).toContain("fetch failed");
   });
+
+  it("D-815: recusa operação de relist pertencente a outra organização sem tocar no ML nem alterar status", async () => {
+    const { db, updates } = fakeDb({ operationStatus: "CLOSED" });
+    const { client } = fakeClient({ parentBody: healthyParent({ status: "closed" }) });
+    const outroEnvelope = { ...ENVELOPE, organizationId: "22222222-0000-4000-8000-000000000002" };
+
+    const outcome = await createRelistExecuteHandler({
+      db,
+      mercadoLivre: client,
+      oauth: { clientId: "APP", clientSecret: "secret", redirectUri: "" },
+      encryptionKey: ENCRYPTION_KEY,
+      now: () => NOW,
+    })(outroEnvelope, {
+      logger: createLogger({}, { sink: () => undefined }),
+      payload: { relistId: RELIST_ID },
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(updates).toHaveLength(0);
+  });
 });

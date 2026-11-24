@@ -400,4 +400,15 @@ describe("parse do arquivo do UpSeller", () => {
 
     expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "statement timeout" });
   });
+
+  it("D-815: recusa lote pertencente a outra organização sem iniciar parsing", async () => {
+    const { deps, captured, lines } = fakeDeps({});
+    const outroEnvelope = { ...ENVELOPE, organizationId: "22222222-0000-4000-8000-000000000002" };
+
+    const outcome = await createErpImportParseHandler(deps)(outroEnvelope, ctx(lines, { batchId: BATCH }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(captured.inserted).toHaveLength(0);
+    expect(captured.publishAttempts).toBe(0);
+  });
 });

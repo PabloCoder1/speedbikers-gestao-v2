@@ -424,4 +424,14 @@ describe("saída por documento não fiscal (D-375)", () => {
     expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "connection reset" });
     expect(captured.movements).toHaveLength(0);
   });
+
+  it("D-815: recusa documento pertencente a outra organização sem gravar movimentos", async () => {
+    const { deps, captured, lines } = fakeDeps({});
+    const outroEnvelope = { ...ENVELOPE, organizationId: "22222222-0000-4000-8000-000000000002" };
+
+    const outcome = await createNfeImportApplyHandler(deps)(outroEnvelope, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(captured.movements).toHaveLength(0);
+  });
 });

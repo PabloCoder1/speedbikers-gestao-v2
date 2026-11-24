@@ -1300,4 +1300,29 @@ describe("sync.order-logistics — a política de erro da leitura do envio (revi
       }),
     ]);
   });
+
+  it("D-815: recusa conta ML pertencente a outra organização sem ler ledger nem chamar ML", async () => {
+    const { db, movimentos } = fakeDb({
+      ledger: [venda(9001, "SKU-1", 1, "2026-09-12T18:00:00.000Z")],
+      orders: [{ id: 9001, shipping_id: 5001, logistic_type: null, logistic_captured_at: null }],
+    });
+    const { client, calls } = fakeClient({ "5001": "fulfillment" });
+    const outroEnvelope = { ...ENVELOPE, organizationId: "22222222-0000-4000-8000-000000000002" };
+
+    const outcome = await createSyncOrderLogisticsHandler({
+      db,
+      mercadoLivre: client,
+      oauth: { clientId: "APP", clientSecret: "SECRET", redirectUri: "" },
+      encryptionKey: ENCRYPTION_KEY,
+      now: () => NOW,
+      sleep: () => Promise.resolve(),
+    })(outroEnvelope, {
+      logger: createLogger({}, { sink: () => undefined }),
+      payload: { mlAccountId: ML_ACCOUNT_ID },
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(calls).toEqual([]);
+    expect(movimentos).toHaveLength(0);
+  });
 });
