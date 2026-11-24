@@ -50,5 +50,14 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: process.env.CI === undefined,
     timeout: 60_000,
+    // D-863: a suíte roda com o "Esqueci a senha" ligado, o estado de produção
+    // depois do SMTP do Auth (`e2e/recuperar-senha.spec.ts`). A página de
+    // entrada lê a variável por requisição, então ela vale no `next start`.
+    env: {
+      ...Object.fromEntries(
+        Object.entries(process.env).filter((par): par is [string, string] => par[1] !== undefined),
+      ),
+      RECUPERACAO_SENHA_POR_EMAIL: "1",
+    },
   },
 });
