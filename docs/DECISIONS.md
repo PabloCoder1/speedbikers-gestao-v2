@@ -20783,3 +20783,21 @@ Fechamos a última consulta `.in("id", orderIds)` sem lote em `apps/worker/src/h
 2. **`persistOrder` (sem prefetch):** adiciona `.eq("organization_id", context.organizationId)` na leitura pontual de `orders`.
 
 TDD RED (`2 failed` em novo `persist-order-hardening.test.ts`) -> GREEN (`158/158` somando `persist-order.test.ts`). Verificação completa pós-`f46c8ec1`: `pnpm run check` (`37/37`, `365` arquivos / `4.632` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` sequencial provando `13/13` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-828 - Worker `page-writes.ts`: fatiamento em lotes de 100 na exclusão da cauda de `order_items`
+
+Fatiado `db.from("order_items").delete().in("order_id", lote).gte("position", fromPosition)` em lotes de `100` pedidos (`TAIL_DELETE_BATCH_SIZE = 100`, commits `4b2e1de7` + `78e9f323`), prevenindo estouro de URI do PostgREST (HTTP 414) em páginas grandes.
+
+TDD RED (`1 failed | 9 passed (10)`) -> GREEN (`10/10` em `apps/worker/src/handlers/page-writes.test.ts`).
+
+## D-829 - API `copilot-chat.ts`: sanitização de erros internos de ferramentas no `tool_result`
+
+Alinhamos `apps/api/src/copilot-chat.ts` ao padrão de `apps/api/src/copilot.ts` (commit `e49ddbb1`): apenas `CopilotToolError` expõe sua mensagem no `tool_result` enviado ao modelo; exceções inesperadas (Postgres/PostgREST/rede) são registradas em `deps.logger.error("copilot_chat_tool_failed", ...)` e devolvem a mensagem fixa `"falha ao executar a ferramenta"`, eliminando vazamento `CWE-209`.
+
+TDD RED (`1 failed | 23 passed (24)`) -> GREEN (`24/24` em `apps/api/src/copilot-chat.test.ts`).
+
+## D-830 - Web faturamento/vendas: eliminação de `error.message` bruto do Postgres no DOM
+
+Removidos todos os 13 pontos em que `error.message` bruto do Postgres/PostgREST era renderizado diretamente em `<EstadoDaTela detalhe={...} />` ou `detalhe:` em `apps/web/app/(app)/faturamento/multicanal.tsx` (9), `apps/web/app/(app)/faturamento/repasse-shopee.tsx` (2) e `apps/web/app/(app)/vendas/shopee/devolucoes.tsx` (2), protegidos por guarda estática em `apps/web/lib/ui-anti-leak.test.ts` (commit `2cd22da7`).
+
+TDD RED (`3 failed (3)`) -> GREEN (`3/3`). Verificação completa pós-`78e9f323`: `pnpm run check` (`37/37`, `366` arquivos / `4.637` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` sequencial provando `17/17` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **726** (D-001 a D-827).
+Decisões registradas: **729** (D-001 a D-830).
 
 ## Por domínio
 
@@ -91,7 +91,7 @@ Decisões registradas: **726** (D-001 a D-827).
 - **D-805** — Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
 - **D-808** — API: receptor autenticado `POST /push/tiktok-shop` (`M04`, fatia 3)
 
-### banco/rls (52)
+### banco/rls (53)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -145,6 +145,7 @@ Decisões registradas: **726** (D-001 a D-827).
 - **D-769** — Ordem de migrations validada por upgrade incremental
 - **D-820** — Web Server Actions: `auth.getUser()` fail-closed nas 5 telas restantes e saneamento de erro SQL na triagem
 - **D-826** — Web exportações CSV/XLSX: eliminação de vazamento de `error.message` bruto do Postgres no HTTP 502
+- **D-830** — Web faturamento/vendas: eliminação de `error.message` bruto do Postgres no DOM
 
 ### estoque (62)
 
@@ -443,7 +444,7 @@ Decisões registradas: **726** (D-001 a D-827).
 - **D-822** — Web `/contas`: painel Lojas TikTok Shop e conector OAuth (`M04`)
 - **D-825** — Worker `relist-prepare` e `relist-measurement`: isolamento multi-tenant e proteção de eventos de republicação
 
-### outros (115)
+### outros (116)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -560,6 +561,7 @@ Decisões registradas: **726** (D-001 a D-827).
 - **D-811** — Web: falha fechada em `removeMember`, hardening de `POST /api/vitals` e busca de SKU em NF-e/Saída Manual
 - **D-823** — Web `/integracoes`: cartão TikTok Shop na Central de Integrações (`M04`)
 - **D-824** — Web `/sincronizacao`: seção `Lojas TikTok Shop` e saúde da autorização (`M04`)
+- **D-829** — API `copilot-chat.ts`: sanitização de erros internos de ferramentas no `tool_result`
 
 ### processo/docs (1)
 
@@ -641,7 +643,7 @@ Decisões registradas: **726** (D-001 a D-827).
 - **D-810** — API TikTok Shop: agendador paginado de pedidos e adaptador Supabase de refresh de token (`M04`)
 - **D-827** — Worker `persist-order`: fatiamento de `orders.in()` e escopo `organization_id` no caminho quente de pedidos
 
-### worker/infra (125)
+### worker/infra (126)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -768,4 +770,5 @@ Decisões registradas: **726** (D-001 a D-827).
 - **D-812** — Contratos compartilhados de fila do TikTok Shop em `@sb/contracts` e alinhamento da API (`M04`)
 - **D-814** — Worker `service_role`: isolamento multi-tenant `envelope.organizationId`, escopo explícito de consultas, lotes de upsert e enqueue protegido em 7 handlers
 - **D-818** — Worker `service_role`: `expectedOrganizationId` centralizado em `lerLojaConectada` e proteção de `enqueue()` em 5 handlers Shopee
+- **D-828** — Worker `page-writes.ts`: fatiamento em lotes de 100 na exclusão da cauda de `order_items`
 
