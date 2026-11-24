@@ -187,7 +187,9 @@ alterados ou sem rastreamento. Registre o ambiente de origem do
 catálogo na revisão.
 
 Para gerar o mesmo plano pelo GitHub Actions, dispare **Preflight de migrations
-da VM** na branch que contém o commit candidato e forneça o arquivo exportado:
+da VM** pela CLI, na branch que contém o commit candidato. O envio em JSON
+preserva as quebras de linha do arquivo exportado. O formulário web tem um
+campo de linha única e pode alterar essa entrada:
 
 ```sh
 jq -Rs '{catalogo: .}' catalogo-migrations.txt |
