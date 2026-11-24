@@ -1,3 +1,9 @@
+import {
+  TIKTOK_JOB_TYPES,
+  TIKTOK_PUSH_WINDOW_S,
+  tiktokPushDedupeKey,
+  tiktokPushWindowBucket,
+} from "@sb/contracts";
 import type { AdminClient } from "@sb/db";
 import type { Logger } from "@sb/observability";
 import {
@@ -14,7 +20,7 @@ import {
 import type { Enqueuer } from "./enqueue.js";
 
 /**
- * Webhook do TikTok Shop (D-808) — `POST /push/tiktok-shop` (`docs/TIKTOK_SHOP.md` §10):
+ * Webhook do TikTok Shop (D-808, contratos compartilhados D-812) — `POST /push/tiktok-shop` (`docs/TIKTOK_SHOP.md` §10):
  *
  * - assinatura verificada ANTES do `JSON.parse` sobre os bytes exatos recebidos:
  *   `HMAC-SHA256(app_secret, app_key + rawBody)` em hex minúsculo no cabeçalho
@@ -28,7 +34,7 @@ import type { Enqueuer } from "./enqueue.js";
  *   observação antes dos handlers do worker), apenas registra o evento validado.
  */
 
-export const TIKTOK_PUSH_WINDOW_S = 300;
+export { TIKTOK_PUSH_WINDOW_S };
 
 export interface TikTokPushDeps {
   db: AdminClient;
@@ -52,10 +58,10 @@ export type TikTokPushOutcome =
   | { status: "enqueued"; type: number; notificationId: string; jobType: string; deduplicated: boolean }
   | { status: "unavailable"; reason: string };
 
-const JOB_DO_WEBHOOK: Record<number, { jobType: string; prefixo: string }> = {
-  [WEBHOOK_ORDER_STATUS_CHANGE]: { jobType: "tiktok.orders.sync", prefixo: "tiktok-orders-push" },
-  [WEBHOOK_CANCELLATION_STATUS_CHANGE]: { jobType: "tiktok.orders.sync", prefixo: "tiktok-orders-push" },
-  [WEBHOOK_RETURN_STATUS_CHANGE]: { jobType: "tiktok.returns.sync", prefixo: "tiktok-returns-push" },
+const JOB_DO_WEBHOOK: Record<number, "tiktok.orders.sync" | "tiktok.returns.sync"> = {
+  [WEBHOOK_ORDER_STATUS_CHANGE]: TIKTOK_JOB_TYPES.ordersSync,
+  [WEBHOOK_CANCELLATION_STATUS_CHANGE]: TIKTOK_JOB_TYPES.ordersSync,
+  [WEBHOOK_RETURN_STATUS_CHANGE]: TIKTOK_JOB_TYPES.returnsSync,
 };
 
 /**
@@ -186,7 +192,7 @@ export async function receiveTikTokPush(
       tts_notification_id: push.tts_notification_id,
       shop_id: push.shop_id,
       tiktok_shop_id: loja.id,
-      job_type: job.jobType,
+      job_type: job,
       ...(detalhe !== null && "orderId" in detalhe ? { order_id: detalhe.orderId } : {}),
     });
 
@@ -194,22 +200,22 @@ export async function receiveTikTokPush(
       status: "acknowledged",
       type: push.type,
       notificationId: push.tts_notification_id,
-      jobType: job.jobType,
+      jobType: job,
     };
   }
 
-  const agoraMs = (deps.now?.() ?? new Date()).getTime();
-  const agoraS = Number.isFinite(agoraMs) ? Math.floor(agoraMs / 1000) : Math.floor(Date.now() / 1000);
-  const fimDaJanela = (Math.floor(agoraS / TIKTOK_PUSH_WINDOW_S) + 1) * TIKTOK_PUSH_WINDOW_S;
+  const agora = deps.now?.() ?? new Date();
+  const instante = Number.isFinite(agora.getTime()) ? agora : new Date();
+  const bucket = tiktokPushWindowBucket(instante, TIKTOK_PUSH_WINDOW_S);
 
   try {
     const result = await deps.enqueuer.enqueue({
-      jobType: job.jobType,
+      jobType: job,
       organizationId: loja.organization_id,
-      dedupeKey: `${job.prefixo}:${loja.id}:${String(fimDaJanela)}`,
+      dedupeKey: tiktokPushDedupeKey(job, loja.id, bucket.bucketEndSeconds),
       queue: "backfill",
       payload: { tiktokShopId: loja.id, notificationId: push.tts_notification_id },
-      delaySeconds: fimDaJanela - agoraS,
+      delaySeconds: bucket.delaySeconds,
     });
 
     deps.logger.info("tiktok_push_enqueued", {
@@ -217,7 +223,7 @@ export async function receiveTikTokPush(
       tts_notification_id: push.tts_notification_id,
       shop_id: push.shop_id,
       tiktok_shop_id: loja.id,
-      job_type: job.jobType,
+      job_type: job,
       deduplicated: result.deduplicated,
     });
 
@@ -225,7 +231,7 @@ export async function receiveTikTokPush(
       status: "enqueued",
       type: push.type,
       notificationId: push.tts_notification_id,
-      jobType: job.jobType,
+      jobType: job,
       deduplicated: result.deduplicated,
     };
   } catch (error) {

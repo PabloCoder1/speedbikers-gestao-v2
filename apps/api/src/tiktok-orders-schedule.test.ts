@@ -1,3 +1,4 @@
+import { parseTikTokJobPayload } from "@sb/contracts";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
@@ -185,5 +186,17 @@ describe("POST /internal/schedule/tiktok-orders (D-810)", () => {
 
     expect(notConfigured.status).toBe(503);
     expect(await notConfigured.json()).toEqual({ error: { code: "not_configured" } });
+  });
+
+  it("todos os jobs enfileirados com UUID real passam no contrato compartilhado @sb/contracts (D-812)", async () => {
+    const { deps, enqueued } = createFakeDeps({
+      shops: [{ id: "bbbbbbbb-0000-4000-8000-0000000000b1", organization_id: "aaaaaaaa-0000-4000-8000-0000000000a1" }],
+    });
+    await triggerTikTokOrdersSync(deps);
+
+    expect(enqueued).toHaveLength(2);
+    for (const item of enqueued) {
+      expect(parseTikTokJobPayload(item.jobType, item.payload).success).toBe(true);
+    }
   });
 });

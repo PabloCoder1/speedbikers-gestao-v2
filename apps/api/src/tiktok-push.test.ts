@@ -1,3 +1,4 @@
+import { parseTikTokJobPayload } from "@sb/contracts";
 import { createLogger } from "@sb/observability";
 import { signWebhook } from "@sb/tiktok-shop";
 import { describe, expect, it } from "vitest";
@@ -164,6 +165,9 @@ describe("POST /push/tiktok-shop (D-808)", () => {
         delaySeconds: FIM_DA_JANELA - Math.floor(NOW.getTime() / 1000),
       },
     ]);
+    for (const item of enfileirados) {
+      expect(parseTikTokJobPayload(item.jobType, item.payload).success).toBe(true);
+    }
   });
 
   it("sem enqueuer ligado (modo observação pré-worker), valida loja, registra log e responde 200", async () => {
