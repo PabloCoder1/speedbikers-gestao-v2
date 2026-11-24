@@ -1,66 +1,61 @@
 # AGENTS — Speed Bikers Gestão V3
 
-Este arquivo é um **roteador de contexto**, não uma ordem para carregar o
-repositório. Leia o mínimo que a sua tarefa exige (D-177).
+**Roteador de contexto (D-177).** Este arquivo atende Codex, Claude Code e outros agentes. Não carregue o repositório inteiro nem documentos históricos por padrão. O produto já está implementado; **não reinicie a construção da V3**.
 
-## Sempre, antes de qualquer coisa
+## Antes de agir
 
-1. `docs/HANDOFF.md` — estado corrente, P0 ativos, riscos, próximo passo.
-2. Confirme branch (`main`, a de produção desde 23/09 — a `v3` foi aposentada),
-   HEAD e os Supabase: Dev `nmgccyqquwxecqffsidr`, produção `imvjfgnaprqsfjlnsyev`.
-   Fatia nova sai de `origin/main` (`git checkout -B <branch> origin/main`): o
-   `main` LOCAL de clones antigos ainda é a V2.
+1. Confirme repositório, `git status`, branch, HEAD local/remoto, worktrees e PRs relacionados. Desde 23/09/2026, **`main` é a V3 e publica o web em produção**. `v2-legacy` e a tag `v2-final` são referências históricas.
+2. Leia `docs/HANDOFF.md` como orientação, **não como status ao vivo**: compare data/commit do documento com GitHub, CI e recursos reais. Para decidir o que mudou, compare `main` com as branches/PRs abertos, inclusive `codex/sentinel-audit`/PR #328 quando ainda existirem.
+3. Confirme saúde **separadamente** em Vercel, Supabase Dev (`nmgccyqquwxecqffsidr`), Supabase produção (`imvjfgnaprqsfjlnsyev`) e Google Cloud. Não presuma que deploy READY significa API/DB saudável. O estado de infraestrutura pode mudar; relatórios do Sentinel são evidência datada, não monitoramento permanente.
+4. Defina o escopo e leia **apenas** o código, os contratos, migrations e documentos que a tarefa exige. Não carregue `DECISIONS.md` inteiro: use `docs/DECISIONS_INDEX.md` para localizar a decisão.
 
-Isso basta para saber onde o projeto está. **Não leia `DECISIONS.md`,
-`ROADMAP.md` ou os arquivos de arquivo por padrão** — juntos passam de 1 MB
-e a maior parte é irrelevante para qualquer tarefa específica.
+## Documentos por domínio
 
-## Depois, só o que a tarefa pede
-
-| Tarefa | Leia também |
+| Tarefa | Consultar |
 |---|---|
-| Banco, RLS, migration, índice | `docs/DATABASE.md` |
-| Mercado Livre, webhook, sync | `docs/MERCADO_LIVRE.md`, `docs/API.md` |
-| TikTok Shop | `docs/TIKTOK_SHOP.md` (contrato conferido e estado), `docs/MULTICHANNEL_HANDOFF.md` |
-| Shopee, multicanal (ML + Shopee) | `docs/SHOPEE.md`, `docs/MULTICHANNEL_HANDOFF.md` (estado e coordenação entre agentes), `docs/MULTICHANNEL_CONTRACTS.md` (contratos de dados), `docs/MULTICHANNEL_SCREENS.md` (telas e filtro Marketplace/Conta) |
-| Tela, componente, UX | `docs/PRODUCT_REQUIREMENTS.md` + a seção relevante do `docs/ROADMAP.md` |
-| **Aparência** de tela ou componente | `docs/DESIGN_IMPLEMENTATION.md` — Design Contract e fila visual |
-| Carregamento, filtro, busca, estados de erro/vazio | `docs/UX_SYSTEM.md` — o padrão de cada espera e a fila do Agente 3 |
-| Métrica, número exibido | `docs/METRICS.md` |
-| Performance, benchmark | `docs/PERFORMANCE.md`, `docs/ARCHITECTURE.md` |
-| Worker, fila, deploy | `docs/ARCHITECTURE.md`, `docs/DEPLOYMENT.md` |
-| Teste | `docs/TESTING.md` |
+| Papéis de agentes, delegação e coordenação | `docs/AGENT_ROLES.md`; Claude Code: `.claude/agents/` |
+| Auditoria Sentinel, risco, branches | Na branch Sentinel: `docs/agent-audit/{FINDINGS,PLAN,SESSION_LOG,BRANCH_AUDIT}.md`; verificar PR atual |
+| Mercado Livre | `docs/MERCADO_LIVRE.md`, `docs/API.md` |
+| Shopee / multicanal | `docs/SHOPEE.md`, `docs/MULTICHANNEL_HANDOFF.md`, `docs/MULTICHANNEL_CONTRACTS.md` |
+| TikTok Shop | `docs/TIKTOK_SHOP.md` e código atual; distinguir OAuth de ingestão real de vendas |
+| Compras, reposição, fornecedores, importação | `apps/web/app/(app)/{compras,reposicao,fornecedores}/`, `packages/domain/src/purchasing/`, migrations/RPCs relacionadas e `docs/METRICS.md` |
+| Estoque, NF-e, ledger, RLS, SQL | `docs/DATABASE.md`, migrations e código em `packages/db` |
+| Preço, margem, faturamento, analytics | `docs/METRICS.md`, `docs/PRODUCT_REQUIREMENTS.md` e contratos reais de cada canal |
+| Telas e design | `docs/UX_SYSTEM.md`, `docs/DESIGN_IMPLEMENTATION.md` e componentes existentes |
+| Performance e testes | `docs/PERFORMANCE.md`, `docs/TESTING.md`, benchmarks/CI |
+| Infraestrutura/deploy | `docs/ARCHITECTURE.md`, `docs/DEPLOYMENT.md`, `infra/`, workflows |
+| Motivo de decisão | `docs/DECISIONS_INDEX.md` → trecho relevante de `docs/DECISIONS.md` |
 
-Para saber **por que** algo é como é: procure em `docs/DECISIONS_INDEX.md` o
-`D-xxx` do assunto e leia **só aquela seção**:
+`docs/PROMPT_MASTER.md` contém princípios gerais **e histórico de planejamento**; fases de criação da V3 não são ordens para reconstruir o sistema. A documentação especializada e o comportamento implementado prevalecem sobre trechos de planejamento antigos.
 
-```bash
-grep -n "^## D-171" -A 40 docs/DECISIONS.md
-```
+## Arquitetura real — limites
 
-## Regras que não mudam
+- `apps/web`: Next.js na Vercel; interface, SSR e ações rápidas, sem tarefas longas nem `service_role`.
+- `apps/api`: Hono no Cloud Run; OAuth, webhooks, comandos e agendamento autenticado.
+- `apps/worker`: Hono no Cloud Run; jobs Cloud Tasks, sincronização, reconciliação e projeções.
+- `packages/domain`: regras determinísticas; `packages/db`: contratos e acesso Supabase/Postgres; `packages/contracts`: Zod/contratos; clientes em `packages/mercado-livre`, `packages/shopee` e `packages/tiktok-shop`.
+- SKU interno é a identidade do produto. Anúncio/variante/conta/loja pertencem ao escopo de origem. Kits exigem composição. **Marca não é fornecedor.** UpSeller segue como fonte ERP relevante no fluxo de estoque; preservar ledger/reconciliação.
 
-- Toda mudança estrutural de banco é **migration versionada**. Ela chega ao
-  Dev pela CI no merge na `main` e à produção pelo `migrations-producao.yml`
-  (duas aprovações do dono) — nunca pelo MCP. **Merge na `main` publica a web
-  em produção**: a migration de que o código depende vai antes.
-- A V2 está em `v2-legacy` (tag `v2-final`), **apenas referência** — nunca
-  copiar código de lá.
-- Agregação em SQL, nunca em JavaScript. Ausência de dado não vira zero.
-- Nenhuma consulta que possa passar de 1.000 linhas sem paginação explícita,
-  `readAllPages` ou agregação no SQL.
-- Conversa anterior **não** é fonte de verdade. Código, migration e
-  infraestrutura real prevalecem sobre qualquer texto.
-- Antes de afirmar que algo está no ar: **verifique**. Commit não prova
-  deploy; migration aplicada não prova worker atualizado.
-- Trabalhe em fatias pequenas, teste antes de avançar e, ao fim de cada
-  etapa, atualize `docs/HANDOFF.md` **sem transformá-lo em diário** — o
-  histórico vai para `docs/archive/`, a decisão vira `D-xxx`, o benchmark
-  vai para `docs/PERFORMANCE.md`.
-- Secrets nunca no frontend nem no Git.
+## Invariantes
 
-## Antes de commitar
+- **Nenhuma migration manual** em Dev ou produção via MCP/SQL Editor. Versionar, revisar e testar migrations. Dev via CI no merge da `main`; produção via `.github/workflows/migrations-producao.yml` com aprovações.
+- **Não fazer merge na `main` por autonomia presumida**: merge publica web. Cloud Run/worker têm ciclo separado; confirme compatibilidade e ordem de rollout antes de solicitar publicação.
+- Não mexer em secrets, faturamento cloud, projetos remotos, dados reais, PRs de outros agentes ou branches incertas sem autorização explícita.
+- Isolamento por organização/conta/loja, RLS/RBAC, idempotência, concorrência e histórico auditável são obrigatórios.
+- Agregações escaláveis no SQL/RPC, não carregando milhares de linhas no navegador. Consulta acima de 1.000 linhas exige paginação ou agregação.
+- Ausência de dado **não é zero**. Separe realizado, estimado e indisponível. Na margem: `(recebido após taxas - custo vendido) / venda bruta * 100`; consolidado é ponderado pelos valores, sem misturar contas ou inventar taxas Shopee/TikTok.
+- Reposição deve explicar quantidade, considerar rupturas, idade do SKU, estoque em trânsito e baixo giro. **Sugestão de retirar do pedido não apaga SKU/anúncio e exige decisão humana.**
+- Não introduzir infraestrutura, dependência ou skill sem justificar necessidade e segurança; inspecione scripts de terceiros.
+- Faça mudanças pequenas e reversíveis, mantenha PR com testes; não apague branches por nome/idade. Confirmar merge, commits exclusivos, PRs, worktrees e referências antes de qualquer remoção.
+- Antes de afirmar que algo funciona em produção, verifique saúde/versões **dos serviços correspondentes**.
+- Registre decisões em `docs/DECISIONS.md`; handoff só com o estado atual, sem diário; histórico no lugar apropriado.
+
+## Validação
 
 ```bash
-pnpm run check && pnpm run build && pnpm docs:check
+pnpm run check
+pnpm run build
+pnpm docs:check
 ```
+
+Execute também integração com Supabase local, Playwright e guardas de segurança conforme o código alterado. Não declarar 100% sem validação real; comunicar bloqueios externos separadamente.

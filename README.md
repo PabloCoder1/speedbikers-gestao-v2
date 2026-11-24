@@ -1,40 +1,41 @@
 # Speed Bikers Gestão V3
 
-Branch de reconstrução da V3.
+Plataforma interna de operações de e-commerce **multicontas e multicanais** (Mercado Livre, Shopee e integração em evolução com TikTok Shop), organizada em torno de SKUs canônicos, anúncios, pedidos, faturamento, estoque, Full, reposição, compras, fornecedores, atendimento, diagnósticos, notificações e Copiloto.
 
-A `main` preserva a V2 como referência histórica e funcional. Esta branch será reconstruída progressivamente com nova arquitetura, Supabase V3 Dev, Google Cloud e documentação orientada a agentes.
+> **Branch padrão `main` = V3 de produção desde 23/09/2026.** A V2 está preservada em `v2-legacy` / tag `v2-final`. `v3` não é a branch principal atual.
 
-## Antes de qualquer desenvolvimento
+## Arquitetura
 
-Leia, nesta ordem:
+| Componente | Execução | Responsabilidade |
+|---|---|---|
+| `apps/web` | Next.js na Vercel | Interface, SSR e ações rápidas |
+| `apps/api` | Hono no Google Cloud Run | Webhooks, OAuth, endpoints e agendamentos |
+| `apps/worker` | Hono no Google Cloud Run | Cloud Tasks, sync, reconciliação e jobs |
+| `packages/*` | Bibliotecas compartilhadas | DB, domínio, contratos, clients de marketplaces e observabilidade |
+| `supabase/` | PostgreSQL/Supabase | Migrations, RLS, RPCs, ledger, Auth e dados |
 
-1. `AGENTS.md`
-2. `docs/PROMPT_MASTER.md`
-3. `docs/HANDOFF.md`
-4. `docs/ROADMAP.md`
-5. `docs/ARCHITECTURE.md`
-6. `docs/PRODUCT_REQUIREMENTS.md`
-7. `docs/AGENT_ROLES.md`
-8. `docs/DECISIONS.md`
+O UpSeller é fonte ERP relevante para estoque, com regras de reconciliação próprias. O modelo e a disponibilidade dos canais não devem ser presumidos equivalentes.
 
-Depois, a documentação especializada do assunto da tarefa:
+## Desenvolvimento com agentes
 
-| Documento | Assunto |
-|---|---|
-| `docs/DATABASE.md` | Modelo de dados, tabelas, constraints, índices, RLS, migrations |
-| `docs/API.md` | Fronteiras entre web/api/worker, rotas, jobs, eventos, erros |
-| `docs/METRICS.md` | Catálogo oficial de métricas (normativo) |
-| `docs/MERCADO_LIVRE.md` | Integração e estratégia de sincronização |
-| `docs/UPSELLER.md` | ERP de origem: estrutura das exportações e qualidade dos dados |
-| `docs/NOTIFICATIONS.md` | Eventos, severidade, agrupamento e tempo real |
-| `docs/COPILOT.md` | Copiloto, ferramentas determinísticas e uso de IA |
-| `docs/DEPLOYMENT.md` | Plataformas, ambientes, secrets, CI/CD |
-| `docs/TESTING.md` | Camadas de teste e regras obrigatórias |
+**Comece por `AGENTS.md`.** É o roteador mínimo de contexto para Codex, Claude Code e outros agentes. Use somente a documentação específica de sua tarefa.
 
-Cada assunto tem **um único dono documental**. Não duplicar regra entre documentos: `docs/ARCHITECTURE.md` é o mapa que decide e aponta; os documentos acima carregam a profundidade.
+- Papéis e responsabilidades: `docs/AGENT_ROLES.md`.
+- Agentes nativos do Claude Code: `.claude/agents/` (seleção por domínio).
+- Política e princípios: `docs/PROMPT_MASTER.md` (parte do documento é planejamento histórico, não uma ordem para reconstruir o produto).
+- Estado documentado: `docs/HANDOFF.md` (validar frescor contra GitHub/infraestrutura).
+- Decisões: `docs/DECISIONS_INDEX.md` → trecho de `docs/DECISIONS.md`.
+- Infraestrutura e rollout: `docs/DEPLOYMENT.md`.
+- Testes: `docs/TESTING.md`.
+- Métricas: `docs/METRICS.md`.
 
-> Não implemente funcionalidades antes de executar o protocolo de início definido em `AGENTS.md` e `docs/PROMPT_MASTER.md`.
+Não faça merge em `main` inadvertidamente: o frontend é publicado automaticamente na Vercel. Migrations de produção exigem o workflow com aprovações e deploy da API/worker tem fluxo próprio.
 
-## Regra central
+```bash
+pnpm install
+pnpm run check
+pnpm run build
+pnpm docs:check
+```
 
-O repositório versionado é a memória oficial do projeto. A `main` é a V3 e a branch de produção (o merge nela publica a web); o trabalho sai de branches derivadas dela e entra por PR. A V2 fica em `v2-legacy` (tag `v2-final`), apenas como referência.
+Esses checks não substituem integração com banco local, E2E e validação dos serviços reais quando o domínio exigir.
