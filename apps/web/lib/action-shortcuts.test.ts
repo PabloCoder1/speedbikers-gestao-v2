@@ -97,6 +97,15 @@ describe("os detectores da Shopee (D-626)", () => {
     ]);
   });
 
+  it("fora do catálogo com anúncio ativo: os anúncios do SKU e Produtos pela busca do SKU (D-861)", () => {
+    expect(actionShortcuts({ kind: "fora_do_catalogo_anunciado", skuId: "sku-1", sku: "CAP 01", shopee: null })).toEqual([
+      { label: "Dashboard do SKU", href: "/skus/sku-1" },
+      { label: "Anúncios do SKU", href: "/skus/sku-1?aba=anuncios" },
+      { label: "Produtos", href: "/produtos?busca=CAP%2001" },
+    ]);
+    expect(actionShortcuts({ kind: "fora_do_catalogo_anunciado", skuId: null, sku: null, shopee: null })).toEqual([]);
+  });
+
   it("sem a referência do anúncio, nenhum link inventado para a Shopee", () => {
     expect(actionShortcuts({ kind: "shopee_sem_vinculo", skuId: null, sku: null, shopee: null })).toEqual([]);
   });

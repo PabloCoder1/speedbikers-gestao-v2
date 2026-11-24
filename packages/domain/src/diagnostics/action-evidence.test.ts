@@ -154,6 +154,23 @@ describe("os detectores da Shopee (D-626)", () => {
   });
 });
 
+describe("o produto fora do catálogo com anúncio ativo (D-861)", () => {
+  it("tem rótulo próprio, é problema e mostra a evidência escrita no banco", () => {
+    const view = describeActionEvidence("fora_do_catalogo_anunciado", {
+      evidencias: [
+        { tipo: "catalogo", descricao: "O SKU CAP-01 está fora do catálogo desde 23/11/2026: marcado à mão em Produtos." },
+        { tipo: "anuncio", descricao: "Ainda há 2 anúncio(s) ativo(s) vinculado(s) a ele: 1 no Mercado Livre e 1 na Shopee." },
+        { tipo: "saldo", descricao: "A V3 não tem saldo local registrado para o SKU." },
+      ],
+      detector: { sku: "CAP-01", origem: "MANUAL", anuncios_ml: 1, anuncios_shopee: 1 },
+    });
+
+    expect(view.kindLabel).toBe("Fora do catálogo com anúncio ativo");
+    expect(view.tone).toBe("problema");
+    expect(view.evidencias.map((e) => e.tipo)).toEqual(["catalogo", "anuncio", "saldo"]);
+  });
+});
+
 describe("readShopeeListingRef (D-626)", () => {
   it("o SKU do anúncio é a busca; sem ele, o número do item", () => {
     expect(readShopeeListingRef({ detector: { shopee_shop_id: "loja-1", sku_anuncio: " CAP-01 ", item_id: 7 } })).toEqual({
