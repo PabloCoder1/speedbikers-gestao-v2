@@ -16,7 +16,7 @@
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
 | **HEAD conhecido** | Candidato em composição com `origin/main` `9670cde3`. A CI do corte anterior `034ffb34` passou 402 E2E e 1.229 testes SQL. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Fechamento da V3** | 155/226 pontos (68,58%), 28/43 entregas. [Inventário Sentinel](agent-audit/CLOSURE_INVENTORY.json). [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7107161168). |
-| **Sentinel: próximo passo** | A CI da composição detectou a expectativa antiga de 18 jobs. A guarda agora inclui o agendamento D-859; conferir a nova execução. O Dev inativo bloqueia quatro versões definitivas. D04 tem restore e ensaios SQL/PostgREST. Falta leitura do arquivo na Central. |
+| **Sentinel: próximo passo** | CI #45439871885 verde em b68dda60. A composição com D-863 precisa de nova CI. O Dev inativo bloqueia quatro versões definitivas. D04 tem restore e ensaios SQL/PostgREST. Falta leitura do arquivo na Central. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo, com 2,0 GB acima do limite gratuito. Google Cloud segue como ambiente atual. Lembrete para retomar em 01/12, condicionado ao Dev ativo. Rotinas Dev pausadas (D-350). |
 | **Supabase** | Produção usa a VM `sb-db` (`speedbikers-prod`). O antigo projeto hosted `imvjfgnaprqsfjlnsyev` estava `INACTIVE` em 18/11. Convite, SMTP e recuperação Auth seguem pendentes. [VM](../infra/vm/README.md). |
 | **Produção** | D-859 a D-862 estão registrados no [handoff de publicação #388](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/388). A correção do multiget segue no #377. |
@@ -194,7 +194,8 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
-13. **Alerta de margem (D-858, D-859):** no ar desde 24/11 (worker `00061`, api `00043`; Scheduler `v3-low-margin-sales` às 8h e 17h e `v3-order-financials-sweep` em `30 6,16 * * *`). D-882 pagina e isola as falhas de fila no candidato. Acompanhar a entrega nas rodadas regulares.
+13. **Alerta de margem (D-858, D-859):** Scheduler e e-mails cadastrados em produção. D-882 pagina e isola falhas de fila no candidato.
+14. **Esqueci a senha (D-863):** configurar SMTP real no Auth da VM e ativar `RECUPERACAO_SENHA_POR_EMAIL=1` na Vercel.
 
 ---
 

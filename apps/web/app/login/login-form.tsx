@@ -4,8 +4,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useState, type ReactNode } from "react";
 
 import { lerConviteDaUrl, type ConviteNaUrl } from "../../lib/invite-hash";
+import { desfechoDoPedido, linkDeRetorno, type DesfechoDoPedido } from "../../lib/recuperar-senha";
 import { safeNext } from "../../lib/safe-next";
-import { createClient, missingBrowserEnv } from "../../lib/supabase/browser";
+import { createClient, createRecoveryClient, missingBrowserEnv } from "../../lib/supabase/browser";
 
 /**
  * Entrada — e, desde D-302, também a ACEITAÇÃO DO CONVITE e o NOVO LINK DE
@@ -41,11 +42,20 @@ import { createClient, missingBrowserEnv } from "../../lib/supabase/browser";
  * formulário de entrada, com um token válido na URL e nenhum campo que o
  * usasse.
  *
+ * ## "Esqueci a senha" (D-863)
+ *
+ * Com SMTP de verdade no Auth, quem esqueceu pede o link aqui mesmo: o e-mail
+ * devolve a pessoa a esta tela com `type=recovery` no fragmento, e ela cai no
+ * MESMO formulário de criar a nova senha do link gerado em `/usuarios`. O
+ * botão só aparece com `RECUPERACAO_SENHA_POR_EMAIL=1` no servidor
+ * (`page.tsx`): sem SMTP real o pedido "funcionaria" e o e-mail não chegaria.
+ *
  * ## Os textos que os testes seguram
  *
  * `e2e/helpers.ts` entra por `getByLabel("E-mail")`, `getByLabel("Senha")` e o
  * botão "Entrar"; `e2e/convite-aceite.spec.ts` por "Defina sua senha", "Nova
- * senha", "Repita a senha" e "Salvar senha e entrar". Por isso o botão de
+ * senha", "Repita a senha" e "Salvar senha e entrar"; `e2e/recuperar-senha.spec.ts`
+ * por "Esqueci a senha", "Enviar link" e "Pedido recebido". Por isso o botão de
  * mostrar a senha tira o nome do TEXTO ("Mostrar"), nunca de um `aria-label`
  * com "senha": casaria com `getByLabel("Senha")` e derrubaria o login de toda a
  * suíte.
@@ -54,13 +64,18 @@ import { createClient, missingBrowserEnv } from "../../lib/supabase/browser";
 /** O mesmo de `minimum_password_length` em `supabase/config.toml`. */
 const MINIMO_SENHA = 6;
 
-type Modo = "entrar" | "invite" | "recovery";
+type Modo = "entrar" | "esqueci" | "invite" | "recovery";
 
 const CABECALHO: Record<Modo, { eyebrow: string; titulo: string; texto: string }> = {
   entrar: {
     eyebrow: "ACESSO INTERNO",
     titulo: "Entrar",
     texto: "Use o e-mail e a senha da sua conta.",
+  },
+  esqueci: {
+    eyebrow: "RECUPERAR ACESSO",
+    titulo: "Esqueci a senha",
+    texto: "Informe o e-mail da sua conta. Se ele tiver acesso, mandamos um link para você criar uma nova senha.",
   },
   invite: {
     eyebrow: "PRIMEIRO ACESSO",
@@ -138,7 +153,7 @@ function Regra({ ok, children }: { ok: boolean; children: ReactNode }): ReactNod
   );
 }
 
-export function LoginForm(): ReactNode {
+export function LoginForm({ recuperacaoPorEmail }: { recuperacaoPorEmail: boolean }): ReactNode {
   const router = useRouter();
   const params = useSearchParams();
   const emailId = useId();
@@ -153,6 +168,8 @@ export function LoginForm(): ReactNode {
   const [verificando, setVerificando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [esqueci, setEsqueci] = useState(false);
+  const [pedido, setPedido] = useState<DesfechoDoPedido | null>(null);
 
   useEffect(() => {
     const achado = lerConviteDaUrl(window.location.hash);
@@ -210,12 +227,32 @@ export function LoginForm(): ReactNode {
     router.refresh();
   }
 
+  async function pedirLink(): Promise<void> {
+    setBusy(true);
+    setPedido(null);
+
+    // A resposta é a mesma para e-mail que existe e que não existe
+    // (`desfechoDoPedido`): a tela nunca diz quem tem acesso.
+    const { error: falha } = await createRecoveryClient().auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: linkDeRetorno(window.location.origin),
+    });
+
+    setPedido(desfechoDoPedido(falha));
+    setBusy(false);
+  }
+
+  function irParaEsqueci(ir: boolean): void {
+    setEsqueci(ir);
+    setPedido(null);
+    setError(null);
+  }
+
   async function definirSenha(): Promise<void> {
     /*
       As duas recusas acontecem ANTES da ida ao servidor. A segunda existe
-      porque corrigir depois custa caro: sem SMTP não há "esqueci minha senha"
-      por conta própria (D-296) — uma senha digitada errada duas vezes iguais
-      só volta com alguém de ADMIN gerando um novo link de acesso.
+      porque corrigir depois custa caro: sem o "esqueci a senha" ligado
+      (D-863), uma senha digitada errada duas vezes iguais só volta com alguém
+      de ADMIN gerando um novo link de acesso.
     */
     if (novaSenha.length < MINIMO_SENHA) {
       setError(`A senha precisa de pelo menos ${String(MINIMO_SENHA)} caracteres.`);
@@ -266,7 +303,7 @@ export function LoginForm(): ReactNode {
     );
   }
 
-  const modo: Modo = convite?.kind === "sessao" ? convite.tipo : "entrar";
+  const modo: Modo = convite?.kind === "sessao" ? convite.tipo : esqueci ? "esqueci" : "entrar";
   const cabecalho = CABECALHO[modo];
 
   return (
@@ -281,14 +318,73 @@ export function LoginForm(): ReactNode {
         <div role="alert" className="sb-note sb-note-atencao sb-login-aviso">
           <span>Este link não vale mais</span>
           <p>
-            Links de convite e de nova senha expiram e só podem ser usados uma vez. Peça a quem
-            administra um novo link de acesso.
+            Links de convite e de nova senha expiram e só podem ser usados uma vez.
+            {recuperacaoPorEmail
+              ? " Peça outro em “Esqueci a senha” ou a quem administra o sistema."
+              : " Peça a quem administra um novo link de acesso."}
             {convite.descricao === "" ? "" : ` (${convite.descricao})`}
           </p>
         </div>
       )}
 
-      {modo !== "entrar" ? (
+      {modo === "esqueci" ? (
+        <form
+          className="sb-login-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void pedirLink();
+          }}
+        >
+          <div className="sb-login-campo">
+            <label htmlFor={emailId} className="sb-login-rotulo">
+              E-mail
+            </label>
+            <input
+              id={emailId}
+              className="sb-input sb-login-input"
+              type="email"
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+              }}
+              placeholder="voce@empresa.com.br"
+              required
+              autoComplete="email"
+              autoFocus
+            />
+          </div>
+
+          {pedido?.kind === "enviado" && (
+            <div role="status" className="sb-note sb-login-enviado">
+              <span>Pedido recebido</span>
+              <p>
+                Se este e-mail tiver acesso, o link chega em alguns minutos. Ele vale uma vez e expira; confira
+                também a caixa de spam.
+              </p>
+            </div>
+          )}
+
+          {pedido?.kind === "falha" && (
+            <p role="alert" className="sb-login-erro">
+              {pedido.mensagem}
+            </p>
+          )}
+
+          <button className="sb-button sb-button-primary sb-login-botao" type="submit" disabled={busy}>
+            {busy ? "Enviando…" : pedido?.kind === "enviado" ? "Enviar outro link" : "Enviar link"}
+          </button>
+
+          <button
+            type="button"
+            className="sb-text-button sb-login-voltar"
+            onClick={() => {
+              irParaEsqueci(false);
+            }}
+          >
+            Voltar para a entrada
+          </button>
+        </form>
+      ) : modo !== "entrar" ? (
         <form
           className="sb-login-form"
           onSubmit={(event) => {
@@ -349,6 +445,18 @@ export function LoginForm(): ReactNode {
 
           <CampoSenha rotulo="Senha" valor={password} onChange={setPassword} autoComplete="current-password" />
 
+          {recuperacaoPorEmail && (
+            <button
+              type="button"
+              className="sb-text-button sb-login-esqueci"
+              onClick={() => {
+                irParaEsqueci(true);
+              }}
+            >
+              Esqueci a senha
+            </button>
+          )}
+
           {error !== null && (
             <p role="alert" className="sb-login-erro">
               {error}
@@ -362,7 +470,9 @@ export function LoginForm(): ReactNode {
       )}
 
       <p className="sb-login-nota">
-        Esqueceu a senha ou ainda não tem acesso? Quem administra o sistema gera um link de acesso para você.
+        {recuperacaoPorEmail
+          ? "Ainda não tem acesso? Quem administra o sistema gera um link de acesso para você."
+          : "Esqueceu a senha ou ainda não tem acesso? Quem administra o sistema gera um link de acesso para você."}
       </p>
     </>
   );
