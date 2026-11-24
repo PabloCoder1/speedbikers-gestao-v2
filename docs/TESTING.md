@@ -166,3 +166,43 @@ Complementa `docs/PROMPT_MASTER.md` §33. Uma feature só está pronta quando, c
 - Cobertura mínima percentual como métrica de qualidade — cobre-se o que tem risco, não o que sobe o número.
 - Testes de snapshot de interface, frágeis e de baixo sinal.
 - Mock do Postgres. Integração usa banco real local.
+
+## Carga do webhook ML com PostgREST e gRPC local
+
+Ensaio Sentinel de 22/11/2026 (Q03) no build `0e438a8c` do
+[candidato #378](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/378).
+O cliente enviou POSTs HTTP ao servidor Hono local com até 128 conexões
+simultâneas. O caminho usou o middleware de origem, o diretório e o
+enfileirador do candidato. O Supabase JS leu quatro contas fictícias num
+PostgreSQL 17.6 via PostgREST v16.1. A autenticação usou uma credencial
+de fixture. O SDK do Cloud Tasks enviou requisições ao serviço gRPC
+local, que validou nome, fila, organização, conta, payload e configuração
+OIDC da tarefa.
+
+Foram executadas duas vezes as quatro fases abaixo. A tabela mostra a
+rodada instrumentada na API. A leitura do diretório recebeu atraso
+controlado de 325 ms para reunir uma rajada antes da resposta do banco.
+O p95 da API mede do recebimento no Hono até a geração da resposta.
+
+| Fase | HTTP recebido | Leituras PostgREST | RPCs gRPC | Tarefas novas | Duplicatas | p95 da API |
+|---|---:|---:|---:|---:|---:|---:|
+| Acesso ao diretório recusado pelo Postgres | 128 × 503 | 1 | 0 | 0 | 0 | 400 ms |
+| Diretório recuperado e fila recusando tarefas | 320 × 503 | 1 | 320 | 0 | 0 | 792 ms |
+| Fila recuperada, reenvio dos mesmos recursos | 320 × 200 | 0 | 320 | 80 | 240 | 260 ms |
+| Reenvio integral da rajada | 320 × 200 | 0 | 320 | 0 | 320 | 190 ms |
+
+As 1.088 respostas por rodada corresponderam aos códigos esperados.
+O PostgREST respondeu 403 com o `SELECT` revogado e 200 após restaurar
+a permissão na fixture. A fila local retornou `FAILED_PRECONDITION`
+durante a recusa e `ALREADY_EXISTS` para os nomes repetidos.
+As 80 tarefas únicas permaneceram após o replay. Os recursos de teste
+foram descartados ao concluir.
+
+O ensaio cobre a API, o acesso real ao Postgres e o contrato gRPC de
+criação e deduplicação. Q03 segue aberto para Cloud Tasks gerenciado,
+entrega ao worker e medição do ACK em ambiente equivalente ao Cloud
+Run. O p95 local inclui a latência simulada onde aplicável. No mesmo
+dia, a consulta somente leitura ao projeto Dev documentado
+(`speedbikers-gestao-v3`) retornou `PERMISSION_DENIED / CONSUMER_INVALID`.
+O inventário da identidade usada só mostrou `speedbikers-prod` como
+projeto disponível com esse prefixo.

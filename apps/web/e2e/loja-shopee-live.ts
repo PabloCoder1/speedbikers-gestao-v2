@@ -1,4 +1,5 @@
 import type { Database } from "@sb/db";
+import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import { createClient } from "@supabase/supabase-js";
 
 /** O cliente com a chave de serviço local, tipado pelo banco, como o do seed. */
@@ -78,15 +79,6 @@ function erro(contexto: string, e: { message: string } | null): void {
   if (e !== null) throw new Error(`${contexto}: ${e.message}`);
 }
 
-/** Às 15:00 UTC de N dias atrás: dentro do mesmo dia comercial em São Paulo. */
-function diasAtras(n: number): string {
-  const d = new Date(Date.now() - n * DIA_MS);
-
-  d.setUTCHours(15, 0, 0, 0);
-
-  return d.toISOString();
-}
-
 export async function criarLojaLive(db: ClienteDeServico): Promise<{ lojaId: string; skuId: string }> {
   await apagarLojaLive(db);
 
@@ -109,6 +101,9 @@ export async function criarLojaLive(db: ClienteDeServico): Promise<{ lojaId: str
 
   const skuId = sku.data.id;
   const agora = new Date().toISOString();
+  const hoje = toSalesMetricDate(agora);
+  // As janelas da Central usam dias completos no fuso de São Paulo.
+  const diasAtras = (n: number): string => `${shiftBusinessDate(hoje, -n)}T15:00:00.000Z`;
 
   const loja = await db
     .from("shopee_shops")

@@ -87,6 +87,8 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   uma nova autorização OAuth. Um problema **transitório** de credencial
   desativa a conta permanentemente, e todo job que itera contas para de
   enfileirar em silêncio (D-217).
+- **Q03.** API, PostgREST e gRPC local validados em rajadas. Falta Cloud Tasks gerenciado. A fixture Shopee usa data comercial de São Paulo, validada no #381.
+
 - **Um job que para de ser ENFILEIRADO não falha — emudece.** O Cloud
   Scheduler mostra verde, o endpoint responde 200, e `job_runs` simplesmente
   para de crescer. Não há linha `failed` para achar. Foi assim que 13 horas
