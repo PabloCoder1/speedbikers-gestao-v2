@@ -144,7 +144,7 @@ duas aprovações de `producao`. Ele não foi adaptado nem executado sobre a VM.
 Antes de nova migration: identificar o destino real, comparar histórico e
 objetos, produzir plano de diferenças e obter as aprovações do fluxo oficial.
 Não usar `db push`, `--include-all` nem repair para repetir ou encobrir a
-aplicação manual. Migração do workflow e mudanças na VM ficam em outra fatia.
+aplicação manual.
 
 ### Comparar o histórico com o candidato
 
@@ -186,13 +186,27 @@ checkout, registrado em `plan.revision`. O verificador recusa SQLs
 alterados ou sem rastreamento. Registre o ambiente de origem do
 catálogo na revisão.
 
+Para gerar o mesmo plano pelo GitHub Actions, dispare **Preflight de migrations
+da VM** na branch que contém o commit candidato e forneça o arquivo exportado:
+
+```sh
+jq -Rs '{catalogo: .}' catalogo-migrations.txt |
+  gh workflow run migrations-producao.yml --ref "$BRANCH_CANDIDATA" --json
+```
+
+Confira o SHA da execução antes de aceitar o artefato `plano-migrations-vm`.
+Se houver lacunas, a execução falha e o relatório fica no log da etapa. O
+workflow usa o catálogo informado. A extração novamente da VM e a conferência
+do ID continuam obrigatórias antes da aplicação aprovada.
+
 
 ### Publicação do candidato #378 e aceite
 
 O plano de publicação na VM foi aprovado em 23/11. A consulta em
 leitura de 24/11 encontrou 325 versões até `20261123180000`. O SQL do
 #384 foi incorporado ao candidato. As quatro versões temporárias
-são anteriores à última aplicada. O fluxo oficial ainda aponta ao hosted.
+são anteriores à última aplicada. O candidato inclui o workflow de preflight
+para a VM.
 
 1. Registrar no Dev as versões definitivas dos quatro SQLs, regenerar os
    tipos e repetir a CI no SHA candidato. Conferir o destino da esteira

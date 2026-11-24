@@ -20509,3 +20509,14 @@ temporárias bloqueadas, sem consultar a VM.
 **Consequência:** o worker ganha `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (Secret Manager), `SMTP_PORT` (465), `ALERT_EMAIL_FROM` e `WEB_APP_URL`. Sem as três primeiras, o worker sobe e o alerta fica só no sino. Pedido de várias linhas no ML e de vários SKUs na Shopee não é julgado, porque o frete não se divide por produto (5E).
 
 **Alternativas rejeitadas:** usar `skus.brand`, que é a categoria do UpSeller e marcaria produto errado como importado; um e-mail por venda, que enche a caixa num dia de promoção; disparar e-mail dentro do trigger do banco, que prenderia a escrita do pedido à disponibilidade do SMTP; avisar com custo desconhecido como zero, que mostraria margem cheia em vez de "não sei".
+
+## D-881 - Workflow de migrations de produção gera o plano da VM
+
+**24/11/2026 · Publicação.** O workflow histórico D-334 apontava para o Supabase
+hospedado. O candidato reaproveita o disparo manual para comparar o catálogo
+exportado da VM com o checkout e publicar o plano com SHA e hashes. Entrada
+inválida ou divergência de histórico reprova a execução.
+
+A etapa usa somente o catálogo informado e acesso de leitura ao repositório.
+O operador extrai novamente o catálogo na VM e confere o plano antes da
+aplicação aprovada. A CI do Dev mantém seu fluxo próprio.

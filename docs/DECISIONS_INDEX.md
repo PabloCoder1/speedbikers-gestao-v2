@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **699** (D-001 a D-880).
+Decisões registradas: **700** (D-001 a D-881).
 
 ## Por domínio
 
@@ -88,7 +88,7 @@ Decisões registradas: **699** (D-001 a D-880).
 - **D-778** — Autorização no servidor em `claimAction`, fail-closed em Server Actions/Caixa de Entrada e escape de curingas `ILIKE`
 - **D-781** — Encerra últimos `getSession()` diretos em clientes web e valida corpo `200 OK` em aplicação, republicação e narração IA
 
-### banco/rls (50)
+### banco/rls (51)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -140,6 +140,7 @@ Decisões registradas: **699** (D-001 a D-880).
 - **D-766** — Saída Manual e itens editáveis na conferência, sem migration
 - **D-769** — Ordem de migrations validada por upgrade incremental
 - **D-790** — Um índice único atende a timeline do Full
+- **D-881** — Workflow de migrations de produção gera o plano da VM
 
 ### estoque (59)
 

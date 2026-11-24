@@ -27,7 +27,7 @@
 |---|---|---|---|
 | **local** | Supabase CLI em Docker | apps locais, Mercado Livre em fixture | `next dev` |
 | **development** | Supabase `speedbikers-gestao-v3-dev` (`nmgccyqquwxecqffsidr`, `sa-east-1`) | Cloud Run em `speedbikers-gestao-v3` (pausado desde 2026-09-14, D-350) | `next dev` local — o projeto Vercel do Dev (`speedbikers-gestao-v2-m71j`) foi excluído em 2026-09-23; `DEV_WEB_ORIGIN` passou a `http://localhost:3000` |
-| **production** | Supabase `speedbikers-prod` (`imvjfgnaprqsfjlnsyev`, `sa-east-1`), criado em 2026-09-14 | Cloud Run em `speedbikers-prod` | Vercel `speedbikers-prod` |
+| **production** | Supabase autogerenciado na VM `sb-db` em `speedbikers-prod` | Cloud Run em `speedbikers-prod` | Vercel `speedbikers-prod` |
 
 **Três ambientes, não quatro.** Staging separado só se justifica quando houver produção com usuário real dependendo de estabilidade.
 
@@ -235,7 +235,8 @@ Em produção, api e worker saem pela rede `v3-vpc` (sub-rede `v3-run-egress`, `
 typecheck -> lint -> testes unitários -> testes de integração -> build -> aplicar migrations no Dev
 ```
 
-- Migrations aplicadas **por CI** (`supabase db push`, job `migrations`), nunca à mão, nunca pelo dashboard — só em push na `main`, depois de `check`/`scripts`/`integration` verdes. **Em produção**, só por `.github/workflows/migrations-producao.yml`, disparado à mão na `main`, com duas aprovações no ambiente `producao` (D-334; primeira execução em 2026-09-14).
+- **Dev** usa `supabase db push` no job `migrations` da `main` após `check`, `scripts`, `integration` e `e2e`. O registro das novas versões está pausado enquanto o Dev estiver inativo.
+- **Produção** segue o [procedimento da VM](../infra/vm/README.md#publicação-do-candidato-378-e-aceite). O workflow manual `migrations-producao.yml` recebe o catálogo de versões e gera o plano de leitura para o commit selecionado.
 - Deploy do `web` pela integração nativa da Vercel com a branch — esse sim é automático.
 - **Deploy de `api` e `worker` é MANUAL** — `bash infra/deploy-cloud-run.sh` (worker primeiro, depois api — secao 3). Não existe workflow do GitHub Actions que publique no Cloud Run. Quem roda o deploy é responsável por conferir CI verde antes ("nenhum deploy sem CI verde" é regra de operador, não trava automática).
 
@@ -248,7 +249,7 @@ Antes de declarar qualquer mudança operacional como implantada, verificar contr
 - `gcloud run services describe api/worker --project <projeto> --region southamerica-east1 --format='value(status.latestReadyRevisionName)'` — **sempre com `--project`**, porque o padrão do `gcloud` na máquina do dono é produção (D-350) — e comparar a tag da imagem (`git rev-parse --short HEAD` no momento do deploy) contra o commit atual;
 - **a revisão nova servindo o tráfego** — desde D-341 o `deploy-cloud-run.sh` falha se ela não serve 100%. Com o tráfego fixo numa revisão (depois de um `update-traffic --to-revisions`, como a volta de D-340), a revisão publicada nasce com 0% e o deploy sairia verde com o commit antigo no ar. **E nunca `--to-latest` com o tráfego fixo** (D-342): nesse estado `latestReadyRevisionName` não anda para a revisão nova — o próprio `gcloud run deploy` imprime o nome errado —, e "latest" seria a revisão anterior. Publique por nome (`--to-revisions <revisão>=100`, conferindo `APP_COMMIT` em `gcloud run revisions list`), confira `/health`, e só desfixe com `--to-latest` quando `latestReadyRevisionName` já for a revisão servindo;
 - `gcloud scheduler jobs list --project <projeto> --location southamerica-east1` contra os jobs esperados (`infra/cloud-scheduler.sh` é a lista canônica);
-- `pnpm exec supabase migration list --linked` (local == remoto, sem drift);
+- catálogo aplicado na VM, comparado com o commit por `check-migration-catalog.mjs`;
 - CI do commit exato verde (`gh run list`/`gh run view`), não presumido;
 - logs de boot sem `ERROR` (`gcloud logging read ... severity>=ERROR`) depois de um deploy novo;
 - para um job que nunca rodou de verdade em produção, disparar manualmente uma vez (`gcloud scheduler jobs run <nome> --project <projeto> --location southamerica-east1`) e conferir **o que ele fez** antes de confiar na cadência automática. **O 200 do agendador e o `done` do job não provam trabalho** (D-350): o handler pode responder 200 falhando por dentro (`accounts_not_listed`), e o Full saiu `done` com 0 processados porque rodou antes dos vínculos. Confira `processed` em `job_runs` e a tabela que o job alimenta; respeite a dependência (anúncios e vínculos antes do Full); e lembre que a chave de vários jobs é por hora — redisparo na mesma hora é descartado.
@@ -443,6 +444,8 @@ unset SD SR
 **O que o ensaio não prova:** os arquivos do GCS; configuração de Auth e chaves de API (o clone não as copia); conteúdo de linha (só contagens); as tabelas de catálogo (a diferença é INFO); as demais tabelas de `public` — são 61 no banco local, e o comparador conta 21 —, como `support_cases`, `order_items` e `ml_credentials`, das quais só se sabe que têm RLS; as políticas de RLS (só que ela está ligada); `api` e `worker` rodando contra o restaurado; o RPO (até ~24 h de perda com backup diário); o PITR; o restore sobre o próprio projeto; e produção.
 
 ### 8.2 Criar o ambiente de produção (D-333)
+
+Registro histórico da criação do Supabase hospedado. O banco atual segue o [procedimento da VM](../infra/vm/README.md).
 
 Todo passo abaixo é **ato humano** — criar projeto, gerar chave e colar segredo não são coisas que um agente faz. O que o repositório garante é que os scripts **recusam misturar** produção com o Dev (`infra/README.md`, seção Ambientes).
 
