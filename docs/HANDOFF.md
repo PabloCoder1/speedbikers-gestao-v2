@@ -44,6 +44,8 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## Riscos ativos
 
+- **P02.** Faturamento e frete medidos após restore, com 6 consultas concorrentes e limites da VM.
+
 - **O faturamento do ML perto do `statement_timeout`** (19/10, `docs/PERFORMANCE.md`): D-499 em produção, 47 vezes menos páginas; 90 dias com detalhe ainda 2,1 s quente, todo CPU.
 - **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
   D-417/D-418, com o vigia agendado pelo dono em 14/10 (`vigiar-sincronizacao`, 30 min; cobre as lojas live); canal externo e Cloud NAT são do dono. O app ML da V2
@@ -67,6 +69,8 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   FONTE:** `get_stock_coverage` aparecia com 89 ms no `pg_stat_statements` e custava **27 s** na
   forma que a tela usa. Toda RPC nova pede ensaio deliberado como `authenticated`, em cada forma
   de chamada (detalhe no arquivo de 2026-09-17 e em `docs/PERFORMANCE.md`).
+- **E2E Shopee.** A fixture segue o dia comercial de São Paulo.
+
 - **`supabase start` da CI falha as vezes, e a falha nao se distingue de
   defeito de migration pelo que a interface mostra** — aconteceu em `8dfea93`
   (09/09): reprovou em *Subir Supabase local*, ANTES de migration ou teste, e a
