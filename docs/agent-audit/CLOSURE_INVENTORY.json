@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-24, integração local e0bedddf + continuidade Gemini D-770–D-789, D-793–D-819 e hotfix rpc-pages (570b6e45, PR #343)",
+  "corte": "2026-11-24, integração local e0bedddf + continuidade Gemini D-770–D-789, D-793–D-821 e hotfix rpc-pages (26fb2bf7, PR #343)",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {

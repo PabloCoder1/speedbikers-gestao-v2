@@ -20713,3 +20713,21 @@ Corrigimos três falhas de borda no núcleo do worker e no callback OAuth do Tik
 3. **`apps/api/src/tiktok-shops.ts`:** recusa `state` em branco (`trim() === ""`) com `{ status: "invalid_state" }` sem consultar `tiktok_oauth_states` e recusa `code` em branco antes de chamar `getAccessToken`.
 
 TDD RED (`3/3` arquivos / `4 failed`) -> GREEN (`10/10` worker + `10/10` API). Verificação completa do monorepo pós-`570b6e45`: `pnpm run check` (`37/37`, `361` arquivos / `4.614` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `5/5` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-820 - Web Server Actions: `auth.getUser()` fail-closed nas 5 telas restantes e saneamento de erro SQL na triagem
+
+Fechamos o tratamento de erro de sessão em todas as Server Actions restantes fora da frente de compras/reposição (commit `d3045b86`):
+
+1. **Separação de falha transitória de Auth vs sessão expirada (`atendimento/actions.ts`, `atendimento/conhecimento/actions.ts`, `atendimento/templates/actions.ts`, `notificacoes/preferencias/actions.ts`, `sugestoes/actions.ts`):** seguem o padrão de `acoes/actions.ts` (`D-778`), distinguindo `401`/`403`/`AuthSessionMissingError` ("Sessão expirada") de erro transitório 5xx/rede ("Não foi possível confirmar sua sessão — tente de novo") em 6 Server Actions (`assignToMe`, `createKnowledgeEntry`, `setKnowledgeStatus`, `createTemplate`, `createPreference`, `createSuggestion`).
+2. **Anti-vazamento em `atendimento/actions.ts` (`describeError`):** substitui `return error.message` por mensagens fixas em português, evitando expor UUIDs ou nomes internos de tabela vindos de exceções do Postgres.
+
+TDD RED (`2 failed` em novo `apps/web/lib/server-actions-auth.test.ts`) -> GREEN (`2/2`), com `@sb/web` `tsc` e `eslint` aprovados.
+
+## D-821 - API OAuth callbacks: padronização de `state`/`code` em branco no Mercado Livre e Shopee
+
+Alinhamos os callbacks OAuth de Mercado Livre (`apps/api/src/ml-accounts.ts`) e Shopee (`apps/api/src/shopee-shops.ts`) ao hardening aplicado no TikTok Shop (`D-819`, commit `26fb2bf7`):
+
+1. **`state` em branco (`trim() === ""`):** devolve `{ status: "invalid_state" }` imediatamente sem consultar `ml_oauth_states` ou `shopee_oauth_states`.
+2. **`code` em branco (`trim() === ""`) e normalização:** `completeConnect` (`ml-accounts.ts`) recusa `code` só com espaços antes de chamar `exchangeCodeForToken`, e ambos os callbacks enviam `code.trim()`.
+
+TDD RED (`2 failed | 33 passed (35)`) -> GREEN (`35/35`). Verificação completa do monorepo pós-`26fb2bf7`: `pnpm run check` (`37/37`, `362` arquivos / `4.618` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `7/7` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).

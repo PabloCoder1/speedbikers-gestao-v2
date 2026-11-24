@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **718** (D-001 a D-819).
+Decisões registradas: **720** (D-001 a D-821).
 
 ## Por domínio
 
@@ -91,7 +91,7 @@ Decisões registradas: **718** (D-001 a D-819).
 - **D-805** — Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
 - **D-808** — API: receptor autenticado `POST /push/tiktok-shop` (`M04`, fatia 3)
 
-### banco/rls (50)
+### banco/rls (51)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -143,6 +143,7 @@ Decisões registradas: **718** (D-001 a D-819).
 - **D-766** — Saída Manual e itens editáveis na conferência, sem migration
 - **D-767** — Um índice único atende a timeline do Full
 - **D-769** — Ordem de migrations validada por upgrade incremental
+- **D-820** — Web Server Actions: `auth.getUser()` fail-closed nas 5 telas restantes e saneamento de erro SQL na triagem
 
 ### estoque (62)
 
@@ -290,7 +291,7 @@ Decisões registradas: **718** (D-001 a D-819).
 - **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
 - **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
 
-### mercado-livre (145)
+### mercado-livre (146)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -437,6 +438,7 @@ Decisões registradas: **718** (D-001 a D-819).
 - **D-816** — Worker `service_role`: `expectedOrganizationId` centralizado em `resolveMlAccountRead` e isolamento em 9 handlers do Mercado Livre
 - **D-817** — Worker `service_role`: isolamento multi-tenant e proteção de continuação `enqueue()` em 3 handlers financeiros/backfill ML
 - **D-819** — Núcleo worker e OAuth TikTok: `readAllPages` contra laço infinito em `NaN`, `delaySeconds` no `enqueue` e validação de `state`/`code`
+- **D-821** — API OAuth callbacks: padronização de `state`/`code` em branco no Mercado Livre e Shopee
 
 ### outros (113)
 
