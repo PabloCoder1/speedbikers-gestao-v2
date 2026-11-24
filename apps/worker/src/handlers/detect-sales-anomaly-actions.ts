@@ -136,7 +136,7 @@ function toEvidence(diagnosis: SalesAnomalyDiagnosis, marketplace: string): Json
 }
 
 export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyActionsDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -144,6 +144,10 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     }
 
     const { organizationId } = parsed.data;
+
+    if (organizationId !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "organização do payload diverge do envelope" };
+    }
     const now = deps.now?.() ?? new Date();
     const asOf = shiftBusinessDate(toSalesMetricDate(now), -1);
 

@@ -88,12 +88,16 @@ function motivo(error: unknown): string {
 }
 
 export function createShopeeOrderFinancialsSyncHandler(deps: ShopeeOrderFinancialsSyncDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const aberta = await lerLojaConectada(deps, context, "shopee_order_financials_skipped");
 
     if ("outcome" in aberta) return aberta.outcome;
 
     const { loja } = aberta;
+
+    if (loja.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "loja não pertence à organização do job" };
+    }
     const now = deps.now?.() ?? new Date();
     const pendentes = await deps.db.rpc("shopee_orders_financials_pending", {
       p_shopee_shop_id: loja.id,
@@ -155,13 +159,25 @@ export function createShopeeOrderFinancialsSyncHandler(deps: ShopeeOrderFinancia
     const temMais = pendentes.data.length === FINANCEIRO_POR_EXECUCAO;
 
     if (temMais) {
-      await deps.enqueuer.enqueue({
-        jobType: "shopee.order-financials.sync",
-        organizationId: loja.organization_id,
-        dedupeKey: `shopee-financials:${loja.id}:${String(Math.floor(now.getTime() / 1000))}`,
-        queue: "backfill",
-        payload: { shopeeShopId: loja.id },
-      });
+      try {
+        await deps.enqueuer.enqueue({
+          jobType: "shopee.order-financials.sync",
+          organizationId: loja.organization_id,
+          dedupeKey: `shopee-financials:${loja.id}:${String(Math.floor(now.getTime() / 1000))}`,
+          queue: "backfill",
+          payload: { shopeeShopId: loja.id },
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "falha ao enfileirar continuação do financeiro Shopee";
+
+        context.logger.error("shopee_order_financials_enqueue_failed", {
+          shopee_shop_id: loja.id,
+          shop_id: loja.shop_id,
+          reason,
+        });
+
+        return { status: "failed", retryable: true, reason };
+      }
     }
 
     context.logger.info("shopee_order_financials_done", {

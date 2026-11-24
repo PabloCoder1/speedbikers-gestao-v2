@@ -35,10 +35,12 @@ function toEvidence(finding: SupportPatternFinding): Json {
   return { evidencias: finding.evidencias, reclamacoes_abertas: finding.openClaims } as unknown as Json;
 }
 
+const ACTION_UPSERT_CHUNK = 500;
+
 export function createDetectSupportPatternActionsHandler(
   deps: DetectSupportPatternActionsDeps,
 ): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -46,6 +48,10 @@ export function createDetectSupportPatternActionsHandler(
     }
 
     const { organizationId } = parsed.data;
+
+    if (organizationId !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "organização do payload diverge do envelope" };
+    }
 
     // Vínculos de SKU cujos cases são CLAIM aberto. O `!inner` no embed
     // filtra pelo pai — sem ele, o filtro de canal viraria "link com case
@@ -111,7 +117,7 @@ export function createDetectSupportPatternActionsHandler(
         for (const link of orderLinks) {
           const amount = link.orders?.total_amount;
 
-          if (amount != null) {
+          if (typeof amount === "number" && Number.isFinite(amount)) {
             orderTotalByCase.set(link.support_case_id, (orderTotalByCase.get(link.support_case_id) ?? 0) + amount);
           }
         }
@@ -191,12 +197,14 @@ export function createDetectSupportPatternActionsHandler(
         dedup_key: finding.dedupKey,
       }));
 
-      const upsertResult = await deps.db.from("actions").upsert(actionRows, {
-        onConflict: "organization_id,dedup_key",
-      });
+      for (const batch of chunk(actionRows, ACTION_UPSERT_CHUNK)) {
+        const upsertResult = await deps.db.from("actions").upsert(batch, {
+          onConflict: "organization_id,dedup_key",
+        });
 
-      if (upsertResult.error !== null) {
-        return { status: "failed", retryable: true, reason: upsertResult.error.message };
+        if (upsertResult.error !== null) {
+          return { status: "failed", retryable: true, reason: upsertResult.error.message };
+        }
       }
     }
 

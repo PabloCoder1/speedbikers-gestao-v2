@@ -95,7 +95,7 @@ async function loadLedgerBalances(
 }
 
 export function createReconcileBalancesHandler(deps: ReconcileBalancesDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -103,6 +103,10 @@ export function createReconcileBalancesHandler(deps: ReconcileBalancesDeps): Job
     }
 
     const { organizationId } = parsed.data;
+
+    if (organizationId !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "organização do payload diverge do envelope" };
+    }
     const now = deps.now?.() ?? new Date();
 
     // PAGINADO desde D-131: a função devolve uma linha por SKU e por location

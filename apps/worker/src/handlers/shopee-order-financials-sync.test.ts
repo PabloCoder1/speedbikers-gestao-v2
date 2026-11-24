@@ -279,4 +279,37 @@ describe("shopee.order-financials.sync (D-427)", () => {
     expect(pedidos).toEqual(["A1"]);
     expect(db.gravados).toEqual([]);
   });
+
+  it("D-814: recusa loja de outra organização (envelope != loja.organization_id) e devolve falha retryable se enqueue da continuação falhar", async () => {
+    const dbOutraOrg = fakeDb({
+      loja: { ...LOJA, organization_id: "22222222-0000-4000-8000-000000000002" },
+      pendentes: ["A1"],
+    });
+    const shopee = fakeShopee();
+    const mismatch = await rodar(dbOutraOrg, shopee);
+
+    expect(mismatch.outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(shopee.pedidos).toEqual([]);
+
+    const loteCheio = Array.from({ length: FINANCEIRO_POR_EXECUCAO }, (_, i) => `ORD-${String(i)}`);
+    const dbCheio = fakeDb({ pendentes: loteCheio });
+    const shopeeCheio = fakeShopee();
+    const handler = createShopeeOrderFinancialsSyncHandler({
+      db: dbCheio.db,
+      client: shopeeCheio.client,
+      encryptionKey: KEY,
+      now: () => NOW,
+      enqueuer: {
+        enqueue: () => Promise.reject(new Error("Cloud Tasks fora")),
+      },
+    });
+
+    const outcome = await handler(ENVELOPE, {
+      logger: createLogger({}, { sink: () => undefined }),
+      payload: { shopeeShopId: LOJA_ID },
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(dbCheio.gravados).toHaveLength(FINANCEIRO_POR_EXECUCAO);
+  });
 });
