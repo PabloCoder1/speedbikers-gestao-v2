@@ -119,19 +119,21 @@ capturar_build() {
 }
 
 identidade='projects/speedbikers-gestao-v3/serviceAccounts/v3-builder@speedbikers-gestao-v3.iam.gserviceaccount.com'
-capturar_build "CLOUD_BUILD_SERVICE_ACCOUNT=${identidade}"
+capturar_build "CLOUD_BUILD_SERVICE_ACCOUNT=${identidade}" CLOUD_BUILD_REGION=us-central1
 if ! grep -Fxq -- "--service-account=${identidade}" "${fixture}/build-args"; then
   printf 'FALHA: o build não recebeu a identidade dedicada\n' >&2
   exit 1
 fi
 printf 'ok    build recebe a identidade dedicada como um argumento\n'
+grep -Fxq -- '--region=us-central1' "${fixture}/build-args"
+printf 'ok    build recebe a região própria do Cloud Build\n'
 
 capturar_build
-if grep -q '^--service-account' "${fixture}/build-args"; then
-  printf 'FALHA: build sem configuração recebeu uma identidade explícita\n' >&2
+if grep -Eq '^--(service-account|region)(=|$)' "${fixture}/build-args"; then
+  printf 'FALHA: build sem configuração recebeu identidade ou região explícita\n' >&2
   exit 1
 fi
-printf 'ok    build sem configuração segue a identidade padrão\n'
+printf 'ok    build sem configuração segue os padrões de identidade e região\n'
 
 cat > "${fixture}/git" <<'SH'
 #!/usr/bin/env bash

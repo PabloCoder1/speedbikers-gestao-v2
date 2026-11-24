@@ -157,14 +157,17 @@ build_and_deploy() {
 
   step "Build da imagem: ${app}"
   info "${image}"
-  local build_identity=()
+  local build_options=()
   if [ -n "${CLOUD_BUILD_SERVICE_ACCOUNT:-}" ]; then
-    build_identity=("--service-account=${CLOUD_BUILD_SERVICE_ACCOUNT}")
+    build_options+=("--service-account=${CLOUD_BUILD_SERVICE_ACCOUNT}")
+  fi
+  if [ -n "${CLOUD_BUILD_REGION:-}" ]; then
+    build_options+=("--region=${CLOUD_BUILD_REGION}")
   fi
   gc builds submit \
     --config infra/cloudbuild.yaml \
     --substitutions "_APP=${app},_IMAGE=${image}" \
-    "${build_identity[@]}" \
+    "${build_options[@]}" \
     .
 
   local revision_nonce revision_suffix revisao

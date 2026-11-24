@@ -64,6 +64,12 @@ Essa janela causou um incidente real em 2026-08-20: quatro tasks `erp.import.par
 usa a identidade padrão do projeto. As contas de execução da API e do worker são
 configuradas em separado.
 
+`CLOUD_BUILD_REGION` define a região do build sem alterar a região de execução
+da API ou do worker. Sem a variável, vale a configuração do `gcloud`.
+Para comparar o ensaio da identidade dedicada com os builds regulares de
+produção, use `southamerica-east1` em ambos e confira a presença do log
+detalhado pelo ID do build.
+
 Para migrar, prepare uma conta dedicada com leitura do bucket de origem, escrita
 no repositório de imagens e escrita no Cloud Logging, que já é o destino dos logs
 em `infra/cloudbuild.yaml`. O operador precisa poder usar a conta com `actAs`.
