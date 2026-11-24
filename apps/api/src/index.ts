@@ -73,6 +73,19 @@ const tiktokShops =
       }
     : undefined;
 
+// D-808: o webhook `/push/tiktok-shop` liga com `app_key` e `app_secret` em
+// modo observação até os handlers de sincronização do worker entrarem com suas
+// tabelas versionadas (sem enfileirar tipos desconhecidos no Cloud Tasks).
+const tiktokPush =
+  env.TIKTOK_SHOP_APP_KEY !== undefined && env.TIKTOK_SHOP_APP_SECRET !== undefined
+    ? {
+        db,
+        logger,
+        appKey: env.TIKTOK_SHOP_APP_KEY,
+        appSecret: env.TIKTOK_SHOP_APP_SECRET,
+      }
+    : undefined;
+
 const nfeImportDeps =
   env.DOCUMENTS_BUCKET !== undefined
     ? { db, enqueuer, logger, store: createFileStore(env.DOCUMENTS_BUCKET) }
@@ -112,6 +125,7 @@ const app = createApp({
   ...(shopeeShops !== undefined ? { shopeeShops } : {}),
   ...(shopeePush !== undefined ? { shopeePush } : {}),
   ...(tiktokShops !== undefined ? { tiktokShops } : {}),
+  ...(tiktokPush !== undefined ? { tiktokPush } : {}),
   // D-426: o gatilho horário dos pedidos, só com a Shopee configurada.
   ...(shopeeShops !== undefined
     ? { shopeeOrdersSchedule: { db, enqueuer, logger, environment: env.SHOPEE_ENVIRONMENT } }

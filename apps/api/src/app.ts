@@ -66,6 +66,8 @@ import type { ShopeePushDeps } from "./shopee-push.js";
 import { receiveShopeePush } from "./shopee-push.js";
 import type { ShopeeShopsDeps } from "./shopee-shops.js";
 import { completeShopeeConnect, startShopeeConnect } from "./shopee-shops.js";
+import type { TikTokPushDeps } from "./tiktok-push.js";
+import { receiveTikTokPush } from "./tiktok-push.js";
 import type { TikTokShopsDeps } from "./tiktok-shops.js";
 import { completeTikTokConnect, startTikTokConnect } from "./tiktok-shops.js";
 import type { ShopeeOrdersScheduleDeps } from "./shopee-orders-schedule.js";
@@ -124,6 +126,8 @@ export interface AppDependencies {
   tiktokShops?: TikTokShopsDeps;
   /** D-453: o push da Shopee (webhook), autenticado pela assinatura do corpo. */
   shopeePush?: ShopeePushDeps;
+  /** D-808: o webhook do TikTok Shop, autenticado por HMAC-SHA256(app_key + corpo bruto). */
+  tiktokPush?: TikTokPushDeps;
   /** D-426: o gatilho horário dos pedidos da Shopee; `undefined` sem a Shopee configurada. */
   shopeeOrdersSchedule?: ShopeeOrdersScheduleDeps;
   copilot?: CopilotDeps;
@@ -433,6 +437,32 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       rawBody: await context.req.text(),
       authorization: context.req.header("authorization"),
     });
+
+    return context.body(null, outcome.status === "unavailable" ? 503 : 200);
+  });
+
+  // --------------------------------------------------------------------
+  // Webhook do TikTok Shop (D-808, docs/TIKTOK_SHOP.md §10). Público: a
+  // autenticação é o HMAC-SHA256 de `app_key + corpo bruto` no cabeçalho
+  // `Authorization` (sem Bearer), conferido em tempo constante antes do parse.
+  // Assinatura inválida responde 401; falha transitória de banco/fila responde
+  // 503 para retentativa; demais casos respondem 200 com corpo vazio em <= 3 s.
+  // --------------------------------------------------------------------
+  app.post("/push/tiktok-shop", async (context) => {
+    const tiktokPush = dependencies.tiktokPush;
+
+    if (tiktokPush === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await receiveTikTokPush(tiktokPush, {
+      rawBody: await context.req.text(),
+      authorization: context.req.header("authorization"),
+    });
+
+    if (outcome.status === "invalid_signature") {
+      return context.json({ error: { code: "unauthorized" } }, 401);
+    }
 
     return context.body(null, outcome.status === "unavailable" ? 503 : 200);
   });

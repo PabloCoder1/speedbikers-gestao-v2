@@ -4,9 +4,7 @@ Terceiro canal da V3, **só leitura** como a Shopee (D-601). Este documento
 guarda o contrato **conferido** na documentação oficial e o estado da
 integração. Narrativa e porquê moram em `docs/DECISIONS.md` (D-601 em diante).
 
-**Estado (22/10/2026): a fatia 1, a conexão da loja, está em código (D-645)** e
-ainda não está ligada em produção. As rotas, as tabelas e o cliente estão
-descritos na §15. O contrato abaixo foi lido na documentação oficial antes do código.
+**Estado (24/11/2026):** a fatia 1 (conexão da loja, D-645), a camada transacional de leitura e renovação coordenada do cliente `@sb/tiktok-shop` (D-807: pedidos §6 sem PII + agregação de `line_items`, financeiro §7, catálogo/estoque §8, devoluções/cancelamentos §9, assinatura/parsers de webhook §10 e refresh com trava) e o receptor `POST /push/tiktok-shop` na API (D-808, em modo observação até os handlers do worker entrarem com suas tabelas) estão em código e ainda não estão ligados em produção. As rotas, as tabelas e o cliente estão descritos na §15. O contrato abaixo foi lido na documentação oficial antes do código.
 
 **Como a documentação foi lida.** O Partner Center é renderizado por
 JavaScript; o conteúdo de cada página `https://partner.tiktokshop.com/docv2/page/<slug>`
@@ -25,7 +23,7 @@ O que a documentação **não** confirma está na §14, e não se implementa por
 | | |
 |---|---|
 | Partner Center | `https://partner.tiktokshop.com`: o global, que serve o Brasil. `partner.us.tiktokshop.com` é só dos EUA (DA DOC, P`developer-onboarding`) |
-| Criado | Pelo dono em 16/10/2026, com os endereços reservados: Redirect URL `https://api-p6gzq3hzca-rj.a.run.app/oauth/tiktok-shop/callback`, Webhook URL `https://api-p6gzq3hzca-rj.a.run.app/push/tiktok-shop` e o IP de saída `34.95.145.35` (D-457). A rota da Redirect URL existe desde a D-645; a do webhook, ainda não |
+| Criado | Pelo dono em 16/10/2026, com os endereços reservados: Redirect URL `https://api-p6gzq3hzca-rj.a.run.app/oauth/tiktok-shop/callback`, Webhook URL `https://api-p6gzq3hzca-rj.a.run.app/push/tiktok-shop` e o IP de saída `34.95.145.35` (D-457). A rota da Redirect URL existe desde a D-645 e a do webhook desde a D-808 |
 | `service_id` | `7697150457891358480` (passado pelo dono em 22/10). Não é segredo: vai no link de autorização |
 | Segredos | App Key e App Secret ficam só no Secret Manager, criados pelo dono. Nunca em chat, print, `.env` versionado ou Git |
 
@@ -295,6 +293,10 @@ Fonte: P`seller-center-development-shops`.
   3. a api publicada com `TIKTOK_SHOP_SERVICE_ID`;
   4. o ADMIN conecta pela `/contas` (tela do A2, C-86).
 - **O que a primeira conexão real confere:** o `user_type`, o `seller_type` e a região da loja, e os escopos concedidos. A falta de escopo só aparece na fatia 2, como o erro `105005`.
+
+**Camada transacional e webhook em código (D-807 e D-808, 24/11):**
+- **`@sb/tiktok-shop` (D-807):** classificação de erros oficiais (§5) e `Retry-After` (§11), coordenador de refresh com trava atômica (`refreshTikTokTokenWithLock`) e `isDefinitiveRefreshRefusal`, webhooks §10 (`signWebhook`/`verifyWebhookSignature`/`tiktokWebhookSchema`/`parseTikTokWebhookData`), pedidos §6 (`searchOrdersPage`, `getOrderDetail`, `aggregateTikTokLineItems`, sem PII de comprador), financeiro §7 (`getStatementsPage`, `getOrderStatementTransactions`, `getUnsettledOrdersPage`), catálogo/estoque §8 (`searchProductsPage`, `getProductDetail`, `searchInventory`) e devoluções/cancelamentos §9 (`searchReturnsPage`, `searchCancellationsPage`, `normalizeTikTokCancelStatus`).
+- **API `POST /push/tiktok-shop` (D-808):** valida assinatura HMAC-SHA256 (`app_key + rawBody`) em tempo constante antes do parse (`401` em assinatura inválida, `503` sem configuração ou em erro transitório de banco/fila, `200` vazio em até 3 s); liga em modo observação com `TIKTOK_SHOP_APP_KEY` + `TIKTOK_SHOP_APP_SECRET` até as migrations das tabelas de pedidos/devoluções e os handlers do worker entrarem.
 
 **Fatias propostas,** no desenho da Shopee (D-425), cada uma conferida antes de codificar:
 - **1. Conexão:** `@sb/tiktok-shop` (assinatura e cliente, com o exemplo oficial em teste); tabelas próprias de loja, credencial cifrada e `state`; `POST /v1/tiktok-shop/connect` e `GET /oauth/tiktok-shop/callback`; `/contas`; o interruptor por variável, com 503 sem ela.
