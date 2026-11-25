@@ -2,7 +2,8 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
- * O Full da faixa de /estoque (`get_stock_summary`) contra o Postgres de verdade (D-870).
+ * O Full da faixa de /estoque (`get_stock_summary`, D-870) e do dashboard do SKU
+ * (`get_sku_dashboard`, D-871) contra o Postgres de verdade.
  *
  * Sem captura do Full na janela de 3 dias, o banco não sabe quanto há no Full:
  * a faixa recebe nulo, não zero. Com captura, o recorte que não tem SKU nela
@@ -19,6 +20,7 @@ const CONTA = "aaaa8700-0000-4000-8000-00000000aaaa";
 
 let client: Client;
 let skuNoFull = "";
+let skuForaDoFull = "";
 
 interface Resumo {
   full_quantity: string | null;
@@ -38,6 +40,28 @@ async function resumo(search: string | null = null): Promise<Resumo> {
     if (row === undefined) throw new Error("get_stock_summary sem linha");
 
     return row;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  }
+}
+
+async function fullDoSku(skuId: string): Promise<string | null> {
+  await client.query("begin");
+
+  try {
+    await client.query("set local role authenticated");
+    await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: ADMIN })]);
+    const result = await client.query<{ full_quantity: string | null }>(
+      "select full_quantity from public.get_sku_dashboard($1, $2, current_date - 30, current_date)",
+      [ORG, skuId],
+    );
+    await client.query("rollback");
+
+    const row = result.rows[0];
+    if (row === undefined) throw new Error("get_sku_dashboard sem linha");
+
+    return row.full_quantity;
   } catch (error) {
     await client.query("rollback");
     throw error;
@@ -83,6 +107,7 @@ beforeAll(async () => {
   );
 
   skuNoFull = skus.rows.find((r) => r.sku_key === "D870-NOFULL")?.id ?? "";
+  skuForaDoFull = skus.rows.find((r) => r.sku_key === "D870-FORA")?.id ?? "";
 });
 
 afterAll(async () => {
@@ -92,18 +117,22 @@ afterAll(async () => {
   await client.end();
 });
 
-describe("Full da faixa de /estoque (D-870)", () => {
+describe("Full desconhecido sem captura: /estoque (D-870) e dashboard do SKU (D-871)", () => {
   it("sem captura nenhuma, o Full é desconhecido (nulo), não zero", async () => {
     const r = await resumo();
 
     expect(Number(r.skus_no_recorte)).toBe(2);
     expect(r.full_quantity).toBeNull();
+    // O dashboard do SKU segue a mesma regra (D-871).
+    expect(await fullDoSku(skuNoFull)).toBeNull();
+    expect(await fullDoSku(skuForaDoFull)).toBeNull();
   });
 
   it("captura fora da janela de 3 dias continua desconhecida", async () => {
     await capturar(skuNoFull, 9, "5 days");
 
     expect((await resumo()).full_quantity).toBeNull();
+    expect(await fullDoSku(skuNoFull)).toBeNull();
   });
 
   it("com captura na janela, soma a última por bucket, e o recorte fora do Full é zero de verdade", async () => {
@@ -117,5 +146,11 @@ describe("Full da faixa de /estoque (D-870)", () => {
     expect(Number(fora.skus_no_recorte)).toBe(1);
     expect(fora.full_quantity).not.toBeNull();
     expect(Number(fora.full_quantity)).toBe(0);
+
+    // No dashboard do SKU: o do Full soma a última captura; o de fora é 0 medido.
+    expect(Number(await fullDoSku(skuNoFull))).toBe(7);
+    const skuFora = await fullDoSku(skuForaDoFull);
+    expect(skuFora).not.toBeNull();
+    expect(Number(skuFora)).toBe(0);
   });
 });

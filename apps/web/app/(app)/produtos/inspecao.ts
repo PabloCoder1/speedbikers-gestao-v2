@@ -194,6 +194,9 @@ export async function inspecionarSku(
   const policy = resolveReplenishmentPolicy(settings, { id: skuId, supplierBrand });
 
   const movement = movementResult.data;
+  // O tipo gerado diz `number`, mas o Full vem nulo sem captura do Full na
+  // janela de 3 dias (D-871): a gaveta mostra "—".
+  const fullDoDashboard = (dashboard?.full_quantity as number | null | undefined) ?? null;
 
   return {
     /*
@@ -206,7 +209,8 @@ export async function inspecionarSku(
         ? null
         : {
             local: dashboard.local_quantity,
-            full: dashboard.full_quantity,
+            // A mesma conta de /reposicao, que soma o Full ausente como 0 (D-314, D-871).
+            full: fullDoDashboard ?? 0,
             transito: dashboard.transito_quantity,
             reservado: dashboard.reservado_quantity,
             stockIsVirtual: coverage.stock_is_virtual,
@@ -226,7 +230,7 @@ export async function inspecionarSku(
     localQuantity: dashboard?.local_quantity ?? null,
     reservedQuantity: dashboard?.reservado_quantity ?? null,
     transitQuantity: dashboard?.transito_quantity ?? null,
-    fullQuantity: dashboard?.full_quantity ?? null,
+    fullQuantity: fullDoDashboard,
     targetCoverageDays: policy?.targetCoverageDays ?? null,
     policyScope: policy?.scope ?? null,
     lastMovement:

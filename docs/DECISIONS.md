@@ -20248,3 +20248,25 @@ Os dois primeiros casos falham com a função antiga (`expected '0' to be null`)
 - A função tem o corpo novo, e `authenticated` e `service_role` executam.
 - A organização tem captura do Full de hoje: o Full continua conhecido, também chamado como membro autenticado.
 - O `exists` acrescentado custa 0,2 ms e 5 páginas. A chamada inteira, como membro, leu 52 mil páginas em cache e levou 1,9 s. Esse custo é das outras partes da função, que já existiam; medir e reduzir fica para uma fatia de performance.
+
+## D-871 - O Full do dashboard do SKU é desconhecido, e não zero, sem captura recente
+
+**Contexto:** a D-870 corrigiu a faixa de `/estoque`, e a varredura das funções que leem `fulfillment_stock_snapshots` achou o mesmo `coalesce(sum(...), 0)` em `get_sku_dashboard`. Essa função alimenta o detalhe do SKU (as caixas de estoque, "no Full" do cartão Estoque local e do Estoque anunciado) e a gaveta Inspeção Rápida de `/produtos`. Sem captura do Full em 3 dias, as três diziam "0 no Full".
+
+**Decisão:**
+- **A mesma regra da D-870.** `full_quantity` vem nulo quando a organização não tem nenhuma captura do Full na janela canônica. Com captura, o SKU fora dela continua 0.
+- **As telas mostram "—".** `formatCount(null)` já imprime o travessão, e o tipo passa a ser `number | null` onde o dashboard é lido. O gerador ainda diz `number` para coluna de `returns table`.
+- **A cobertura e o diagnóstico continuam contando o Full ausente como 0.** `/reposicao` (`get_purchase_suggestions`) faz assim e expõe o frescor ("Full capturado em —"). A D-314 exige que o cartão Cobertura e `/reposicao` façam a mesma conta. Tornar a cobertura desconhecida sem Full mudaria as duas telas juntas e é decisão do dono, não desta fatia.
+- **Mesma assinatura e mesmo retorno** (`create or replace`). A ordem entre a migration e a web não importa.
+- A guarda da D-204 continua satisfeita: a definição do Full segue com o bucket `inventory_id` e a janela de 3 dias. O `exists` só pergunta se houve captura.
+
+**Alternativas rejeitadas:**
+- Cobertura nula quando o Full é desconhecido: quebraria a igualdade com `/reposicao` (D-314) sem decisão do dono.
+- Editar a gaveta `inspecao-rapida.tsx`: o candidato #378 mexe nesse arquivo. A gaveta já recebe `fullQuantity` como `number | null` e mostra "— un".
+
+**Verificação:** `estoque-resumo.integration.test.ts` passou a cobrir `get_sku_dashboard` nos mesmos cenários:
+- nulo sem captura e com captura só fora da janela;
+- 7 com captura de 1 h;
+- 0 para o SKU fora do Full.
+
+Os casos de ausência falham com a função antiga (`expected '0' to be null`). A suíte do `@sb/db` num banco recriado teve as mesmas 10 falhas de OAuth e estorno da D-870, e a guarda da D-204 passou.

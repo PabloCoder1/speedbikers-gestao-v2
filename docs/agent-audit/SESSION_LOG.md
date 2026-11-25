@@ -639,3 +639,20 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
   1. A mesma correção em `get_sku_dashboard`.
   2. Medir e reduzir o custo de `get_stock_summary`.
   3. Em 26/11, conferir os negativos do UpSeller e um dia inteiro de `sync.listing.item`.
+
+### 25/11/2026 · Claude Sentinel: Full desconhecido no dashboard do SKU (D-871)
+
+- **Base.** `main` em `3ee30291`. Branch `claude/sku-full-ausente`.
+- **Entrega.** A migration `20261125130000_full_ausente_no_dashboard_do_sku.sql` aplica a regra da D-870 em `get_sku_dashboard`.
+  - O detalhe do SKU e a inspeção de `/produtos` mostram "—" no Full sem captura em 3 dias.
+  - A cobertura e o diagnóstico continuam com o Full ausente como 0, a mesma conta de `/reposicao` (D-314).
+  - `inspecao-rapida.tsx` ficou intocada, porque o candidato #378 mexe nela.
+- **Testes.**
+  - Integration estendido: falha na função antiga e passa na nova.
+  - Suíte do `@sb/db`: as mesmas 10 falhas de baseline, e a guarda da D-204 passou.
+  - Passaram `check`, as 7 guardas, `build` e `docs:check`. As telas não foram abertas no navegador.
+- **Pendente do dono.** Decidir se a cobertura deve ficar desconhecida quando o Full é desconhecido, nas duas telas juntas (SKU e `/reposicao`).
+- **Próxima etapa.**
+  1. Publicar a D-871 (merge e migration pela VM), com autorização.
+  2. Medir e reduzir o custo de `get_stock_summary`: 1,9 s como membro.
+  3. Em 26/11, conferir os negativos do UpSeller e um dia inteiro de `sync.listing.item`.
