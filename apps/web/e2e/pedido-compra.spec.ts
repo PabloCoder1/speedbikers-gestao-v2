@@ -414,18 +414,39 @@ test("custo do pedido: resposta perdida avisa, relê a lista e não deixa o form
   await expect(incluir).toBeEnabled();
   expect(derrubada()).toBe(true);
 
-  // O custo foi gravado uma vez, e a releitura o mostra na tela: é o que a
-  // pessoa precisa ver para NÃO lançar de novo (lançar custo não é idempotente).
-  const { data, error } = await banco().from("purchase_order_costs").select("amount").eq("purchase_order_id", id);
+  // O custo foi gravado uma vez, e a releitura o mostra na tela.
+  const valores = async (): Promise<number[]> => {
+    const { data, error } = await banco().from("purchase_order_costs").select("amount").eq("purchase_order_id", id);
 
-  expect(error).toBeNull();
-  expect(data?.map((linha) => linha.amount)).toEqual([150]);
+    if (error !== null) throw new Error(error.message);
+
+    return data.map((linha) => linha.amount);
+  };
+
+  expect(await valores()).toEqual([150]);
   await expect(page.getByRole("cell", { name: "R$ 150,00" })).toBeVisible();
 
   // Com o primeiro custo, a releitura troca o `<details>` pelo painel e monta
   // outro formulário: o aviso tem de continuar na tela (a CI do #394 pegou a
   // releitura apagando o aviso antes da conferência).
   await expect(page.getByText("Não foi possível confirmar o lançamento do custo.")).toBeVisible();
+
+  // Quem não viu a lista e repete com os MESMOS dados no formulário novo manda
+  // a mesma requisição (D-869): o banco devolve o custo já lançado.
+  const valor = page.getByLabel("Valor", { exact: true });
+
+  await valor.fill("150");
+  await incluir.click();
+  // Confirmada, a inclusão limpa o formulário.
+  await expect(valor).toHaveValue("");
+  await expect(page.getByText("Não foi possível confirmar o lançamento do custo.")).toBeHidden();
+  expect(await valores()).toEqual([150]);
+
+  // Um custo novo de verdade, depois de confirmado o anterior, entra.
+  await valor.fill("150");
+  await incluir.click();
+  await expect(valor).toHaveValue("");
+  await expect.poll(valores).toEqual([150, 150]);
 });
 
 test("previsão do pedido: falha de transporte avisa e libera o botão (D-865)", async ({ page }) => {
