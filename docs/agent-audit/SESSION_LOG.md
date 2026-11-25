@@ -611,3 +611,21 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **UpSeller.** Captura nova aplicada em 25/11 11:32 UTC. Os 25 saldos LOCAL negativos devem sumir na próxima reconciliação diária; isso se confere amanhã.
 - **I04.** Ensaio feito com uma política temporária (disco acima de 20%). O incidente abriu em cerca de 3 minutos, e a política foi apagada logo depois (D-868). Falta o dono confirmar que o e-mail chegou.
 - **Próxima etapa.** Medir `sync.listing.item` num dia inteiro com a `cf6dae2d`. Conferir os negativos depois da reconciliação de 26/11.
+
+### 25/11/2026 · Claude Sentinel: Full desconhecido na faixa de /estoque (D-870)
+
+- **Contexto.** O Supabase hospedado só volta em 01/12, e isso bloqueia o Dev e a ordenação oficial das migrations. A produção roda na VM `sb-db`. Enquanto isso, a rodada segue nas frentes que não dependem dele.
+- **Entrega.** O #400, branch `claude/estoque-full-ausente`, tem a migration `20261125120000_full_ausente_no_resumo_do_estoque.sql` e a tela de `/estoque`.
+  - Sem captura do Full em 3 dias, a faixa mostra "—" com a ressalva em vez de "Full 0".
+  - Assinatura e retorno são os mesmos, e a ordem entre migration e web não importa.
+- **Testes.**
+  - `estoque-resumo.integration.test.ts`: falha na função antiga e passa na nova.
+  - Suíte de integração do `@sb/db`: as mesmas 10 falhas de OAuth e estorno com e sem a migration (baseline medido).
+  - Passaram `check`, as 7 guardas da web, `build` e `docs:check`. A tela não foi aberta no navegador.
+- **Varredura do mesmo padrão.** Das funções que leem `fulfillment_stock_snapshots`, só `get_sku_dashboard` ainda soma o Full com `coalesce(..., 0)`.
+  - Ela atende o detalhe do SKU e a inspeção de `/produtos`.
+  - `get_purchase_analysis` já devolve nulo sem saldo nem captura.
+- **Próxima etapa.**
+  1. A mesma correção em `get_sku_dashboard` e nas duas telas, como fatia própria.
+  2. Publicar a migration da D-870 em produção pela VM, com autorização do dono, depois do merge.
+  3. Em 26/11, conferir os 25 negativos do UpSeller e um dia inteiro de `sync.listing.item`.
