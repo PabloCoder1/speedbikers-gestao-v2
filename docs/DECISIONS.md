@@ -20219,3 +20219,27 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 - a coluna `request_id` existe.
 
 A tela que manda a requisição é o #397.
+
+## D-870 - O Full da faixa de /estoque é desconhecido, e não zero, sem captura recente
+
+**Contexto:** `get_stock_summary` somava o Full com `coalesce(sum(...), 0)`, na janela canônica de 3 dias (D-173/D-192). Se a captura do Full parasse por mais de 3 dias, a faixa de `/estoque` mostrava "Full 0". Isso afirma que não há nada no Full, quando o sistema não sabe. A tela já tratava a falha da leitura (pente fino de 18/09) e o "Em trânsito" (D-067), mas não esse caso. Ausência de dado não vira zero.
+
+**Decisão:**
+- **`full_quantity` vem nulo quando a organização não tem nenhuma captura na janela.** A célula mostra "—" com a ressalva "nenhuma captura do Full nos últimos 3 dias".
+- **Com captura, a soma vazia de um recorte continua zero.** Um SKU que não aparece na captura está fora do Full, e aí o 0 é medida. Exemplo: a busca por um SKU que só vende do estoque local.
+- **A ressalva não aparece quando a leitura falha.** A tela já avisa a falha, e "sem captura" seria outra causa.
+- **Mesma assinatura e mesmo retorno** (`create or replace`): os grants ficam, e a tela anterior (`?? 0`) continua funcionando. A ordem de publicação entre a migration e a web não importa.
+  - O `exists` da organização usa `fulfillment_stock_snapshots_org_captured_idx` (D-465).
+  - O tipo gerado continua dizendo `number`, porque o gerador não marca coluna de `returns table` como anulável. A tela trata o valor como `number | null`.
+
+**Alternativas rejeitadas:**
+- Nulo sempre que a soma do recorte é vazia: trocaria o 0 real de um recorte sem SKU no Full por "—".
+- Resolver só na tela: com o `coalesce`, a tela recebe 0 e não tem como distinguir.
+
+**Verificação:** `estoque-resumo.integration.test.ts`, com organização própria:
+- sem captura, o Full é nulo;
+- com captura só de 5 dias atrás, continua nulo;
+- com captura de 1 h, soma a última por bucket (7);
+- o recorte sem SKU no Full dá 0.
+
+Os dois primeiros casos falham com a função antiga (`expected '0' to be null`). A suíte de integração do `@sb/db` num banco recriado teve as mesmas 10 falhas de antes, em OAuth e estorno, também sem a migration.
