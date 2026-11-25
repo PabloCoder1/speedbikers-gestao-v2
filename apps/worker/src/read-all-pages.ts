@@ -99,3 +99,75 @@ export async function readAllPages<T>(
 
   return todas;
 }
+
+/**
+ * Lê todas as páginas de uma consulta PostgREST pela chave (keyset), e não
+ * pelo deslocamento.
+ *
+ * Cada página pede as linhas com chave MAIOR que a última vista. Com `range`,
+ * o PostgREST manda `OFFSET`, e o Postgres percorre e descarta tudo o que vem
+ * antes da página: a última página de uma varredura longa custa dezenas de
+ * vezes a primeira, e a varredura inteira cresce com o quadrado do conjunto
+ * (D-876). Pela chave, toda página custa o mesmo que a primeira.
+ *
+ * `readPage(depois, limite)` monta a MESMA consulta com `.gt(coluna, depois)`
+ * quando `depois` não é nulo, `.order(coluna)` crescente e `.limit(limite)`.
+ * A coluna precisa ser única (a PK), e `chave(linha)` devolve o valor dela.
+ *
+ * ```ts
+ * const linhas = await readAllPagesByKey(
+ *   (depois, limite) => {
+ *     const q = db.from("stock_movements").select("id, sku_id").eq("organization_id", org);
+ *
+ *     return (depois === null ? q : q.gt("id", depois)).order("id").limit(limite);
+ *   },
+ *   (linha) => linha.id,
+ * );
+ * ```
+ */
+export async function readAllPagesByKey<T, K extends string | number>(
+  readPage: (depois: K | null, limite: number) => PromiseLike<PageResponse<T>>,
+  chave: (linha: T) => K,
+  options: ReadAllPagesOptions = {},
+): Promise<T[]> {
+  const pageSize = Math.min(options.pageSize ?? POSTGREST_MAX_ROWS, POSTGREST_MAX_ROWS);
+
+  if (pageSize < 1) {
+    throw new Error("readAllPagesByKey: pageSize precisa ser pelo menos 1");
+  }
+
+  const todas: T[] = [];
+  let depois: K | null = null;
+
+  for (;;) {
+    const page = await readPage(depois, pageSize);
+
+    if (page.error !== null) {
+      throw new Error(
+        options.label === undefined ? page.error.message : `${options.label}: ${page.error.message}`,
+      );
+    }
+
+    const lote = page.data ?? [];
+
+    todas.push(...lote);
+
+    // Mesma regra de `readAllPages`: página incompleta é o fim; página cheia
+    // pede mais uma, que pode voltar vazia.
+    if (lote.length < pageSize) {
+      break;
+    }
+
+    const ultima = chave(lote[lote.length - 1] as T);
+
+    // Uma consulta sem o `gt` (ou ordenada por outra coluna) devolveria a
+    // mesma página para sempre. Parar alto é melhor que um laço infinito.
+    if (ultima === depois) {
+      throw new Error("readAllPagesByKey: a chave não avançou; a consulta precisa filtrar e ordenar pela chave");
+    }
+
+    depois = ultima;
+  }
+
+  return todas;
+}

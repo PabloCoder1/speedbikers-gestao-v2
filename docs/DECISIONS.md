@@ -20360,3 +20360,28 @@ No plano genérico da curva, a CTE `full_by_sku`, usada uma vez, é incorporada 
 - **Fica de fora:** a disputa entre o teste e o `docker run` continua possível com outro processo que escute nessas portas, mas fora da faixa temporária o sistema não as entrega sozinho.
 
 **Verificação:** `node --test scripts/isolate-supabase.test.mjs` passou, e com o código antigo a nova asserção falharia. Rodado no `config.toml` real, o script escolheu o bloco 61000.
+
+## D-876 - A varredura de logística lê o ledger pela chave, e não por OFFSET
+
+**Contexto:** a leitura do `pg_stat_statements` na VM (acumulado desde 18/11) mostrou que a consulta que mais soma tempo no banco é a do `sync.order-logistics`.
+- A cada rodada, por conta, o handler lê o ledger inteiro da organização (vendas, reversões, devoluções e estornos) com `readAllPages`, que pagina por `range`, ou seja, por `OFFSET`.
+- Com `OFFSET`, o Postgres percorre e descarta tudo o que vem antes da página. Em produção, só leitura: a primeira página custou 9 ms e a última 253 ms, lendo ~135 mil buffers.
+- A média por página ficou em 295 ms, e a rodada dura ~37 s. O custo cresce com o quadrado do ledger.
+
+**Decisão:**
+- **`readAllPagesByKey`** em `apps/worker/src/read-all-pages.ts`. Cada página pede as linhas com `id` maior que o da última, ordenadas por `id` e com `limit`. Toda página custa o mesmo que a primeira, pela chave primária.
+- Se a chave não avançar (consulta sem o `gt` ou ordenada por outra coluna), ele para com erro, em vez de repetir a página.
+- **`lerLedger`** passa a usá-lo. As linhas e a ordem são as mesmas: o `id` é a PK, e a ordem já era por ela.
+- **Fica de fora:** o ledger inteiro continua indo para a memória do worker. O próprio `read-all-pages.ts` diz que conjunto grande pertence a uma RPC. Essa troca pede migration e deploy juntos e é a fatia seguinte, se a rodada continuar longa.
+
+**Achado para a próxima fatia:** o `ml-fulfillment-fetch` lê todo o histórico de `fulfillment_stock_snapshots` dos inventários da conta para ficar com a captura mais recente de cada um.
+- Média de 255 ms por página.
+- A paginação ordena por `captured_at`, que não é único entre inventários, contra a regra da D-131. Na fronteira de uma página, a captura mais recente de um inventário pode ser pulada, e a "anterior" usada na comparação sai mais velha.
+- A correção é uma leitura da última captura por inventário no SQL (`distinct on`, pelo índice `fulfillment_stock_snapshots_timeline_idx`).
+
+**Verificação:**
+- Testes novos do helper: o conjunto inteiro em três páginas; as mesmas linhas e a mesma ordem que a leitura por `range`; a página extra no múltiplo exato; o erro quando a chave não avança; o rótulo no erro.
+- O banco falso do teste do handler passou a aplicar `gt`, `order` e `limit`, e lança se a leitura voltar a usar `range`.
+- `tsc`, `eslint` e os 1.037 testes do worker passaram.
+
+**Publicação:** pede deploy do `worker` em produção, com autorização do dono. Não há migration.

@@ -758,3 +758,14 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Correção:** o `isolate-supabase` passa a começar em 61000, e o teste confere o limite.
 - **Testes:** `node --test scripts/isolate-supabase.test.mjs`.
 - **Próxima etapa:** varredura das consultas mais caras na VM, só com leitura.
+
+### 25/11/2026 · Claude Sentinel: consultas mais caras e ledger pela chave (D-876)
+
+- **Leitura:** `pg_stat_statements` na VM, só leitura. A soma maior é a do worker em `sync.order-logistics`, que lê o ledger inteiro por `OFFSET` (última página ~28 vezes a primeira).
+- **D-876:** `readAllPagesByKey` no worker, usado pelo `lerLedger`. As linhas e a ordem são as mesmas.
+- **Achado:** o `ml-fulfillment-fetch` lê todo o histórico de snapshots por `OFFSET`, ordenado por coluna não única (D-131). É a próxima fatia.
+- **Testes:** `tsc`, `eslint` e os 1.037 testes do worker.
+- **Próxima etapa:**
+  - deploy do `worker`, com autorização do dono;
+  - a última captura do Full no SQL;
+  - medir como membro as RPCs de 4 a 5 s.
