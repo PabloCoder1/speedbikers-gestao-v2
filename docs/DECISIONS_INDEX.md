@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **763** (D-001 a D-885).
+Decisões registradas: **764** (D-001 a D-885).
 
 ## Por domínio
 
-### atendimento (72)
+### atendimento (73)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -90,6 +90,7 @@ Decisões registradas: **763** (D-001 a D-885).
 - **D-788** — Invariantes de tempo e finitude em `@sb/domain` (`remote-transition`, `support-events`, `sales-anomaly`, `calculadora-preco`)
 - **D-805** — Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
 - **D-808** — API: receptor autenticado `POST /push/tiktok-shop` (`M04`, fatia 3)
+- **D-836** — GCP `I06`/`S05`/`L04`: política de retenção de artefatos e auditoria real de nuvem
 
 ### banco/rls (54)
 
