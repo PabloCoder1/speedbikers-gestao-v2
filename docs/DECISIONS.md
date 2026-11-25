@@ -20270,3 +20270,21 @@ Os dois primeiros casos falham com a função antiga (`expected '0' to be null`)
 - 0 para o SKU fora do Full.
 
 Os casos de ausência falham com a função antiga (`expected '0' to be null`). A suíte do `@sb/db` num banco recriado teve as mesmas 10 falhas de OAuth e estorno da D-870, e a guarda da D-204 passou.
+
+## D-872 - A faixa de /estoque não junta os saldos ao escopo de novo no plano genérico
+
+**Contexto:** na publicação da D-870, `get_stock_summary` levou 1,9 s como membro autenticado. O mesmo SQL escrito por extenso levou 154 ms. A função é `language sql` com `set search_path = ''`, então o Postgres não a expande na consulta que a chama, e ela roda com o plano genérico dos parâmetros. Os filtros opcionais (`p_x is null or ...`) deixam a estimativa de linhas errada. O plano escolhe um laço aninhado entre `saldos` e `escopo` em `local_confirmado`, que descarta ~9,6 milhões de linhas por chamada.
+
+**Decisão:**
+- **`saldos` leva `purchase_cost`, `stock_is_virtual` e `stock_is_virtual_set_at`**, que já vinham do `join escopo`. `local_confirmado` lê só `saldos`, sem juntar de novo.
+- **O Full se restringe por `sku_id in (select id from escopo)`**, em vez de `join escopo`. É a mesma restrição, escrita como semijunção.
+- **Mesma assinatura, mesmo retorno e a mesma regra do Full desconhecido (D-870).** A guarda da D-204 continua satisfeita.
+- O `set search_path = ''` fica: tirá-lo para permitir a expansão abriria a função à resolução de nomes pelo caminho de quem chama.
+
+**Alternativas rejeitadas:**
+- Reescrever em plpgsql com `return query`: os primeiros planos seriam específicos, mas a troca para o genérico depois de cinco execuções devolveria o problema de forma intermitente.
+- Remover `set search_path`: pelo motivo acima.
+
+**Verificação:**
+- Em produção, só leitura, com plano genérico forçado: o corpo antigo levou 3,2 s e o novo 296 ms. Os dois devolveram a mesma linha nos 7 recortes. Os números estão em `PERFORMANCE.md`.
+- Localmente, a suíte de integração do `@sb/db` teve as mesmas 10 falhas de baseline. Os testes da D-249 e da D-870 e a guarda da D-204 passaram.
