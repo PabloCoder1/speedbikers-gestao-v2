@@ -697,3 +697,21 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
   - Decisão do dono: "sem Full" na curva ABC quando não há captura nenhuma (padrão da D-870).
   - Investigar `get_fulfillment_overview`.
   - Em 26/11, conferir UpSeller e `sync.listing.item`.
+
+### 25/11/2026 · D-885, leitura do histórico da Central
+
+- Branch `codex/sentinel-d04-historico`, a partir da main `628ff887` (#406). Migration `20261125160000` e cliente em `/notificacoes`. A migration precede a publicação web.
+- Validação local: `check` 37/37, `build` 10/10, integração SQL 1.243/1.243 e Chromium 8/8. A Data API autenticada manteve a notificação sintética após movê-la para o arquivo, contou uma ocorrência e a excluiu de não lidas. A RPC anônima foi recusada. [Medição](../PERFORMANCE.md#histórico-da-central-com-arquivo-sentinel-d04-25112026)
+- D04 continua em andamento. A rotina de transferência, a janela de retenção e a referência de `sync_runs` precisam de decisões próprias. O #401 fica com Gemini. Claude mantém as frentes da avaliação do Full e de `get_fulfillment_overview`.
+
+### 25/11/2026 · D-886, índice temporal no histórico da Central
+
+- Base `b1542fe7`, PR #407, candidato `237d287d` e main `628ff887`. A migration aditiva `20261125170000` usa o índice temporal na leitura sem filtros até o deslocamento 1.000. A visão de contagens de D-885 continua na consulta existente.
+- Check 37/37, build 10/10 e integração serial 1.243/1.243. A execução paralela registrou um deadlock no teste de cancelamento de compras. O benchmark preservou os resultados em dez recortes. A comparação incluiu cópias duplicadas, filtros seletivos, limite entre os planos e página vazia. [Medição](../PERFORMANCE.md#índice-temporal-para-as-primeiras-páginas-do-histórico-d-886-25112026)
+- S05: a conta dedicada existe. A leitura das políticas do projeto, repositório de imagens, bucket de origem e conta de serviço não encontrou as concessões do ensaio anterior. A adoção aguarda autorização para conceder os acessos mínimos e confirmar o primeiro build pela rotina regular. #401 permanece com Gemini e #406 com Claude.
+
+### 25/11/2026 · D04, ensaio repetível de transferência e restauração
+
+- Base `99a8d64c` no #407, candidato `55a4b14a` no #364 e main `628ff887`. Acrescentei um teste de integração com lote lido, corte sintético e restauração. O ensaio mantém os registros de notificação e evento necessários à restauração.
+- A colisão abortou a tentativa e preservou o vínculo original. As duas operações puderam ser repetidas com zero novas mudanças. Estados de leitura e datas bateram, e a notificação continuou invisível a outra organização. Em duas sessões, a segunda pulou a linha bloqueada e viu uma única ocorrência antes e depois do commit.
+- Check 37/37, build 10/10 e integração serial 1.244/1.244. A CI de `99a8d64c` (#407) terminou verde. A implantação da rotina efetiva depende da política de retenção. M04 continua com Gemini (#401) e S05 aguarda autorização para IAM.
