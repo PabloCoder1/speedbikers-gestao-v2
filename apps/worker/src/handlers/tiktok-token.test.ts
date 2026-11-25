@@ -4,7 +4,7 @@ import { encryptToken } from "@sb/mercado-livre";
 import type { TikTokShopClient } from "@sb/tiktok-shop";
 import { describe, expect, it, vi } from "vitest";
 
-import { ensureTikTokAccessToken, type TikTokTokenDeps } from "./tiktok-token.js";
+import { createWorkerTikTokTokenStore, ensureTikTokAccessToken, type TikTokTokenDeps } from "./tiktok-token.js";
 
 const KEY = randomBytes(32);
 const SHOP_ID = "33333333-0000-4000-8000-000000000003";
@@ -157,5 +157,47 @@ describe("ensureTikTokAccessToken (D-833)", () => {
       retryable: true,
       reason: "falha ao ler a credencial do TikTok Shop: timeout",
     });
+  });
+
+  it("markRejected não marca tiktok_shops como ERROR se reconexão OAuth trocou refresh_token_ciphertext", async () => {
+    const shopUpdateSpy = vi.fn();
+    const db = {
+      from: (table: string) => {
+        if (table === "tiktok_shops") {
+          return {
+            update: () => ({
+              eq: () => {
+                shopUpdateSpy();
+
+                return Promise.resolve({ error: null });
+              },
+            }),
+          };
+        }
+
+        return {
+          update: () => ({
+            eq: () => ({
+              eq: () => ({
+                eq: () => ({
+                  select: () => ({
+                    maybeSingle: () => Promise.resolve({ data: null, error: null }),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        };
+      },
+    } as unknown as TikTokTokenDeps["db"];
+
+    const store = createWorkerTikTokTokenStore({ db, encryptionKey: KEY }, SHOP_ID);
+    const rejected = await store.markRejected(
+      { lockUntilIso: "2026-11-25T12:01:00.000Z", previousRefreshCiphertext: encryptToken("rtk_antigo", KEY) },
+      "refresh expirado",
+    );
+
+    expect(rejected).toEqual({ ok: true, applied: false });
+    expect(shopUpdateSpy).not.toHaveBeenCalled();
   });
 });

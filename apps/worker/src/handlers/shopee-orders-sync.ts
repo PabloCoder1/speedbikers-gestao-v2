@@ -100,16 +100,25 @@ export function createShopeeOrdersSyncHandler(deps: ShopeeOrdersSyncDeps): JobHa
       }
     }
 
+    let enqueueFailureReason: string | null = null;
+
     for (const pedido of seguintes) {
       try {
         await deps.enqueuer.enqueue(pedido);
       } catch (error) {
+        const reason = error instanceof Error ? error.message : "erro desconhecido";
+
+        enqueueFailureReason ??= `falha ao enfileirar continuação (${pedido.jobType}): ${reason}`;
         context.logger.warn("shopee_orders_sync_enqueue_failed", {
           shopee_shop_id: loja.id,
           job_type: pedido.jobType,
-          reason: error instanceof Error ? error.message : "erro desconhecido",
+          reason,
         });
       }
+    }
+
+    if (enqueueFailureReason !== null && outcome.status === "done") {
+      return { status: "failed", retryable: true, reason: enqueueFailureReason };
     }
 
     return outcome;

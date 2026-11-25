@@ -276,16 +276,25 @@ export function createTikTokOrdersSyncHandler(deps: TikTokOrdersSyncDeps): JobHa
       }
     }
 
+    let enqueueFailureReason: string | null = null;
+
     for (const pedido of seguintes) {
       try {
         await deps.enqueuer.enqueue(pedido);
       } catch (error) {
+        const reason = error instanceof Error ? error.message : "erro desconhecido";
+
+        enqueueFailureReason ??= `falha ao enfileirar continuação (${pedido.jobType}): ${reason}`;
         context.logger.warn("tiktok_orders_sync_enqueue_failed", {
           tiktok_shop_id: loja.id,
           job_type: pedido.jobType,
-          reason: error instanceof Error ? error.message : "erro desconhecido",
+          reason,
         });
       }
+    }
+
+    if (enqueueFailureReason !== null && outcome.status === "done") {
+      return { status: "failed", retryable: true, reason: enqueueFailureReason };
     }
 
     return outcome;
@@ -339,11 +348,19 @@ export function createTikTokOrderFetchHandler(deps: TikTokOrderFetchDeps): JobHa
           payload: { tiktokShopId: loja.id, orderId: parsed.data.orderId },
         });
       } catch (error) {
+        const reason = error instanceof Error ? error.message : "erro desconhecido";
+
         context.logger.warn("tiktok_order_fetch_enqueue_financials_failed", {
           tiktok_shop_id: loja.id,
           order_id: parsed.data.orderId,
-          reason: error instanceof Error ? error.message : "erro desconhecido",
+          reason,
         });
+
+        return {
+          status: "failed",
+          retryable: true,
+          reason: `falha ao enfileirar financeiro do pedido TikTok: ${reason}`,
+        };
       }
 
       return { status: "done", processed: projected.length };

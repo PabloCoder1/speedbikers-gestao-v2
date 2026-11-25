@@ -198,6 +198,8 @@ interface Opcoes {
   lancaNoMarco?: boolean;
   /** D-775: soltar a trava no finally LANÇA (rede). */
   lancaAoSoltar?: boolean;
+  /** Revisão D-832: fila indisponível após gravar o marco. */
+  lancaAoEnfileirar?: boolean;
 }
 
 function rodar(loja: Loja | null, shopee: ReturnType<typeof fakeShopee>, opcoes: Opcoes = {}, eventos?: string[]) {
@@ -214,6 +216,10 @@ function rodar(loja: Loja | null, shopee: ReturnType<typeof fakeShopee>, opcoes:
       enqueue: (request) => {
         enfileirados.push(request);
         gravado.eventos.push("enfileira");
+
+        if (opcoes.lancaAoEnfileirar === true) {
+          return Promise.reject(new Error("Cloud Tasks indisponível"));
+        }
 
         return Promise.resolve({ deduplicated: false });
       },
@@ -443,6 +449,21 @@ describe("shopee.orders.sync (D-426)", () => {
 
     expect(outcome).toEqual({ status: "done", processed: 1 });
     expect(enfileirados).toHaveLength(1);
+  });
+
+  it("fila indisponível após gravar o marco devolve falha transitória (retryable=true) sem mascarar perda de continuação", async () => {
+    const { outcome, gravado, enfileirados } = await rodar(LOJA, fakeShopee({ paginas: [["A1"]] }), {
+      lancaAoEnfileirar: true,
+    });
+
+    expect(outcome).toEqual({
+      status: "failed",
+      retryable: true,
+      reason: "falha ao enfileirar continuação (shopee.orders.sync): Cloud Tasks indisponível",
+    });
+    expect(gravado.marco).not.toBeNull();
+    expect(enfileirados).toHaveLength(1);
+    expect(gravado.eventos).toEqual(["trava", "solta", "enfileira"]);
   });
 
   it("loja em erro, de outro ambiente ou inexistente: pula, sem chamar a Shopee", async () => {

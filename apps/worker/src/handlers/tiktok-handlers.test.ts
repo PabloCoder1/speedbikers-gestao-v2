@@ -233,7 +233,7 @@ describe("TikTok Shop worker handlers (D-834)", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it("tiktok.order.fetch persiste pedido pontual e tolera falha ao enfileirar financeiro", async () => {
+  it("tiktok.order.fetch persiste pedido pontual e sinaliza retryable=true se enfileirar financeiro falhar", async () => {
     const db = makeDb(ORG_A);
     const repo = makeRepository();
     const enqueue = vi.fn(() => Promise.reject(new Error("tasks unavailable")));
@@ -265,7 +265,11 @@ describe("TikTok Shop worker handlers (D-834)", () => {
       logger: silentLogger(),
     });
 
-    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(outcome).toEqual({
+      status: "failed",
+      retryable: true,
+      reason: "falha ao enfileirar financeiro do pedido TikTok: tasks unavailable",
+    });
     expect(repo.upsertOrders).toHaveBeenCalledTimes(1);
     expect(enqueue).toHaveBeenCalledTimes(1);
   });

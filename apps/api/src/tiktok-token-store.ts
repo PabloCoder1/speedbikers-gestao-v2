@@ -161,6 +161,7 @@ export function createSupabaseTikTokTokenStore(
         .update({ refresh_locked_until: null })
         .eq("tiktok_shop_id", deps.tiktokShopId)
         .eq("refresh_locked_until", handle.lockUntilIso)
+        .eq("refresh_token_ciphertext", handle.previousRefreshCiphertext)
         .select("tiktok_shop_id")
         .maybeSingle();
 
