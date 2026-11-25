@@ -1034,3 +1034,10 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - **`I06`/`S05`/`L04` (`D-836`, `8c14670a`):** auditoria somente leitura em `speedbikers-prod` confirmou `speedbikers-v3` com `1.669,34 MB` sem `cleanupPolicies`, `speedbikers-prod_cloudbuild` sem lifecycle, SAs dedicadas em `sb-db`/`api`/`worker` (comprovando que `246130997439-compute@...` com `roles/editor` só é fallback de build sem `v3-builder`), e 3 revisões tagged `worker-m05-*` candidatas à limpeza. Entregues `infra/artifact-retention-policy.json`, `infra/artifact-retention.sh` e `docs/agent-audit/CLOUD_COST_AND_CLEANUP_2026-11-25.md`.
 - **`M04` (`D-835`, `71a7e54d`):** `apps/worker/src/env.ts` com validação fail-closed do par `TIKTOK_SHOP_APP_KEY`/`TIKTOK_SHOP_APP_SECRET` e `apps/worker/src/handlers/tiktok-bootstrap.ts` (`createTikTokWorkerHandlers` para os 5 `TIKTOK_JOB_TYPES`), empilhados no PR `#401` com 0 conflitos contra `#364` (`32bfc540`).
 - **Próxima etapa:** integrar `#401` em `#364`, fazer merge `#364` → `main` (`V02` web), aplicar retenção de artefatos com OK do dono (`I06`/`L04`) e concluir migrations + adaptador Supabase de `M04` no retorno do Dev em 01/12/2026.
+
+
+### 25/11/2026 · Gemini Sentinel (Rodada 17): endurecimento dos 3 callbacks OAuth (`D-837`)
+
+- **API OAuth (`D-837`, `08b2253c`):** corrigido mascaramento de erro transitório de banco (`claimed.error !== null` -> `invalid_state` sem log) em `ml-accounts.ts`, `shopee-shops.ts` e `tiktok-shops.ts`, e protegidas conversões de validade de tokens contra `RangeError` em `shopee-shops.ts` e `tiktok-shops.ts` (`49/49` testes em `@sb/api`).
+- **Auditoria complementar:** conferidos `shopee-push.ts`, `tiktok-push.ts` (íntegros) e PR `#402` do Claude (`D-870` em produção).
+- **Próxima etapa:** integrar PR `#401` (`D-832..D-837`, 0 conflitos contra `#364` `32bfc540`), reconciliar `#364` → `main` (`V02` web) e aguardar autorização para `infra/artifact-retention.sh` (`I06`/`L04`) / remoção de `roles/editor` (`S05`) + retorno do Dev em 01/12/2026 (`M04`/`I05`).

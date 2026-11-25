@@ -21388,3 +21388,13 @@ Auditamos somente leitura os recursos ativos do projeto `speedbikers-prod` em `2
 1. **Retenção de artefatos (`I06`):** o repositório `speedbikers-v3` (Artifact Registry) estava com `1.669,34 MB` acumulados e `cleanupPolicies: null`, e `speedbikers-prod_cloudbuild` sem lifecycle. Criados `infra/artifact-retention-policy.json` (`keepCount: 10` versões mais recentes + delete > 30 dias) e `infra/artifact-retention.sh` (idempotente, com `--dry-run` e `--cloudbuild-lifecycle` de 30 dias sem tocar nos buckets de negócio).
 2. **Revisão IAM `roles/editor` (`S05`):** comprovado que `sb-db`, `api` e `worker` já usam SAs dedicadas (`sb-db-vm`, `v3-api-runtime`, `v3-worker-runtime`); a única conta com `roles/editor` (`246130997439-compute@developer.gserviceaccount.com`) é usada apenas como fallback de builds sem `v3-builder`. Procedimento de remoção e rollback em 1 comando documentados em `docs/agent-audit/CLOUD_COST_AND_CLEANUP_2026-11-25.md`.
 3. **Recursos candidatos (`L04`):** inventariados com dependência e rollback as revisões tagged `worker-m05-*`, imagens antigas em `speedbikers-v3`, tarballs em `speedbikers-prod_cloudbuild` e o projeto legado `imvjfgnaprqsfjlnsyev` (`INACTIVE`).
+
+
+## D-837 - API: separação de erro de banco no claim de `state` e proteção de expiração nos 3 callbacks OAuth
+
+Nos 3 callbacks OAuth da API (`apps/api/src/ml-accounts.ts`, `apps/api/src/shopee-shops.ts` e `apps/api/src/tiktok-shops.ts`, commit `08b2253c`):
+
+1. **Separação de falha transitória de banco no consumo de `state`:** antes, `claimed.error !== null || claimed.data === null` retornava `{ status: "invalid_state" }` silenciosamente (mascarando indisponibilidade de banco como CSRF/expiração sem emitir log). Agora `claimed.error !== null` registra `ml_oauth_state_claim_failed` / `shopee_oauth_state_claim_failed` / `tiktok_oauth_state_claim_failed` e devolve `{ status: "rejected", reason: "não foi possível validar a autorização no momento" }` sem vazar `claimed.error.message`.
+2. **Proteção de expiração de token (`RangeError`):** em `shopee-shops.ts` (`new Date(now.getTime() + token.expire_in * 1000).toISOString()`) e `tiktok-shops.ts` (`tiktokEpochToIso(...)`), valores fora de faixa são capturados devolvendo `{ status: "rejected" }` com log dedicado em vez de derrubar o callback com HTTP 500 não tratado.
+
+TDD RED (`4 failed (4)`) -> GREEN (`49/49` em `oauth-callbacks-hardening.test.ts`, `ml-accounts.test.ts`, `shopee-shops.test.ts` e `tiktok-shops.test.ts`). Auditoria paralela de `shopee-push.ts` e `tiktok-push.ts` confirmou ambos íntegros sem achados novos.

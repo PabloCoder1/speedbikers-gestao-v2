@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **763** (D-001 a D-884).
+Decisões registradas: **764** (D-001 a D-884).
 
 ## Por domínio
 
@@ -299,7 +299,7 @@ Decisões registradas: **763** (D-001 a D-884).
 - **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
 - **D-869** — Lançar custo no pedido de compra é idempotente pela requisição
 
-### mercado-livre (151)
+### mercado-livre (152)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -451,6 +451,7 @@ Decisões registradas: **763** (D-001 a D-884).
 - **D-822** — Web `/contas`: painel Lojas TikTok Shop e conector OAuth (`M04`)
 - **D-825** — Worker `relist-prepare` e `relist-measurement`: isolamento multi-tenant e proteção de eventos de republicação
 - **D-831** — Worker `ml-token.ts` e `shopee-token.ts`: `decryptToken` fail-closed (`retryable: false`) e liberação da trava
+- **D-837** — API: separação de erro de banco no claim de `state` e proteção de expiração nos 3 callbacks OAuth
 - **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
 ### outros (130)

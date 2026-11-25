@@ -130,3 +130,12 @@ D-807 continua reservado pelo Gemini nos doze módulos do checkpoint de origem. 
 - **Estado do `main` e outros agentes:** `origin/main` avançou para `bf6e420e` (merge do `#400` do Claude `D-870`); `#364` do Codex segue em `32bfc540` (`168/226 = 74,34%`).
 - **Próximo ID reservado ao Gemini:** `D-837` (faixa livre `D-837..D-849`).
 - **Próxima etapa exata:** integrar `#401` em `#364`, reconciliar `#364` → `main` (publicando `web` / `V02`), executar `./infra/artifact-retention.sh --project speedbikers-prod --cloudbuild-lifecycle` (com autorização do dono para `I06`/`L04`) e, em 01/12/2026 (retorno do Supabase Dev), aplicar as migrations transacionais de `M04` + adaptador Supabase de `TikTokSyncRepository`.
+
+
+## 10. Rodada 17 (25/11): Endurecimento dos 3 callbacks OAuth (`D-837`)
+
+- **Branch / PR ativo:** `agent/gemini-sentinel-fechamento` (base `#364` `29adf54c`, PR `#401` mirando `codex/sentinel-candidato-integrado`, **0 conflitos** contra `#364` `32bfc540`).
+- **Commit novo empilhado no `#401`:** `08b2253c` (`D-837`) — separa `claimed.error !== null` de `invalid_state` em `ml-accounts.ts`, `shopee-shops.ts` e `tiktok-shops.ts`, e protege cálculo de expiração de tokens contra `RangeError` não tratado (`49/49` testes focados em `@sb/api`).
+- **Auditoria adicional:** revisados `shopee-push.ts` e `tiktok-push.ts` (ambos íntegros, sem novos achados) e lido o PR `#402` do Claude (`D-870` aplicado em produção na `sb-db` e Vercel).
+- **Próximo ID reservado ao Gemini:** `D-838` (faixa livre `D-838..D-849`).
+- **Próxima etapa exata:** integrar `#401` (`D-832..D-837`) em `#364`, reconciliar `#364` → `main` (`V02` web), executar `./infra/artifact-retention.sh --project speedbikers-prod --cloudbuild-lifecycle` com autorização do dono (`I06`/`L04`) e, em 01/12/2026 (retorno do Supabase Dev), aplicar migrations transacionais de `M04` + adaptador Supabase de `TikTokSyncRepository`.
