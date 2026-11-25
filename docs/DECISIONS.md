@@ -20346,3 +20346,17 @@ No plano genérico da curva, a CTE `full_by_sku`, usada uma vez, é incorporada 
 - **Migration:** `20261125183000` foi aplicada na VM com `psql -1` e registrada no histórico.
 - **Conferido depois:** o corpo novo, o comentário e os grants (`authenticated`, `postgres` e `service_role`).
 - **Tempo:** como membro, a chamada de 30 dias levou 282 ms, contra 1,49 a 1,54 s antes; a ordem "local" levou 258 ms, contra 1,61 s.
+
+## D-875 - A stack de testes da CI usa portas acima da faixa temporária do Linux
+
+**Contexto:** em 25/11, o e2e da `main` no merge do #411 falhou antes de rodar qualquer teste, com `failed to bind host port 0.0.0.0:60022/tcp: address already in use`, e passou ao repetir o job. Desde 10/11, a mesma falha na 60022 apareceu em mais um run (45441658929), entre os 17 jobs de e2e e integração que falharam.
+- O `scripts/isolate-supabase.mjs` testa um bloco de portas livre a partir de 60000, libera e só então o `supabase start` sobe os containers.
+- No Ubuntu do runner, a faixa de portas temporárias (`ip_local_port_range`) vai de 32768 a 60999. Uma conexão de saída feita nesse intervalo, como o download das imagens, pode pegar a porta testada.
+- Cada falsa falha na `main` atrasa migrations de produção, que esperam a CI verde.
+
+**Decisão:**
+- **O primeiro bloco passa a ser 61000.** Com o `config.toml` atual, a stack usa de 61020 a 61029. O laço continua procurando o próximo bloco livre até 65000.
+- O teste ocupa a 61022 para forçar outro bloco e confere que nenhuma porta escolhida fica abaixo de 61000.
+- **Fica de fora:** a disputa entre o teste e o `docker run` continua possível com outro processo que escute nessas portas, mas fora da faixa temporária o sistema não as entrega sozinho.
+
+**Verificação:** `node --test scripts/isolate-supabase.test.mjs` passou, e com o código antigo a nova asserção falharia. Rodado no `config.toml` real, o script escolheu o bloco 61000.

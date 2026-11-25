@@ -751,3 +751,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Tempo, como membro:** a Central Full de 30 dias levou 282 ms, contra 1,49 a 1,54 s antes.
 - **Vercel:** publicou o `57eb7961`. A web não muda.
 - **Próxima etapa:** em 26/11, conferir UpSeller e `sync.listing.item`.
+
+### 25/11/2026 · Claude Sentinel: portas da stack de testes (D-875)
+
+- **Causa:** o e2e da `main` falhou hoje com a 60022 ocupada. O bloco de portas da stack de testes caía na faixa temporária do Linux.
+- **Correção:** o `isolate-supabase` passa a começar em 61000, e o teste confere o limite.
+- **Testes:** `node --test scripts/isolate-supabase.test.mjs`.
+- **Próxima etapa:** varredura das consultas mais caras na VM, só com leitura.
