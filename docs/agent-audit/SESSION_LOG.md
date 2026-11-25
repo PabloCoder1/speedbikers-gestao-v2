@@ -603,3 +603,11 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
   - I04: alerta de disco e três verificações de disponibilidade ativos desde 24/11 (D-868). Falta forçar um disparo de ensaio.
   - M05 continua aberto.
 - **Próxima etapa.** Publicar o worker com `d0c2790f`, ou o sucessor, com autorização do dono, e medir de novo `sync.listing.item`. Planilha nova do UpSeller.
+
+### 25/11/2026 · Claude Sentinel: correção dos anúncios do ML no ar e ensaio do I04
+
+- **Anúncios do ML.** O Codex pôs `worker-m05-cf6dae2d` com 100% do tráfego às 11:39 UTC. Essa revisão tira a projeção `attributes=` do `/items/bulk`, e o envelope volta a trazer `id`, `status_code` e `body`. O dono tinha autorizado a publicação, e ela já estava feita, então não houve implantação nova.
+  - Primeiros minutos, lidos pela VM em modo só leitura: `sync.listing.item`, `sync.listings.snapshot` e `sync.webhook.received` fecharam sem nenhuma falha. A tabela `listings` voltou a receber atualizações.
+- **UpSeller.** Captura nova aplicada em 25/11 11:32 UTC. Os 25 saldos LOCAL negativos devem sumir na próxima reconciliação diária; isso se confere amanhã.
+- **I04.** Ensaio feito com uma política temporária (disco acima de 20%). O incidente abriu em cerca de 3 minutos, e a política foi apagada logo depois (D-868). Falta o dono confirmar que o e-mail chegou.
+- **Próxima etapa.** Medir `sync.listing.item` num dia inteiro com a `cf6dae2d`. Conferir os negativos depois da reconciliação de 26/11.
