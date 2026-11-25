@@ -2234,3 +2234,19 @@ Ensaio no Chromium com build de produção e Supabase local isolado. A fixture t
 | RPC e paginação da web após D-715 | 1.002 |
 
 A regressão conferiu o conteúdo inteiro, o vínculo manual, o vínculo pelo SKU do anúncio, as 500 linhas da loja sandbox com o selo Teste e a ausência dos dois itens apagados. A ordem usa nome da loja, nome do item, item, modelo (nulos primeiro) e ID da loja. O trace registrou 1.000, 2 e zero linhas nos offsets 0, 1.000 e 1.002, com HTTP 206 na primeira página (`Content-Range: 0-999/1002`) e 200 nas seguintes. As duas leituras de SKU com só um anúncio terminaram na primeira chamada. A migration `20261117173152` foi aplicada apenas localmente. A leitura completa acrescenta chamadas quando ultrapassa uma página. Latência e frequência com dados reais seguem pendentes.
+
+### Faixa de `/estoque` no plano genérico (Claude Sentinel, D-872, 25/11/2026)
+
+Medido em produção, na VM `sb-db`, em transação só leitura e como membro autenticado da organização, depois de aquecer o cache:
+
+| Forma | Páginas lidas | Tempo |
+|---|---|---|
+| `get_stock_summary` (função, antes) | ~52 mil | 1,7 a 2,1 s (4 chamadas) |
+| O mesmo SQL escrito por extenso (plano específico) | ~4,4 mil | 154 ms |
+| O corpo antigo com plano genérico forçado | ~52 mil | 3,2 s |
+| O corpo da D-872 com plano genérico forçado | ~52 mil | 296 ms |
+
+- **A causa.** A função é `language sql` com `set search_path = ''`, então não é expandida dentro da consulta e roda com o plano genérico dos parâmetros. Nesse plano, a soma do LOCAL confirmado juntava `saldos` a `escopo` num laço aninhado que descartava ~9,6 milhões de linhas.
+- **A correção.** `saldos` passa a levar as colunas do SKU, e o Full se restringe por `sku_id in (select id from escopo)`.
+- **O que fica.** As páginas lidas continuam ~52 mil porque o Full ainda é buscado SKU a SKU (`fulfillment_stock_snapshots_sku_idx`), mas todas estão em cache. O ganho é de CPU.
+- **Equivalência.** Antigo e novo devolveram a mesma linha nos 7 recortes: sem filtro, negativos, marca, categoria, busca, busca vazia e marca com negativos.
