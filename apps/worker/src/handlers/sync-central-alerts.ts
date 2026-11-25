@@ -76,7 +76,7 @@ export function createSyncCentralAlertsHandler(deps: SyncCentralAlertsDeps): Job
 
     const { organizationId } = parsed.data;
 
-    if (envelope.organizationId !== undefined && organizationId !== envelope.organizationId) {
+    if (organizationId !== envelope.organizationId) {
       return { status: "failed", retryable: false, reason: "organizationId do payload diverge do envelope" };
     }
     const falhas: string[] = [];
