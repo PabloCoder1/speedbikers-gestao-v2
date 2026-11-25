@@ -20271,6 +20271,8 @@ Os dois primeiros casos falham com a função antiga (`expected '0' to be null`)
 
 Os casos de ausência falham com a função antiga (`expected '0' to be null`). A suíte do `@sb/db` num banco recriado teve as mesmas 10 falhas de OAuth e estorno da D-870, e a guarda da D-204 passou.
 
+**Em produção (25/11):** a migration `20261125130000` foi aplicada pela VM `sb-db` com `psql -1` e registrada em `schema_migrations`, depois dos 4 jobs obrigatórios verdes na `main` (`a8a0d7cf`). O job do Dev falhou com "project is paused". Conferido: corpo novo, grants iguais, e um SKU com captura de hoje devolve Full positivo como membro autenticado. A Vercel publicou a web às 13:49 UTC.
+
 ## D-872 - A faixa de /estoque não junta os saldos ao escopo de novo no plano genérico
 
 **Contexto:** na publicação da D-870, `get_stock_summary` levou 1,9 s como membro autenticado. O mesmo SQL escrito por extenso levou 154 ms. A função é `language sql` com `set search_path = ''`, então o Postgres não a expande na consulta que a chama, e ela roda com o plano genérico dos parâmetros. Os filtros opcionais (`p_x is null or ...`) deixam a estimativa de linhas errada. O plano escolhe um laço aninhado entre `saldos` e `escopo` em `local_confirmado`, que descarta ~9,6 milhões de linhas por chamada.
@@ -20288,3 +20290,5 @@ Os casos de ausência falham com a função antiga (`expected '0' to be null`). 
 **Verificação:**
 - Em produção, só leitura, com plano genérico forçado: o corpo antigo levou 3,2 s e o novo 296 ms. Os dois devolveram a mesma linha nos 7 recortes. Os números estão em `PERFORMANCE.md`.
 - Localmente, a suíte de integração do `@sb/db` teve as mesmas 10 falhas de baseline. Os testes da D-249 e da D-870 e a guarda da D-204 passaram.
+
+**Em produção (25/11):** a migration `20261125140000` foi aplicada pela VM com `psql -1` e registrada, depois dos 4 jobs obrigatórios verdes na `main` (`d3f90239`). Como membro autenticado, a chamada passou de 1,7 a 2,1 s para 180 a 197 ms em três chamadas, inclusive com o filtro de negativos. O Full continua conhecido, e os grants ficaram iguais.

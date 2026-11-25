@@ -2250,3 +2250,5 @@ Medido em produção, na VM `sb-db`, em transação só leitura e como membro au
 - **A correção.** `saldos` passa a levar as colunas do SKU, e o Full se restringe por `sku_id in (select id from escopo)`.
 - **O que fica.** As páginas lidas continuam ~52 mil porque o Full ainda é buscado SKU a SKU (`fulfillment_stock_snapshots_sku_idx`), mas todas estão em cache. O ganho é de CPU.
 - **Equivalência.** Antigo e novo devolveram a mesma linha nos 7 recortes: sem filtro, negativos, marca, categoria, busca, busca vazia e marca com negativos.
+
+**Depois da publicação (25/11, 14:2x UTC):** com a função da D-872 em produção, a chamada como membro autenticado levou 197, 184 e 181 ms, a última com `p_only_negative`. Antes eram 1,7 a 2,1 s.
