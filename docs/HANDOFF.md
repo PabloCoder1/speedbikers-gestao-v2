@@ -37,7 +37,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## P0 ativos
 
-- **Catálogo ML (D-791).** #377 reúne #368 e #376. Falta publicar o worker com SMTP preservado e medir a fila. [Baseline](PERFORMANCE.md#referência-de-produção-para-m05-24112026).
+- **Catálogo ML (D-791).** #377 reúne #368 e #376. A primeira publicação foi revertida. A correção do envelope aguarda validar um processamento real antes de nova promoção. [Baseline](PERFORMANCE.md#referência-de-produção-para-m05-24112026).
 - **Workflow de banco.** Dev e antigo hosted estão inativos. O pipeline da VM aguarda reconciliação. [Roteiro](../infra/vm/README.md).
 - **Avisos críticos do Next.js.** A branch local atualiza Next.js e Zod e passa a auditoria no corte alto. A publicação segue o fluxo da `main` e os deploys da API e do worker. [Achados](agent-audit/FINDINGS.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
 

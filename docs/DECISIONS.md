@@ -20016,6 +20016,8 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 
 **Validação.** O teste local com envelope novo falhava no parser antigo. O corte passa os testes do cliente e do worker. Falta confirmar as leituras em produção após publicação autorizada.
 
+**Compatibilidade do envelope (25/11).** O cliente também aceita `code` e usa `body.id` para identificar sucessos sem ID no envelope. Falhas sem ID ficam sem correspondência. Os testes cobrem lotes mistos e duplicatas. A validação em produção exige uma leitura real de catálogo após o staging.
+
 ## D-863 - "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
 
 **Contexto:** no ensaio de 24/11 do S04, o dono entrou e aceitou convite, mas não achou o "Esqueci a senha". A tela nunca o teve. D-296 e D-302 decidiram que o acesso volta pelo link gerado em `/usuarios`, porque o Auth não tinha SMTP. A leitura do Auth da VM de produção, em 24/11, mostra que isso continua verdade: `GOTRUE_SMTP_HOST=supabase-mail`, o capturador de testes do Compose, com remetente `admin@example.com`. Um botão ligado hoje responderia "pedido recebido" e o e-mail não chegaria a ninguém.

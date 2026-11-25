@@ -166,7 +166,7 @@ describe("getItemsBatch", () => {
       client,
       ids: ["MLB1", "MLB2"],
       accessToken: "t",
-      attributes: ["id", "title"],
+      attributes: ["title"],
     });
 
     expect(calls[0]?.path).toBe("/items/bulk");
@@ -184,6 +184,28 @@ describe("getItemsBatch", () => {
     const ids = Array.from({ length: 21 }, (_, i) => `MLB${String(i)}`);
 
     await expect(getItemsBatch({ client, ids, accessToken: "t" })).rejects.toThrow(/no máximo 20/);
+  });
+
+  it("normaliza o formato com code e identifica o item pelo corpo", async () => {
+    const { client } = fakeClient([[
+      { code: 404, body: { message: "item not found" } },
+      { code: 200, body: { id: "MLB2" } },
+      { status_code: 200, body: { id: "MLB1" } },
+    ]]);
+
+    await expect(getItemsBatch({ client, ids: ["MLB1", "MLB2", "MLB3"], accessToken: "t" })).resolves.toEqual([
+      { id: "MLB2", code: 200, body: { id: "MLB2" } },
+      { id: "MLB1", code: 200, body: { id: "MLB1" } },
+    ]);
+  });
+
+  it("mantém duplicatas ambíguas quando o mesmo ID vem nos dois formatos", async () => {
+    const { client } = fakeClient([[
+      { code: 200, body: { id: "MLB1" } },
+      { id: "MLB1", status_code: 404, body: null },
+    ]]);
+
+    await expect(getItemsBatch({ client, ids: ["MLB1"], accessToken: "t" })).resolves.toEqual([]);
   });
 
   it("ignora respostas de outro ID e IDs com entradas conflitantes", async () => {

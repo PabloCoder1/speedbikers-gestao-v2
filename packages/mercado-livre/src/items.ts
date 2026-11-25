@@ -123,22 +123,43 @@ export async function* scanSellerItems(
   }
 }
 
+const itemBodyIdentitySchema = z.object({ id: itemIdSchema });
+const itemStatusSchema = z.number().int().min(100).max(599);
+
 /**
- * O bulk retorna o ID e o status de cada entrada no envelope. Mapeamos
- * `status_code` para o código que os consumidores usam. Cada consumidor
- * valida o corpo segundo o próprio caso de uso.
+ * Normaliza os envelopes de multiget sem inferir identidade pela posição.
+ * Um sucesso pode identificar o item pelo corpo. Uma falha sem ID explícito
+ * fica sem correspondência e pode ser relida pelo chamador.
  */
 export const itemsMultigetEntrySchema = z
   .object({
-    id: itemIdSchema,
-    status_code: z.number().int(),
+    id: itemIdSchema.optional(),
+    status_code: itemStatusSchema.optional(),
+    code: itemStatusSchema.optional(),
     body: z.unknown(),
   })
-  .transform(({ id, status_code, body }) => ({ id, code: status_code, body }));
+  .transform(({ id, status_code, code, body }, context) => {
+    const status = status_code ?? code;
 
-export const itemsMultigetSchema = z.array(itemsMultigetEntrySchema);
+    if (status === undefined || (status_code !== undefined && code !== undefined && status_code !== code)) {
+      context.addIssue({ code: "custom", message: "status do item ausente ou conflitante no multiget" });
 
-export type ItemsMultigetEntry = z.infer<typeof itemsMultigetEntrySchema>;
+      return z.NEVER;
+    }
+
+    if (id !== undefined) {
+      return { id, code: status, body };
+    }
+
+    const identity = itemBodyIdentitySchema.safeParse(body);
+
+    return status === 200 && identity.success ? { id: identity.data.id, code: status, body } : null;
+  });
+
+export const itemsMultigetSchema = z.array(itemsMultigetEntrySchema)
+  .transform((entries) => entries.filter((entry) => entry !== null));
+
+export type ItemsMultigetEntry = z.infer<typeof itemsMultigetSchema>[number];
 
 export function chunkItemIds(ids: readonly string[], size = ITEMS_MULTIGET_MAX_IDS): string[][] {
   if (size < 1) {
@@ -179,13 +200,16 @@ export async function getItemsBatch(options: GetItemsBatchOptions): Promise<Item
     );
   }
 
+  const attributes = options.attributes?.length
+    ? [...new Set(["id", ...options.attributes])].map((attribute) => `body.${attribute}`).join(",")
+    : undefined;
   const entries = await options.client.request({
     method: "GET",
     path: "/items/bulk",
     accessToken: options.accessToken,
     searchParams: {
       ids: options.ids.join(","),
-      attributes: options.attributes?.map((attribute) => `body.${attribute}`).join(","),
+      attributes,
     },
     schema: itemsMultigetSchema,
   });
