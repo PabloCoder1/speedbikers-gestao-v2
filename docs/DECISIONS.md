@@ -21370,3 +21370,21 @@ Implementamos os 5 handlers do worker alinhados aos contratos de `@sb/contracts/
 5. `apps/worker/src/handlers/tiktok-financials-sync.ts`: `createTikTokFinancialsSyncHandler` (`tiktok.financials.sync`, transação pontual por `orderId` ou extratos paginados de 30 dias).
 
 Verificação: `tiktok-handlers.test.ts` (7/7 cobrindo sucesso, isolamento cross-org nos 5 handlers, preservação de cursor em falha de escrita, proteção de unlock/enqueue e erros 403/429), somando 18/18 testes TikTok no worker.
+
+
+## D-835 - Worker TikTok Shop: env fail-closed e bootstrap dos 5 handlers (`M04`)
+
+Adicionamos a configuração de boot e o agregador de handlers do TikTok Shop no worker (`71a7e54d`, branch `agent/gemini-sentinel-fechamento` sobre `#364`):
+
+1. `apps/worker/src/env.ts`: declara `TIKTOK_SHOP_APP_KEY` e `TIKTOK_SHOP_APP_SECRET` opcionais (mesmo interruptor da Shopee em `D-426`), com `superRefine` fail-closed no boot quando apenas uma das duas variáveis é informada.
+2. `apps/worker/src/handlers/tiktok-bootstrap.ts`: `createTikTokWorkerHandlers` instancia `createTikTokShopClient` e registra exatamente os 5 job types de `TIKTOK_JOB_TYPES` (`tiktok.orders.sync`, `tiktok.order.fetch`, `tiktok.items.sync`, `tiktok.returns.sync`, `tiktok.financials.sync`) quando credenciais e `TikTokSyncRepository` estão presentes, devolvendo `{}` caso contrário.
+
+Verificação: `apps/worker/src/env.test.ts` (16/16) e `apps/worker/src/handlers/tiktok-bootstrap.test.ts` (2/2), `@sb/worker typecheck` e `lint` verdes.
+
+## D-836 - GCP `I06`/`S05`/`L04`: política de retenção de artefatos e auditoria real de nuvem
+
+Auditamos somente leitura os recursos ativos do projeto `speedbikers-prod` em `25/11/2026` e entregamos os artefatos versionados de retenção e limpeza (`8c14670a`):
+
+1. **Retenção de artefatos (`I06`):** o repositório `speedbikers-v3` (Artifact Registry) estava com `1.669,34 MB` acumulados e `cleanupPolicies: null`, e `speedbikers-prod_cloudbuild` sem lifecycle. Criados `infra/artifact-retention-policy.json` (`keepCount: 10` versões mais recentes + delete > 30 dias) e `infra/artifact-retention.sh` (idempotente, com `--dry-run` e `--cloudbuild-lifecycle` de 30 dias sem tocar nos buckets de negócio).
+2. **Revisão IAM `roles/editor` (`S05`):** comprovado que `sb-db`, `api` e `worker` já usam SAs dedicadas (`sb-db-vm`, `v3-api-runtime`, `v3-worker-runtime`); a única conta com `roles/editor` (`246130997439-compute@developer.gserviceaccount.com`) é usada apenas como fallback de builds sem `v3-builder`. Procedimento de remoção e rollback em 1 comando documentados em `docs/agent-audit/CLOUD_COST_AND_CLEANUP_2026-11-25.md`.
+3. **Recursos candidatos (`L04`):** inventariados com dependência e rollback as revisões tagged `worker-m05-*`, imagens antigas em `speedbikers-v3`, tarballs em `speedbikers-prod_cloudbuild` e o projeto legado `imvjfgnaprqsfjlnsyev` (`INACTIVE`).

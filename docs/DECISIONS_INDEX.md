@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **761** (D-001 a D-884).
+Decisões registradas: **763** (D-001 a D-884).
 
 ## Por domínio
 
-### atendimento (72)
+### atendimento (73)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -90,6 +90,7 @@ Decisões registradas: **761** (D-001 a D-884).
 - **D-788** — Invariantes de tempo e finitude em `@sb/domain` (`remote-transition`, `support-events`, `sales-anomaly`, `calculadora-preco`)
 - **D-805** — Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
 - **D-808** — API: receptor autenticado `POST /push/tiktok-shop` (`M04`, fatia 3)
+- **D-836** — GCP `I06`/`S05`/`L04`: política de retenção de artefatos e auditoria real de nuvem
 
 ### banco/rls (54)
 
@@ -669,7 +670,7 @@ Decisões registradas: **761** (D-001 a D-884).
 - **D-867** — A importação de pedidos anteriores sobrevive à Server Action que não responde
 - **D-882** — Agendamento de margem percorre todas as organizações com alerta ativo
 
-### worker/infra (132)
+### worker/infra (133)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -800,6 +801,7 @@ Decisões registradas: **761** (D-001 a D-884).
 - **D-832** — Worker: isolamento multi-tenant nos 4 handlers finais sob service_role
 - **D-833** — Worker TikTok Shop: base comum multi-tenant e renovação de token CAS (`M04`)
 - **D-834** — Worker TikTok Shop: 5 handlers transacionais prontos para persistência (`M04`)
+- **D-835** — Worker TikTok Shop: env fail-closed e bootstrap dos 5 handlers (`M04`)
 - **D-857** — Avisos em tempo real respeitam o ciclo da sessão
 - **D-863** — "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
 - **D-883** — Preservar os traces das falhas Playwright na CI

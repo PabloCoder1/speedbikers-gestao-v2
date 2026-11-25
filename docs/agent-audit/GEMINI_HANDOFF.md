@@ -119,3 +119,14 @@ D-807 continua reservado pelo Gemini nos doze módulos do checkpoint de origem. 
 - **Revisão cruzada:** PR `#400` do Claude (`D-870`, `get_stock_summary` com `full_quantity = NULL` sem captura em 3 dias) revisado e comentado sem achados de código (`#400#issuecomment-7162553891`).
 - **Próximo ID reservado ao Gemini:** `D-835` (faixa livre `D-835..D-849`).
 - **Próxima etapa exata:** integrar `#401` em `#364`, reconciliar `#364` → `main` para publicar `web` (`V02`), e em 01/12/2026 (retorno do Supabase Dev) aplicar as migrations das tabelas transacionais do TikTok Shop e plugar o adaptador Supabase em `TikTokSyncRepository` + registro no `router.ts` do worker.
+
+
+## 9. Rodada 16 (25/11): Retenção de artefatos / auditoria GCP (`D-836`) e bootstrap TikTok no worker (`D-835`)
+
+- **Branch / PR ativo:** `agent/gemini-sentinel-fechamento` (base `#364` `29adf54c`, PR `#401` mirando `codex/sentinel-candidato-integrado`, **0 conflitos** contra `#364` `32bfc540`).
+- **Commits novos empilhados no `#401`:**
+  - `8c14670a` (`D-836`): `infra/artifact-retention-policy.json`, `infra/artifact-retention.sh` e `docs/agent-audit/CLOUD_COST_AND_CLEANUP_2026-11-25.md` (evidência real `I06` + `S05` + `L04` em `speedbikers-prod`).
+  - `71a7e54d` (`D-835`): `TIKTOK_SHOP_APP_KEY`/`TIKTOK_SHOP_APP_SECRET` fail-closed em `apps/worker/src/env.ts` e `createTikTokWorkerHandlers` em `apps/worker/src/handlers/tiktok-bootstrap.ts` (+ testes).
+- **Estado do `main` e outros agentes:** `origin/main` avançou para `bf6e420e` (merge do `#400` do Claude `D-870`); `#364` do Codex segue em `32bfc540` (`168/226 = 74,34%`).
+- **Próximo ID reservado ao Gemini:** `D-837` (faixa livre `D-837..D-849`).
+- **Próxima etapa exata:** integrar `#401` em `#364`, reconciliar `#364` → `main` (publicando `web` / `V02`), executar `./infra/artifact-retention.sh --project speedbikers-prod --cloudbuild-lifecycle` (com autorização do dono para `I06`/`L04`) e, em 01/12/2026 (retorno do Supabase Dev), aplicar as migrations transacionais de `M04` + adaptador Supabase de `TikTokSyncRepository`.
