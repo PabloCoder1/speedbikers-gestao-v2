@@ -96,6 +96,24 @@ Preço de tabela do catálogo do Google em reais, para 730 horas por mês. **É 
 
 **Ação do dono, antes do próximo deploy de `api` ou `worker`:** conceder ao `v3-builder` os papéis do runbook do candidato e fazer o deploy com `--service-account`. Ou, se o deploy for urgente, aplicar o rollback de um comando do #408.
 
+São os três vínculos que o ensaio de 24/11 usou e removeu:
+1. escrita no repositório de imagens;
+2. leitura do bucket de origem;
+3. escrita de logs.
+
+O `infra/cloudbuild.yaml` já usa `CLOUD_LOGGING_ONLY`, que o Cloud Build exige quando a conta é escolhida.
+
+```bash
+SA=serviceAccount:v3-builder@speedbikers-prod.iam.gserviceaccount.com
+gcloud artifacts repositories add-iam-policy-binding speedbikers-v3 --project=speedbikers-prod --location=southamerica-east1 --member="$SA" --role=roles/artifactregistry.writer
+gcloud storage buckets add-iam-policy-binding gs://speedbikers-prod_cloudbuild --member="$SA" --role=roles/storage.objectViewer
+gcloud projects add-iam-policy-binding speedbikers-prod --member="$SA" --role=roles/logging.logWriter --condition=None
+```
+
+O build passa a levar `--service-account=projects/speedbikers-prod/serviceAccounts/v3-builder@speedbikers-prod.iam.gserviceaccount.com --region=southamerica-east1`. A conta de quem opera precisa de `actAs` no `v3-builder`, que o papel `owner` já inclui.
+
+Espere cerca de 2 minutos antes do primeiro build: o ensaio regional de 24/11 só gravou log 139 s depois da concessão.
+
 ## O que fecha o I06
 
 - **Custo efetivo:** o dono lê o custo de novembro no console, ou autoriza a exportação de faturamento para o BigQuery.
