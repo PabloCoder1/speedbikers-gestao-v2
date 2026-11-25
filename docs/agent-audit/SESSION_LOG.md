@@ -582,3 +582,24 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Shopee.** Vincular um anúncio preenche o SKU dos itens de pedido ainda sem SKU, e remover o vínculo não desfaz, por desenho: o pedido guarda a atribuição. Os casos de falha de conexão e de recusa de catálogo vinculavam o item sem SKU e deixavam o pedido do seed atribuído. A limpeza agora chama a mesma resolução do fim do seed.
 - **Validação.** Os quatro specs em sequência passaram, 42 casos, e o banco terminou com as contagens do seed. Passaram `pnpm run check`, as guardas da CI e `pnpm docs:check`.
 - **Próxima etapa.** Conferir a suíte completa na CI. Depois, seguir a fila do inventário de Server Actions sem tratamento de exceção. [Plano](PLAN.md)
+
+### 25/11/2026 · Claude Sentinel: verificação de produção depois da troca do banco para a VM
+
+- **Base.** `main` em `8f39cddc`. Tudo foi lido sem alterar nada: Cloud Scheduler e Cloud Run pela API REST, Cloud Logging, e `job_runs`, `inventory_balances`, `erp_stock_snapshots` e `listings` pela VM `sb-db` com `default_transaction_read_only`.
+- **Agendamentos.** Os 20 jobs do Scheduler de produção estão `ENABLED`, e todos tiveram sucesso na última chamada. O item P0 do plano ("próxima execução dos oito agendamentos com último erro") deixa de ter pendência no Scheduler.
+- **Jobs no banco, 24 h.** Fecharam sem falha final: pedidos, logística, financeiro, Full, SAC, Shopee, ledger, reconciliação, margem e ping. Exceções:
+  - `sync.listing.item` e `sync.listings.snapshot` (ver abaixo);
+  - 404 e 429 isolados em devoluções do ML no `sync.webhook.received`;
+  - uma `diagnostics.detect-support-patterns` com `fetch failed`.
+- **Incidente: anúncios do ML.** O Mercado Livre passou a recusar o `GET /items` antigo com 403 `ResourceDeprecated` desde 24/11 05:40 UTC.
+  - De 24/11 18:16 a 25/11 ~11:05 UTC, a revisão `worker-m05-0f7a98de` (o `/items/bulk` do #377) esteve com o tráfego e reprovou o envelope real no zod: `[0].id` e `[0].status_code` ausentes. A falha de `sync.listing.item` passou de cerca de 5% ao dia para mais de 99%.
+  - Às 11:05 UTC o tráfego voltou para `worker-00061-gwr`, que ainda recebe o 403 no `GET /items`.
+  - O Codex publicou a correção `d0c2790f` na branch do #377, ainda não implantada. A revisão cruzada, com um ponto sobre a resposta 404 sem `id` num pedido de um ID só, está no #377.
+- **Estoque contra o ERP.** A reconciliação diária comparou 3.151 SKUs de 22/11 a 25/11, sem nenhum ajuste.
+  - A última captura do UpSeller é de 19/11.
+  - Os 25 saldos LOCAL negativos são iguais ao alvo do ERP: são vendas depois da captura acima do saldo da planilha, e não um defeito do ledger. Somem com uma planilha nova do UpSeller.
+- **Para o inventário.**
+  - S04: SMTP, recuperação e troca de senha validados pelo dono em 24/11 (D-863).
+  - I04: alerta de disco e três verificações de disponibilidade ativos desde 24/11 (D-868). Falta forçar um disparo de ensaio.
+  - M05 continua aberto.
+- **Próxima etapa.** Publicar o worker com `d0c2790f`, ou o sucessor, com autorização do dono, e medir de novo `sync.listing.item`. Planilha nova do UpSeller.
