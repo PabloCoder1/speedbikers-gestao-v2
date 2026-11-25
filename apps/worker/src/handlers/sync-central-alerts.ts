@@ -67,7 +67,7 @@ export interface SyncCentralAlertsDeps {
 }
 
 export function createSyncCentralAlertsHandler(deps: SyncCentralAlertsDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -75,6 +75,10 @@ export function createSyncCentralAlertsHandler(deps: SyncCentralAlertsDeps): Job
     }
 
     const { organizationId } = parsed.data;
+
+    if (envelope.organizationId !== undefined && organizationId !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "organizationId do payload diverge do envelope" };
+    }
     const falhas: string[] = [];
     let processadas = 0;
     let foraDoContrato = false;

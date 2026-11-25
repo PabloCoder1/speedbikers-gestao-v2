@@ -5,7 +5,7 @@ import type { SyncCentralAlertsDeps } from "./sync-central-alerts.js";
 import { createSyncCentralAlertsHandler } from "./sync-central-alerts.js";
 
 const ORG = "11111111-0000-4000-8000-000000000001";
-const envelope = { jobId: "j1" } as never;
+const envelope = { jobId: "j1", organizationId: ORG } as never;
 
 function resultado(fonte: string, criadas: number) {
   return {
