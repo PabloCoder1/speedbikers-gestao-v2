@@ -6568,6 +6568,26 @@ export type Database = {
         }
         Relationships: []
       }
+      notification_history: {
+        Row: {
+          // Os joins internos garantem os campos obrigatórios da entrega e do evento.
+          account_label: string | null
+          after: Json | null
+          archived: boolean
+          before: Json | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          event_type: string
+          ml_account_id: string | null
+          notification_id: string
+          occurred_at: string
+          read_at: string | null
+          severity: string
+          shopee_shop_id: string | null
+        }
+        Relationships: []
+      }
       shopee_listing_units: {
         Row: {
           available_stock: number | null
@@ -9748,6 +9768,18 @@ export type Database = {
       // este arquivo antes disso. Os quatro argumentos sao anulaveis COM
       // significado ("sem recorte nesta dimensao"), a classe de D-133; a loja
       // (`p_shopee_shop_id`) veio na `20261020130000` (D-491).
+      list_notification_history: {
+        Args: {
+          p_event_type_pattern?: string
+          p_limit: number
+          p_ml_account_id?: string
+          p_offset: number
+          p_severity?: string
+          p_shopee_shop_id?: string
+          p_unread: boolean
+        }
+        Returns: Database["public"]["Views"]["notification_history"]["Row"][]
+      }
       mark_notifications_read: {
         Args: {
           p_event_type_prefix?: string | null

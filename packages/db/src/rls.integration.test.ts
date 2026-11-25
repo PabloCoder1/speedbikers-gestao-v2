@@ -16339,6 +16339,64 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
     });
   });
 
+  describe("histórico ativo e arquivado da Central", () => {
+    it("preserva paginação, filtros e leitura por destinatário durante a sobreposição", async () => {
+      const archivedId = randomUUID();
+      const timestamp = "2026-08-24T12:00:00.000Z";
+      const { rows: [active] } = await client.query<{ id: string }>(
+        `select id from public.notifications where domain_event_id = $1`,
+        [contaAEventId],
+      );
+      if (active === undefined) throw new Error("notificação ativa ausente");
+
+      await client.query(
+        `update public.notification_recipients set created_at = $3
+          where notification_id = $1 and user_id = $2`,
+        [active.id, ANALISTA_SB, timestamp],
+      );
+      await client.query(
+        `insert into notification_archive.recipients
+           (notification_id, user_id, domain_event_id, read_at, created_at)
+         values ($1, $3, $4, $5, $5), ($2, $3, $4, $5, $5)`,
+        [active.id, archivedId, ANALISTA_SB, contaAEventId, timestamp],
+      );
+
+      const select = `select notification_id, read_at is null as unread, account_label
+        from public.notification_history
+        where ml_account_id = '${CONTA_A}' and severity = 'informativo'
+          and event_type like 'listing.%' and notification_id in ('${active.id}', '${archivedId}')`;
+      const sorted = [active.id, archivedId].sort().reverse();
+      try {
+        for (const [offset, id] of sorted.entries()) {
+          const rows = await asUser(ANALISTA_SB, `select notification_id, read_at is null as unread, account_label
+            from public.list_notification_history(${String(offset)}, 1, false, 'informativo', 'listing.%', '${CONTA_A}')
+            where notification_id in ('${active.id}', '${archivedId}')`);
+          expect(rows).toEqual([{ notification_id: id, unread: id === active.id, account_label: "Conta A (notificações)" }]);
+        }
+        expect(await asUser(ANALISTA_SB, `${select} and read_at is null`)).toHaveLength(1);
+        expect(await asUser(ANALISTA_SB, select)).toHaveLength(2);
+        expect(await asUser(ADMIN_SB, `${select} and notification_id = '${archivedId}'`)).toEqual([]);
+        expect(await asUser(DE_OUTRA_ORG, select)).toEqual([]);
+
+        await client.query(
+          "delete from public.user_account_permissions where user_id = $1 and ml_account_id = $2",
+          [ANALISTA_SB, CONTA_A],
+        );
+        expect(await asUser(ANALISTA_SB, select)).toEqual([]);
+      } finally {
+        await client.query("delete from notification_archive.recipients where user_id = $1 and notification_id in ($2, $3)", [ANALISTA_SB, active.id, archivedId]);
+        await client.query("insert into public.user_account_permissions (user_id, ml_account_id) values ($1, $2) on conflict do nothing", [ANALISTA_SB, CONTA_A]);
+      }
+    });
+
+    it("reserva a view aos autenticados e mantém o arquivo fora do acesso direto", async () => {
+      await expect(asAnon("select * from public.notification_history")).rejects.toThrow(/permission denied/i);
+      await expect(asAnon("select * from public.list_notification_history(0, 1, false)")).rejects.toThrow(/permission denied/i);
+      await expect(asUser(ANALISTA_SB, "select * from notification_archive.recipients")).rejects.toThrow(/permission denied/i);
+      await expect(asUser(ANALISTA_SB, "update public.notification_history set read_at = now()")).rejects.toThrow(/cannot update view/i);
+    });
+  });
+
   describe("marcar como lida — Server Action de escopo do usuário (ARCHITECTURE.md secao 4)", () => {
     it("usuário marca a própria notificação como lida", async () => {
       const rows = await asUserPersist<{ read_at: string | null }>(

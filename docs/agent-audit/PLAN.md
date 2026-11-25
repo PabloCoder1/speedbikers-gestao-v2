@@ -4,7 +4,7 @@
 
 Há 124 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou medições externas (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. API, worker e integrações concentram as falhas de consistência. Banco e desempenho exigem observação real. A varredura de antecipação de queries de 13/11 não encontrou outra oportunidade nas rotas de alto tráfego fora de D-670–D-684. O [checkpoint](SESSION_LOG.md) reúne as correções, as auditorias de dependências e o estado da publicação.
 
-**Frente atual em 25/11.** D-884 confirma que o catálogo da VM coincide com o candidato. O upgrade das quatro pendências da base Git passou em uma stack local. O Dev pausado continua para a retomada combinada.
+**Frente atual em 25/11.** D-884 verificou o upgrade local de 334 para 339 versões, com a massa inicial preservada. Dev segue para a retomada combinada.
 
 | Prioridade | Critério aplicado |
 | --- | --- |
@@ -17,7 +17,7 @@ Há 124 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou mediçõe
 
 1. Conferir a CI do #364 após D-870 a D-873. Na retomada do Dev, reconciliar o catálogo. Gemini conserva M04 e o #401, com CI e separação da retenção solicitadas.
 2. M05 validado em produção com o worker do #377, reconciliação e recuperação do recorte identificável. Acompanhar a revisão nas rodadas regulares.
-3. Concluir a revisão da leitura local do arquivo na Central (D04). Para `sync_runs`, medir uma estratégia que preserve a FK. A janela de retenção depende do responsável.
+3. Validar a CI da leitura do arquivo na Central já incorporada ao candidato (D04). Para `sync_runs`, medir uma estratégia que preserve a FK. A janela de retenção depende do responsável.
 
 ## Frentes de execução
 

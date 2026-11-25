@@ -1101,3 +1101,17 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - Gemini publicou D-832 a D-837 em `2550a9bc`. O #401 reúne worker, TikTok, Auth e infraestrutura. Solicitei a CI do candidato, a separação de retenção e o teste de concorrência OAuth em M04. [Revisão](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/401#issuecomment-7167748577)
 - A leitura do Google Cloud confirmou retenção no Artifact Registry e no bucket temporário de builds, remoção do papel Editor da conta padrão e retirada das tags temporárias do worker. L04 ganha 2 pontos. I06 aguarda custo real. S05 aguarda adoção da identidade dedicada nos builds regulares; os seis builds regionais recentes não a usaram.
 - D04 tem leitura do arquivo na Central, commit `b1542fe7` no #407, com integração local 1.243/1.243 e Chromium 8/8. A política de retenção e `sync_runs` continuam abertos. O Dev alojado permanece pendente até a retomada combinada.
+
+### 25/11/2026 · D-885, leitura do histórico da Central
+
+- Branch `codex/sentinel-d04-historico`, a partir da main `628ff887` (#406). Migration `20261125160000` e cliente em `/notificacoes`. A migration precede a publicação web.
+- Validação local: `check` 37/37, `build` 10/10, integração SQL 1.243/1.243 e Chromium 8/8. A Data API autenticada manteve a notificação sintética após movê-la para o arquivo, contou uma ocorrência e a excluiu de não lidas. A RPC anônima foi recusada. [Medição](../PERFORMANCE.md#histórico-da-central-com-arquivo-sentinel-d04-25112026)
+- D04 continua em andamento. A rotina de transferência, a janela de retenção e a referência de `sync_runs` precisam de decisões próprias. O #401 fica com Gemini. Claude mantém as frentes da avaliação do Full e de `get_fulfillment_overview`.
+
+### 25/11/2026 · D04 no candidato e aceite de I06
+
+- Main `628ff887`. O candidato `codex/sentinel-integracao-20261124` em `2063463e` recebeu o #407 (`b1542fe7`). A resolução conservou os atalhos de contadores e a marcação em lote sob RLS, usando a RPC de histórico para a lista e a view para as contagens.
+- No Supabase local, o catálogo anterior (`32bfc540`, 334 versões) recebeu cinco migrations até `20261125160000`. As duas notificações prévias permaneceram com o mesmo hash. `check` 37/37, `build` 10/10, integração SQL/PostgREST 1.259/1.259 em 20 arquivos e Chromium da Central 11/11.
+- I06 aceito. O dono forneceu o custo efetivo de outubro de 2026 do projeto a partir de consulta ao Google Cloud Billing em 25/11. A retenção e o dimensionamento já tinham evidência. Inventário em 173/226 pontos e 33/43 entregas.
+- O #401 fica com Gemini. A revisão de D-832 apontou que a falha de publicação da próxima janela Shopee pode ser seguida de retorno `done`. Pedi teste de falha de fila após o marco. M04 segue com o teste de concorrência OAuth. [Revisão](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/401#issuecomment-7168241930)
+- Próximo passo: conferir a CI do novo HEAD do #364, validar o catálogo oficial do Dev na retomada e sequenciar as migrations antes da web. A política de retenção de D04, S05 e a aplicação em produção permanecem abertas.
