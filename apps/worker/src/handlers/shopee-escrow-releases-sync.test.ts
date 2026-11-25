@@ -110,9 +110,14 @@ const pagina = (more: boolean, lista: { order_sn: string; payout_amount?: number
   response: { more, escrow_list: lista },
 });
 
-function rodar(loja: Loja, shopee: ReturnType<typeof fakeShopee>, opcoes: { erroNaGravacao?: string } = {}) {
+function rodar(
+  loja: Loja,
+  shopee: ReturnType<typeof fakeShopee>,
+  opcoes: { erroNaGravacao?: string; envelopeOrganizationId?: string; enqueueError?: Error } = {},
+) {
   const { db, chamadas } = fakeDb(loja, opcoes);
   const enfileirados: EnqueueRequest[] = [];
+  const lines: string[] = [];
   const handler = createShopeeEscrowReleasesSyncHandler({
     db,
     client: shopee.client,
@@ -120,6 +125,10 @@ function rodar(loja: Loja, shopee: ReturnType<typeof fakeShopee>, opcoes: { erro
     now: () => NOW,
     enqueuer: {
       enqueue: (request: EnqueueRequest) => {
+        if (opcoes.enqueueError !== undefined) {
+          return Promise.reject(opcoes.enqueueError);
+        }
+
         enfileirados.push(request);
 
         return Promise.resolve({ deduplicated: false });
@@ -127,10 +136,15 @@ function rodar(loja: Loja, shopee: ReturnType<typeof fakeShopee>, opcoes: { erro
     } as unknown as ShopeeEscrowReleasesSyncDeps["enqueuer"],
   });
 
-  return handler(ENVELOPE, {
-    logger: createLogger({}, { sink: () => undefined }),
+  const envelope =
+    opcoes.envelopeOrganizationId === undefined
+      ? ENVELOPE
+      : { ...ENVELOPE, organizationId: opcoes.envelopeOrganizationId };
+
+  return handler(envelope, {
+    logger: createLogger({}, { sink: (line) => lines.push(line) }),
     payload: { shopeeShopId: LOJA_ID },
-  }).then((outcome) => ({ outcome, chamadas, enfileirados }));
+  }).then((outcome) => ({ outcome, chamadas, enfileirados, lines }));
 }
 
 describe("shopee.escrow-releases.sync (D-451)", () => {
@@ -229,5 +243,27 @@ describe("shopee.escrow-releases.sync (D-451)", () => {
     expect(resInvalido.outcome).toEqual({ status: "done", processed: 0 });
     expect(shopeeInvalido.pedidos[0]?.get("release_time_from")).toBe(String(AGORA_S - 90 * DIA_S));
     expect(shopeeInvalido.pedidos[0]?.get("release_time_to")).toBe(String(AGORA_S - 90 * DIA_S + 15 * DIA_S));
+  });
+
+  it("D-818: recusa sem repetir quando a loja pertence a outra organização", async () => {
+    const shopee = fakeShopee([pagina(false, [])]);
+    const { outcome, chamadas, enfileirados } = await rodar(LOJA, shopee, {
+      envelopeOrganizationId: "99999999-9999-4999-8999-999999999999",
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(shopee.pedidos).toEqual([]);
+    expect(chamadas).toEqual([]);
+    expect(enfileirados).toEqual([]);
+  });
+
+  it("D-818: falha transitória ao enfileirar próxima janela devolve retryable=true e registra log", async () => {
+    const shopee = fakeShopee([pagina(false, [])]);
+    const { outcome, lines } = await rodar(LOJA, shopee, {
+      enqueueError: new Error("cloud tasks unavailable"),
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(lines.join("\n")).toContain("shopee_escrow_releases_enqueue_failed");
   });
 });

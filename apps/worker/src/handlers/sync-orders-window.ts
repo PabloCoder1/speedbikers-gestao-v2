@@ -112,6 +112,7 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
       logger: context.logger,
       missingEvent: "sync_orders_window_account_missing",
       mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
     });
 
     if ("outcome" in resolvedAccount) {

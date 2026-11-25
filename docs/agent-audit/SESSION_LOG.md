@@ -953,3 +953,10 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - As correções Shopee #379 e #380 e a fixture #373 já estão no histórico do candidato. #381 e #382 seguem como evidências de P02 e Q03 referenciadas no inventário.
 - M04 ainda precisa de tabelas versionadas, handlers, ligação da fila e teste integrado da loja. V01 aguarda as quatro versões definitivas e o ensaio de upgrade da VM. O inventário permanece em 155/226 (68,58%), 28/43 entregas.
 - CI externa concluída com quatro jobs verdes em `c1ef6afd` (45446906931), `0f7a98de` (45444838540) e `8edf669d` (45446867460). Os dois PRs isolados tiveram 346 E2E cada. O runner Linux do #340 escolheu 61021/61022. O dispatch seguinte do #378 valida o segundo batch inteiro no SHA final.
+
+### Continuidade em 25/11/2026
+
+- A composição de D-864 sobre `ff0de2c9` ficou em `55e20b5b`. Check 37/37, build 10/10 e docs:check.
+- D-815 a D-819 do #343: `daa30b3a`, `ce980cdc`, `e895084c`, `5dfeeebf`, `570b6e45`. Check 37/37, build 10/10 e docs:check. Conteúdo de migrations, lockfile e workflows preservado.
+- O dono prevê a retomada do Supabase Pro em 01/12/2026. Confirmar o Dev saudável antes de registrar versões oficiais.
+- A próxima fatia de M04 tem o caso de reconexão durante refresh encaminhado ao Gemini. [Coordenação](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/343#issuecomment-7140347544)

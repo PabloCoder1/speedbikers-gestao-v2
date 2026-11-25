@@ -111,7 +111,11 @@ const LOJA: Loja = {
   ads_synced_at: null,
 };
 
-function rodar(loja: Loja, shopee: ReturnType<typeof fakeShopee>, opcoes: { erroNaGravacao?: string } = {}) {
+function rodar(
+  loja: Loja,
+  shopee: ReturnType<typeof fakeShopee>,
+  opcoes: { erroNaGravacao?: string; envelopeOrganizationId?: string } = {},
+) {
   const { db, chamadas } = fakeDb(loja, opcoes);
   const handler = createShopeeAdsSyncHandler({
     db,
@@ -121,7 +125,12 @@ function rodar(loja: Loja, shopee: ReturnType<typeof fakeShopee>, opcoes: { erro
     enqueuer: { enqueue: () => Promise.resolve({ deduplicated: false }) } as unknown as ShopeeAdsSyncDeps["enqueuer"],
   });
 
-  return handler(ENVELOPE, {
+  const envelope =
+    opcoes.envelopeOrganizationId === undefined
+      ? ENVELOPE
+      : { ...ENVELOPE, organizationId: opcoes.envelopeOrganizationId };
+
+  return handler(envelope, {
     logger: createLogger({}, { sink: () => undefined }),
     payload: { shopeeShopId: LOJA_ID },
   }).then((outcome) => ({ outcome, chamadas }));
@@ -212,6 +221,17 @@ describe("shopee.ads.sync (D-449)", () => {
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
     expect(outcome.status === "failed" ? outcome.reason : "").toMatch(/próximo ciclo da loja/);
+    expect(chamadas).toEqual([]);
+  });
+
+  it("D-818: recusa sem repetir quando a loja pertence a outra organização", async () => {
+    const shopee = fakeShopee({ dias: [{ date: "13-10-2026", impression: 10, clicks: 1, expense: 1 }] });
+    const { outcome, chamadas } = await rodar(LOJA, shopee, {
+      envelopeOrganizationId: "99999999-9999-4999-8999-999999999999",
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(shopee.pedidos).toEqual([]);
     expect(chamadas).toEqual([]);
   });
 });

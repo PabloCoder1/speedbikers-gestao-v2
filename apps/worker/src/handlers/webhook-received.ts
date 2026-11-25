@@ -99,7 +99,7 @@ function parsePositiveSafeId(raw: string | undefined): string | null {
 }
 
 export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -137,6 +137,7 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
       logger: context.logger,
       missingEvent: "webhook_fast_path_account_missing",
       mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
     });
 
     if ("outcome" in resolvedAccount) {

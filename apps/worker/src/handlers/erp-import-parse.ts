@@ -172,7 +172,7 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
   // Contrato local da migration até regenerar os tipos compartilhados a partir do Dev.
   const persistence = deps.db as unknown as ErpParseRpc;
 
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -194,6 +194,10 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
 
     if (batch.data === null) {
       return { status: "failed", retryable: false, reason: `lote ${batchId} não existe` };
+    }
+
+    if (batch.data.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "lote não pertence à organização do job" };
     }
 
     if (batch.data.status === "APPLIED" || batch.data.status === "APPLYING") {

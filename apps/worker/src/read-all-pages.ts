@@ -62,11 +62,13 @@ export async function readAllPages<T>(
   readPage: (from: number, to: number) => PromiseLike<PageResponse<T>>,
   options: ReadAllPagesOptions = {},
 ): Promise<T[]> {
-  const pageSize = Math.min(options.pageSize ?? POSTGREST_MAX_ROWS, POSTGREST_MAX_ROWS);
+  const requested = options.pageSize ?? POSTGREST_MAX_ROWS;
 
-  if (pageSize < 1) {
+  if (!Number.isFinite(requested) || requested < 1) {
     throw new Error("readAllPages: pageSize precisa ser pelo menos 1");
   }
+
+  const pageSize = Math.min(Math.floor(requested), POSTGREST_MAX_ROWS);
 
   const todas: T[] = [];
   let from = 0;

@@ -128,6 +128,7 @@ export function createSyncSupportClaimsReconcileHandler(
       logger: context.logger,
       missingEvent: "sync_support_claims_reconcile_account_missing",
       mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
     });
 
     if ("outcome" in resolvedAccount) {

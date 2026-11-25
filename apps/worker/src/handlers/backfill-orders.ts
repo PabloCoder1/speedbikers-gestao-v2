@@ -69,6 +69,7 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
       logger: context.logger,
       missingEvent: "backfill_orders_account_missing",
       mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
     });
 
     if ("outcome" in resolvedAccount) {

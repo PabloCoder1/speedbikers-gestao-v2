@@ -15,7 +15,7 @@ Há 124 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou mediçõe
 
 ## Prioridades em 24/11
 
-1. Validar a CI do SHA atualizado do #378 com D-863 e D-807–D-814. O Gemini conserva D-815. M04 aguarda persistência, handlers e jornadas da loja. Manter V01 aberto até registrar as quatro versões definitivas em Dev e validar o upgrade em cópia da VM.
+1. Validar a CI do SHA atualizado do #378 com D-864 e D-807–D-819. O Gemini conserva D-820. M04 aguarda persistência, handlers e jornadas da loja. Manter V01 aberto até registrar as quatro versões definitivas em Dev e validar o upgrade em cópia da VM.
 2. Conferir a CI de `0f7a98de` no #377. Após a autorização do dono, preparar e validar a revisão isolada do worker, com SMTP preservado. Depois da promoção, comparar janelas equivalentes de backlog, falhas 403 e sucessos dos jobs de catálogo.
 3. Revisar o aumento de volume de `sync_runs` e a leitura do arquivo na Central em ambiente isolado (D04). Manter a política efetiva e as passagens operacionais de Auth/estoque sujeitas à decisão do responsável.
 

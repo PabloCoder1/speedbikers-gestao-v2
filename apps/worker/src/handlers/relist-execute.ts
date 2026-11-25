@@ -772,7 +772,7 @@ async function resumeAfterRejection(
 }
 
 export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -798,6 +798,10 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
       context.logger.warn("relist_execute_operation_missing", { relist_id: parsed.data.relistId });
 
       return { status: "done", processed: 0 };
+    }
+
+    if (operation.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "operação de relist não pertence à organização do job" };
     }
 
     const ctx: TransitionContext = { db: deps.db, logger: context.logger, operation };

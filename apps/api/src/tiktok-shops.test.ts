@@ -288,4 +288,19 @@ describe("completeTikTokConnect (D-645)", () => {
     });
     expect(gravado.rpc).toHaveLength(0);
   });
+
+  it("D-819: state em branco devolve invalid_state sem consultar o banco e code em branco recusa sem chamar o TikTok", async () => {
+    const semState = montar();
+    const resState = await completeTikTokConnect(semState.deps, { state: "   ", code: "TTP_code" });
+
+    expect(resState).toEqual({ status: "invalid_state" });
+    expect(semState.gravado.update).toHaveLength(0);
+    expect(semState.chamadas).toHaveLength(0);
+
+    const semCode = montar();
+    const resCode = await completeTikTokConnect(semCode.deps, { state: "s", code: "   " });
+
+    expect(resCode).toMatchObject({ status: "rejected" });
+    expect(semCode.chamadas).toHaveLength(0);
+  });
 });

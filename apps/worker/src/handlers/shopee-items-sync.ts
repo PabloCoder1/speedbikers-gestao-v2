@@ -76,8 +76,8 @@ async function lerLista(
 }
 
 export function createShopeeItemsSyncHandler(deps: ShopeeItemsSyncDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
-    const aberta = await lerLojaConectada(deps, context, "shopee_items_sync_skipped");
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
+    const aberta = await lerLojaConectada(deps, context, "shopee_items_sync_skipped", envelope.organizationId);
 
     if ("outcome" in aberta) return aberta.outcome;
 
@@ -157,13 +157,24 @@ export function createShopeeItemsSyncHandler(deps: ShopeeItemsSyncDeps): JobHand
     }
 
     // O detalhe vem atrás; quem diz o que ler é o SQL.
-    await deps.enqueuer.enqueue({
-      jobType: "shopee.items.hydrate",
-      organizationId: loja.organization_id,
-      dedupeKey: `shopee-items-hydrate:${loja.id}:${String(agoraS)}`,
-      queue: "backfill",
-      payload: { shopeeShopId: loja.id },
-    });
+    try {
+      await deps.enqueuer.enqueue({
+        jobType: "shopee.items.hydrate",
+        organizationId: loja.organization_id,
+        dedupeKey: `shopee-items-hydrate:${loja.id}:${String(agoraS)}`,
+        queue: "backfill",
+        payload: { shopeeShopId: loja.id },
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "erro desconhecido ao enfileirar leitura de detalhes";
+
+      context.logger.error("shopee_items_hydrate_enqueue_failed", {
+        shopee_shop_id: loja.id,
+        reason,
+      });
+
+      return { status: "failed", retryable: true, reason: `falha ao enfileirar leitura de detalhes: ${reason}` };
+    }
 
     context.logger.info("shopee_items_sync_done", {
       shopee_shop_id: loja.id,

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **735** (D-001 a D-883).
+Decisões registradas: **740** (D-001 a D-883).
 
 ## Por domínio
 
@@ -294,7 +294,7 @@ Decisões registradas: **735** (D-001 a D-883).
 - **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
 - **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
 
-### mercado-livre (143)
+### mercado-livre (147)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -438,6 +438,10 @@ Decisões registradas: **735** (D-001 a D-883).
 - **D-800** — API, Worker e Web: hardening de Copiloto, OAuth Shopee, logística/pacote/anomalias e helpers de métricas
 - **D-801** — Domínio, Worker e Web: finitude em eventos/inventário/suporte, estoque Full no preflight de relist e parsers/filtros web
 - **D-807** — TikTok Shop: camada transacional de leitura, webhook e coordenador de refresh em `@sb/tiktok-shop` (`M04`)
+- **D-815** — Worker `service_role`: isolamento multi-tenant `envelope.organizationId` em 7 handlers críticos de escrita, importação, relist, logística e webhook
+- **D-816** — Worker `service_role`: `expectedOrganizationId` centralizado em `resolveMlAccountRead` e isolamento em 9 handlers do Mercado Livre
+- **D-817** — Worker `service_role`: isolamento multi-tenant e proteção de continuação `enqueue()` em 3 handlers financeiros/backfill ML
+- **D-819** — Núcleo worker e OAuth TikTok: `readAllPages` contra laço infinito em `NaN`, `delaySeconds` no `enqueue` e validação de `state`/`code`
 - **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
 ### outros (123)
@@ -648,7 +652,7 @@ Decisões registradas: **735** (D-001 a D-883).
 - **D-859** — O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
 - **D-882** — Agendamento de margem percorre todas as organizações com alerta ativo
 
-### worker/infra (127)
+### worker/infra (128)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -774,6 +778,7 @@ Decisões registradas: **735** (D-001 a D-883).
 - **D-794** — Telemetria `@sb/db` (`recordJobRun`/`recordAiRun`) blindada contra transporte e isolamento de enqueue nos 13 agendadores/backfills restantes da API
 - **D-812** — Contratos compartilhados de fila do TikTok Shop em `@sb/contracts` e alinhamento da API (`M04`)
 - **D-814** — Worker `service_role`: isolamento multi-tenant `envelope.organizationId`, escopo explícito de consultas, lotes de upsert e enqueue protegido em 7 handlers
+- **D-818** — Worker `service_role`: `expectedOrganizationId` centralizado em `lerLojaConectada` e proteção de `enqueue()` em 5 handlers Shopee
 - **D-857** — Avisos em tempo real respeitam o ciclo da sessão
 - **D-863** — "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
 - **D-883** — Preservar os traces das falhas Playwright na CI

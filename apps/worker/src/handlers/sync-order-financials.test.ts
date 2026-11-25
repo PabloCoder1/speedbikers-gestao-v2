@@ -195,6 +195,7 @@ function run(
   client: MercadoLivreClient,
   sleeps: number[] = [],
   lines: string[] = [],
+  envelopeOrganizationId?: string,
 ) {
   const handler = createSyncOrderFinancialsHandler({
     db,
@@ -209,7 +210,10 @@ function run(
     },
   });
 
-  return handler(ENVELOPE, {
+  const envelope =
+    envelopeOrganizationId === undefined ? ENVELOPE : { ...ENVELOPE, organizationId: envelopeOrganizationId };
+
+  return handler(envelope, {
     logger: createLogger({}, { sink: (line) => lines.push(line) }),
     payload: { mlAccountId: ML_ACCOUNT_ID },
   });
@@ -505,5 +509,16 @@ describe("sync.order-financials — o contrato de /orders/{id}/discounts (D-229)
     const outCheckpoint = await run(falhaCheckpoint.db, client);
     expect(outCheckpoint).toMatchObject({ status: "failed", retryable: true });
     expect(falhaCheckpoint.syncRuns[0]).toMatchObject({ resource: "order_financials", status: "failed" });
+  });
+
+  it("D-817: recusa sem repetir quando a conta pertence a outra organização", async () => {
+    const { db, upserted } = fakeDb({ orders: [{ id: 9001, shipping_id: 5001 }] });
+    const { client, calls } = fakeClient({ costsBySender: [10] });
+
+    const outcome = await run(db, client, [], [], "99999999-9999-4999-8999-999999999999");
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(calls).toEqual([]);
+    expect(upserted).toEqual([]);
   });
 });

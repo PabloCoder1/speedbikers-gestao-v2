@@ -5,7 +5,7 @@ import type { ListingSalesDropDeps } from "./listing-sales-drop.js";
 import { createListingSalesDropHandler } from "./listing-sales-drop.js";
 
 const ORG = "11111111-0000-4000-8000-000000000001";
-const envelope = { jobId: "j1" } as never;
+const envelope = { jobId: "j1", organizationId: ORG } as never;
 
 function fakeDb(resposta: { data: unknown; error: { message: string } | null }): {
   db: ListingSalesDropDeps["db"];
@@ -52,6 +52,16 @@ describe("listing-sales-drop (D-629)", () => {
 
   it("payload sem organização não chama o banco", async () => {
     const { outcome, chamadas } = await run({ data: null, error: null }, {});
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(chamadas).toEqual([]);
+  });
+
+  it("D-815: recusa divergência entre organizationId do payload e do envelope sem chamar a RPC", async () => {
+    const { outcome, chamadas } = await run(
+      { data: { linhas: 1, em_queda: 0, periodo_ate: "2026-10-10" }, error: null },
+      { organizationId: "22222222-0000-4000-8000-000000000002" },
+    );
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
     expect(chamadas).toEqual([]);

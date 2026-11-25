@@ -35,7 +35,7 @@ export type ShopeeEscrowReleasesSyncDeps = ShopeeJobDeps;
 
 export function createShopeeEscrowReleasesSyncHandler(deps: ShopeeEscrowReleasesSyncDeps): JobHandler {
   return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
-    const aberta = await lerLojaConectada(deps, context, "shopee_escrow_releases_sync_skipped");
+    const aberta = await lerLojaConectada(deps, context, "shopee_escrow_releases_sync_skipped", envelope.organizationId);
 
     if ("outcome" in aberta) return aberta.outcome;
 
@@ -96,13 +96,25 @@ export function createShopeeEscrowReleasesSyncHandler(deps: ShopeeEscrowReleases
     const temMais = ateS < agoraS;
 
     if (temMais) {
-      await deps.enqueuer.enqueue({
-        jobType: "shopee.escrow-releases.sync",
-        organizationId: loja.organization_id,
-        dedupeKey: `shopee-escrow-releases:${loja.id}:${String(ateS)}`,
-        queue: "backfill",
-        payload: { shopeeShopId: loja.id },
-      });
+      try {
+        await deps.enqueuer.enqueue({
+          jobType: "shopee.escrow-releases.sync",
+          organizationId: loja.organization_id,
+          dedupeKey: `shopee-escrow-releases:${loja.id}:${String(ateS)}`,
+          queue: "backfill",
+          payload: { shopeeShopId: loja.id },
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "erro desconhecido ao enfileirar próxima janela";
+
+        context.logger.error("shopee_escrow_releases_enqueue_failed", {
+          shopee_shop_id: loja.id,
+          ate: new Date(ateS * 1000).toISOString(),
+          reason,
+        });
+
+        return { status: "failed", retryable: true, reason: `falha ao enfileirar próxima janela de repasses: ${reason}` };
+      }
     }
 
     context.logger.info("shopee_escrow_releases_sync_done", {

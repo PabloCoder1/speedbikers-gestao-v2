@@ -77,6 +77,7 @@ export function createSyncAdsCampaignsHandler(deps: SyncAdsCampaignsDeps): JobHa
       logger: context.logger,
       missingEvent: "sync_ads_campaigns_account_missing",
       mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
     });
 
     if ("outcome" in resolvedAccount) {
