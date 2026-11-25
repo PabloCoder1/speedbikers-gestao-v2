@@ -238,4 +238,25 @@ describe("controle de retry do Cloud Tasks", () => {
     expect(response.status).toBe(503);
     expect(lines.join()).toContain('"attempt":2');
   });
+
+  it("cabeçalho vazio ou não decimal (ex.: '', '   ', '1e20') cai no envelope em vez de virar attempt 1 ou inseguro (D-798)", async () => {
+    for (const invalidHeader of ["", "   ", "1e20", "0x10"]) {
+      const { app, lines } = buildWorker({
+        "sync.orders.window": () =>
+          Promise.resolve({ status: "failed", retryable: true, reason: "timeout" }),
+      });
+
+      const response = await app.request("/internal/jobs", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-cloudtasks-taskretrycount": invalidHeader,
+        },
+        body: JSON.stringify({ ...validEnvelope, jobType: "sync.orders.window", attempt: 3 }),
+      });
+
+      expect(response.status).toBe(503);
+      expect(lines.join()).toContain('"attempt":3');
+    }
+  });
 });

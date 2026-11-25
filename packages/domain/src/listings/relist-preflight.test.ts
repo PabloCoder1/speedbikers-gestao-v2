@@ -284,6 +284,10 @@ describe("estoque que a republicação leva (D-364)", () => {
       { ...healthyItem(), variations: [{ id: "abc", price: 10, available_quantity: 3 }] },
       { ...healthyItem(), variations: [{ id: 2 ** 60, price: 10, available_quantity: 3 }] },
       { ...healthyItem(), variations: [{ id: 1, price: 10, available_quantity: -1 }] },
+      { ...healthyItem(), variations: [{ id: 0, price: 10, available_quantity: 3 }] },
+      { ...healthyItem(), variations: [{ id: "0", price: 10, available_quantity: 3 }] },
+      { ...healthyItem(), variations: [{ id: 1, price: 0, available_quantity: 3 }] },
+      { ...healthyItem(), variations: [{ id: 1, price: -10, available_quantity: 3 }] },
     ]) {
       const result = evaluateRelistPreflight(snapshot, new Map(), CONTA_SEM_UP);
 

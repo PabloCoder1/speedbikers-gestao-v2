@@ -15,6 +15,7 @@ import {
 } from "../../../../lib/metas-imposto";
 import { lerMetaDoMes } from "../../../../lib/central-meta";
 import { carregarLimites } from "../../../../lib/limites-central";
+import { mesmaUrl } from "../../../../lib/mesma-url";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
@@ -81,6 +82,22 @@ async function MetasContent({
   const consulta = await searchParams;
   const supabase = await createClient();
   const membership = await currentMembership();
+
+  if (membership.error !== null) {
+    return (
+      <>
+        <CabecalhoDeMetas consulta={consulta} />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membership.error.message}
+          acao={{ href: mesmaUrl("/central/metas", consulta), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
+
   const podeEditar = membership.role === "ADMIN" || membership.role === "GESTOR";
   const hoje = toSalesMetricDate(new Date());
   const mesAtual = `${hoje.slice(0, 8)}01`;

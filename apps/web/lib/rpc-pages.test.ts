@@ -43,6 +43,19 @@ describe("lerPaginasDaRpc", () => {
     expect(new Set(linhas).size).toBe(4_500);
   });
 
+  it("lê todos os anúncios do SKU quando o teto é infinito positivo", async () => {
+    const { lerPagina, chamadas } = servidor(1_002);
+    const { linhas, error } = await lerPaginasDaRpc(lerPagina, Number.POSITIVE_INFINITY);
+
+    expect(error).toBeNull();
+    expect(linhas).toEqual(Array.from({ length: 1_002 }, (_, i) => i));
+    expect(chamadas).toEqual([
+      { offset: 0, limite: 1_000 },
+      { offset: 1_000, limite: 1_000 },
+      { offset: 1_002, limite: 1_000 },
+    ]);
+  });
+
   it("para no teto, para a rota poder dizer no nome do arquivo que cortou", async () => {
     const { lerPagina, chamadas } = servidor(12_000);
 
@@ -70,5 +83,22 @@ describe("lerPaginasDaRpc", () => {
     };
 
     await expect(lerPaginasDaRpc(lerPagina, 5_000)).resolves.toEqual({ linhas: [], error: { message: "boom", code: "PGRST202" } });
+  });
+
+  it("normaliza teto inválido ou fracionário e respeita o limite mesmo se o servidor devolver além do pedido", async () => {
+    const chamadas: { offset: number; limite: number }[] = [];
+    const lerPagina = (offset: number, limite: number) => {
+      chamadas.push({ offset, limite });
+      return Promise.resolve({ data: [1, 2, 3, 4, 5], error: null });
+    };
+
+    expect(await lerPaginasDaRpc(lerPagina, Number.NaN)).toEqual({ linhas: [], error: null });
+    expect(await lerPaginasDaRpc(lerPagina, Number.NEGATIVE_INFINITY)).toEqual({ linhas: [], error: null });
+    expect(chamadas).toEqual([]);
+
+    const parcial = await lerPaginasDaRpc(lerPagina, 2.9);
+
+    expect(chamadas).toEqual([{ offset: 0, limite: 2 }]);
+    expect(parcial).toEqual({ linhas: [1, 2], error: null });
   });
 });

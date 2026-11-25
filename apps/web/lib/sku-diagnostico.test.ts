@@ -241,6 +241,24 @@ describe("diagnosticarSku", () => {
     expect(acimaDoTeto(89.9, 98.9)).toBe(true);
     expect(acimaDoTeto(100, 110)).toBe(false);
     expect(acimaDoTeto(0, 10)).toBe(false);
+    expect(acimaDoTeto(10, Number.POSITIVE_INFINITY)).toBe(false);
+    expect(acimaDoTeto(Number.NaN, 100)).toBe(false);
+  });
+
+  it("ignora preços e quantidades não finitos para não envenenar o diagnóstico", () => {
+    const d = diagnosticarSku(
+      entrada({
+        anuncios: [
+          anuncio({ price: 100, promotional_price: Number.NaN, available_quantity: Number.POSITIVE_INFINITY }),
+          anuncio({ item_id: "MLB2", ml_account_id: "c2", price: Number.POSITIVE_INFINITY, available_quantity: 5 }),
+        ],
+        estoqueInterno: { local: Number.POSITIVE_INFINITY, reservado: 0, transito: 0, full: 0, virtual: false },
+      }),
+    );
+
+    expect(d.estoqueAnunciado).toBe(5);
+    expect(d.precos).toEqual({ menor: 100, maior: 100, media: 100, dispersaoPct: 0 });
+    expect(d.problemas).toHaveLength(0);
   });
 
   it("o número da dispersão sai mesmo quando não acende — fato antes de veredito", () => {
@@ -303,5 +321,18 @@ describe("compararPrecoDaConta", () => {
     expect(r?.daConta).toBe(41.9);
     expect(r?.dasOutras).toBe(41.9);
     expect(r?.diferencaPct).toBe(0);
+  });
+
+  it("descarta preços não finitos na comparação entre contas", () => {
+    const r = compararPrecoDaConta(
+      [
+        anuncio({ ml_account_id: "c1", price: 100 }),
+        anuncio({ item_id: "MLB2", ml_account_id: "c2", price: Number.POSITIVE_INFINITY }),
+        anuncio({ item_id: "MLB3", ml_account_id: "c2", price: 100 }),
+      ],
+      "c1",
+    );
+
+    expect(r).toEqual({ daConta: 100, dasOutras: 100, diferencaPct: 0 });
   });
 });

@@ -56,7 +56,9 @@ export function paginaDosPedidos(raw: string | string[] | undefined): number {
 
 /** O endereço de uma página da lista, na aba Vendas do SKU. */
 export function hrefDaPaginaDosPedidos(skuId: string, pagina: number): string {
-  return buildFilterHref(`/skus/${skuId}`, { aba: "vendas", [PARAMETRO_DA_PAGINA]: pagina > 1 ? String(pagina) : null }, 1);
+  const paginaValida = Number.isSafeInteger(pagina) && pagina > 1 ? String(pagina) : null;
+
+  return buildFilterHref(`/skus/${encodeURIComponent(skuId)}`, { aba: "vendas", [PARAMETRO_DA_PAGINA]: paginaValida }, 1);
 }
 
 /** A frase da janela ("21–40 de 57 pedidos"), a mesma das outras listas paginadas. */

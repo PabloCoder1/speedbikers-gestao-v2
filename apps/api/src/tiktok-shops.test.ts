@@ -268,4 +268,39 @@ describe("completeTikTokConnect (D-645)", () => {
     expect(vazio.gravado.rpc).toHaveLength(0);
     expect(deOutra.gravado.rpc).toHaveLength(1);
   });
+
+  it("D-793: epoch de expiração fora da faixa de Date devolve rejected sem lançar RangeError", async () => {
+    const { deps, gravado } = montar({
+      respostas: {
+        "/api/v2/token/get": {
+          ...TOKEN,
+          data: { ...TOKEN.data, access_token_expire_in: 9_000_000_000_000 },
+        },
+        "/authorization/202309/shops": LOJAS,
+      },
+    });
+
+    const outcome = await completeTikTokConnect(deps, { state: "s", code: "TTP_code" });
+
+    expect(outcome).toEqual({
+      status: "rejected",
+      reason: "não foi possível concluir a autorização com o TikTok Shop",
+    });
+    expect(gravado.rpc).toHaveLength(0);
+  });
+
+  it("D-819: state em branco devolve invalid_state sem consultar o banco e code em branco recusa sem chamar o TikTok", async () => {
+    const semState = montar();
+    const resState = await completeTikTokConnect(semState.deps, { state: "   ", code: "TTP_code" });
+
+    expect(resState).toEqual({ status: "invalid_state" });
+    expect(semState.gravado.update).toHaveLength(0);
+    expect(semState.chamadas).toHaveLength(0);
+
+    const semCode = montar();
+    const resCode = await completeTikTokConnect(semCode.deps, { state: "s", code: "   " });
+
+    expect(resCode).toMatchObject({ status: "rejected" });
+    expect(semCode.chamadas).toHaveLength(0);
+  });
 });

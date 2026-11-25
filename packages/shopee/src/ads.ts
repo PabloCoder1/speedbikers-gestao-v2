@@ -45,18 +45,49 @@ const dailySchema = z.object({
   response: z.array(shopeeAdsDaySchema).nullable().optional(),
 });
 
+function validarCalendario(ano: number, mes: number, dia: number, original: string): void {
+  const data = new Date(Date.UTC(ano, mes - 1, dia));
+
+  if (
+    !Number.isFinite(data.getTime()) ||
+    data.getUTCFullYear() !== ano ||
+    data.getUTCMonth() !== mes - 1 ||
+    data.getUTCDate() !== dia
+  ) {
+    throw new Error(`Data inválida para Ads da Shopee: ${original}`);
+  }
+}
+
 /** `AAAA-MM-DD` -> `DD-MM-AAAA`, o formato da API. */
 export function toShopeeAdsDate(iso: string): string {
-  const [ano, mes, dia] = iso.split("-");
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  const ano = match?.[1];
+  const mes = match?.[2];
+  const dia = match?.[3];
 
-  return `${dia ?? ""}-${mes ?? ""}-${ano ?? ""}`;
+  if (ano === undefined || mes === undefined || dia === undefined) {
+    throw new Error(`Data ISO inválida para Ads da Shopee (esperado AAAA-MM-DD): ${iso}`);
+  }
+
+  validarCalendario(Number(ano), Number(mes), Number(dia), iso);
+
+  return `${dia}-${mes}-${ano}`;
 }
 
 /** `DD-MM-AAAA` -> `AAAA-MM-DD`. */
 export function fromShopeeAdsDate(shopee: string): string {
-  const [dia, mes, ano] = shopee.split("-");
+  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(shopee);
+  const dia = match?.[1];
+  const mes = match?.[2];
+  const ano = match?.[3];
 
-  return `${ano ?? ""}-${mes ?? ""}-${dia ?? ""}`;
+  if (dia === undefined || mes === undefined || ano === undefined) {
+    throw new Error(`Data da Shopee inválida para Ads (esperado DD-MM-AAAA): ${shopee}`);
+  }
+
+  validarCalendario(Number(ano), Number(mes), Number(dia), shopee);
+
+  return `${ano}-${mes}-${dia}`;
 }
 
 /** O desempenho diário dos anúncios CPC da loja entre duas datas `AAAA-MM-DD` (início < fim). */
@@ -65,6 +96,9 @@ export async function getAllCpcAdsDailyPerformance(
   shop: { accessToken: string; shopId: number },
   options: { startDate: string; endDate: string },
 ): Promise<ShopeeAdsDay[]> {
+  const startDate = toShopeeAdsDate(options.startDate);
+  const endDate = toShopeeAdsDate(options.endDate);
+
   if (options.startDate >= options.endDate) {
     throw new Error("get_all_cpc_ads_daily_performance pede início anterior ao fim");
   }
@@ -73,7 +107,7 @@ export async function getAllCpcAdsDailyPerformance(
     method: "GET",
     path: "/api/v2/ads/get_all_cpc_ads_daily_performance",
     shop,
-    query: { start_date: toShopeeAdsDate(options.startDate), end_date: toShopeeAdsDate(options.endDate) },
+    query: { start_date: startDate, end_date: endDate },
     schema: dailySchema,
   });
 

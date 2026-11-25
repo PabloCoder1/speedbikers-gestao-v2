@@ -99,4 +99,16 @@ describe("resumo do recorte", () => {
     expect(revenueShare(10, 0)).toBeNull();
     expect(revenueShare(10, undefined)).toBeNull();
   });
+
+  it("D-804: recorteConversion e revenueShare devolvem null diante de valores não finitos", () => {
+    expect(recorteConversion(Number.NaN, 100)).toBeNull();
+    expect(recorteConversion(10, Number.NaN)).toBeNull();
+    expect(recorteConversion(Number.POSITIVE_INFINITY, 100)).toBeNull();
+    expect(recorteConversion(10, Number.POSITIVE_INFINITY)).toBeNull();
+
+    expect(revenueShare(Number.NaN, 1000)).toBeNull();
+    expect(revenueShare(100, Number.NaN)).toBeNull();
+    expect(revenueShare(Number.POSITIVE_INFINITY, 1000)).toBeNull();
+    expect(revenueShare(100, Number.POSITIVE_INFINITY)).toBeNull();
+  });
 });

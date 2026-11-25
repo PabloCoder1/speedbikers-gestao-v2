@@ -75,6 +75,7 @@ export function createSyncSupportMessagesReconcileHandler(
       logger: context.logger,
       missingEvent: "sync_support_messages_reconcile_account_missing",
       mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
     });
 
     if ("outcome" in resolvedAccount) {
@@ -131,7 +132,12 @@ export function createSyncSupportMessagesReconcileHandler(
         accessToken: tokenResult.accessToken,
       });
     } catch (error) {
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+      const errorClass =
+        error instanceof MercadoLivreApiError
+          ? error.errorClass
+          : error instanceof z.ZodError
+            ? "not_retryable"
+            : "retryable";
       const reason =
         error instanceof Error ? error.message : "erro desconhecido ao listar conversas não lidas";
 

@@ -179,4 +179,16 @@ describe("descreverLimites (D-408)", () => {
     expect(comoDigitado("change_strong", 0.07)).toBe("7");
     expect(comoDigitado("points_neutral", 0.0025)).toBe("0,25");
   });
+
+  it("D-801: lerLimites recusa strings vazias, arrays e limites que violam os CHECKs voltando aos padrões", () => {
+    expect(lerLimites({ ...LINHA, change_strong: "" })).toBe(LIMITES_PADRAO);
+    expect(lerLimites({ ...LINHA, change_strong: "   " })).toBe(LIMITES_PADRAO);
+    expect(lerLimites([])).toBe(LIMITES_PADRAO);
+    expect(lerLimites({ ...LINHA, change_neutral: 0.2, change_strong: 0.1 })).toBe(LIMITES_PADRAO);
+    expect(lerLimites({ ...LINHA, min_orders_sample: 0 })).toBe(LIMITES_PADRAO);
+    expect(lerLimites({ ...LINHA, margin_floor: "", ads_roas_floor: 0 })).toMatchObject({
+      margemMinima: LIMITES_PADRAO.margemMinima,
+      roasPisoDaMeta: LIMITES_PADRAO.roasPisoDaMeta,
+    });
+  });
 });

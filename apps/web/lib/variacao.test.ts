@@ -67,4 +67,10 @@ describe("avaliarVariacao", () => {
     expect(negativo?.relativa).toBeNull();
     expect(negativo?.diferenca).toBe(30);
   });
+
+  it("D-800: valores não finitos (NaN/Infinity) devolvem null em vez de variação corrompida", () => {
+    expect(avaliarVariacao(Number.NaN, 100, "maior-melhor", "valor")).toBeNull();
+    expect(avaliarVariacao(100, Number.POSITIVE_INFINITY, "maior-melhor", "valor")).toBeNull();
+    expect(avaliarVariacao(Number.NEGATIVE_INFINITY, 100, "maior-melhor", "fracao")).toBeNull();
+  });
 });

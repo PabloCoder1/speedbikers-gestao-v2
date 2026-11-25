@@ -12,6 +12,8 @@
  * **O tom das sugestões é o do pedido do dono:** "vale conferir", "vale
  * revisar" — o detector aponta indício, não diagnostica.
  */
+import { isValidBusinessDate } from "@sb/domain";
+
 import type { Tom } from "../components/tone";
 import { formatBusinessDate, formatCurrency, formatPercent } from "./format";
 
@@ -118,7 +120,7 @@ function registro(valor: unknown): Registro {
 }
 
 function numeroOuNulo(r: Registro, chave: string): number | null {
-  if (!(chave in r)) throw new ForaDoContrato(chave);
+  if (!Object.hasOwn(r, chave)) throw new ForaDoContrato(chave);
 
   const v = r[chave];
 
@@ -132,7 +134,7 @@ function numeroOuNulo(r: Registro, chave: string): number | null {
 
 /** Campo que só existe depois de uma migration: ausente vale `null`, presente é conferido. */
 function numeroOpcional(r: Registro, chave: string): number | null {
-  return chave in r ? numeroOuNulo(r, chave) : null;
+  return Object.hasOwn(r, chave) ? numeroOuNulo(r, chave) : null;
 }
 
 function numero(r: Registro, chave: string): number {
@@ -144,15 +146,23 @@ function numero(r: Registro, chave: string): number {
 }
 
 function texto(r: Registro, chave: string): string {
-  const v = r[chave];
+  const v = Object.hasOwn(r, chave) ? r[chave] : undefined;
 
   if (typeof v !== "string") throw new ForaDoContrato(chave);
 
   return v;
 }
 
+function dataCivil(r: Registro, chave: string): string {
+  const v = texto(r, chave);
+
+  if (!isValidBusinessDate(v)) throw new ForaDoContrato(chave);
+
+  return v;
+}
+
 function textoOuNulo(r: Registro, chave: string): string | null {
-  if (!(chave in r)) throw new ForaDoContrato(chave);
+  if (!Object.hasOwn(r, chave)) throw new ForaDoContrato(chave);
 
   const v = r[chave];
 
@@ -266,7 +276,7 @@ export function lerDetectorFrete(valor: unknown): DetectorDeFrete | null {
     for (const chave of RESUMO_NUMEROS) numeros[chave] = numero(rs, chave);
 
     return {
-      janela: { inicio: texto(j, "inicio"), corte: texto(j, "corte"), fim: texto(j, "fim") },
+      janela: { inicio: dataCivil(j, "inicio"), corte: dataCivil(j, "corte"), fim: dataCivil(j, "fim") },
       resumo: {
         ...(numeros as Omit<ResumoDoDetector, "excesso_14_dias">),
         excesso_14_dias: numeroOuNulo(rs, "excesso_14_dias"),
@@ -346,16 +356,31 @@ export interface Motivo {
  * da evidência mais direta (o próprio anúncio, o mesmo produto, a categoria,
  * a proporção, a margem). Os dias da janela vêm da RPC.
  */
+function finitoPositivo(n: number | null): n is number {
+  return n !== null && Number.isFinite(n) && n > 0;
+}
+
 export function motivosDoAlerta(a: AlertaDeFrete, janela: DetectorDeFrete["janela"]): Motivo[] {
   const motivos: Motivo[] = [];
   const diasAntes = diasEntre(janela.inicio, janela.corte);
+  const freteAtualValido = Number.isFinite(a.frete_atual);
 
-  if (a.sinais.historico > 0 && a.frete_antes !== null && a.frete_antes > 0) {
+  if (
+    finitoPositivo(a.sinais.historico) &&
+    freteAtualValido &&
+    finitoPositivo(a.frete_antes) &&
+    Number.isFinite(a.frete_atual / a.frete_antes)
+  ) {
     const geral = a.variacao_geral_faixa;
     const esperado = a.frete_esperado;
     // D-399: com mudança geral medida na faixa, o motivo compara com o esperado
     // e diz quanto foi a tabela; sem ela (ou num banco anterior), com o de antes.
-    const corrigido = geral !== null && esperado !== null && esperado > 0 && Math.abs(geral) >= 0.005;
+    const corrigido =
+      geral !== null &&
+      Number.isFinite(geral) &&
+      finitoPositivo(esperado) &&
+      Number.isFinite(a.frete_atual / esperado) &&
+      Math.abs(geral) >= 0.005;
     const desde = a.mudou_em === null ? "" : ` A mudança aparece a partir de ${formatBusinessDate(a.mudou_em)}.`;
 
     motivos.push({
@@ -372,7 +397,13 @@ export function motivosDoAlerta(a: AlertaDeFrete, janela: DetectorDeFrete["janel
     });
   }
 
-  if (a.sinais.irmaos > 0 && a.frete_irmaos !== null && a.frete_irmaos > 0 && a.irmaos !== null) {
+  if (
+    finitoPositivo(a.sinais.irmaos) &&
+    freteAtualValido &&
+    finitoPositivo(a.frete_irmaos) &&
+    Number.isFinite(a.frete_atual / a.frete_irmaos) &&
+    finitoPositivo(a.irmaos)
+  ) {
     motivos.push({
       sinal: "irmaos",
       pontos: a.sinais.irmaos,
@@ -384,7 +415,13 @@ export function motivosDoAlerta(a: AlertaDeFrete, janela: DetectorDeFrete["janel
     });
   }
 
-  if (a.sinais.pares > 0 && a.frete_pares !== null && a.frete_pares > 0 && a.pares !== null) {
+  if (
+    finitoPositivo(a.sinais.pares) &&
+    freteAtualValido &&
+    finitoPositivo(a.frete_pares) &&
+    Number.isFinite(a.frete_atual / a.frete_pares) &&
+    finitoPositivo(a.pares)
+  ) {
     motivos.push({
       sinal: "pares",
       pontos: a.sinais.pares,
@@ -395,18 +432,27 @@ export function motivosDoAlerta(a: AlertaDeFrete, janela: DetectorDeFrete["janel
     });
   }
 
-  if (a.sinais.proporcao > 0 && a.razao_p95 !== null) {
+  if (
+    finitoPositivo(a.sinais.proporcao) &&
+    freteAtualValido &&
+    Number.isFinite(a.razao) &&
+    Number.isFinite(a.preco_atual) &&
+    a.razao_p95 !== null &&
+    Number.isFinite(a.razao_p95)
+  ) {
+    const rotuloFaixa = Object.hasOwn(ROTULO_DA_FAIXA, a.faixa) ? ROTULO_DA_FAIXA[a.faixa] : a.faixa;
+
     motivos.push({
       sinal: "proporcao",
       pontos: a.sinais.proporcao,
       texto:
         `O frete é ${formatPercent(a.razao)} do preço (${formatCurrency(a.frete_atual)} sobre ` +
-        `${formatCurrency(a.preco_atual)}). Na faixa ${ROTULO_DA_FAIXA[a.faixa]}, 95% dos anúncios ` +
+        `${formatCurrency(a.preco_atual)}). Na faixa ${rotuloFaixa}, 95% dos anúncios ` +
         `ficam em até ${formatPercent(a.razao_p95)}.`,
     });
   }
 
-  if (a.sinais.margem > 0) {
+  if (finitoPositivo(a.sinais.margem)) {
     motivos.push({ sinal: "margem", pontos: a.sinais.margem, texto: textoDaMargem(a) });
   }
 
@@ -465,6 +511,8 @@ export function sugestaoDoAlerta(a: AlertaDeFrete): string {
 
 /** Dias entre duas datas de negócio (`YYYY-MM-DD`), sem passar por fuso. */
 export function diasEntre(inicio: string, fim: string): number {
+  if (!isValidBusinessDate(inicio) || !isValidBusinessDate(fim)) return 0;
+
   return Math.round((Date.parse(`${fim}T00:00:00Z`) - Date.parse(`${inicio}T00:00:00Z`)) / 86_400_000);
 }
 

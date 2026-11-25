@@ -64,7 +64,7 @@ const TRANSITIONS: Readonly<Record<RelistState, readonly RelistState[]>> = {
 };
 
 export function canTransitionRelist(from: RelistState, to: RelistState): boolean {
-  return TRANSITIONS[from].includes(to);
+  return Object.hasOwn(TRANSITIONS, from) && TRANSITIONS[from].includes(to);
 }
 
 /** Estados sem transição de saída — a operação acabou (bem ou mal, mas acabou). */

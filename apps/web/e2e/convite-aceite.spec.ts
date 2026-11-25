@@ -103,9 +103,9 @@ test("convite: senhas diferentes NÃO vão ao servidor", async ({ page }) => {
   await page.getByRole("button", { name: "Salvar senha e entrar" }).click();
 
   /*
-    Recusa em CASA. Sem SMTP não existe "esqueci minha senha" (D-296): uma
-    senha digitada errada e confirmada errada seria uma conta inalcançável até
-    alguém convidar de novo.
+    Recusa em CASA. Sem o "esqueci a senha" ligado (D-863, que pede SMTP real
+    no Auth), uma senha digitada errada e confirmada errada seria uma conta
+    inalcançável até alguém convidar de novo.
 
     Afirmada pelo TEXTO, não por `getByRole("alert")`: o Next mantém um
     `#__next-route-announcer__` com `role="alert"` em toda página, e a busca por

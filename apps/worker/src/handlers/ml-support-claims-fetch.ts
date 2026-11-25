@@ -73,9 +73,12 @@ export async function fetchSupportClaims(
   let remoteTotal = 0;
   let truncated = false;
   let latestRecordAt: string | null = null;
+  let latestRecordMs: number | null = null;
   const seen = new Set<number>();
 
   for (const role of SELLER_ROLES) {
+    let roleHasPagingTotal = false;
+
     for (let page = 0; page < MAX_PAGES; page += 1) {
       const offset = page * PAGE_SIZE;
       // **Sem `sort`, e a ausência é deliberada (D-109).** A primeira versão
@@ -122,7 +125,15 @@ export async function fetchSupportClaims(
       // Aceitar os dois é mais barato que apostar num deles (D-097).
       const claims = response.data ?? response.results ?? [];
 
-      remoteTotal += response.paging?.total ?? claims.length;
+      // D-787: `paging.total` já é o total do papel inteiro, somado UMA vez na
+      // página 0 (como `ml-support-questions-fetch.ts`). Só soma `claims.length`
+      // página a página quando a API omite `paging.total`.
+      if (page === 0 && response.paging?.total != null) {
+        remoteTotal += response.paging.total;
+        roleHasPagingTotal = true;
+      } else if (!roleHasPagingTotal) {
+        remoteTotal += claims.length;
+      }
 
       for (const claim of claims) {
         // Um claim pode aparecer nas duas varreduras se o vendedor ocupar os
@@ -154,9 +165,13 @@ export async function fetchSupportClaims(
         }
 
         const updatedAt = claim.last_updated ?? claim.date_created ?? null;
+        const updatedMs = updatedAt === null ? Number.NaN : Date.parse(updatedAt);
 
-        if (updatedAt !== null && (latestRecordAt === null || updatedAt > latestRecordAt)) {
+        // D-787: compara instante real (ms) em vez de string lexicográfica para
+        // não errar entre fusos distintos (-04:00/-03:00/+00:00) nem propagar data inválida.
+        if (updatedAt !== null && Number.isFinite(updatedMs) && (latestRecordMs === null || updatedMs > latestRecordMs)) {
           latestRecordAt = updatedAt;
+          latestRecordMs = updatedMs;
         }
       }
 

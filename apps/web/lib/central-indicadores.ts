@@ -177,11 +177,25 @@ function contribuicao(
   const apos = imposto?.resultado_apos_imposto ?? null;
   const coberta = f.receita_coberta;
 
-  if (apos === null || investimentoAds === null || coberta === null || coberta <= 0 || f.receita_bruta <= 0) {
+  if (
+    apos === null ||
+    investimentoAds === null ||
+    coberta === null ||
+    !Number.isFinite(apos) ||
+    !Number.isFinite(investimentoAds) ||
+    !Number.isFinite(coberta) ||
+    !Number.isFinite(f.receita_bruta) ||
+    coberta <= 0 ||
+    f.receita_bruta <= 0
+  ) {
     return { resultado: null, margem: null };
   }
 
   const resultado = Math.round((apos - (investimentoAds * coberta) / f.receita_bruta) * 100) / 100;
+
+  if (!Number.isFinite(resultado)) {
+    return { resultado: null, margem: null };
+  }
 
   return { resultado, margem: resultado / coberta };
 }
@@ -630,7 +644,7 @@ export function listarDatas(dias: readonly string[]): string {
 
 /** O mesmo formato de `/faturamento` (`campanhas-ads.tsx`): "4,20x". */
 export function formatRoas(roas: number | null): string {
-  return roas === null ? "—" : `${ROAS.format(roas)}x`;
+  return roas === null || !Number.isFinite(roas) ? "—" : `${ROAS.format(roas)}x`;
 }
 
 function porcento(relativa: number): string {
@@ -676,11 +690,16 @@ export function decomporMargem(atual: ResumoFaturamento, anterior: ResumoFaturam
 
     if (
       receita === null ||
+      !Number.isFinite(receita) ||
       receita <= 0 ||
       r.taxas_ml_cobertas === null ||
+      !Number.isFinite(r.taxas_ml_cobertas) ||
       r.frete_vendedor_coberto === null ||
+      !Number.isFinite(r.frete_vendedor_coberto) ||
       r.custo_produtos === null ||
-      r.margem_venda === null
+      !Number.isFinite(r.custo_produtos) ||
+      r.margem_venda === null ||
+      !Number.isFinite(r.margem_venda)
     ) {
       return null;
     }
@@ -743,7 +762,7 @@ export function montarResumo(
   preset: string | null,
 ): ResumoCentral {
   const frases: string[] = [];
-  const abertura = ABERTURA[preset ?? ""] ?? "No período";
+  const abertura = preset !== null && Object.hasOwn(ABERTURA, preset) ? (ABERTURA[preset] ?? "No período") : "No período";
 
   // 1. Faturamento.
   const receita = porId(indicadores, "receita");

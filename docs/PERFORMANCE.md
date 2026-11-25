@@ -224,6 +224,14 @@ olhado. Medido no Dev, todas as execuções registradas:
 `backfill.orders` (415 execuções, 17 min de média) fica de fora da leitura:
 é carga histórica, roda uma vez por conta e não voltou desde 25/08.
 
+### Sobreposição de páginas no catálogo do Mercado Livre
+
+No ensaio de 21/11 com duas páginas contendo os mesmos 20 anúncios ativos,
+o worker passou de 82 para 41 chamadas de hidratação e enriquecimento:
+multiget de 2 para 1, promoções de 40 para 20 e descrições de 40 para 20.
+O resultado gravou 20 anúncios únicos. A contagem usa uma fixture, com as
+chamadas interceptadas pelos testes de `ml-listings-fetch.test.ts`.
+
 ### O que o `sync.webhook.received` esconde na média
 
 Os 96 ms médios são enganosos — a maioria das execuções não faz trabalho
@@ -2256,3 +2264,310 @@ No Postgres local, a consulta `DISTINCT ON (ml_account_id, inventory_id)` com or
 
 
 A VM tinha estimativa de 346.394 linhas e `pg_table_size` de 50.454.528 bytes. Um Postgres 17.6 descartável, sem rede, recebeu 346.394 linhas sintéticas (48.971.776 bytes) e as definições prévias dos índices. A DDL versionada levou **549 ms** sem concorrência, medidos de ponta a ponta no cliente local. Com uma segunda sessão mantendo `ACCESS SHARE`, a troca abortou com `55P03` em **10,718 s**. O rollback preservou a constraint e os dois índices anteriores. Sem o bloqueio, a mesma DDL manteve as 346.394 linhas e deixou um índice único válido. A latência e a janela de bloqueio na VM seguem sem medição.
+
+### Tamanho de Full e telemetria na VM (Sentinel P03, 23/11/2026)
+
+Leitura de catálogo no Postgres da VM `sb-db`, em transação somente leitura com
+limite de 5 s por consulta. O tamanho inclui índices e TOAST. As linhas vivas
+são estimativas de `pg_stat_user_tables`. O reset das estatísticas do banco
+aparece em 18/11 às 13:49 UTC. A amostra mede tamanho atual, sem taxa mensal.
+
+| Relação | Bytes totais | Linhas vivas estimadas |
+| --- | ---: | ---: |
+| `fulfillment_stock_snapshots` | 174.301.184 | 394.693 |
+| `job_runs` | 140.722.176 | 348.192 |
+| `notifications` | 32.358.400 | 143.287 |
+| `sync_runs` | 19.128.320 | 59.543 |
+| `sync_errors` | 253.952 | 558 |
+
+O Full da reposição usa as capturas dos últimos três dias. O worker também
+busca a captura anterior por conta e inventário quando a janela recente está
+vazia. A compactação precisa preservar essas duas leituras e os eventos de
+mudança. `/api/vitals` escreve logs e fica fora da amostra do Postgres.
+Próximo ensaio em cópia isolada: comparar os resultados das RPCs e os eventos
+antes e depois da compactação e medir o tamanho físico recuperável.
+
+Restore seletivo de `fulfillment_stock_snapshots` da geração
+`1795328157907250` de 22/11, com MD5 e tamanho conferidos. PostgreSQL 17
+descartável sem rede nem portas publicadas, limitado a 2 vCPU e 8 GiB.
+As tabelas da comparação foram reconstruídas com os mesmos cinco índices.
+
+| Regra ensaiada | Linhas | Bytes com índices |
+| --- | ---: | ---: |
+| Cópia integral | 382.574 | 131.448.832 |
+| Últimos 30 dias e primeira/última captura de cada sequência de estado igual | 67.086 | 23.289.856 |
+| Regra anterior mais última captura por dia comercial, org, conta, inventário, anúncio, variação e SKU | 148.093 | 50.987.008 |
+
+Estado igual considera organização, anúncio, variação, SKU e quantidade. A
+primeira regra conservou a captura atual e as transições comparadas, mas
+falhou numa janela histórica de três dias com saldo constante: podia
+descartar a única captura válida para o fechamento de um dia em
+`get_purchase_analysis`. A segunda preservou, por ID, **104.303 fechamentos
+diários**, **2.412 últimas capturas de inventários** e **22.032 inícios de
+sequência**. Todas as comparações tiveram zero divergências.
+
+A segunda regra economizou 80.461.824 bytes (61,21%) na cópia reconstruída.
+A medição se refere à reconstrução local. Os contêineres temporários e
+arquivos locais foram removidos ao fim dos ensaios.
+
+#### RPCs e controle de acesso na cópia integral
+
+A mesma geração diária foi restaurada integralmente em PostgreSQL 17.6
+isolado, com 324 migrations até `20261119180000`, ACLs do dump, owners
+locais e execução do cron desativada. Uma política restritiva temporária
+sobre `fulfillment_stock_snapshots` simulou a visibilidade pós-compactação.
+As políticas de produção foram preservadas e as 13 funções que referenciam
+a tabela no catálogo consultado são `SECURITY INVOKER`.
+
+O ensaio comparou **60 pares** de respostas completas sob
+`authenticated`, sem divergências no recorte. Para funções que devolvem
+conjuntos, as linhas foram ordenadas por seu JSON antes da comparação.
+
+| Grupo | Comparações | Cobertura |
+| --- | ---: | --- |
+| RPCs centrais | 36 | Análise de compra em quatro datas e dois modos, reposição, Full, Curva ABC sem Full e painel de SKU |
+| Outros consumidores diretos | 24 | Lista e contagens de anúncios, vinculações, sugestões e alcance de reposição, análise ABC, saldos e resumo de estoque |
+
+O administrador manteve as quatro contas, com 382.574 → 148.093 linhas
+visíveis. O gestor sintético com permissão em uma conta manteve esse único
+escopo, com 106.114 → 39.422 linhas. O usuário sem vínculo viu zero linhas
+de snapshots e nenhuma linha de análise de compra antes e depois. Três
+RPCs agregadas devolveram estrutura de resumo para esse usuário nas duas
+fases. O rollback deixou as 382.574 linhas originais e removeu a política
+de ensaio e o schema auxiliar.
+
+O teste prova equivalência das respostas comparadas no backup com a
+visibilidade simulada. O ensaio físico abaixo verifica o acesso e a
+recuperação das 234.481 capturas movidas pela regra.
+
+Na VM, a janela de `pg_stat_statements` começou em 18/11 às 13:49 UTC.
+A leitura agregada de 23/11 identificou 48.240 chamadas de inserção e
+7.427 leituras PostgREST diretas, ambas como `service_role`. Nenhuma
+leitura PostgREST direta autenticada apareceu no recorte. O contador
+cobre os padrões ainda disponíveis em `pg_stat_statements` e a busca
+classifica SQL por referência textual. O resultado não exclui acesso
+eventual, chamadas fora da janela ou consultas não capturadas.
+
+#### Arquivo recuperável e concorrência (D-850)
+
+A política aprovada mantém as capturas brutas dos últimos 30 dias online,
+além das transições e do último registro de cada dia comercial. As demais
+capturas brutas ficam recuperáveis em arquivo restrito, sem expiração
+automática definida.
+
+Em cópia descartável do mesmo dump, o complemento físico de **234.481
+linhas** ficou em schema sem acesso para o papel de aplicação ensaiado. A
+união das **148.093 linhas online** e do arquivo teve zero diferenças da
+origem com `EXCEPT ALL` nos dois sentidos e o arquivo teve zero capturas
+dentro dos últimos 30 dias. O dump de **10.369.789 bytes** do arquivo foi
+restaurado em outro banco, com a mesma contagem e o mesmo SHA-256 da
+exportação ordenada.
+
+Em Postgres 17 descartável com linhas sintéticas, uma escrita concorrente
+fez a manutenção abortar com `55P03` antes da exclusão. Após o commit do
+escritor, o recorte preservou a linha nova e o rollback recolocou a linha
+arquivada. A aplicação na VM ainda requer migration versionada, destino
+persistente do arquivo e conferência da janela de bloqueio. A telemetria
+de notificações e sincronização segue em D04 no inventário.
+
+
+### Idade da telemetria na VM (Sentinel D04, 23/11/2026)
+
+Consulta agregada em transação somente leitura, com limite de 5 s por
+comando. Idade por `created_at` para registros e por `finished_at` para
+a última execução bem-sucedida.
+
+| Recorte | Total | Mais de 30 dias | Mais de 60 dias | Mais de 90 dias |
+| --- | ---: | ---: | ---: | ---: |
+| Notificações | 144.119 | 125.802 | 61.567 | 0 |
+| Notificações com pelo menos um destinatário sem leitura | — | 88.477 | 24.242 | 0 |
+| Execuções de sincronização | 59.847 | 52.797 | 14.168 | 0 |
+| Último sucesso por organização, conta e recurso | 36 | 7 | 4 | 0 |
+
+Entre as execuções com mais de 60 dias, 601 são falhas ou resultados
+parciais. Um corte apenas por idade afetaria notificações ainda pendentes
+e poderia retirar a última execução bem-sucedida de quatro grupos.
+
+Em restore seletivo da geração 1795328157907250, com corte simulado de
+60 dias em 23/11 às 00:00 BRT, **37.325 de 141.500 notificações** ficaram
+candidatas ao arquivo. Nenhuma tinha destinatário sem leitura.
+**12.782 de 57.853 execuções** ficaram candidatas, preservando falhas e
+parciais, a última execução, o último sucesso usado pela tela e o maior
+marco importado por organização, conta, recurso e canal. Os agregados
+de saúde dos **44 grupos** ficaram iguais com e sem o recorte, incluindo
+o ID da última execução e os contadores de 24 h. A conferência usa as
+mesmas projeções do SQL da tela na cópia seletiva.
+
+#### Dependências e restauração do arquivo (D04)
+
+A chave `sync_errors.sync_run_id` usa `ON DELETE SET NULL`. As duas
+tabelas têm proteções append-only. Uma execução referenciada por erro
+fica fora do recorte, mesmo quando satisfaz os filtros de idade e
+sucesso. No backup, **532 execuções distintas** tinham um erro vinculado.
+Nenhuma estava entre as candidatas. Uma amostra sintética com a migration
+base de sincronização confirmou a exclusão dessa candidata e que o
+trigger bloqueou a tentativa de remoção, preservando a referência.
+
+Na mesma geração do backup, o arquivo restrito no Postgres 17 guardou
+**37.325 notificações, 37.325 vínculos de destinatário e 12.782
+execuções**. A chave estrangeira ligou os destinatários às notificações
+dentro do arquivo. O dump de **3.807.702 bytes** foi restaurado em outro
+banco descartável. A exportação ordenada de cada tabela manteve o
+SHA-256 e os papéis `anon`, `authenticated` e `service_role` seguiram
+sem acesso ao schema. A amostra sintética também confirmou que a chave
+estrangeira rejeita um destinatário órfão após o restore.
+
+A Central de Notificações pagina e conta o histórico lido. Um arquivo
+restrito separado da consulta atual mudaria esse resultado. A política
+ainda precisa definir a consulta do histórico arquivado e o procedimento
+de separação do histórico append-only. A cópia ensaiada preservou as
+tabelas de origem.
+
+O ensaio também descartou um particionamento direto de `sync_runs` por
+`finished_at` com as chaves atuais. O Postgres recusou a chave primária
+só em `id` (`0A000`) e, com a chave composta, recusou a referência só em
+`id` de `sync_errors` (`42830`). A próxima alternativa a ensaiar é uma
+manutenção restrita que preserve a chave e os vínculos atuais. [Limites do
+particionamento no PostgreSQL 17](https://www.postgresql.org/docs/17/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE-LIMITATIONS).
+
+#### Leitura do histórico e concorrência (D04)
+
+No ensaio SQL com dados sintéticos, uma view `security_invoker` uniu os
+destinatários atuais e arquivados. As regras de RLS ficaram nas tabelas
+base. A cópia atual prevaleceu quando a mesma combinação de notificação
+e destinatário estava nos dois lados. Para dois usuários foi comparada a
+lista inteira, a segunda página com filtro de severidade e desempate
+pelo ID, e a contagem de não lidas por conta. Os resultados coincidiram.
+A revogação de acesso à conta ocultou os eventos correspondentes, e a
+remoção de perfil retirou os vínculos nos dois lados. O ensaio também
+confirmou que a role anônima não lia a view e o destinatário não abria o
+schema do arquivo diretamente. [Views com security_invoker no PostgreSQL
+17](https://www.postgresql.org/docs/17/sql-createview.html).
+
+No PostgREST 14.18 isolado, o embed automático sobre a view com `UNION`
+respondeu `400/PGRST200`. Uma segunda view trouxe as colunas do evento
+pelo join em SQL e retornou a página filtrada com `Content-Range: 1-1/2`,
+isolou o segundo destinatário e recusou a leitura anônima com `401`.
+O ensaio usou dados e tokens sintéticos. Em um segundo ensaio SQL, a
+view preservou o histórico de dois destinatários durante a cópia e
+depois de mover três notificações e seus vínculos para as tabelas de
+arquivo. A lista preferiu o vínculo ativo durante a sobreposição,
+manteve o filtro por loja e a contagem de não lidas, e o rollback
+recolocou as quatro notificações na tabela ativa. A migração e o cliente
+web ainda precisam reproduzir o contrato completo da Central.
+[Relacionamentos em views do PostgREST](https://docs.postgrest.org/en/v14/references/api/resource_embedding.html#foreign-key-joins-on-views).
+
+Em duas sessões no Postgres 17, `FOR UPDATE NOWAIT` adiou uma execução
+enquanto outra sessão gravava a FK de um erro. Após o commit do escritor,
+uma nova leitura em `READ COMMITTED` encontrou o vínculo. Na ordem
+inversa, a gravação para a execução selecionada aguardou, uma gravação
+para outra execução passou e o rollback deixou a primeira gravar a
+referência. As proteções append-only atuais foram mantidas. Em tabelas
+sintéticas separadas, mover e confirmar a execução em arquivo fez a FK
+recusar o erro tardio com `23503`. O bloqueio de linha sozinho resolve
+a disputa antes do commit. O corte ainda exige preservar a referência
+depois do commit e medir o tempo de bloqueio por lote. [Bloqueios de linha no PostgreSQL
+17](https://www.postgresql.org/docs/17/explicit-locking.html#LOCKING-ROWS).
+
+#### Custo de preservar a referência depois do corte (D04)
+
+Uma chave estrangeira para um registro de IDs independente da tabela
+ativa preservou o vínculo de um erro inserido após a movimentação de uma
+execução sintética. A variante com organização e conta também rejeitou
+IDs inexistentes e vínculos fora do escopo, manteve o vínculo opcional e
+preservou as tabelas no rollback. [Chaves estrangeiras no PostgreSQL
+17](https://www.postgresql.org/docs/17/ddl-constraints.html#DDL-CONSTRAINTS-FK).
+
+O restore seletivo da geração 1795328157907250 foi usado para medir
+`pg_total_relation_size` com as tabelas reconstruídas e os índices da
+tabela de execuções. O recorte de 60 dias removeu 12.782 de 57.853
+execuções na cópia. Entre os erros já vinculados, a organização e a
+conta coincidiram com as da execução em todos os registros do recorte.
+
+| Estrutura ativa | Bytes | Variação frente à base |
+| --- | ---: | ---: |
+| Tabela integral | 15.695.872 | — |
+| Tabela compactada + registro só com ID | 16.916.480 | +7,78% |
+| Tabela compactada + registro com ID, organização e conta | 21.094.400 | +34,39% |
+
+A medição exclui o arquivo e a sobrecarga de escrever no registro.
+Para esse recorte o registro resolve a integridade, com aumento de
+espaço. A alternativa fica fora do candidato. A revisão de retenção
+pode avançar na leitura do histórico de notificações e manter o
+histórico append-only de sincronização enquanto se mede o benefício
+de um recorte maior.
+
+### Custo da ordenação da Central de Notificações (D-851)
+
+Ensaio em PostgreSQL 17 descartável com 141.500 vínculos sintéticos
+distribuídos por quatro destinatários, horários agrupados em lotes de 30,
+e o índice `user_id, created_at DESC`. Uma execução de cada variante em
+`EXPLAIN ANALYZE`, sem joins e com páginas de 100 itens. A consulta usou
+35.375 linhas do mesmo destinatário.
+
+| Página | Só horário | Horário e ID |
+| --- | ---: | ---: |
+| Primeira | 0,063 ms | 0,119 ms |
+| Deslocamento de 20.000 linhas | 2,952 ms | 4,197 ms |
+
+O novo critério manteve o índice e acrescentou ordenação incremental,
+com pico observado de 27 kB. A página profunda continua lendo o
+deslocamento inteiro. A amostra mede a ordenação e o acesso ao índice. Os tempos da rota com joins e RLS não foram medidos aqui.
+
+### Marcação de notificações visíveis em lote (D-853)
+
+Medição em PostgreSQL 17 descartável com duas vCPU e 141.500 vínculos
+sintéticos. O usuário do ensaio tinha 55.000 vínculos sem leitura, dos
+quais 49.500 tinham evento visível pela RLS. Cada variante foi executada
+uma vez, em transação própria, com rollback.
+
+| Escrita | Vínculos alterados | Tempo |
+| --- | ---: | ---: |
+| Update direto, contando as linhas alteradas | 55.000 | 670,231 ms |
+| RPC com join nos eventos visíveis | 49.500 | 1.311,154 ms |
+
+Após os rollbacks, nenhuma linha havia ficado marcada. O ensaio mede o
+custo de banco e não inclui HTTP, latência de produção nem contenção.
+
+### Contagem visível no cabeçalho (D-854)
+
+Restore seletivo da geração 1795328157907250, PostgreSQL 17 e duas vCPU.
+RLS de destinatário reconstruída com os índices primário e parcial de
+não lidas. Foi simulada a revogação da conta com mais notificações do
+destinatário que tinha a maior fila. Em nove execuções aquecidas:
+
+| Contagem exata | Resultado | Mediana | Máximo |
+| --- | ---: | ---: | ---: |
+| Pelo destinatário | 103.964 | 5,387 ms | 8,982 ms |
+| Pelo destinatário e pelo evento visível | 76.281 | 584,714 ms | 753,704 ms |
+
+No mesmo recorte, a leitura limitada teve mediana de 1,679 ms e máximo
+de 3,582 ms quando retornou 100 linhas. Ao simular nenhum evento
+visível para o mesmo destinatário, devolveu zero, com mediana de
+707,135 ms e máximo de 827,624 ms. O cabeçalho inicia a leitura junto
+das demais e aguarda o resultado só na fronteira de Suspense do
+emblema. Um teste de renderização do Shell com a resposta pendente
+confirmou que o HTML inicial já trazia o conteúdo e o atalho. O
+emblema chegou depois da resposta e os totais 0, 1, 99 e 100
+mantiveram o rótulo acessível esperado.
+
+Em uma segunda base, com 141.500 vínculos sintéticos, a consulta
+limitada a 100 e ordenada por data usou o índice parcial e examinou 145
+candidatas para retornar 100. A execução de SQL levou 0,458 ms. Quando
+todos os eventos do ensaio foram ocultados, a consulta varreu os eventos
+e devolveu zero em 5,752 ms. No PostgREST 16.1, as respostas de 0, 99 e
+100 produziram 2, 1.880 e 1.899 bytes de JSON. O ensaio sintético usa
+uma policy de acesso simplificada. Seus tempos não são projeção de
+latência máxima no banco real.
+
+Em uma amostra adicional, o PostgREST 14.18 aceitou a projeção exata do
+cabeçalho e devolveu apenas a linha própria, visível e sem leitura.
+
+Na Atividade recente da Home, o limite incidia sobre os vínculos de
+destinatário antes de descartar eventos ocultados pela RLS. Em ensaios
+isolados com PostgreSQL e PostgREST, as cinco linhas mais recentes
+retornavam sem evento visível. O join interno antes do limite
+recuperou os cinco eventos visíveis mais antigos. Desde D-856, a
+contagem e a atividade iniciam em paralelo, e cada uma tem sua
+própria fronteira de espera. O teste de renderização reteve a resposta
+do PostgREST simulado e confirmou a entrega inicial dos indicadores.

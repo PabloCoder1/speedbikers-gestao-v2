@@ -32,6 +32,9 @@ export function buildAuthorizationUrl(options: {
   return url.toString();
 }
 
+/** Teto de validade relativa (100 anos em segundos): evita estouro de `Date` ao calcular `now + expire_in * 1000`. */
+const MAX_TOKEN_TTL_SECONDS = 3_153_600_000;
+
 /**
  * `access_token` vale 4 h (`expire_in`, em segundos); `refresh_token` vale 30
  * dias e só pode ser usado UMA vez — a renovação devolve o próximo.
@@ -39,7 +42,7 @@ export function buildAuthorizationUrl(options: {
 export const shopeeTokenSchema = z.object({
   access_token: z.string().min(1),
   refresh_token: z.string().min(1),
-  expire_in: z.number().int().positive(),
+  expire_in: z.number().int().positive().max(MAX_TOKEN_TTL_SECONDS),
   // Só com `main_account_id`: as lojas autorizadas desta vez.
   shop_id_list: z.array(z.number().int().positive()).nullable().optional(),
   // Só na renovação.

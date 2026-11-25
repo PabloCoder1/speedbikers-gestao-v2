@@ -1,5 +1,6 @@
 import { Suspense, type ReactNode } from "react";
 
+import { recuperacaoPorEmailLigada } from "../../lib/recuperar-senha";
 import { LoginForm } from "./login-form";
 
 export const metadata = { title: "Entrar — Speed Bikers Gestão" };
@@ -26,6 +27,10 @@ export const dynamic = "force-dynamic";
  * recusa isso nas telas de dentro.
  */
 export default function LoginPage(): ReactNode {
+  // Lida a cada requisição (a página é dinâmica): ligar o "esqueci a senha"
+  // depois do SMTP do Auth é só a variável e uma nova publicação (D-863).
+  const recuperacaoPorEmail = recuperacaoPorEmailLigada(process.env.RECUPERACAO_SENHA_POR_EMAIL);
+
   return (
     <main className="sb-login">
       <section className="sb-login-marca" aria-label="Speed Bikers Gestão">
@@ -62,7 +67,7 @@ export default function LoginPage(): ReactNode {
             Suspense, o Next tenta pre-renderizar a pagina no build e falha.
           */}
           <Suspense fallback={null}>
-            <LoginForm />
+            <LoginForm recuperacaoPorEmail={recuperacaoPorEmail} />
           </Suspense>
         </div>
       </section>

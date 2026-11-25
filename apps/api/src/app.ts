@@ -66,10 +66,14 @@ import type { ShopeePushDeps } from "./shopee-push.js";
 import { receiveShopeePush } from "./shopee-push.js";
 import type { ShopeeShopsDeps } from "./shopee-shops.js";
 import { completeShopeeConnect, startShopeeConnect } from "./shopee-shops.js";
+import type { TikTokPushDeps } from "./tiktok-push.js";
+import { receiveTikTokPush } from "./tiktok-push.js";
 import type { TikTokShopsDeps } from "./tiktok-shops.js";
 import { completeTikTokConnect, startTikTokConnect } from "./tiktok-shops.js";
 import type { ShopeeOrdersScheduleDeps } from "./shopee-orders-schedule.js";
 import { triggerShopeeOrdersSync } from "./shopee-orders-schedule.js";
+import type { TikTokOrdersScheduleDeps } from "./tiktok-orders-schedule.js";
+import { triggerTikTokOrdersSync } from "./tiktok-orders-schedule.js";
 import type { NfeImportDeps } from "./nfe-import.js";
 import { confirmNfeApply, receiveNfeUpload } from "./nfe-import.js";
 import { comandoDeItemSchema, editDocumentItem } from "./document-items.js";
@@ -80,6 +84,8 @@ import type { ReconcileDeps } from "./reconcile.js";
 import { triggerOrdersReconciliation } from "./reconcile.js";
 import type { SalesAnomalyActionsScheduleDeps } from "./sales-anomaly-actions-schedule.js";
 import { triggerSalesAnomalyActionsDetection } from "./sales-anomaly-actions-schedule.js";
+import type { LowMarginSalesScheduleDeps } from "./low-margin-sales-schedule.js";
+import { triggerLowMarginSalesDetection } from "./low-margin-sales-schedule.js";
 import type { WebhookDeps } from "./webhook.js";
 import { receiveWebhook } from "./webhook.js";
 
@@ -124,8 +130,12 @@ export interface AppDependencies {
   tiktokShops?: TikTokShopsDeps;
   /** D-453: o push da Shopee (webhook), autenticado pela assinatura do corpo. */
   shopeePush?: ShopeePushDeps;
+  /** D-808: o webhook do TikTok Shop, autenticado por HMAC-SHA256(app_key + corpo bruto). */
+  tiktokPush?: TikTokPushDeps;
   /** D-426: o gatilho horário dos pedidos da Shopee; `undefined` sem a Shopee configurada. */
   shopeeOrdersSchedule?: ShopeeOrdersScheduleDeps;
+  /** D-810: o gatilho horário dos pedidos e catálogo do TikTok Shop; `undefined` até handlers no worker. */
+  tiktokOrdersSchedule?: TikTokOrdersScheduleDeps;
   copilot?: CopilotDeps;
   reconcile?: ReconcileDeps;
   fulfillmentSchedule?: FulfillmentScheduleDeps;
@@ -146,6 +156,8 @@ export interface AppDependencies {
   pricingQuote?: PricingQuoteDeps;
   invites?: InviteDeps;
   metricsRefreshSchedule?: MetricsRefreshScheduleDeps;
+  /** D-858/D-859: o alerta de venda abaixo da margem, às 8h e às 17h. */
+  lowMarginSalesSchedule?: LowMarginSalesScheduleDeps;
   salesAnomalyActionsSchedule?: SalesAnomalyActionsScheduleDeps;
   decisionOutcomesSchedule?: DecisionOutcomesScheduleDeps;
   aiBudgetSchedule?: AiBudgetScheduleDeps;
@@ -438,6 +450,32 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
   });
 
   // --------------------------------------------------------------------
+  // Webhook do TikTok Shop (D-808, docs/TIKTOK_SHOP.md §10). Público: a
+  // autenticação é o HMAC-SHA256 de `app_key + corpo bruto` no cabeçalho
+  // `Authorization` (sem Bearer), conferido em tempo constante antes do parse.
+  // Assinatura inválida responde 401; falha transitória de banco/fila responde
+  // 503 para retentativa; demais casos respondem 200 com corpo vazio em <= 3 s.
+  // --------------------------------------------------------------------
+  app.post("/push/tiktok-shop", async (context) => {
+    const tiktokPush = dependencies.tiktokPush;
+
+    if (tiktokPush === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await receiveTikTokPush(tiktokPush, {
+      rawBody: await context.req.text(),
+      authorization: context.req.header("authorization"),
+    });
+
+    if (outcome.status === "invalid_signature") {
+      return context.json({ error: { code: "unauthorized" } }, 401);
+    }
+
+    return context.body(null, outcome.status === "unavailable" ? 503 : 200);
+  });
+
+  // --------------------------------------------------------------------
   // Rotas internas: Cloud Scheduler e Cloud Tasks, autenticadas por OIDC.
   //
   // A `api` é pública no Cloud Run por causa do webhook do Mercado Livre, que
@@ -546,6 +584,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
   });
 
   // --------------------------------------------------------------------
+  // ALERTA DE VENDA ABAIXO DA MARGEM (D-858, horário em D-859). Duas rodadas
+  // por dia, às 8h e às 17h de Brasília: cada uma julga as vendas novas, avisa
+  // no sino e manda um e-mail só. Cadência em `infra/cloud-scheduler.sh`.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/low-margin-sales", async (context) => {
+    const lowMarginSalesSchedule = dependencies.lowMarginSalesSchedule;
+
+    if (lowMarginSalesSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerLowMarginSalesDetection(lowMarginSalesSchedule);
+
+    return respostaDoAgendador(context, outcome);
+  });
+
+  // --------------------------------------------------------------------
   // Reconciliação de estoque contra o snapshot do UpSeller (D-029) — por
   // ORGANIZAÇÃO, não por conta ML (estoque não pertence a uma conta
   // específica, D-006). Cadência diária: `infra/cloud-scheduler.sh`.
@@ -626,6 +681,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const outcome = await triggerShopeeOrdersSync(shopeeOrdersSchedule);
+
+    return respostaDoAgendador(context, outcome);
+  });
+
+  // --------------------------------------------------------------------
+  // Pedidos e catálogo do TikTok Shop (D-810, M04) — por LOJA CONNECTED, com
+  // paginação por chave e isolamento de falhas de enqueue. Responde 503
+  // not_configured até ser ligado no bootstrap com os handlers do worker.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/tiktok-orders", async (context) => {
+    const tiktokOrdersSchedule = dependencies.tiktokOrdersSchedule;
+
+    if (tiktokOrdersSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerTikTokOrdersSync(tiktokOrdersSchedule);
 
     return respostaDoAgendador(context, outcome);
   });
@@ -1434,7 +1506,31 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
     }
 
-    const outcome = await confirmApply(importDeps, authorized.caller, batchId);
+    // Corpo opcional (D-860): a web antiga confirma sem corpo, e isso continua
+    // valendo como "não marcar fora do catálogo". Corpo presente e malformado
+    // é recusado -- nunca vira falso em silêncio.
+    const rawBody = await context.req.text();
+    let markAbsent = false;
+
+    if (rawBody.trim() !== "") {
+      let parsedBody: unknown;
+
+      try {
+        parsedBody = JSON.parse(rawBody);
+      } catch {
+        return context.json({ error: { code: "invalid_payload", message: "corpo inválido" } }, 400);
+      }
+
+      const body = z.object({ markAbsent: z.boolean().optional() }).safeParse(parsedBody);
+
+      if (!body.success) {
+        return context.json({ error: { code: "invalid_payload", message: "corpo inválido" } }, 400);
+      }
+
+      markAbsent = body.data.markAbsent === true;
+    }
+
+    const outcome = await confirmApply(importDeps, authorized.caller, batchId, { markAbsent });
 
     if (outcome.status === "not_found") {
       return context.json({ error: { code: "not_found" } }, 404);

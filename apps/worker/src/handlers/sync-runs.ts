@@ -60,25 +60,33 @@ export async function recordSyncRunSuccess(
   },
   logger: Logger,
 ): Promise<void> {
-  const result = await db.from("sync_runs").insert({
-    organization_id: params.organizationId,
-    ml_account_id: params.mlAccountId,
-    job_id: params.jobId,
-    resource: params.resource,
-    channel: params.channel,
-    status: params.status ?? "done",
-    reason: params.reason?.slice(0, 2000) ?? null,
-    items_processed: params.itemsProcessed,
-    latest_record_at: params.latestRecordAt?.toISOString() ?? null,
-    started_at: params.startedAt.toISOString(),
-    finished_at: params.finishedAt.toISOString(),
-  });
+  try {
+    const result = await db.from("sync_runs").insert({
+      organization_id: params.organizationId,
+      ml_account_id: params.mlAccountId,
+      job_id: params.jobId,
+      resource: params.resource,
+      channel: params.channel,
+      status: params.status ?? "done",
+      reason: params.reason?.slice(0, 2000) ?? null,
+      items_processed: params.itemsProcessed,
+      latest_record_at: params.latestRecordAt?.toISOString() ?? null,
+      started_at: params.startedAt.toISOString(),
+      finished_at: params.finishedAt.toISOString(),
+    });
 
-  if (result.error !== null) {
+    if (result.error !== null) {
+      logger.error("sync_run_not_recorded", {
+        job_id: params.jobId,
+        resource: params.resource,
+        reason: result.error.message,
+      });
+    }
+  } catch (error) {
     logger.error("sync_run_not_recorded", {
       job_id: params.jobId,
       resource: params.resource,
-      reason: result.error.message,
+      reason: error instanceof Error ? error.message : String(error),
     });
   }
 }
@@ -95,46 +103,65 @@ export async function recordSyncRunFailure(
   logger: Logger,
 ): Promise<void> {
   const reason = params.reason.slice(0, 2000);
+  let syncRunId: string | null = null;
 
-  const run = await db
-    .from("sync_runs")
-    .insert({
-      organization_id: params.organizationId,
-      ml_account_id: params.mlAccountId,
-      job_id: params.jobId,
-      resource: params.resource,
-      channel: params.channel,
-      status: "failed",
-      reason,
-      started_at: params.startedAt.toISOString(),
-      finished_at: params.finishedAt.toISOString(),
-    })
-    .select("id")
-    .maybeSingle();
+  try {
+    const run = await db
+      .from("sync_runs")
+      .insert({
+        organization_id: params.organizationId,
+        ml_account_id: params.mlAccountId,
+        job_id: params.jobId,
+        resource: params.resource,
+        channel: params.channel,
+        status: "failed",
+        reason,
+        started_at: params.startedAt.toISOString(),
+        finished_at: params.finishedAt.toISOString(),
+      })
+      .select("id")
+      .maybeSingle();
 
-  if (run.error !== null) {
+    if (run.error !== null) {
+      logger.error("sync_run_failure_not_recorded", {
+        job_id: params.jobId,
+        resource: params.resource,
+        reason: run.error.message,
+      });
+    } else {
+      syncRunId = run.data?.id ?? null;
+    }
+  } catch (error) {
     logger.error("sync_run_failure_not_recorded", {
       job_id: params.jobId,
       resource: params.resource,
-      reason: run.error.message,
+      reason: error instanceof Error ? error.message : String(error),
     });
   }
 
-  const errorInsert = await db.from("sync_errors").insert({
-    organization_id: params.organizationId,
-    ml_account_id: params.mlAccountId,
-    sync_run_id: run.data?.id ?? null,
-    resource: params.resource,
-    error_class: params.errorClass,
-    message: reason,
-    occurred_at: params.finishedAt.toISOString(),
-  });
+  try {
+    const errorInsert = await db.from("sync_errors").insert({
+      organization_id: params.organizationId,
+      ml_account_id: params.mlAccountId,
+      sync_run_id: syncRunId,
+      resource: params.resource,
+      error_class: params.errorClass,
+      message: reason,
+      occurred_at: params.finishedAt.toISOString(),
+    });
 
-  if (errorInsert.error !== null) {
+    if (errorInsert.error !== null) {
+      logger.error("sync_error_not_recorded", {
+        job_id: params.jobId,
+        resource: params.resource,
+        reason: errorInsert.error.message,
+      });
+    }
+  } catch (error) {
     logger.error("sync_error_not_recorded", {
       job_id: params.jobId,
       resource: params.resource,
-      reason: errorInsert.error.message,
+      reason: error instanceof Error ? error.message : String(error),
     });
   }
 }

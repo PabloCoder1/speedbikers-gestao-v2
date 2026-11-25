@@ -38,12 +38,19 @@ export async function createPreference(input: {
 }): Promise<PreferenceActionResult> {
   const supabase = await createClient();
 
-  const { data: auth } = await supabase.auth.getUser();
-  const userId = auth.user?.id;
+  const { data: auth, error: authError } = await supabase.auth.getUser();
 
-  if (userId === undefined) {
-    return { ok: false, message: "Sessão expirada — atualize a página e tente de novo." };
+  if (authError !== null) {
+    return {
+      ok: false,
+      message:
+        authError.status === 401 || authError.status === 403 || authError.name === "AuthSessionMissingError"
+          ? "Sessão expirada — atualize a página e tente de novo."
+          : "Não foi possível confirmar sua sessão — tente de novo.",
+    };
   }
+
+  const userId = auth.user.id;
 
   const { error } = await supabase.from("notification_preferences").insert({
     user_id: userId,

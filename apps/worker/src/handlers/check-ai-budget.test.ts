@@ -146,4 +146,14 @@ describe("aviso de orçamento de IA (D-100)", () => {
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
   });
+
+  it("D-814: recusa divergência entre organizationId do payload e do envelope sem emitir evento", async () => {
+    const { deps, events, lines } = fakeDeps({ cost: 500 });
+    const outraOrg = "22222222-0000-4000-8000-000000000002";
+
+    const outcome = await createCheckAiBudgetHandler(deps)(ENVELOPE, ctx(lines, { organizationId: outraOrg }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(events).toHaveLength(0);
+  });
 });

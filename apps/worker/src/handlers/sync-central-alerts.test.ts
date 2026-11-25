@@ -22,6 +22,7 @@ function resultado(fonte: string, criadas: number) {
 interface Resposta {
   data: unknown;
   error: { message: string } | null;
+  throwError?: Error;
 }
 
 function fakeDb(porFonte: Record<string, Resposta>): {
@@ -33,7 +34,13 @@ function fakeDb(porFonte: Record<string, Resposta>): {
     rpc: (fn: string, args: { p_organization_id: string; p_fontes: string[] }) => {
       chamadas.push({ fn, args });
 
-      return Promise.resolve(porFonte[args.p_fontes[0] ?? ""] ?? { data: null, error: { message: "sem resposta" } });
+      const resp = porFonte[args.p_fontes[0] ?? ""];
+
+      if (resp?.throwError !== undefined) {
+        return Promise.reject(resp.throwError);
+      }
+
+      return Promise.resolve(resp ?? { data: null, error: { message: "sem resposta" } });
     },
   } as unknown as SyncCentralAlertsDeps["db"];
 
@@ -48,6 +55,7 @@ const TUDO_CERTO: Record<string, Resposta> = {
   shopee_ruptura: { data: resultado("shopee_ruptura", 1), error: null },
   shopee_prejuizo: { data: resultado("shopee_prejuizo", 0), error: null },
   shopee_divergencia: { data: resultado("shopee_divergencia", 2), error: null },
+  fora_do_catalogo_anunciado: { data: resultado("fora_do_catalogo_anunciado", 1), error: null },
 };
 
 async function run(porFonte: Record<string, Resposta>, payload: unknown = { organizationId: ORG }) {
@@ -75,10 +83,12 @@ describe("sync-central-alerts (D-403, D-404)", () => {
       { fn: "sincronizar_alertas_central", args: { p_organization_id: ORG, p_fontes: ["shopee_prejuizo"] } },
       // D-627: a divergência de estoque da Shopee, a última.
       { fn: "sincronizar_alertas_central", args: { p_organization_id: ORG, p_fontes: ["shopee_divergencia"] } },
+      // D-861: o produto fora do catálogo com anúncio ativo, a última.
+      { fn: "sincronizar_alertas_central", args: { p_organization_id: ORG, p_fontes: ["fora_do_catalogo_anunciado"] } },
     ]);
-    // (2 + 1) + (1 + 1) + (0 + 1) + (3 + 1) + (1 + 1) + (0 + 1) + (2 + 1): criadas e atualizadas de cada fonte.
-    expect(outcome).toEqual({ status: "done", processed: 16 });
-    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(7);
+    // (2 + 1) + (1 + 1) + (0 + 1) + (3 + 1) + (1 + 1) + (0 + 1) + (2 + 1) + (1 + 1): criadas e atualizadas de cada fonte.
+    expect(outcome).toEqual({ status: "done", processed: 18 });
+    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(8);
     expect(linhas.join("")).toContain('"detectados":{"frete_anomalo":3}');
   });
 
@@ -88,8 +98,8 @@ describe("sync-central-alerts (D-403, D-404)", () => {
       frete_anomalo: { data: null, error: { message: "canceling statement due to statement timeout" } },
     });
 
-    expect(chamadas).toHaveLength(7);
-    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(6);
+    expect(chamadas).toHaveLength(8);
+    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(7);
     expect(outcome).toEqual({
       status: "failed",
       retryable: true,
@@ -103,10 +113,36 @@ describe("sync-central-alerts (D-403, D-404)", () => {
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
   });
 
+  it("falha transitória combinada com outra fonte fora do contrato mantém retryable=true para não perder a fonte que deu timeout (D-786)", async () => {
+    const { outcome } = await run({
+      ...TUDO_CERTO,
+      frete_anomalo: { data: null, error: { message: "canceling statement due to statement timeout" } },
+      ads_campanha: { data: { hoje: "2026-09-24" }, error: null },
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+  });
+
   it("payload sem organização não chama o banco", async () => {
     const { outcome, chamadas } = await run(TUDO_CERTO, {});
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
     expect(chamadas).toEqual([]);
+  });
+
+  it("D-795: erro de transporte numa fonte é isolado, continua nas outras e devolve retryable=true", async () => {
+    const { outcome, chamadas, linhas } = await run({
+      ...TUDO_CERTO,
+      frete_anomalo: { data: null, error: null, throwError: new TypeError("fetch failed") },
+    });
+
+    expect(chamadas.map(({ args }) => args.p_fontes[0])).toEqual(Object.keys(TUDO_CERTO));
+    expect(linhas.filter((l) => l.includes("sync_central_alerts_done"))).toHaveLength(7);
+    expect(linhas.join("")).toContain('"fonte":"fora_do_catalogo_anunciado"');
+    expect(outcome).toEqual({
+      status: "failed",
+      retryable: true,
+      reason: "frete_anomalo: fetch failed",
+    });
   });
 });

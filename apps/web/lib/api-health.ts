@@ -23,7 +23,7 @@ export interface ApiHealth {
 }
 
 export function apiBaseUrl(): string | null {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "";
+  const base = (process.env.NEXT_PUBLIC_API_URL ?? "").trim().replace(/\/+$/u, "");
 
   return base === "" ? null : base;
 }
@@ -48,7 +48,11 @@ export async function fetchApiHealth(): Promise<ApiHealth | null> {
 
     if (!response.ok) return null;
 
-    const body = (await response.json()) as { commit?: unknown; startedAt?: unknown };
+    const raw: unknown = await response.json();
+
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+
+    const body = raw as { commit?: unknown; startedAt?: unknown };
 
     return {
       commit: typeof body.commit === "string" ? body.commit : null,

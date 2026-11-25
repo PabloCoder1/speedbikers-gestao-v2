@@ -130,4 +130,26 @@ describe("detectShopeePriceEvents (C-81)", () => {
 
     expect(eventos.map((e) => e.entityId)).toEqual(["2"]);
   });
+
+  it("D-801: ignora preços não finitos (NaN/Infinity) e readAt inválido sem lançar RangeError", () => {
+    expect(
+      detectShopeePriceEvents({
+        shopeeShopId: LOJA,
+        shopName: "Loja SB",
+        previous: [leitura({ price: Number.NaN }), leitura({ itemId: 2, price: 50 })],
+        current: [leitura({ price: Number.NaN }), leitura({ itemId: 2, price: Number.POSITIVE_INFINITY })],
+        readAt: LIDO,
+      }),
+    ).toEqual([]);
+
+    expect(
+      detectShopeePriceEvents({
+        shopeeShopId: LOJA,
+        shopName: "Loja SB",
+        previous: [leitura({ price: 100 })],
+        current: [leitura({ price: 120 })],
+        readAt: new Date("invalid"),
+      }),
+    ).toEqual([]);
+  });
 });

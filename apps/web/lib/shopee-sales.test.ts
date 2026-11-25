@@ -5,6 +5,7 @@ import {
   SHOPEE_SALES_METRICS,
   SHOPEE_SITUACOES,
   buildShopeeSalesHref,
+  hrefDoPedidoShopee,
   lojaDeTesteShopee,
   nomeDaLojaShopee,
   origemDoSkuShopee,
@@ -203,5 +204,17 @@ describe("janela, loja", () => {
     expect(nomeDaLojaShopee({ shop_name: null, shop_id: 990000001 })).toBe("Loja 990000001");
     expect(lojaDeTesteShopee("sandbox")).toBe(true);
     expect(lojaDeTesteShopee("live")).toBe(false);
+  });
+
+  it("D-804: hrefDoPedidoShopee recusa loja em branco e data impossível; origemDoSkuShopee ignora protótipo", () => {
+    expect(hrefDoPedidoShopee("   ", "2026-10-14", "ORDER1")).toBeNull();
+    expect(hrefDoPedidoShopee(LOJA, "2026-02-31", "ORDER1")).toBeNull();
+    expect(hrefDoPedidoShopee(LOJA, "2026-13-01", "ORDER1")).toBeNull();
+    expect(hrefDoPedidoShopee(` ${LOJA} `, "2026-10-14", " ORDER1 ")).toBe(
+      `/vendas/shopee?loja=${LOJA}&from=2026-10-14&to=2026-10-14&pedido=ORDER1`,
+    );
+
+    expect(origemDoSkuShopee("toString")).toBe("toString");
+    expect(origemDoSkuShopee("constructor")).toBe("constructor");
   });
 });

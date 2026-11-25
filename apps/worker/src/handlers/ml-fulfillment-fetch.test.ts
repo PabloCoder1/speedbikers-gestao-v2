@@ -618,6 +618,8 @@ function fakeDbWithAbsences(options: {
   readError?: boolean;
   upsertError?: boolean;
   deleteError?: boolean;
+  upsertThrow?: Error;
+  deleteThrow?: Error;
 }): {
   db: FetchFulfillmentSnapshotsParams["db"];
   table: Map<string, AbsenceRow>;
@@ -693,6 +695,7 @@ function fakeDbWithAbsences(options: {
 
         upserts.push({ rows: rows as AbsenceRow[], options: upsertOptions });
 
+        if (options.upsertThrow !== undefined) return Promise.reject(options.upsertThrow);
         if (options.upsertError === true) return Promise.resolve(boom);
 
         // O upsert é UM comando: uma linha que viola um CHECK da migration
@@ -725,6 +728,7 @@ function fakeDbWithAbsences(options: {
           in: (_column: string, ids: readonly string[]) => {
             deletes.push({ filters: { ...filters }, ids });
 
+            if (options.deleteThrow !== undefined) return Promise.reject(options.deleteThrow);
             if (options.deleteError === true) return Promise.resolve(boom);
 
             // Sem o filtro de conta, o delete apagaria o item de TODAS as
@@ -1244,6 +1248,70 @@ describe("marca de ausência: item 404/403 sai da varredura até o recheque", ()
 
     expect(result.itemsProcessed).toBe(3);
     expect(lines.find((line) => line.includes("fulfillment_item_absences_not_cleared"))).toBeDefined();
+  });
+
+  it("D-797: erro de transporte ao gravar ou apagar marca de ausência é logado sem abortar a captura", async () => {
+    const stateUpsert = fakeDbWithAbsences({
+      links: LINKS_COM_UM_MORTO,
+      upsertThrow: new TypeError("fetch failed"),
+    });
+    const linesUpsert: string[] = [];
+    const resUpsert = await runAt(
+      stateUpsert.db,
+      scriptedClient({ ...VIVOS, MLB9: { status: 404 } }).client,
+      T0,
+      linesUpsert,
+    );
+
+    expect(resUpsert).toEqual({ itemsProcessed: 2, itemsSkipped: 0, itemsFailed: 1, itemsDeferred: 0, inventoriesShared: 0 });
+    expect(linesUpsert.join("\n")).toContain("fulfillment_item_absences_not_recorded");
+
+    const stateDelete = fakeDbWithAbsences({
+      links: LINKS_COM_UM_MORTO,
+      absences: [mark("MLB9", 403, at(9))],
+      deleteThrow: new TypeError("fetch failed"),
+    });
+    const linesDelete: string[] = [];
+    const resDelete = await runAt(
+      stateDelete.db,
+      scriptedClient({ ...VIVOS, MLB9: { id: "MLB9", inventory_id: "INV-9" } }).client,
+      at(12),
+      linesDelete,
+    );
+
+    expect(resDelete.itemsProcessed).toBe(3);
+    expect(linesDelete.join("\n")).toContain("fulfillment_item_absences_not_cleared");
+  });
+
+  it("D-797: ZodError em /items ou /stock/fulfillment pula só o item sem abortar a conta nem gravar marca 404/403", async () => {
+    const state = fakeDbWithAbsences({ links: LINKS_COM_UM_MORTO });
+    const lines: string[] = [];
+    const client = {
+      request: (options: RequestOptions<unknown>) => {
+        if (options.path === "/items/MLB9") {
+          return Promise.resolve(options.schema.parse({ id: 999 }));
+        }
+
+        if (options.path === "/inventories/INV-2/stock/fulfillment") {
+          return Promise.resolve(options.schema.parse({ inventory_id: "INV-2", available_quantity: "invalido" }));
+        }
+
+        if (options.path.startsWith("/items/")) {
+          const id = options.path.slice("/items/".length);
+
+          return Promise.resolve({ id, inventory_id: `INV-${id.slice(3)}` });
+        }
+
+        return Promise.resolve({ inventory_id: options.path.split("/")[2], available_quantity: 5 });
+      },
+    } as unknown as MercadoLivreClient;
+
+    const result = await runAt(state.db, client, T0, lines);
+
+    expect(result).toEqual({ itemsProcessed: 1, itemsSkipped: 0, itemsFailed: 2, itemsDeferred: 0, inventoriesShared: 0 });
+    expect(state.table.size).toBe(0);
+    expect(lines.join("\n")).toContain("fulfillment_item_fetch_failed");
+    expect(lines.join("\n")).toContain("fulfillment_stock_fetch_failed");
   });
 
   it("erro retryable na fase de ESTOQUE não perde a marca: a nova tentativa já pula o morto", async () => {

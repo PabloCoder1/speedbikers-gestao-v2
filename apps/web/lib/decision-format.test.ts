@@ -43,6 +43,12 @@ describe("formatDecisionSnapshot", () => {
     expect(formatDecisionSnapshot("texto")).toBe("Sem dado.");
     expect(formatDecisionSnapshot([1, 2])).toBe("Sem dado.");
   });
+
+  it("campos ausentes ou não finitos no snapshot viram '—', nunca 'undefined' ou 'R$ NaN'", () => {
+    const texto = formatDecisionSnapshot({ as_of: "2026-08-23", avg_price_7d: Number.NaN });
+
+    expect(texto).toBe("Vendido (7d): — · Preço médio: — · Estoque local: —");
+  });
 });
 
 describe("janelas de medição", () => {

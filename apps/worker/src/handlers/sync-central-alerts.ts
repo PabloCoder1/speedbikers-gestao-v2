@@ -45,6 +45,9 @@ export const FONTES_ALERTAS = [
   // D-627: a divergencia de estoque da Shopee, a ultima; so depois da
   // migration 20261021150000 em producao.
   "shopee_divergencia",
+  // D-861: o produto fora do catalogo (D-860) com anuncio ativo vinculado;
+  // so depois da migration 20261124120000 em producao.
+  "fora_do_catalogo_anunciado",
 ] as const;
 
 const resultadoSchema = z.object({
@@ -75,14 +78,25 @@ export function createSyncCentralAlertsHandler(deps: SyncCentralAlertsDeps): Job
     const falhas: string[] = [];
     let processadas = 0;
     let foraDoContrato = false;
+    let erroTransitorio = false;
 
     for (const fonte of FONTES_ALERTAS) {
-      const result = await deps.db.rpc("sincronizar_alertas_central", {
-        p_organization_id: organizationId,
-        p_fontes: [fonte],
-      });
+      let result;
+
+      try {
+        result = await deps.db.rpc("sincronizar_alertas_central", {
+          p_organization_id: organizationId,
+          p_fontes: [fonte],
+        });
+      } catch (error) {
+        erroTransitorio = true;
+        falhas.push(`${fonte}: ${error instanceof Error ? error.message : String(error)}`);
+
+        continue;
+      }
 
       if (result.error !== null) {
+        erroTransitorio = true;
         falhas.push(`${fonte}: ${result.error.message}`);
 
         continue;
@@ -117,7 +131,7 @@ export function createSyncCentralAlertsHandler(deps: SyncCentralAlertsDeps): Job
     }
 
     if (falhas.length > 0) {
-      return { status: "failed", retryable: !foraDoContrato, reason: falhas.join("; ") };
+      return { status: "failed", retryable: erroTransitorio || !foraDoContrato, reason: falhas.join("; ") };
     }
 
     return { status: "done", processed: processadas };

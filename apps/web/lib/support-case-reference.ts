@@ -50,23 +50,38 @@ export function resolveSupportCaseReference(
     return null;
   }
 
-  const withSku = links.find((link) => link.sku_id !== null && link.skus !== null);
+  const withSku = links.find(
+    (link) =>
+      link.sku_id !== null &&
+      link.sku_id.trim() !== "" &&
+      link.skus !== null &&
+      link.skus.sku.trim() !== "",
+  );
 
   if (withSku?.skus != null && withSku.sku_id !== null) {
+    const skuId = withSku.sku_id.trim();
+
     return {
-      code: withSku.skus.sku,
+      code: withSku.skus.sku.trim(),
       title: withSku.listings?.title ?? null,
       kind: "SKU",
       // `/skus/[skuId]` existe desde a Fase 5B — é o único destino real aqui.
-      href: `/skus/${withSku.sku_id}`,
+      href: `/skus/${encodeURIComponent(skuId)}`,
     };
   }
 
-  const withListing = links.find((link) => link.listing_id !== null && link.listings !== null);
+  const withListing = links.find(
+    (link) =>
+      link.listing_id !== null &&
+      link.listings !== null &&
+      link.listings.item_id.trim() !== "",
+  );
 
   if (withListing?.listings != null) {
+    const itemId = withListing.listings.item_id.trim();
+
     return {
-      code: withListing.listings.item_id,
+      code: itemId,
       title: withListing.listings.title,
       kind: "LISTING",
       /*
@@ -76,24 +91,30 @@ export function resolveSupportCaseReference(
         atendimento continuava mostrando o código como texto morto. Achado ao
         ligar a gaveta do pedido (D39) na mesma tela.
       */
-      href: `/anuncios/${withListing.listings.item_id}`,
+      href: `/anuncios/${encodeURIComponent(itemId)}`,
     };
   }
 
   const externalListing = links.find(
-    (link) => link.external_entity_kind === "LISTING" && link.external_entity_id !== null,
+    (link) =>
+      link.external_entity_kind === "LISTING" &&
+      link.external_entity_id !== null &&
+      link.external_entity_id.trim() !== "",
   );
 
   if (externalListing?.external_entity_id != null) {
     return {
-      code: externalListing.external_entity_id,
+      code: externalListing.external_entity_id.trim(),
       title: null,
       kind: "LISTING",
       href: null,
     };
   }
 
-  const withOrder = links.find((link) => link.order_id !== null);
+  const withOrder = links.find(
+    (link) =>
+      link.order_id !== null && Number.isSafeInteger(link.order_id) && link.order_id > 0,
+  );
 
   if (withOrder?.order_id != null) {
     return { code: String(withOrder.order_id), title: null, kind: "ORDER", href: null };

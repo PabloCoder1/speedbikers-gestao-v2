@@ -178,8 +178,8 @@ export async function receiveShopeePush(
     return { status: "ignored", code: push.code, reason: "push sem ação" };
   }
 
-  if (push.shop_id === undefined) {
-    return { status: "invalid_payload", reason: "push de loja sem shop_id" };
+  if (push.shop_id === undefined || push.shop_id <= 0) {
+    return { status: "invalid_payload", reason: "push de loja sem shop_id válido" };
   }
 
   const lida = await deps.db

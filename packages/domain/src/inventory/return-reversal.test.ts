@@ -364,4 +364,26 @@ describe("computeReturnReversal — pedido do Full (D-352)", () => {
     expect(result.estornosFull).toEqual([]);
     expect(result.movements).toEqual([]);
   });
+
+  it("rejeita occurredAt inválido com RangeError e nunca trata quantidade zero ou não finita como reversão total", () => {
+    expect(() => computeReturnReversal(ORDER, { position: 0, totalQuantity: 1, returnQuantity: 1 }, SALE, [], CLAIM_ID, new Date("invalid"))).toThrow(RangeError);
+    expect(() =>
+      computeUnreversedReturn(ORDER, { itemId: "MLB1", variationId: null, returnQuantity: 1 }, CLAIM_ID, new Date("invalid")),
+    ).toThrow(RangeError);
+
+    const zerado = computeReturnReversal(ORDER, { position: 0, totalQuantity: 0, returnQuantity: 0 }, SALE, [], CLAIM_ID, OCCURRED_AT);
+    const infinito = computeReturnReversal(
+      ORDER,
+      { position: 0, totalQuantity: 1, returnQuantity: Number.POSITIVE_INFINITY },
+      SALE,
+      [],
+      CLAIM_ID,
+      OCCURRED_AT,
+    );
+
+    expect(zerado.fullReversal).toBe(false);
+    expect(zerado.movements).toEqual([]);
+    expect(infinito.fullReversal).toBe(false);
+    expect(infinito.movements).toEqual([]);
+  });
 });

@@ -247,6 +247,28 @@ describe("parseNfeXmlObject", () => {
     expect(!result.ok && result.reason).toContain("item 1");
   });
 
+  it("recusa qCom zero/negativo, valores monetários negativos e dhEmi inexistente no calendário (D-799)", () => {
+    const qtdZero = baseNfe();
+    qtdZero.NFe.infNFe.det[0]!.prod.qCom = "0";
+    expect(parseNfeXmlObject({ nfeProc: qtdZero }, OWN_CNPJ).ok).toBe(false);
+
+    const qtdNegativa = baseNfe();
+    qtdNegativa.NFe.infNFe.det[0]!.prod.qCom = "-5";
+    expect(parseNfeXmlObject({ nfeProc: qtdNegativa }, OWN_CNPJ).ok).toBe(false);
+
+    const valorUnitNegativo = baseNfe();
+    valorUnitNegativo.NFe.infNFe.det[0]!.prod.vUnCom = "-1.00";
+    expect(parseNfeXmlObject({ nfeProc: valorUnitNegativo }, OWN_CNPJ).ok).toBe(false);
+
+    const valorTotalNegativo = baseNfe();
+    valorTotalNegativo.NFe.infNFe.det[0]!.prod.vProd = "-10.00";
+    expect(parseNfeXmlObject({ nfeProc: valorTotalNegativo }, OWN_CNPJ).ok).toBe(false);
+
+    const dataImpossivel = baseNfe();
+    dataImpossivel.NFe.infNFe.ide.dhEmi = "2026-02-31T10:00:00-03:00";
+    expect(parseNfeXmlObject({ nfeProc: dataImpossivel }, OWN_CNPJ).ok).toBe(false);
+  });
+
   it("dest ausente: recipientCnpj/recipientName ficam nulos — só funciona se emit bater com a organização", () => {
     const nfe = baseNfe();
     nfe.NFe.infNFe.emit = { CNPJ: OWN_CNPJ, xNome: "Speed Bikers Comercio LTDA" };

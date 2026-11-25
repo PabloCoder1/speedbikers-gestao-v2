@@ -57,6 +57,15 @@ export interface ScanSellerItemsOptions {
 
 const DEFAULT_MAX_PAGES = 500;
 
+export class SellerItemsScanLimitError extends Error {
+  readonly errorClass = "not_retryable";
+
+  constructor(maxPages: number) {
+    super(`varredura de anúncios atingiu o limite de ${String(maxPages)} páginas com cursor aberto`);
+    this.name = "SellerItemsScanLimitError";
+  }
+}
+
 /**
  * Percorre o catálogo inteiro por `search_type=scan`, devolvendo lotes de IDs.
  *
@@ -107,7 +116,7 @@ export async function* scanSellerItems(
     }
 
     if (pages >= maxPages) {
-      return;
+      throw new SellerItemsScanLimitError(maxPages);
     }
 
     scrollId = page.scroll_id;
@@ -125,7 +134,7 @@ export const itemsMultigetEntrySchema = z
     status_code: z.number().int(),
     body: z.unknown(),
   })
-  .transform(({ status_code, body }) => ({ code: status_code, body }));
+  .transform(({ id, status_code, body }) => ({ id, code: status_code, body }));
 
 export const itemsMultigetSchema = z.array(itemsMultigetEntrySchema);
 
@@ -149,8 +158,6 @@ export interface GetItemsBatchOptions {
   client: MercadoLivreClient;
   ids: readonly string[];
   accessToken: string;
-  /** Projeção de campos (`attributes=`). Omitir traz o item inteiro. */
-  attributes?: readonly string[];
 }
 
 /**
@@ -158,6 +165,10 @@ export interface GetItemsBatchOptions {
  * é erro do chamador, e a doc não diz o que a API faz nesse caso (erro 400?
  * truncamento silencioso?). Falhar aqui é melhor que descobrir depois que
  * metade do catálogo sumiu em silêncio — use `chunkItemIds`.
+ *
+ * A resposta com `attributes=body.…` omitiu o ID e o status do envelope na
+ * sondagem real de 25/11. O worker usa esses campos para identificar o
+ * anúncio e distinguir um 404 de uma leitura incompleta.
  */
 export async function getItemsBatch(options: GetItemsBatchOptions): Promise<ItemsMultigetEntry[]> {
   if (options.ids.length === 0) {
@@ -170,14 +181,23 @@ export async function getItemsBatch(options: GetItemsBatchOptions): Promise<Item
     );
   }
 
-  return await options.client.request({
+  const entries = await options.client.request({
     method: "GET",
     path: "/items/bulk",
     accessToken: options.accessToken,
-    searchParams: {
-      ids: options.ids.join(","),
-      attributes: options.attributes?.map((attribute) => `body.${attribute}`).join(","),
-    },
+    searchParams: { ids: options.ids.join(",") },
     schema: itemsMultigetSchema,
   });
+
+  const requested = new Set(options.ids);
+  const byId = new Map<string, ItemsMultigetEntry | null>();
+
+  for (const entry of entries) {
+    if (requested.has(entry.id)) {
+      // Duas respostas para o mesmo ID ficam ambíguas, inclusive num lote unitário.
+      byId.set(entry.id, byId.has(entry.id) ? null : entry);
+    }
+  }
+
+  return Array.from(byId.values()).filter((entry) => entry !== null);
 }

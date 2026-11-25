@@ -4,6 +4,7 @@ import { encryptToken, MercadoLivreApiError } from "@sb/mercado-livre";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 
 import type { fetchListings } from "./ml-listings-fetch.js";
 import type { SyncListingItemDeps } from "./sync-listing-item.js";
@@ -117,5 +118,8 @@ describe("sync.listing.item (D-631)", () => {
 
     fetchListingsMock.mockRejectedValueOnce(new Error("rede"));
     expect(await run().outcome).toMatchObject({ status: "failed", retryable: true });
+
+    fetchListingsMock.mockRejectedValueOnce(new ZodError([]));
+    expect(await run().outcome).toMatchObject({ status: "failed", retryable: false });
   });
 });

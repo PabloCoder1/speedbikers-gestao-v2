@@ -165,7 +165,9 @@ function pedidoDe(id: string | null): string | null {
     return null;
   }
 
-  return Number.isSafeInteger(Number(id)) ? id : null;
+  const numeric = Number(id);
+
+  return Number.isSafeInteger(numeric) && numeric > 0 ? String(numeric) : null;
 }
 
 /**
@@ -431,7 +433,7 @@ function contagemZerada(): Contagem {
 }
 
 export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -453,7 +455,17 @@ export function createSyncOrderLogisticsHandler(deps: SyncOrderLogisticsDeps): J
       return { status: "failed", retryable: true, reason: `falha ao ler a conta: ${account.error.message}` };
     }
 
-    if (account.data?.status !== "CONNECTED") {
+    if (account.data === null) {
+      context.logger.info("sync_order_logistics_account_not_connected", { ml_account_id: mlAccountId });
+
+      return { status: "done", processed: 0 };
+    }
+
+    if (account.data.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "conta não pertence à organização do job" };
+    }
+
+    if (account.data.status !== "CONNECTED") {
       context.logger.info("sync_order_logistics_account_not_connected", { ml_account_id: mlAccountId });
 
       return { status: "done", processed: 0 };

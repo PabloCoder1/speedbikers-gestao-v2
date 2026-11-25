@@ -79,3 +79,51 @@ test("CLI diferencia bloqueio, entrada inválida e catálogo compatível", (t) =
   assert.equal(changed.status, 1, changed.stderr);
   assert.equal(JSON.parse(changed.stdout).status, "plan_changed");
 });
+
+test("CLI vincula o plano ao HEAD e recusa SQL fora do checkout", (t) => {
+  const fixture = mkdtempDisposableSync(join(tmpdir(), "sb-migration-commit-"));
+  t.after(() => fixture.remove());
+  const git = (...args) => {
+    const result = spawnSync("git", ["-C", fixture.path, ...args], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  git("init", "--quiet", "--template=");
+  writeFileSync(join(fixture.path, ".gitignore"), "/20261119180001_sentinel.sql\n");
+  for (const name of [filename(first), filename(second)]) writeFileSync(join(fixture.path, name), "select 1;\n");
+  git("add", ".");
+  const commit = (...args) => git("-c", "user.name=Sentinel Fixture", "-c", "user.email=sentinel@example.test",
+    "-c", "commit.gpgsign=false", "commit", "--quiet", ...args);
+  commit("-m", "base");
+  const script = fileURLToPath(new URL("./check-migration-catalog.mjs", import.meta.url));
+  const run = (...args) => spawnSync(process.execPath, [script, fixture.path, ...args], { input: first, encoding: "utf8" });
+
+  const planned = run("--plan", "--bind-head");
+  assert.equal(planned.status, 0, planned.stderr);
+  const { id, revision } = JSON.parse(planned.stdout).plan;
+  assert.equal(revision, git("rev-parse", "HEAD"));
+  assert.equal(run("--expect-plan", id, "--bind-head").status, 0);
+  assert.equal(run("--expect-plan", id).status, 1);
+  assert.equal(run("--bind-head").status, 2);
+
+  commit("--allow-empty", "-m", "outro commit");
+  const changed = run("--expect-plan", id, "--bind-head");
+  assert.equal(changed.status, 1, changed.stderr);
+  assert.equal(JSON.parse(changed.stdout).status, "plan_changed");
+
+  const pending = join(fixture.path, filename(second));
+  writeFileSync(pending, "select 2;\n");
+  const modified = run("--plan", "--bind-head");
+  assert.equal(modified.status, 2);
+  assert.match(modified.stderr, /migrations SQL fora do commit/);
+  git("add", filename(second));
+  const staged = run("--plan", "--bind-head");
+  assert.equal(staged.status, 2);
+  assert.match(staged.stderr, /migrations SQL fora do commit/);
+
+  git("restore", "--source=HEAD", "--staged", "--worktree", filename(second));
+  writeFileSync(join(fixture.path, filename(third)), "select 3;\n");
+  const ignored = run("--plan", "--bind-head");
+  assert.equal(ignored.status, 2);
+  assert.match(ignored.stderr, /migrations SQL fora do commit/);
+});

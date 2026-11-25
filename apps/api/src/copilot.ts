@@ -1,6 +1,7 @@
 import type { AdminClient, UserClient } from "@sb/db";
 import { recordAiRun } from "@sb/db";
 import {
+  businessDateRangeLength,
   composeSkuReplenishment,
   describeActionEvidence,
   previousBusinessDateRange,
@@ -537,6 +538,13 @@ export async function handleCopilotQuery(
   accessToken: string,
   request: CopilotQueryRequest,
 ): Promise<CopilotQueryOutcome> {
+  if (!Object.hasOwn(TOOLS, request.tool)) {
+    return {
+      status: 400,
+      body: { error: { code: "unknown_tool", message: "ferramenta desconhecida" } },
+    };
+  }
+
   const definition = TOOLS[request.tool];
 
   const parsedInput = definition.inputSchema.safeParse(request.input);
@@ -661,11 +669,12 @@ export async function runSkuReplenishment(
   organizationId: string,
 ): Promise<SkuReplenishmentOutput> {
   const hoje = toSalesMetricDate(new Date());
+  const sku = input.sku.trim();
 
   const linhas = await userClient.rpc("get_purchase_suggestions", {
     p_organization_id: organizationId,
     p_date_to: hoje,
-    p_search: input.sku,
+    p_search: sku,
     p_limit: 20,
   });
 
@@ -675,7 +684,7 @@ export async function runSkuReplenishment(
 
   // `data` nao e anulavel depois da checagem de erro; o lint acusa a condicao
   // morta, e condicao morta esconde a leitura real.
-  const alvo = linhas.data.find((linha) => linha.sku.toUpperCase() === input.sku.trim().toUpperCase());
+  const alvo = linhas.data.find((linha) => linha.sku.toUpperCase() === sku.toUpperCase());
 
   if (alvo === undefined) {
     throw new CopilotToolError(
@@ -769,6 +778,16 @@ export async function runListingPerformance(
   input: ListingPerformanceInput,
   organizationId: string,
 ): Promise<ListingPerformanceOutput> {
+  // Datas ISO civis validadas no calendário real antes de consultar o banco:
+  // evita rollover silencioso (ex.: `2026-02-31`) e intervalo invertido (D-800).
+  let daysRequested: number;
+
+  try {
+    daysRequested = businessDateRangeLength(input.dateFrom, input.dateTo);
+  } catch (error) {
+    throw new CopilotToolError(error instanceof Error ? error.message : "período inválido");
+  }
+
   const [resumo, cadastro] = await Promise.all([
     userClient
       .rpc("get_listing_dashboard_summary", {
@@ -795,12 +814,8 @@ export async function runListingPerformance(
     throw new CopilotToolError(cadastro.error.message);
   }
 
-  // Datas ISO civis: UTC impede que o fuso do processo transforme uma janela
-  // de 7 dias em 6/8 na virada de horário. `days_observed` é a prova de que
-  // `visits = 0` veio do ML, não do coalesce da RPC sobre conjunto vazio.
-  const daysRequested = Math.floor(
-    (Date.parse(`${input.dateTo}T00:00:00Z`) - Date.parse(`${input.dateFrom}T00:00:00Z`)) / 86_400_000,
-  ) + 1;
+  // `days_observed` é a prova de que `visits = 0` veio do ML, não do coalesce
+  // da RPC sobre conjunto vazio.
   const daysObserved = resumo.data.days_observed;
   const visitsCoverage =
     daysObserved === 0 ? "SEM_COBERTURA" : daysObserved < daysRequested ? "PARCIAL" : "COMPLETA";

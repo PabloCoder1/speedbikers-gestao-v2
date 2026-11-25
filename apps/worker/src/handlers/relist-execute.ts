@@ -245,21 +245,29 @@ async function transition(
     return { ok: false, casLost: true, message: `a operação não estava mais em ${from} — transição não aplicada` };
   }
 
-  const event = await ctx.db.from("listing_relist_events").insert({
-    organization_id: ctx.operation.organization_id,
-    ml_account_id: ctx.operation.ml_account_id,
-    relist_id: ctx.operation.id,
-    from_status: from,
-    to_status: to,
-    actor_user_id: options.actorUserId ?? null,
-    reason,
-  });
+  try {
+    const event = await ctx.db.from("listing_relist_events").insert({
+      organization_id: ctx.operation.organization_id,
+      ml_account_id: ctx.operation.ml_account_id,
+      relist_id: ctx.operation.id,
+      from_status: from,
+      to_status: to,
+      actor_user_id: options.actorUserId ?? null,
+      reason,
+    });
 
-  if (event.error !== null) {
+    if (event.error !== null) {
+      ctx.logger.error("relist_event_not_recorded", {
+        relist_id: ctx.operation.id,
+        to_status: to,
+        reason: event.error.message,
+      });
+    }
+  } catch (error) {
     ctx.logger.error("relist_event_not_recorded", {
       relist_id: ctx.operation.id,
       to_status: to,
-      reason: event.error.message,
+      reason: error instanceof Error ? error.message : String(error),
     });
   }
 
@@ -764,7 +772,7 @@ async function resumeAfterRejection(
 }
 
 export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -790,6 +798,10 @@ export function createRelistExecuteHandler(deps: RelistExecuteDeps): JobHandler 
       context.logger.warn("relist_execute_operation_missing", { relist_id: parsed.data.relistId });
 
       return { status: "done", processed: 0 };
+    }
+
+    if (operation.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "operação de relist não pertence à organização do job" };
     }
 
     const ctx: TransitionContext = { db: deps.db, logger: context.logger, operation };

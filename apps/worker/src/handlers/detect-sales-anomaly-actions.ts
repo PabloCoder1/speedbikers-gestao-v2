@@ -136,7 +136,7 @@ function toEvidence(diagnosis: SalesAnomalyDiagnosis, marketplace: string): Json
 }
 
 export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyActionsDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -144,6 +144,10 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     }
 
     const { organizationId } = parsed.data;
+
+    if (organizationId !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "organização do payload diverge do envelope" };
+    }
     const now = deps.now?.() ?? new Date();
     const asOf = shiftBusinessDate(toSalesMetricDate(now), -1);
 
@@ -232,9 +236,13 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     const eventsBySkuAndChannel = new Map<string, CorrelatedEvent[]>();
 
     for (const event of correlatedEvents) {
+      const occurredAt = new Date(event.occurred_at);
+
+      if (Number.isNaN(occurredAt.getTime())) continue;
+
       for (const marketplace of event.marketplace === null ? MARKETPLACES : [event.marketplace]) {
         const list = eventsBySkuAndChannel.get(chave(event.sku_id, marketplace)) ?? [];
-        list.push({ eventType: event.event_type, occurredAt: new Date(event.occurred_at) });
+        list.push({ eventType: event.event_type, occurredAt });
         eventsBySkuAndChannel.set(chave(event.sku_id, marketplace), list);
       }
     }

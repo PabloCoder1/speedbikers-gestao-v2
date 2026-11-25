@@ -7,6 +7,14 @@
 # Uso:  bash infra/deploy-cloud-run.sh          # api e worker
 #       bash infra/deploy-cloud-run.sh api      # só um serviço
 
+case "$#:${1-}" in
+  0:|1:api|1:worker) ;;
+  *)
+    printf 'Uso: bash infra/deploy-cloud-run.sh [api|worker]\n' >&2
+    exit 2
+    ;;
+esac
+
 source "$(dirname "$0")/lib.sh"
 
 REPO="speedbikers-v3"
@@ -19,7 +27,36 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 service_url() {
-  gc run services describe "$1" --region "${REGION}" --format='value(status.url)' 2>/dev/null || true
+  local service="$1" inventory="$2" row url
+  row="$(awk -F '\t' -v service="${service}" '$1 == service { print; exit }' <<< "${inventory}")"
+  if [[ -z "${row}" ]]; then
+    return 0
+  fi
+  url="${row#*$'\t'}"
+  if [[ ! "${url}" =~ ^https://[^[:space:]]+$ ]]; then
+    fail "${service} existe no Cloud Run, mas ainda não tem uma URL HTTPS válida."
+  fi
+  printf '%s\n' "${url}"
+}
+
+worker_invoker_ready=false
+ensure_worker_invoker() {
+  if [[ "${worker_invoker_ready}" = true ]]; then
+    return
+  fi
+  step "Permissão de invocação do worker"
+  # Menor privilégio: só o Cloud Tasks invoca o worker, e a permissão é dada no
+  # serviço, não no projeto.
+  # O worker foi publicado nesta execução ou teve a URL confirmada pela API.
+  binding="$(gc run services add-iam-policy-binding worker \
+    --region "${REGION}" \
+    --member "serviceAccount:$(sa_email "${SA_TASKS}")" \
+    --role roles/run.invoker 2>&1)" || {
+    printf '%s\n' "${binding}" >&2
+    fail "Falha ao conceder run.invoker no worker. Mensagem do gcloud acima."
+  }
+  ok "worker: run.invoker -> ${SA_TASKS}"
+  worker_invoker_ready=true
 }
 
 build_and_deploy() {
@@ -85,38 +122,62 @@ build_and_deploy() {
       ;;
   esac
 
+  # Consulte o Cloud Run antes de pagar o build. Em um deploy combinado,
+  # a API relê o inventário após o worker para obter a URL recém-criada.
+  local services worker_url api_url
+  if ! services="$(gc run services list --region "${REGION}" --format='value(metadata.name,status.url)' | tr -d '\r')"; then
+    fail "Não foi possível listar os serviços do Cloud Run em ${REGION}."
+  fi
+  worker_url="$(service_url worker "${services}")"
+  if [[ "${app}" = api ]]; then
+    [[ -n "${worker_url}" ]] || fail "worker ainda não existe. Rode: bash infra/deploy-cloud-run.sh worker"
+    api_url="$(service_url api "${services}")"
+    if [[ -z "${api_url}" ]]; then
+      info "api ainda não existe; primeiro deploy define a URL e o segundo a injeta"
+      api_url="https://placeholder.invalid"
+    fi
+  else
+    if [[ -n "${worker_url}" && -z "${MARGIN_ALERT_EMAIL_ENABLED:-}" ]]; then
+      local worker_env_names
+      if ! worker_env_names="$(gc run services describe worker --region "${REGION}" \
+        --flatten='spec.template.spec.containers[0].env[]' \
+        --format='value(spec.template.spec.containers[0].env.name)' | tr -d '\r')"; then
+        fail "Não foi possível conferir as variáveis da revisão do worker."
+      fi
+      if grep -Eq '^(SMTP_HOST|SMTP_USER|SMTP_PASSWORD|SMTP_PORT|ALERT_EMAIL_FROM)$' <<< "${worker_env_names}"; then
+        fail "O worker já tem SMTP. Defina MARGIN_ALERT_EMAIL_ENABLED=sim para manter ou nao para desativar."
+      fi
+    fi
+    worker_url="${worker_url:-https://placeholder.invalid}"
+  fi
+
+  if [[ "${app}" = api ]]; then
+    ensure_worker_invoker
+  fi
+
   step "Build da imagem: ${app}"
   info "${image}"
-  local build_identity=()
+  local build_options=()
   if [ -n "${CLOUD_BUILD_SERVICE_ACCOUNT:-}" ]; then
-    build_identity=("--service-account=${CLOUD_BUILD_SERVICE_ACCOUNT}")
+    build_options+=("--service-account=${CLOUD_BUILD_SERVICE_ACCOUNT}")
+  fi
+  if [ -n "${CLOUD_BUILD_REGION:-}" ]; then
+    build_options+=("--region=${CLOUD_BUILD_REGION}")
   fi
   gc builds submit \
     --config infra/cloudbuild.yaml \
     --substitutions "_APP=${app},_IMAGE=${image}" \
-    "${build_identity[@]}" \
+    "${build_options[@]}" \
     .
 
+  local revision_nonce revision_suffix revisao
+  revision_nonce="$(od -An -N8 -tx1 /dev/urandom | tr -d '[:space:]')"
+  [[ "${revision_nonce}" =~ ^[0-9a-f]{16}$ ]] || fail "Não foi possível gerar um identificador para a revisão de ${app}."
+  revision_suffix="sentinel-${revision_nonce}"
+  revisao="${app}-${revision_suffix}"
   step "Deploy: ${app}"
 
   if [ "${app}" = "api" ]; then
-    # A api precisa conhecer a própria URL (audience do OIDC) e a do worker.
-    # Ambas são estáveis por serviço; na primeira criação a de si mesma ainda
-    # não existe, então o deploy roda em duas fases.
-    local api_url worker_url
-    api_url="$(service_url api)"
-    worker_url="$(service_url worker)"
-
-    # URL vazia viraria variável vazia no container, o Zod recusaria no boot e
-    # o Cloud Run reportaria apenas "failed to start" — erro caro de diagnosticar.
-    # Falhar aqui, com a causa explícita, custa muito menos.
-    [ -n "${worker_url}" ] || fail "worker ainda não existe. Rode: bash infra/deploy-cloud-run.sh worker"
-
-    if [ -z "${api_url}" ]; then
-      info "api ainda não existe; primeiro deploy define a URL e o segundo a injeta"
-      api_url="https://placeholder.invalid"
-    fi
-
     # Precisa bater exatamente com o cadastrado no painel de aplicações do
     # Mercado Livre. Vazio antes do primeiro cadastro é aceitável no
     # placeholder acima; falhar aqui de verdade quando a api_url real existir
@@ -131,15 +192,12 @@ build_and_deploy() {
     # Secret Manager (docs/DEPLOYMENT.md secao 5).
     # Caminho no diretório do repositório, não em /tmp: o gcloud.cmd é um
     # programa Windows nativo e não entende o caminho MSYS `/tmp/...`.
-    # O nome casa com `.env.*` do .gitignore, então não há risco de versionar.
-    local env_file=".env.deploy.yaml"
-    trap 'rm -f "${env_file}"' RETURN
-    # RETURN só dispara quando a função retorna. Se o script PARA no meio —
-    # `fail` sai com `exit`, como a guarda de tráfego logo abaixo —, o arquivo
-    # ficava para trás (D-341). O EXIT cobre esse caminho.
-    trap 'rm -f .env.deploy.yaml' EXIT
+    # O nome único casa com .gitignore e .gcloudignore. Cada processo limpa
+    # somente o arquivo que criou, inclusive quando o deploy falha.
+    api_env_file="$(mktemp .env.deploy.XXXXXXXX.yaml)"
+    trap 'rm -f -- "${api_env_file}"' EXIT
 
-    cat > "${env_file}" <<YAML
+    cat > "${api_env_file}" <<YAML
 NODE_ENV: production
 # Commit desta imagem — o MESMO que a taggeia. E o que a Saude do Sistema
 # (D-176) compara com o commit da web para dizer se o que esta no ar e o que
@@ -173,7 +231,7 @@ YAML
     # segredo sem acesso não falha o deploy, falha a PARTIDA do container.
     local shopee_secret=""
     if [ -n "${SHOPEE_PARTNER_ID}" ]; then
-      cat >> "${env_file}" <<YAML
+      cat >> "${api_env_file}" <<YAML
 SHOPEE_PARTNER_ID: "${SHOPEE_PARTNER_ID}"
 SHOPEE_ENVIRONMENT: "${SHOPEE_ENVIRONMENT}"
 SHOPEE_REDIRECT_URI: "${SHOPEE_REDIRECT_URI:-${api_url}/oauth/shopee/callback}"
@@ -181,14 +239,7 @@ YAML
       shopee_secret=",SHOPEE_PARTNER_KEY=${SECRET_SHOPEE_PARTNER_KEY}:latest"
       info "Shopee ligada: ${SHOPEE_ENVIRONMENT}, partner_id ${SHOPEE_PARTNER_ID}"
 
-      # D-453: o push é assinado com uma chave própria (a "Test Push Partner
-      # Key" do Console), não com a Partner Key. Só a api recebe push; o
-      # segredo só é montado se existir (a conta da api precisa de
-      # secretAccessor nele antes, pelo mesmo motivo de cima).
-      if gc secrets describe "${SECRET_SHOPEE_PUSH_PARTNER_KEY}" >/dev/null 2>&1; then
-        shopee_secret="${shopee_secret},SHOPEE_PUSH_PARTNER_KEY=${SECRET_SHOPEE_PUSH_PARTNER_KEY}:latest"
-        info "push da Shopee com chave própria: ${SECRET_SHOPEE_PUSH_PARTNER_KEY}"
-      fi
+      shopee_secret="${shopee_secret}${shopee_push_secret}"
     fi
 
     # D-645: o TikTok Shop só entra com TIKTOK_SHOP_SERVICE_ID definido, o mesmo
@@ -197,7 +248,7 @@ YAML
     # Center. Na fatia 1 só a api usa o TikTok.
     local tiktok_secret=""
     if [ -n "${TIKTOK_SHOP_SERVICE_ID}" ]; then
-      cat >> "${env_file}" <<YAML
+      cat >> "${api_env_file}" <<YAML
 TIKTOK_SHOP_SERVICE_ID: "${TIKTOK_SHOP_SERVICE_ID}"
 YAML
       tiktok_secret=",TIKTOK_SHOP_APP_KEY=${SECRET_TIKTOK_SHOP_APP_KEY}:latest,TIKTOK_SHOP_APP_SECRET=${SECRET_TIKTOK_SHOP_APP_SECRET}:latest"
@@ -212,6 +263,7 @@ YAML
     # webhook e provoca reentrega.
     gc run deploy "${app}" \
       --image "${image}" \
+      --revision-suffix="${revision_suffix}" \
       --region "${REGION}" \
       --service-account "$(sa_email "${SA_API}")" \
       --allow-unauthenticated \
@@ -221,7 +273,7 @@ YAML
       --concurrency 80 \
       --timeout 60s \
       --cpu 1 --memory 512Mi \
-      --env-vars-file "${env_file}" \
+      --env-vars-file "${api_env_file}" \
       --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest,ANTHROPIC_API_KEY=${SECRET_ANTHROPIC_KEY}:latest${shopee_secret}${tiktok_secret}" \
       --quiet
   else
@@ -233,10 +285,6 @@ YAML
     #
     # Timeout longo e concorrência baixa: perfil oposto ao da api, que é a
     # razão de serem dois serviços (D-013).
-    local self_url
-    self_url="$(service_url worker)"
-    [ -n "${self_url}" ] || self_url="https://placeholder.invalid"
-
     # D-426: o worker lê os pedidos da Shopee e renova os tokens — o mesmo
     # interruptor da api (SHOPEE_PARTNER_ID), sem redirect_uri.
     local shopee_env="" shopee_secret=""
@@ -248,6 +296,7 @@ YAML
 
     gc run deploy "${app}" \
       --image "${image}" \
+      --revision-suffix="${revision_suffix}" \
       --region "${REGION}" \
       --service-account "$(sa_email "${SA_WORKER}")" \
       --no-allow-unauthenticated \
@@ -257,11 +306,11 @@ YAML
       --concurrency 4 \
       --timeout 900s \
       --cpu 1 --memory 512Mi \
-      --set-env-vars "NODE_ENV=production,APP_COMMIT=${TAG},SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,DOCUMENTS_BUCKET=${PROJECT_ID}-documents,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${self_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}"),AI_MONTHLY_BUDGET_USD=${AI_MONTHLY_BUDGET_USD}${shopee_env}" \
-      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest${shopee_secret}" \
+      --set-env-vars "NODE_ENV=production,APP_COMMIT=${TAG},SUPABASE_URL=${SUPABASE_URL},ERP_IMPORTS_BUCKET=${PROJECT_ID}-erp-imports,DOCUMENTS_BUCKET=${PROJECT_ID}-documents,MERCADO_LIVRE_CLIENT_ID=${MERCADO_LIVRE_CLIENT_ID},GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},WORKER_URL=${worker_url},TASKS_INVOKER_SERVICE_ACCOUNT=$(sa_email "${SA_TASKS}"),AI_MONTHLY_BUDGET_USD=${AI_MONTHLY_BUDGET_USD}${shopee_env}${margin_alert_env}" \
+      --set-secrets "SUPABASE_SERVICE_ROLE_KEY=${SECRET_SUPABASE_KEY}:latest,MERCADO_LIVRE_CLIENT_SECRET=${SECRET_ML_CLIENT_SECRET}:latest,ML_TOKEN_ENCRYPTION_KEY=${SECRET_ML_TOKEN_KEY}:latest${shopee_secret}${margin_alert_secrets}" \
       --quiet
 
-    if [ "${self_url}" = "https://placeholder.invalid" ]; then
+    if [ "${worker_url}" = "https://placeholder.invalid" ]; then
       info "worker ainda não existe; primeiro deploy define a URL — rode este comando de novo para injetar WORKER_URL real"
     fi
   fi
@@ -272,22 +321,14 @@ YAML
   # antigo respondendo. Conferir aqui custa uma chamada; descobrir pelo
   # /health, quando alguém lembrar de olhar, custa o deploy inteiro.
   #
-  # A revisão conferida é `latestCreatedRevisionName`, a que ESTE deploy criou.
-  # `latestReadyRevisionName` NÃO serve: com o tráfego fixo, o Cloud Run não o
-  # move para a revisão nova — medido em 2026-09-14, ele seguia apontando a
-  # revisão revertida de D-339. Pelo mesmo motivo a saída sugerida nomeia a
-  # revisão e nunca usa `--to-latest`: "latest" é esse campo velho, e teria
-  # mandado o tráfego para o código revertido.
-  #
-  # `tr -d '\r'`: o gcloud no Windows pode terminar a linha com CR, e "100\r"
-  # não é "100".
-  local revisao percentual
-  revisao="$(gc run services describe "${app}" --region "${REGION}" --format='value(status.latestCreatedRevisionName)' | tr -d '\r')"
+  # Confira o nome reservado por esta execução. Outro deploy pode avançar
+  # latestCreatedRevisionName antes desta leitura.
+  local percentual
   percentual="$(gc run services describe "${app}" --region "${REGION}" \
     --flatten=status.traffic \
     --format='csv[no-heading](status.traffic.revisionName,status.traffic.percent)' |
     tr -d '\r' |
-    awk -F, -v r="${revisao}" '$1 == r { p = $2 } END { print (p == "" ? 0 : p) }')"
+    awk -F, -v r="${revisao}" '$1 == r && $2 ~ /^[0-9]+$/ { p += $2 } END { print p + 0 }')"
 
   [ "${percentual}" = "100" ] ||
     fail "${app}: a revisão ${revisao} foi publicada mas serve ${percentual}% do tráfego — ele está fixo noutra revisão. Confira a revisão e, se a publicação é para valer: gcloud run services update-traffic ${app} --region ${REGION} --project ${PROJECT_ID} --to-revisions ${revisao}=100"
@@ -296,6 +337,10 @@ YAML
   local url
   url="$(gc run services describe "${app}" --region "${REGION}" --format='value(status.url)')"
   ok "${app}: ${url}"
+
+  if [[ "${app}" = worker ]]; then
+    ensure_worker_invoker
+  fi
 }
 
 step "Pré-condições"
@@ -309,6 +354,54 @@ if [ "${AMBIENTE}" = "prod" ]; then
     fail "produção sem a sub-rede ${VPC_SUBNET}: rode infra/cloud-nat.sh antes (D-457)."
   info "saída: ${VPC_NETWORK}/${VPC_SUBNET}, todo o tráfego pelo Cloud NAT ${NAT_GATEWAY}"
 fi
+shopee_push_secret=""
+margin_alert_env=""
+margin_alert_secrets=""
+check_shopee_push=false
+check_margin_alert=false
+if [[ -n "${SHOPEE_PARTNER_ID}" && "${1:-api}" = api ]]; then
+  check_shopee_push=true
+fi
+if [[ "${1:-worker}" = worker ]]; then
+  case "${MARGIN_ALERT_EMAIL_ENABLED:-nao}" in
+    sim) check_margin_alert=true ;;
+    nao) ;;
+    *) fail "MARGIN_ALERT_EMAIL_ENABLED deve ser sim ou nao." ;;
+  esac
+fi
+
+# Resolva os vínculos antes do Cloud Build. Uma falha de leitura do inventário
+# pode ocultar a chave dedicada da Shopee (D-453) ou a configuração de SMTP.
+if [[ "${check_shopee_push}" = true || "${check_margin_alert}" = true ]]; then
+  if ! secret_names="$(gc secrets list --format='value(name.basename())' | tr -d '\r')"; then
+    fail "Não foi possível listar os segredos para confirmar os vínculos do deploy."
+  fi
+fi
+if [[ "${check_shopee_push}" = true ]]; then
+  if grep -Fxq -- "${SECRET_SHOPEE_PUSH_PARTNER_KEY}" <<< "${secret_names}"; then
+    shopee_push_secret=",SHOPEE_PUSH_PARTNER_KEY=${SECRET_SHOPEE_PUSH_PARTNER_KEY}:latest"
+    info "push da Shopee com chave própria: ${SECRET_SHOPEE_PUSH_PARTNER_KEY}"
+  fi
+fi
+if [[ "${check_margin_alert}" = true ]]; then
+  for smtp_secret in SMTP_HOST SMTP_USER SMTP_PASSWORD SMTP_PORT ALERT_EMAIL_FROM; do
+    if ! grep -Fxq -- "${smtp_secret}" <<< "${secret_names}"; then
+      case "${smtp_secret}" in
+        SMTP_PORT|ALERT_EMAIL_FROM) continue ;;
+        *) fail "Segredo obrigatório do alerta de margem ausente: ${smtp_secret}." ;;
+      esac
+    fi
+    if ! smtp_version="$(gc secrets versions describe latest --secret="${smtp_secret}" \
+      --format='csv[no-heading](name.basename(),state)' | tr -d '\r')" ||
+      [[ ! "${smtp_version}" =~ ^[1-9][0-9]*,ENABLED$ ]]; then
+      fail "Não foi possível confirmar uma versão mais recente habilitada para ${smtp_secret}."
+    fi
+    margin_alert_secrets+=",${smtp_secret}=${smtp_secret}:${smtp_version%,*}"
+  done
+  margin_alert_env=",WEB_APP_URL=${ORIGENS_WEB[0]}"
+  info "Alerta de margem por e-mail configurado para o worker."
+fi
+
 info "registry: ${REGISTRY}"
 info "tag: ${TAG}"
 
@@ -325,20 +418,6 @@ else
   # deixou quatro imports do UpSeller presos em UPLOADED em 2026-08-20.
   build_and_deploy worker
   build_and_deploy api
-fi
-
-step "Permissão de invocação do worker"
-# Menor privilégio: só o Cloud Tasks invoca o worker, e a permissão é dada no
-# serviço, não no projeto.
-if gc run services describe worker --region "${REGION}" >/dev/null 2>&1; then
-  binding="$(gc run services add-iam-policy-binding worker \
-    --region "${REGION}" \
-    --member "serviceAccount:$(sa_email "${SA_TASKS}")" \
-    --role roles/run.invoker 2>&1)" || {
-    printf '%s\n' "${binding}" >&2
-    fail "Falha ao conceder run.invoker no worker. Mensagem do gcloud acima."
-  }
-  ok "worker: run.invoker -> ${SA_TASKS}"
 fi
 
 step "Concluído"

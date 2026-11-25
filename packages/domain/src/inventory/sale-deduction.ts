@@ -481,6 +481,11 @@ export function computeSaleDeductions(order: SaleDeductionOrder, preCapture: Pre
   }
 
   const saleAt = saleInstant(order);
+
+  if (!Number.isFinite(saleAt.getTime())) {
+    throw new RangeError(`computeSaleDeductions: data da venda inválida no pedido ${String(order.id)}`);
+  }
+
   const deductions: StockMovementDraft[] = [];
 
   for (const item of order.items) {
@@ -491,8 +496,20 @@ export function computeSaleDeductions(order: SaleDeductionOrder, preCapture: Pre
       continue;
     }
 
+    if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+      throw new RangeError(
+        `computeSaleDeductions: quantidade inválida no pedido ${String(order.id)} item ${String(item.position)}: ${String(item.quantity)}`,
+      );
+    }
+
     if (item.skuKind === "KIT") {
       for (const component of item.components) {
+        if (!Number.isFinite(component.quantity) || component.quantity <= 0) {
+          throw new RangeError(
+            `computeSaleDeductions: quantidade de componente inválida no pedido ${String(order.id)} componente ${component.componentSkuId}: ${String(component.quantity)}`,
+          );
+        }
+
         deductions.push({
           skuId: component.componentSkuId,
           qtyDelta: -(item.quantity * component.quantity),

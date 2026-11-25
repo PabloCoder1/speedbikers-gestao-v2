@@ -163,4 +163,23 @@ describe("a nota recusada por regra (D-612, D-497 b)", () => {
 
     expect(etapas[1]).toEqual({ label: "Leitura do arquivo", estado: "falhou" });
   });
+
+  it("ignora semBaixaPorRegra em branco e normaliza contagens não finitas ou negativas", () => {
+    const recusadaBranca = nfeEtapas({
+      status: "FAILED",
+      parsedAt: null,
+      totalItems: 0,
+      resolvedItems: 0,
+      semBaixaPorRegra: "   ",
+    });
+    expect(recusadaBranca[1]).toEqual({ label: "Leitura do arquivo", estado: "falhou" });
+
+    const parsed = nfeEtapas({
+      status: "PARSED",
+      parsedAt: "2026-09-05T10:00:00Z",
+      totalItems: Number.POSITIVE_INFINITY,
+      resolvedItems: Number.NaN,
+    });
+    expect(parsed[2]?.nota).toBe("0 de 0 vinculados");
+  });
 });

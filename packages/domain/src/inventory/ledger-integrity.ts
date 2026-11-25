@@ -45,8 +45,25 @@ export function computeLedgerIntegrityDivergences(
   businessDate: string,
   occurredAt: Date,
 ): DomainEventDraft[] {
-  const ledgerByKey = new Map(ledgerBalances.map((b) => [`${b.skuId}:${b.locationKind}`, b.quantity]));
-  const projectedByKey = new Map(projectedBalances.map((b) => [`${b.skuId}:${b.locationKind}`, b.quantity]));
+  const ledgerByKey = new Map<string, number>();
+
+  for (const b of ledgerBalances) {
+    if (!Number.isFinite(b.quantity)) {
+      throw new RangeError(`quantidade inválida no ledger para ${b.skuId}:${b.locationKind}`);
+    }
+
+    ledgerByKey.set(`${b.skuId}:${b.locationKind}`, b.quantity);
+  }
+
+  const projectedByKey = new Map<string, number>();
+
+  for (const b of projectedBalances) {
+    if (!Number.isFinite(b.quantity)) {
+      throw new RangeError(`quantidade inválida na projeção para ${b.skuId}:${b.locationKind}`);
+    }
+
+    projectedByKey.set(`${b.skuId}:${b.locationKind}`, b.quantity);
+  }
 
   const keys = new Set([...ledgerByKey.keys(), ...projectedByKey.keys()]);
   const events: DomainEventDraft[] = [];

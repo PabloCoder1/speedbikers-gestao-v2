@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-21, candidato sobre a81f5235 concilia a infraestrutura do #374",
+  "corte": "25/11/2026, S04, I04 e M05 aceitos, candidato #378 com Claude #397 e Gemini D-831",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -119,7 +119,7 @@
       "peso": 8,
       "status": "Em andamento",
       "responsavel": "Multicanal/Dono",
-      "evidencia": "ROADMAP 796–797; conexão sem pedidos/webhook completo",
+      "evidencia": "#378 incorpora D-807 a D-814 e telas D-822 a D-824. Faltam persistência, handlers, regressão de reconexão e teste de uma loja.",
       "fase": 3
     },
     {
@@ -127,9 +127,9 @@
       "area": "Integrações dos marketplaces",
       "entrega": "Recuperação do atraso e diagnóstico ML 403",
       "peso": 5,
-      "status": "Em andamento",
+      "status": "Validado em produção",
       "responsavel": "Backend",
-      "evidencia": "Cloud Logging confirmou ResourceDeprecated no multiget. D-791/#342 validou a migração local para /items/bulk. Faltam publicação, verificação em produção e recuperação do atraso.",
+      "evidencia": "#377 cf6dae2d. CI aprovada e rollout do worker verificado. Reconciliação concluída nas lojas e exceções reprocessadas no fluxo normal. Listagens afetadas identificáveis conferidas em job_runs e listings.",
       "fase": 1
     },
     {
@@ -167,9 +167,9 @@
       "area": "Banco de dados",
       "entrega": "R1/R2/R4: compactação e retenções com política aprovada",
       "peso": 3,
-      "status": "Não iniciado",
+      "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "OPTIMIZATION_PLAN; não apagar negócio",
+      "evidencia": "Full em P03/D-850. Restore com SHA-256 igual em três tabelas. Ensaios SQL/PostgREST preservaram RLS, página e contagens, inclusive ao mover a notificação e seus destinatários na cópia. O registro de IDs elevou o espaço ativo em 7,78% no mínimo. Falta integração na Central e recorte de sync com ganho.",
       "fase": 3
     },
     {
@@ -207,9 +207,9 @@
       "area": "Google Cloud e infraestrutura",
       "entrega": "Backup/restore recorrente com prova e alerta",
       "peso": 5,
-      "status": "Em andamento",
+      "status": "Validado em produção",
       "responsavel": "Infra/Database",
-      "evidencia": "Restore integral do diário de 19/11 em container sem rede, com 322 migrations e zero índices inválidos. Sondagem externa diária ativa, com entrega do alerta confirmada após falha sintética (#372). Faltam política de retenção e ensaios de restore recorrentes.",
+      "evidencia": "Restores isolados de 19 e 22/11. O segundo restaurou em 91 s com 324 migrations. Retenção de 35 dias em diario/. Sondagem externa ativa e incidente/e-mail confirmados após falha controlada (#372, #374, infra/vm/README.md).",
       "fase": 2
     },
     {
@@ -217,9 +217,9 @@
       "area": "Google Cloud e infraestrutura",
       "entrega": "Monitoramento externo, disco e falha de backup",
       "peso": 3,
-      "status": "Em andamento",
+      "status": "Publicado",
       "responsavel": "Infra/Dono",
-      "evidencia": "Sondagem externa do backup ativa, com incidente e e-mail confirmados (#372). Métrica de disco conferida e política versionada (#370/#374). Faltam ativação e ensaio de disco e monitoramento de indisponibilidade.",
+      "evidencia": "#394/D-868. Checagem de 25/11 confirmou três políticas habilitadas (backup, disco e indisponibilidade) e três uptime checks. Incidente e e-mail de backup foram confirmados no ensaio #372.",
       "fase": 2
     },
     {
@@ -229,7 +229,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Infra/Database",
-      "evidencia": "Preflight do catálogo e hash do plano aprovados na CI (#366/#374). O workflow oficial ainda aponta para o hosted. Faltam integração com a VM e ensaio do rollback.",
+      "evidencia": "O candidato D-880/D-881 inclui preflight vinculado ao SHA e ao manifesto, com workflow da VM. #375 registra ensaio isolado de rollback. Faltam registro definitivo no Dev e novo upgrade com o catálogo reconciliado da VM.",
       "fase": 2
     },
     {
@@ -239,7 +239,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Infra/Dono",
-      "evidencia": "Billing429; ArtifactRegistry1.33GB; consumo não medido",
+      "evidencia": "Em 24/11 o billing do projeto está habilitado. VM sb-db e2-standard-2 em execução e disco pd-balanced de 50 GB associado. Falta atribuir custo efetivo e validar dimensionamento e retenção.",
       "fase": 2
     },
     {
@@ -277,9 +277,9 @@
       "area": "Segurança e autenticação",
       "entrega": "Auth VM real: login, convites, recuperação, SMTP e política",
       "peso": 5,
-      "status": "Bloqueado",
+      "status": "Validado em produção",
       "responsavel": "Dono/Database",
-      "evidencia": "#333 registra navegação autenticada após o corte. Convite, SMTP, recuperação de senha e política Auth seguem sem validação",
+      "evidencia": "#394 relata login/convite e recuperação recebida e concluída pelo dono. /login retornou HTTP 200 e exibiu Esqueci a senha na checagem de 25/11.",
       "fase": 1
     },
     {
@@ -289,7 +289,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Infra/Dono",
-      "evidencia": "SA padrão Editor; main protected=false, sem checks obrigatórios ou rulesets em 18/11",
+      "evidencia": "24/11: main com PR, quatro checks obrigatórios, force-push e exclusão bloqueados, com bypass administrativo. Build isolado 6e12a79b publicou o worker com v3-builder. O teste regional bff60fa4 registrou o marcador 139 s após a concessão de IAM. Não há triggers em global ou southamerica-east1. Falta adoção nos builds regulares e revisão de roles/editor.",
       "fase": 2
     },
     {
@@ -307,9 +307,9 @@
       "area": "Performance",
       "entrega": "Benchmarks representativos após restauração",
       "peso": 5,
-      "status": "Não iniciado",
+      "status": "Testado localmente",
       "responsavel": "Performance",
-      "evidencia": "Baseline antiga não mede VM atual; faturamento90d e frete frio",
+      "evidencia": "72 consultas sob concorrência de seis em backup restaurado com limites equivalentes à VM (2 vCPU e 8 GiB). Todas abaixo de 8 s (#381).",
       "fase": 3
     },
     {
@@ -317,9 +317,9 @@
       "area": "Performance",
       "entrega": "Reduzir crescimento Full/telemetria sem perder auditoria",
       "peso": 3,
-      "status": "Em andamento",
+      "status": "Testado localmente",
       "responsavel": "Database",
-      "evidencia": "1092→979MB apenas simulação; medir retenções",
+      "evidencia": "Política Full aprovada (D-850). Cópia: -61,21%, 60 pares de RPCs sob RLS iguais, 234.481 linhas arquivadas e restauradas com SHA-256 igual, bloqueio concorrente e rollback ensaiados. Aplicação e telemetria complementar pendentes (PERFORMANCE.md / D04).",
       "fase": 3
     },
     {
@@ -347,9 +347,9 @@
       "area": "Testes e qualidade",
       "entrega": "Carga e falhas representativas em stack equivalente",
       "peso": 5,
-      "status": "Em andamento",
+      "status": "Testado localmente",
       "responsavel": "QA/Infra",
-      "evidencia": "Ensaio em processo do webhook com duas rajadas de 320: 503 sem enqueue durante falha de lookup; 200 após recuperação. Postgres e Cloud Tasks reais ainda pendentes.",
+      "evidencia": "Stack local com duas rodadas de 1.088 requisições, 80 tarefas únicas e 240 duplicatas (#382). Cloud Tasks gerenciado isolado: 48/48 entregues, 16/16 recuperadas após 503, duplicata 409 e fila vazia. Em operação, 24/24 heartbeats chegaram ao worker (TESTING.md).",
       "fase": 5
     },
     {
@@ -389,7 +389,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Sentinel/Outros",
-      "evidencia": "A integração com #337 preserva D-767 de Compras e atribui D-790 ao índice Full. PRs e worktrees seguem em revisão",
+      "evidencia": "26 PRs comparados com #378: 17 heads ancestrais, 6 mudanças equivalentes ou ampliadas e 3 evidências independentes. Preservar refs e worktrees até revisão (BRANCH_AUDIT.md).",
       "fase": 4
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "CI verde no #364 em 2e25fb72 e no recorte de infraestrutura #374 em 4c678480. PG17 isolado aplicou upgrade de 324 para 328 migrations com versões temporárias. Faltam CI da composição e registro oficial de migrations no Dev.",
+      "evidencia": "#378 compõe #397 e Gemini até D-831. Quatro migrations do Sentinel aguardam Dev saudável para ordenação oficial e ensaio de upgrade da VM.",
       "fase": 5
     },
     {
@@ -419,7 +419,7 @@
       "peso": 8,
       "status": "Bloqueado",
       "responsavel": "Dono/Infra",
-      "evidencia": "#333 registra 17 versões da main na VM até 20261118211000. Workflow ainda no hosted. Revisões API/worker mantidas. Faltam revisão e autorização para publicar Gemini/Codex e #331",
+      "evidencia": "Plano de publicação na VM aprovado. Preflight de 24/11: 325 versões até 20261123180000. #384 integrado e workflow de preflight da VM preparado no candidato (D-881). Faltam as quatro versões definitivas, a CI do candidato e a publicação do SHA aprovado.",
       "fase": 5
     },
     {
@@ -429,7 +429,7 @@
       "peso": 8,
       "status": "Não iniciado",
       "responsavel": "Dono/QA",
-      "evidencia": "janela e limites de erro/atraso acordar; não basta /health",
+      "evidencia": "Aceitantes definidos: dono ou gestor. Faltam execução das jornadas operacionais e observação da estabilidade após publicação.",
       "fase": 5
     }
   ]

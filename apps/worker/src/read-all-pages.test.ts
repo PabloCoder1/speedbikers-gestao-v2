@@ -99,4 +99,29 @@ describe("readAllPages", () => {
 
     await expect(readAllPages(f.ler, { pageSize: 0 })).rejects.toThrow("pageSize");
   });
+
+  it("D-819: pageSize NaN, -Infinity ou fracionário é rejeitado/normalizado sem laço infinito", async () => {
+    let calls = 0;
+    const bounded = () => {
+      calls += 1;
+
+      if (calls > 5) {
+        return Promise.resolve({ data: null, error: { message: "infinite_loop" } });
+      }
+
+      return Promise.resolve({ data: [], error: null });
+    };
+
+    await expect(readAllPages(bounded, { pageSize: Number.NaN })).rejects.toThrow("pageSize");
+    await expect(readAllPages(bounded, { pageSize: Number.NEGATIVE_INFINITY })).rejects.toThrow("pageSize");
+    expect(calls).toBe(0);
+
+    const f = fonte(5);
+    expect(await readAllPages(f.ler, { pageSize: 2.9 })).toHaveLength(5);
+    expect(f.chamadas).toEqual([
+      [0, 1],
+      [2, 3],
+      [4, 5],
+    ]);
+  });
 });

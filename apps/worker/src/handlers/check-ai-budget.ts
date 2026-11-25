@@ -37,7 +37,7 @@ export interface CheckAiBudgetDeps {
 }
 
 export function createCheckAiBudgetHandler(deps: CheckAiBudgetDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -45,6 +45,10 @@ export function createCheckAiBudgetHandler(deps: CheckAiBudgetDeps): JobHandler 
     }
 
     const { organizationId } = parsed.data;
+
+    if (organizationId !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "organização do payload diverge do envelope" };
+    }
     const now = deps.now?.() ?? new Date();
 
     // Mês de NEGÓCIO (America/Sao_Paulo), não UTC — mesma convenção de todo

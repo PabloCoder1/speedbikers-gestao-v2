@@ -315,6 +315,10 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
       return { status: "done", processed: 0 };
     }
 
+    if (account.data.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "conta do Mercado Livre pertence a outra organização" };
+    }
+
     const organizationId = account.data.organization_id;
     const started = now;
     const tokenResult = await ensureAccessToken(deps, mlAccountId, now);
@@ -342,41 +346,41 @@ export function createSyncOrderFinancialsHandler(deps: SyncOrderFinancialsDeps):
     const accessToken = tokenResult.accessToken;
     const windowStart = new Date(now.getTime() - SWEEP_WINDOW_DAYS * 86_400_000).toISOString();
 
-    // Paginado (classe D-131): janela de 7 dias já passa de 1.000 pedidos
-    // por conta em semana forte. `id` é único — ordenação estável.
-    const orders = await readAllPages<OrderToSweep>(
-      (from, to) =>
-        deps.db
-          .from("orders")
-          .select("id, shipping_id")
-          .eq("ml_account_id", mlAccountId)
-          .in("status", ["paid", "partially_refunded"])
-          .gte("date_created", windowStart)
-          .order("id")
-          .range(from, to),
-      { label: "falha ao ler orders" },
-    );
-
-    const captured = await readAllPages<{ order_id: number }>(
-      (from, to) =>
-        deps.db
-          .from("order_financials")
-          .select("order_id")
-          .eq("ml_account_id", mlAccountId)
-          .gte("captured_at", windowStart)
-          .order("order_id")
-          .range(from, to),
-      { label: "falha ao ler o checkpoint de order_financials" },
-    );
-
-    // A linha pode ter sido capturada ANTES da janela (pedido antigo varrido
-    // numa rodada anterior) — o filtro por captured_at acima é só para não
-    // paginar a tabela inteira; o Set decide por pedido.
-    const alreadyCaptured = new Set(captured.map((row) => row.order_id));
-
     let resultado: ResultadoDaCaptura;
 
     try {
+      // Paginado (classe D-131): janela de 7 dias já passa de 1.000 pedidos
+      // por conta em semana forte. `id` é único — ordenação estável.
+      const orders = await readAllPages<OrderToSweep>(
+        (from, to) =>
+          deps.db
+            .from("orders")
+            .select("id, shipping_id")
+            .eq("ml_account_id", mlAccountId)
+            .in("status", ["paid", "partially_refunded"])
+            .gte("date_created", windowStart)
+            .order("id")
+            .range(from, to),
+        { label: "falha ao ler orders" },
+      );
+
+      const captured = await readAllPages<{ order_id: number }>(
+        (from, to) =>
+          deps.db
+            .from("order_financials")
+            .select("order_id")
+            .eq("ml_account_id", mlAccountId)
+            .gte("captured_at", windowStart)
+            .order("order_id")
+            .range(from, to),
+        { label: "falha ao ler o checkpoint de order_financials" },
+      );
+
+      // A linha pode ter sido capturada ANTES da janela (pedido antigo varrido
+      // numa rodada anterior) — o filtro por captured_at acima é só para não
+      // paginar a tabela inteira; o Set decide por pedido.
+      const alreadyCaptured = new Set(captured.map((row) => row.order_id));
+
       resultado = await capturarCustosDosPedidos({
         deps,
         context,

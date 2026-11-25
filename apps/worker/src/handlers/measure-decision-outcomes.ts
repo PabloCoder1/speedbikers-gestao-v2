@@ -52,7 +52,7 @@ interface ActionRow {
 const OUTCOME_UPSERT_CHUNK = 500;
 
 export function createMeasureDecisionOutcomesHandler(deps: MeasureDecisionOutcomesDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -60,6 +60,10 @@ export function createMeasureDecisionOutcomesHandler(deps: MeasureDecisionOutcom
     }
 
     const { organizationId } = parsed.data;
+
+    if (organizationId !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "organização do payload diverge do envelope" };
+    }
     const now = deps.now?.() ?? new Date();
     const asOf = shiftBusinessDate(toSalesMetricDate(now), -1);
 
@@ -99,6 +103,7 @@ export function createMeasureDecisionOutcomesHandler(deps: MeasureDecisionOutcom
           deps.db
             .from("action_outcomes")
             .select("action_decision_id, window_days")
+            .eq("organization_id", organizationId)
             .in("action_decision_id", idChunk)
             .order("id")
             .range(from, to),
@@ -121,7 +126,11 @@ export function createMeasureDecisionOutcomesHandler(deps: MeasureDecisionOutcom
     const skuByAction = new Map<string, string | null>();
 
     for (const idChunk of chunk(actionIds, LOOKUP_CHUNK)) {
-      const actionsResult = await deps.db.from("actions").select("id, sku_id").in("id", idChunk);
+      const actionsResult = await deps.db
+        .from("actions")
+        .select("id, sku_id")
+        .eq("organization_id", organizationId)
+        .in("id", idChunk);
 
       if (actionsResult.error !== null) {
         return { status: "failed", retryable: true, reason: actionsResult.error.message };

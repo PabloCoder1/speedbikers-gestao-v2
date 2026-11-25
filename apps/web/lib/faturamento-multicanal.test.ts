@@ -451,4 +451,38 @@ describe("skuParaALista", () => {
   it("receita desconhecida não vira zero: o SKU sai da lista", () => {
     expect(skuParaALista({ ...sku, receita_bruta: null })).toBeNull();
   });
+
+  it("D-801: montarCascataShopee devolve null para valores não finitos (NaN/Infinity) sem propagar barras NaN", () => {
+    const base: ComposicaoShopee = {
+      nivel: "TOTAL",
+      account_id: null,
+      account_name: null,
+      environment: null,
+      pedidos_cobertos: 10,
+      receita_coberta: 1000,
+      comissao: 120,
+      taxa_servico: null,
+      taxa_transacao: null,
+      frete_loja: null,
+      frete_devolucao: null,
+      cupom_loja: null,
+      afiliados: null,
+      taxa_por_pedido: null,
+      protecao_envio: null,
+      outros: 0,
+      recebido_coberto: 880,
+      comissao_liquida: null,
+      taxa_servico_liquida: null,
+      cupom_shopee: null,
+      moedas_shopee: null,
+      desconto_shopee: null,
+      pedidos_com_ajuste: 0,
+      ajustes: null,
+    };
+
+    expect(montarCascataShopee({ ...base, receita_coberta: Number.NaN }, 500, 300, 0)).toBeNull();
+    expect(montarCascataShopee({ ...base, comissao: Number.NaN }, 500, 300, 0)).toBeNull();
+    expect(montarCascataShopee(base, Number.POSITIVE_INFINITY, 300, 0)).toBeNull();
+    expect(montarCascataShopee(base, 500, 300, Number.NaN)).toBeNull();
+  });
 });

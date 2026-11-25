@@ -97,6 +97,17 @@ export interface ReturnReversal {
  * gravado a devolução entregue depois a devolveria uma segunda vez. As chaves
  * dessas vendas (`cancelledInSheetKeys`) saem com restante zero.
  */
+function toFinitePositive(value: unknown): number | null {
+  const n =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : Number.NaN;
+
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export function computeReturnReversal(
   order: ReturnedOrder,
   item: ReturnedOrderItem,
@@ -110,13 +121,23 @@ export function computeReturnReversal(
   /** Chaves de `VENDA_ML` que já têm estorno gravado (`ESTORNO_PRE_CAPTURA` ou `ESTORNO_FULL`). */
   estornadas: ReadonlySet<string> = new Set(),
 ): ReturnReversal {
+  if (!Number.isFinite(occurredAt.getTime())) {
+    throw new RangeError(`computeReturnReversal: occurredAt inválido no pedido ${String(order.id)}`);
+  }
+
   const prefix = `venda:${String(order.id)}:${String(item.position)}`;
   const matched = saleMovements.filter(
     (m) => m.idempotencyKey === prefix || m.idempotencyKey.startsWith(`${prefix}:`),
   );
 
   const doFull = isFullLogistic(order.logisticType);
-  const fullReversal = item.returnQuantity >= item.totalQuantity && matched.length > 0;
+  const totalQuantity = toFinitePositive(item.totalQuantity);
+  const returnQuantity = toFinitePositive(item.returnQuantity);
+  const fullReversal =
+    totalQuantity !== null &&
+    returnQuantity !== null &&
+    returnQuantity >= totalQuantity &&
+    matched.length > 0;
 
   const movements: StockMovementDraft[] = [];
   const estornosFull: StockMovementDraft[] = [];
@@ -228,6 +249,10 @@ export function computeUnreversedReturn(
   claimId: string,
   occurredAt: Date,
 ): DomainEventDraft {
+  if (!Number.isFinite(occurredAt.getTime())) {
+    throw new RangeError(`computeUnreversedReturn: occurredAt inválido no pedido ${String(order.id)}`);
+  }
+
   const eventType = "order.return.unreversed";
 
   return {

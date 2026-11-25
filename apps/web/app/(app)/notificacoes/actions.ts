@@ -64,20 +64,9 @@ export async function markNotificationRead(notificationId: string): Promise<Noti
  * `listing.available_quantity.changed` é 60,4% das 54.306 notificações do Dev;
  * o que se quer limpar é exatamente essa família, sem tocar no resto.
  *
- * **Dois caminhos, e a divisão não é acidental.**
- *
- * - **Sem recorte** a escrita continua sendo a de sempre: `update` direto sob
- *   RLS, sem função. Além de ser o caminho já provado, ele é o que continua
- *   funcionando na PRÉVIA do PR — a CI nunca aplica migration em PR (D-025),
- *   então `mark_notifications_read` só existe no Dev depois do merge. Deixar o
- *   caso mais comum fora da dependência é o que impede a fatia de chegar com o
- *   botão principal quebrado.
- * - **Com recorte** quem escreve é `public.mark_notifications_read`
- *   (`security invoker`, migration `20260923200000`), porque o filtro mora num
- *   JOIN com `domain_events` e um `update` do PostgREST não junta tabela. A
- *   alternativa sem função seria ler as ids de mil em mil — o teto do
- *   PostgREST — e mandar catorze updates, com um teto para estourar em
- *   silêncio. É a classe de defeito de D-183, e não se repete aqui.
+ * A RPC `mark_notifications_read` aplica os filtros e a RLS do evento
+ * nas ações em lote. Sem filtros, ela marca todas as notificações visíveis
+ * ao usuário e devolve quantas foram alteradas.
  *
  * **Valor fora da lista RECUSA, nunca alarga.** Na tela, um `?severidade=xpto`
  * cai em "todas" e o pior que acontece é ver linhas demais. Aqui o mesmo
@@ -123,25 +112,6 @@ export async function markAllNotificationsRead(
   const supabase = await createClient();
   const semRecorte = severity === null && family === null && account === null && loja === null;
 
-  if (semRecorte) {
-    const { error } = await supabase
-      .from("notification_recipients")
-      .update({ read_at: new Date().toISOString() })
-      .is("read_at", null);
-
-    if (error !== null) {
-      return { ok: false, message: "Não foi possível marcar todas como lidas.", marked: null };
-    }
-
-    revalidatePath("/notificacoes");
-
-    // A contagem do caminho sem recorte não vem do banco: o `update` do
-    // PostgREST não devolve linhas afetadas sem `returning`, e pedir o retorno
-    // de milhares de linhas para contar seria pagar caro por um número que o
-    // painel já recarrega. Quem chama mostra o número que tinha antes.
-    return { ok: true, message: null, marked: null };
-  }
-
   const { data, error } = await supabase.rpc("mark_notifications_read", {
     p_severity: severity,
     p_event_type_prefix: family === null ? null : notificationFamilyPrefix(family),
@@ -150,7 +120,13 @@ export async function markAllNotificationsRead(
   });
 
   if (error !== null) {
-    return { ok: false, message: "Não foi possível marcar as notificações deste recorte.", marked: null };
+    return {
+      ok: false,
+      message: semRecorte
+        ? "Não foi possível marcar todas como lidas."
+        : "Não foi possível marcar as notificações deste recorte.",
+      marked: null,
+    };
   }
 
   revalidatePath("/notificacoes");

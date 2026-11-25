@@ -123,13 +123,22 @@ describe("scanSellerItems", () => {
     expect(await drain(scanSellerItems({ client, sellerId: 1, accessToken: "t" }))).toEqual([]);
   });
 
-  it("maxPages é teto de segurança contra scroll que nunca termina", async () => {
+  it("no teto, sinaliza varredura incompleta se o scroll ainda estiver aberto", async () => {
     const infinitas = Array.from({ length: 50 }, () => ({ results: ["MLB1"], scroll_id: "s1" }));
     const { client, calls } = fakeClient(infinitas);
 
-    await drain(scanSellerItems({ client, sellerId: 1, accessToken: "t", maxPages: 3 }));
+    await expect(drain(scanSellerItems({ client, sellerId: 1, accessToken: "t", maxPages: 3 })))
+      .rejects.toThrow(/atingiu o limite de 3 páginas/u);
 
     expect(calls).toHaveLength(3);
+  });
+
+  it("aceita a última página quando o cursor termina no teto", async () => {
+    const { client, calls } = fakeClient([{ results: ["MLB1"], scroll_id: null }]);
+
+    await expect(drain(scanSellerItems({ client, sellerId: 1, accessToken: "t", maxPages: 1 })))
+      .resolves.toEqual(["MLB1"]);
+    expect(calls).toHaveLength(1);
   });
 });
 
@@ -150,19 +159,21 @@ describe("chunkItemIds", () => {
 });
 
 describe("getItemsBatch", () => {
-  it("chama o bulk com campos do body e preserva o código por item", async () => {
+  it("pede o envelope completo e preserva o código por item", async () => {
     const { client, calls } = fakeClient([[{ id: "MLB2", status_code: 404, body: null }, { id: "MLB1", status_code: 200, body: { id: "MLB1" } }]]);
 
     const entries = await getItemsBatch({
       client,
       ids: ["MLB1", "MLB2"],
       accessToken: "t",
-      attributes: ["id", "title"],
     });
 
     expect(calls[0]?.path).toBe("/items/bulk");
-    expect(calls[0]?.searchParams).toEqual({ ids: "MLB1,MLB2", attributes: "body.id,body.title" });
-    expect(entries).toEqual([{ code: 404, body: null }, { code: 200, body: { id: "MLB1" } }]);
+    expect(calls[0]?.searchParams).toEqual({ ids: "MLB1,MLB2" });
+    expect(entries).toEqual([
+      { id: "MLB2", code: 404, body: null },
+      { id: "MLB1", code: 200, body: { id: "MLB1" } },
+    ]);
   });
 
   it("acima de 20 ids FALHA em vez de deixar a API truncar em silêncio", async () => {
@@ -172,6 +183,19 @@ describe("getItemsBatch", () => {
     const ids = Array.from({ length: 21 }, (_, i) => `MLB${String(i)}`);
 
     await expect(getItemsBatch({ client, ids, accessToken: "t" })).rejects.toThrow(/no máximo 20/);
+  });
+
+  it("ignora respostas de outro ID e IDs com entradas conflitantes", async () => {
+    const { client } = fakeClient([[
+      { id: "MLB3", status_code: 404, body: null },
+      { id: "MLB2", status_code: 200, body: { id: "MLB2" } },
+      { id: "MLB2", status_code: 404, body: null },
+      { id: "MLB1", status_code: 200, body: { id: "MLB1" } },
+    ]]);
+
+    const entries = await getItemsBatch({ client, ids: ["MLB1", "MLB2"], accessToken: "t" });
+
+    expect(entries).toEqual([{ id: "MLB1", code: 200, body: { id: "MLB1" } }]);
   });
 
   it("lista vazia não chama a API", async () => {
@@ -189,5 +213,9 @@ describe("getItemsBatch", () => {
 
     expect(entries.filter((entry) => entry.code === 200)).toHaveLength(1);
     expect(entries[1]?.code).toBe(404);
+  });
+
+  it("rejeita a resposta com apenas body, sem status e identidade do envelope", () => {
+    expect(itemsMultigetSchema.safeParse([{ body: { id: "MLB1" } }]).success).toBe(false);
   });
 });

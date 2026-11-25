@@ -186,4 +186,17 @@ describe("conferência automática ledger × projeção (D-056)", () => {
     expect(outcome).toEqual({ status: "done", processed: 0 });
     expect(events).toHaveLength(0);
   });
+
+  it("D-814: recusa divergência entre organizationId do payload e do envelope", async () => {
+    const { deps, events, lines } = fakeDeps({
+      ledger: [{ sku_id: "sku-1", location_kind: "LOCAL", quantity: 10 }],
+      projected: [{ sku_id: "sku-1", location_kind: "LOCAL", quantity: 0 }],
+    });
+    const outraOrg = "22222222-0000-4000-8000-000000000002";
+
+    const outcome = await createVerifyLedgerIntegrityHandler(deps)(ENVELOPE, ctx(lines, { organizationId: outraOrg }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(events).toHaveLength(0);
+  });
 });

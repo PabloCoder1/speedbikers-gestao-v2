@@ -129,6 +129,11 @@ describe("formatShopeeMoney", () => {
     expect(formatShopeeMoney(12.5, null)).toBe("12,50");
     expect(formatShopeeMoney(12.5, "não-é-moeda")).toBe("NÃO-É-MOEDA 12,50");
   });
+
+  it("valor não finito vira '—', nunca 'R$ NaN' ou 'R$ ∞'", () => {
+    expect(formatShopeeMoney(Number.NaN, "BRL")).toBe("—");
+    expect(formatShopeeMoney(Number.POSITIVE_INFINITY, null)).toBe("—");
+  });
 });
 
 describe("shopeeImageUrl", () => {
@@ -178,6 +183,8 @@ describe("resumoDoCatalogoShopee (D-429)", () => {
     expect(resumoDoCatalogoShopee(1, 1)).toBe("1 anúncio · 1 vinculado");
     expect(resumoDoCatalogoShopee(0, 0)).toBe("0 anúncios · 0 vinculados");
     expect(resumoDoCatalogoShopee(null, null)).toBeNull();
+    expect(resumoDoCatalogoShopee(Number.NaN, 2)).toBeNull();
+    expect(resumoDoCatalogoShopee(5, Number.POSITIVE_INFINITY)).toBeNull();
   });
 });
 
@@ -239,6 +246,14 @@ describe("o cabeçalho que ordena e o resumo do recorte (D-606)", () => {
       semReceita: 3,
     });
     expect(recorteDeVendasShopee({ recorte_unidades: null, recorte_receita: null })).toBeNull();
+    expect(recorteDeVendasShopee({ recorte_unidades: Number.NaN, recorte_receita: 100 })).toBeNull();
+    expect(
+      recorteDeVendasShopee({
+        recorte_unidades: 4,
+        recorte_receita: Number.POSITIVE_INFINITY,
+        recorte_unidades_sem_receita: Number.NaN,
+      }),
+    ).toEqual({ unidades: 4, receita: null, semReceita: 0 });
     expect(recorteDeVendasShopee({})).toBeNull();
     expect(recorteDeVendasShopee(undefined)).toBeNull();
   });

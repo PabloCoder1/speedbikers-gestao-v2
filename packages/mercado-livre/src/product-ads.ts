@@ -173,9 +173,11 @@ export async function fetchProductAdsCampaigns(
   advertiserId: number,
 ): Promise<ProductAdsCampaign[]> {
   const LIMIT = 50;
-  const campanhas: ProductAdsCampaign[] = [];
+  const MAX_PAGES = 200;
+  const campanhasPorId = new Map<number, ProductAdsCampaign>();
+  let offset = 0;
 
-  for (let offset = 0; ; offset += LIMIT) {
+  for (let page = 0; page < MAX_PAGES; page += 1) {
     const pagina = await client.request({
       method: "GET",
       path: `/advertising/${siteId}/advertisers/${String(advertiserId)}/product_ads/campaigns/search`,
@@ -185,14 +187,31 @@ export async function fetchProductAdsCampaigns(
       schema: campaignsPageSchema,
     });
 
-    campanhas.push(...pagina.results);
+    if (pagina.results.length === 0) {
+      break;
+    }
 
-    // A guarda de `results.length` evita laço infinito se o `total` vier maior
-    // do que o que a API de fato entrega.
-    if (pagina.results.length === 0 || campanhas.length >= pagina.paging.total) {
-      return campanhas;
+    let novas = 0;
+
+    for (const campanha of pagina.results) {
+      if (!campanhasPorId.has(campanha.id)) {
+        novas += 1;
+      }
+
+      campanhasPorId.set(campanha.id, campanha);
+    }
+
+    offset += pagina.results.length;
+
+    // Avança pelo tamanho efetivo devolvido, deduplica campanhas deslocadas
+    // entre páginas (evitando erro 21000 no upsert em lote) e interrompe se a
+    // API repetir apenas itens já vistos com `paging.total` inflado (D-789).
+    if (novas === 0 || campanhasPorId.size >= pagina.paging.total) {
+      break;
     }
   }
+
+  return Array.from(campanhasPorId.values());
 }
 
 /** Métricas por dia de UMA campanha, no intervalo fechado `dateFrom..dateTo`. */

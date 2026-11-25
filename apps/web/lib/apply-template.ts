@@ -18,7 +18,7 @@ export function applyTemplate(current: string, templateBody: string, limit: numb
   const base = current.trimEnd();
   const next = base.length === 0 ? templateBody : `${base}\n\n${templateBody}`;
 
-  if (next.length > limit) {
+  if (!Number.isFinite(limit) || limit < 0 || next.length > limit) {
     return { text: current, applied: false };
   }
 

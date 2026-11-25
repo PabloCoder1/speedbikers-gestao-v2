@@ -96,6 +96,21 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
   const nivel = nivelDaUrl(query);
   const membership = await currentMembership();
 
+  if (membership.error !== null) {
+    return (
+      <>
+        <Titulo consulta={query} subtitle={SUBTITULO_PADRAO} />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membership.error.message}
+          acao={{ href: mesmaUrl("/central/ads", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
+
   if (membership.organizationId === null) {
     return (
       <>

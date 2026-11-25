@@ -1,6 +1,7 @@
 /**
  * Leitura em páginas de uma RPC que devolve linhas (`returns table`), até um
- * teto — a defesa das exportações contra o `max_rows = 1000` do PostgREST
+ * teto. O SKU usa `Infinity` para ler todas as páginas disponíveis.
+ * A paginação protege as exportações contra o `max_rows = 1000` do PostgREST
  * (D-131).
  *
  * Pedir `p_limit: 5000` numa ida só devolve MIL linhas, sem erro e sem aviso.
@@ -28,10 +29,17 @@ export async function lerPaginasDaRpc<T>(
   lerPagina: (offset: number, limite: number) => PromiseLike<PaginaDaRpc<T>>,
   teto: number,
 ): Promise<{ linhas: T[]; error: PaginaDaRpc<T>["error"] }> {
+  const limiteMaximo = Math.floor(teto);
+
+  if (Number.isNaN(limiteMaximo) || limiteMaximo <= 0) {
+    return { linhas: [], error: null };
+  }
+
   const linhas: T[] = [];
 
-  while (linhas.length < teto) {
-    const limite = Math.min(PAGINA_DO_POSTGREST, teto - linhas.length);
+  while (linhas.length < limiteMaximo) {
+    const restante = limiteMaximo - linhas.length;
+    const limite = Math.min(PAGINA_DO_POSTGREST, restante);
     const pagina = await lerPagina(linhas.length, limite);
 
     if (pagina.error !== null) {
@@ -40,7 +48,8 @@ export async function lerPaginasDaRpc<T>(
 
     const lote = pagina.data ?? [];
     const primeiraPaginaCompleta = linhas.length === 0 && pagina.count === lote.length;
-    linhas.push(...lote);
+
+    linhas.push(...(lote.length > restante ? lote.slice(0, restante) : lote));
 
     // Sem total exato, só a página vazia confirma o fim. Uma página curta
     // também pode ser efeito do limite do servidor.

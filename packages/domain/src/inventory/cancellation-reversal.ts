@@ -154,6 +154,10 @@ function planCancellationReversals(
     return plan;
   }
 
+  if (!Number.isFinite(order.occurredAt.getTime())) {
+    throw new RangeError(`planCancellationReversals: occurredAt inválido no pedido ${String(order.id)}`);
+  }
+
   for (const movement of saleMovements) {
     // Estornada e cancelada até a exportação: a planilha já tem a venda E a devolução.
     if (sheetContainsCancellation(order, movement, preCapture.estornadas, preCapture.cutoffFor)) continue;
@@ -287,7 +291,16 @@ export function computeCancellationMovements(input: CancellationMovementsInput):
     return cancelamentoDoFull(input);
   }
 
+  if (!Number.isFinite(input.occurredAt.getTime())) {
+    throw new RangeError(`computeCancellationMovements: occurredAt inválido no pedido ${String(input.order.id)}`);
+  }
+
   const saleAt = saleInstant(input.order);
+
+  if (!Number.isFinite(saleAt.getTime())) {
+    throw new RangeError(`computeCancellationMovements: data da venda inválida no pedido ${String(input.order.id)}`);
+  }
+
   const gravadas = new Map(input.recordedSales.map((sale) => [sale.idempotencyKey, sale]));
   const preCapture: PreCaptureCutoffs = {
     cutoffFor: input.cutoffFor,
@@ -298,6 +311,10 @@ export function computeCancellationMovements(input: CancellationMovementsInput):
   const sales: StockMovementDraft[] = [];
   const { transition } = input;
   const cancelledAt = transition?.cancelledAt ?? null;
+
+  if (cancelledAt !== null && !Number.isFinite(cancelledAt.getTime())) {
+    throw new RangeError(`computeCancellationMovements: cancelledAt inválido no pedido ${String(input.order.id)}`);
+  }
 
   if (transition !== null && cancelledAt !== null && input.order.dateClosed !== null && input.recordedSales.length === 0) {
     // O status da transicao passa pelo filtro de venda valida de

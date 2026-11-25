@@ -119,6 +119,8 @@ describe("resolveSupplierBrand — texto do anúncio e código do SKU", () => {
       "OFF RACER",
     );
     expect(resolveSupplierBrand(linha({ sku: "KitOff12", categories: "MANETE→HORNET" })).brand).toBe("OFF RACER");
+    expect(resolveSupplierBrand(linha({ sku: "RT-01", categories: "MANETE→HORNET" })).brand).toBe("RT");
+    expect(resolveSupplierBrand(linha({ sku: "RTA01", categories: "MANETE→HORNET" })).brand).toBeNull();
   });
 
   it("título que cita DUAS marcas conhecidas não decide", () => {

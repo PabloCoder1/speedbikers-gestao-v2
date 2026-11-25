@@ -76,7 +76,7 @@ export async function DevolucoesShopee({
   if (r.error !== null) {
     return (
       <Panel title={TITULO} subtitle={periodo}>
-        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as devoluções" detalhe={r.error.message} acao={acao} />
+        <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as devoluções" acao={acao} />
       </Panel>
     );
   }
@@ -177,7 +177,7 @@ function Resumo({
 
 function Lista({ lista, acao }: { lista: Resposta<LinhaDevolucao>; acao: AcaoDoEstado }): ReactNode {
   if (lista.error !== null) {
-    return <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as devoluções" detalhe={lista.error.message} acao={acao} />;
+    return <EstadoDaTela tipo="erro" titulo="Não foi possível carregar as devoluções" acao={acao} />;
   }
 
   const linhas = lista.data ?? [];

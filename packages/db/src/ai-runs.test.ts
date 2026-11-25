@@ -56,4 +56,13 @@ describe("recordAiRun", () => {
 
     expect(insert).toHaveBeenCalledTimes(1);
   });
+
+  it("D-794: NÃO lança quando o cliente rejeita com falha de transporte", async () => {
+    const { client } = fakeClient(() => Promise.reject(new TypeError("fetch failed")));
+
+    await expect(recordAiRun(client, RUN)).resolves.toEqual({
+      ok: false,
+      reason: "fetch failed",
+    });
+  });
 });

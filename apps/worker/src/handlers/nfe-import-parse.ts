@@ -92,7 +92,7 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
   // Contrato local da migration até regenerar os tipos compartilhados a partir do Dev.
   const persistence = deps.db as unknown as NfeParseRpc;
 
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -113,6 +113,10 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
 
     if (document.data === null) {
       return { status: "failed", retryable: false, reason: `documento ${documentId} não existe` };
+    }
+
+    if (document.data.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "documento não pertence à organização do job" };
     }
 
     if (document.data.status === "APPLIED" || document.data.status === "APPLYING") {
@@ -186,9 +190,18 @@ export function createNfeImportParseHandler(deps: NfeParseDeps): JobHandler {
       return marcarFalhaDeLeitura(deps.db, documentId, version, reason, true);
     }
 
-    const leitura = ehPdf
-      ? lerPdf(arquivo as Uint8Array, organization.data.cnpj)
-      : lerXml(arquivo, organization.data.cnpj);
+    let leitura: Leitura;
+
+    try {
+      leitura = ehPdf
+        ? lerPdf(arquivo as Uint8Array, organization.data.cnpj)
+        : lerXml(arquivo, organization.data.cnpj);
+    } catch (error) {
+      leitura = {
+        ok: false,
+        motivo: error instanceof Error ? error.message : "falha ao interpretar o documento",
+      };
+    }
 
     if (!leitura.ok) {
       context.logger.error("documento_parse_invalido", {

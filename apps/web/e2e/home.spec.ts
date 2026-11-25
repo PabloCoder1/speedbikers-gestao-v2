@@ -66,6 +66,10 @@ test("Home: os seis cards de atenção carregam, e nenhum deles falha", async ({
 
   // O cartão diz o impacto numa frase, não num número solto; e o CTA é botão.
   await expect(grade.getByText("1 ação de severidade alta aberta", { exact: true })).toBeVisible();
+  await expect(grade.getByRole("link", { name: /Notificações não lidas/ })).toHaveAttribute(
+    "href",
+    "/notificacoes?estado=nao-lidas",
+  );
   await expect(page.getByText("5 situações detectadas", { exact: true })).toBeVisible();
 
   // A guarda de verdade: leitura que falha vira "—" e este aviso (D-067). Um

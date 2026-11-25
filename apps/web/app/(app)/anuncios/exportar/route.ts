@@ -35,7 +35,7 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   // Sem as contas, um recorte `?conta=` viraria "todas" em silêncio.
   if (contas.error !== null) {
-    return new Response(`Não foi possível ler as contas: ${contas.error.message}`, { status: 502 });
+    return new Response("Não foi possível ler as contas no momento.", { status: 502 });
   }
 
   const lista = contas.data;
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   );
 
   if (error !== null) {
-    return new Response(`Não foi possível exportar os anúncios: ${error.message}`, { status: 502 });
+    return new Response("Não foi possível exportar os anúncios no momento.", { status: 502 });
   }
 
   const rows = linhas as unknown as ListingExportRow[];

@@ -123,19 +123,19 @@ function primeiro(bruto: string | string[] | undefined): string | undefined {
  * chegam com `estado=pendente` explícito continuam significando o mesmo.
  */
 function resolveEstado(bruto: unknown): EstadoChave {
-  return typeof bruto === "string" && bruto in ESTADOS ? (bruto as EstadoChave) : "todos";
+  return typeof bruto === "string" && Object.hasOwn(ESTADOS, bruto) ? (bruto as EstadoChave) : "todos";
 }
 
 function daLista<T extends string>(lista: Record<T, string>, bruto: unknown): T | null {
-  return typeof bruto === "string" && bruto in lista ? (bruto as T) : null;
+  return typeof bruto === "string" && Object.hasOwn(lista, bruto) ? (bruto as T) : null;
 }
 
 function resolveSinal(bruto: unknown): SinalChave | null {
-  return typeof bruto === "string" && bruto in SINAIS ? (bruto as SinalChave) : null;
+  return typeof bruto === "string" && Object.hasOwn(SINAIS, bruto) ? (bruto as SinalChave) : null;
 }
 
 export function resolveOrdem(bruto: unknown): OrdemChave {
-  return typeof bruto === "string" && bruto in ORDENS ? (bruto as OrdemChave) : "curadoria";
+  return typeof bruto === "string" && Object.hasOwn(ORDENS, bruto) ? (bruto as OrdemChave) : "curadoria";
 }
 
 export function resolveCurationFilters(

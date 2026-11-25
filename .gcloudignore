@@ -43,7 +43,7 @@ out/
 .vitest/
 coverage/
 
-# Nunca sobem. `.env.deploy.yaml` -- que `infra/deploy-cloud-run.sh` escreve na
+# Nunca sobem. `.env.deploy.*.yaml` -- que `infra/deploy-cloud-run.sh` escreve na
 # raiz durante o deploy da api -- casa com `.env.*` e cai aqui junto.
 .env
 .env.*

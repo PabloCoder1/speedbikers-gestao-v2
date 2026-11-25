@@ -27,6 +27,17 @@ function clienteCom(corpo: unknown) {
 }
 
 describe("get_order_list (D-426)", () => {
+  it.each([undefined, null, ""])("rejeita continuação sem cursor utilizável (%s)", async (nextCursor) => {
+    const { client, urls } = clienteCom({
+      error: "",
+      response: { more: true, next_cursor: nextCursor, order_list: [{ order_sn: "A1" }] },
+    });
+
+    await expect(getOrderListPage(client, SHOP, { timeRangeField: "update_time", timeFrom: 1, timeTo: 2 }))
+      .rejects.toThrow(/cursor de continuação ausente/);
+    expect(urls).toHaveLength(1);
+  });
+
   it("pede a janela por update_time, 100 por página, e devolve o cursor só quando há mais", async () => {
     const { client, urls } = clienteCom({
       error: "",

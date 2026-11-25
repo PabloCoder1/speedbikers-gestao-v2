@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchApiHealth } from "./api-health";
+import { apiBaseUrl, fetchApiHealth } from "./api-health";
 
 /**
  * A leitura do `/health` da api (D-231) e o cronômetro que ela ganhou em
@@ -78,5 +78,29 @@ describe("fetchApiHealth", () => {
 
     expect(await fetchApiHealth()).toBeNull();
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("apiBaseUrl apara espaços e barra final; endereço só com espaços não faz fetch", async () => {
+    process.env.NEXT_PUBLIC_API_URL = "  https://api.exemplo.test///  ";
+    expect(apiBaseUrl()).toBe("https://api.exemplo.test");
+
+    process.env.NEXT_PUBLIC_API_URL = "   ";
+    globalThis.fetch = vi.fn(() => {
+      throw new Error("não deveria ter sido chamado");
+    });
+
+    expect(apiBaseUrl()).toBeNull();
+    expect(await fetchApiHealth()).toBeNull();
+  });
+
+  it("JSON que não é objeto plano (array, null, primitivo) é tratado como sem resposta", async () => {
+    comApi(["ok"]);
+    expect(await fetchApiHealth()).toBeNull();
+
+    comApi("ok");
+    expect(await fetchApiHealth()).toBeNull();
+
+    comApi(null);
+    expect(await fetchApiHealth()).toBeNull();
   });
 });

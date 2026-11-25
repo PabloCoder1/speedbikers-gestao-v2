@@ -367,6 +367,35 @@ describe("shopee.items.sync (D-428)", () => {
     expect(enfileirados).toEqual([]);
   });
 
+  it.each([undefined, 100])("offset inválido na segunda página (%s) preserva o marco", async (nextOffset) => {
+    const banco = fakeDb({ marco: new Date(NOW.getTime() - 3_600_000).toISOString() });
+    const shopee = fakeShopee({
+      "/api/v2/product/get_item_list": (url) => {
+        const primeira = url.searchParams.get("offset") === "0";
+
+        return {
+          error: "",
+          response: {
+            item: [{ item_id: primeira ? 1 : 2, item_status: "NORMAL", update_time: AGORA_S - 100 }],
+            has_next_page: true,
+            next_offset: primeira ? 100 : nextOffset,
+          },
+        };
+      },
+    });
+
+    const { outcome, enfileirados } = await rodar(createShopeeItemsSyncHandler, banco, shopee);
+
+    expect(outcome).toEqual({
+      status: "failed",
+      retryable: true,
+      reason: "a lista de itens da Shopee retornou offset de continuação inválido",
+    });
+    expect(shopee.chamadas.map((url) => url.searchParams.get("offset"))).toEqual(["0", "100"]);
+    expect(escritas(banco.ops)).toEqual([]);
+    expect(enfileirados).toEqual([]);
+  });
+
   it("erro da Shopee: falha (passageira ou não), sem gravar nem enfileirar", async () => {
     for (const [codigo, repete] of [
       ["error_server", true],

@@ -1,6 +1,7 @@
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
 
+import { resolveMlAccountRead } from "./ml-account-read.js";
 import { createBackfillOrdersHandler } from "./backfill-orders.js";
 import { createSyncAdsCampaignsHandler } from "./sync-ads-campaigns.js";
 import { createSyncFulfillmentSnapshotHandler } from "./sync-fulfillment-snapshot.js";
@@ -24,7 +25,7 @@ const ENVELOPE = {
   enqueuedAt: "2026-08-22T15:37:00.000Z",
 };
 
-function fakeAccountDb(result: { data: null; error: { message: string } | null }) {
+function fakeAccountDb(result: { data: Record<string, unknown> | null; error: { message: string } | null }) {
   const self = {
     select: () => self,
     eq: () => self,
@@ -136,6 +137,54 @@ describe("handlers ML distinguem erro transitório do banco de conta ausente", (
 
       expect(outcome).toEqual({ status: "done", processed: 0 });
       expect(lines.join()).toContain(item.missingLog);
+    });
+  }
+});
+
+describe("D-816 — isolamento multi-tenant via expectedOrganizationId em resolveMlAccountRead e handlers ML", () => {
+  const OUTRA_ORG = "22222222-0000-4000-8000-000000000002";
+
+  it("resolveMlAccountRead recusa conta de outra organização quando expectedOrganizationId é informado", () => {
+    const logger = createLogger({}, { sink: () => undefined });
+    const result = resolveMlAccountRead(
+      { data: { id: ML_ACCOUNT_ID, organization_id: OUTRA_ORG, status: "CONNECTED" }, error: null },
+      { logger, missingEvent: "missing", mlAccountId: ML_ACCOUNT_ID, expectedOrganizationId: ORGANIZATION_ID },
+    );
+
+    expect(result).toEqual({
+      outcome: {
+        status: "failed",
+        retryable: false,
+        reason: "conta não pertence à organização do job",
+      },
+    });
+  });
+
+  for (const item of CASES.filter((c) => c.name !== "sync-listings-snapshot")) {
+    it(`${item.name}: recusa conta ML de outra organização com retryable=false`, async () => {
+      const logger = createLogger({}, { sink: () => undefined });
+      const handler = item.create(
+        fakeAccountDb({
+          data: {
+            id: ML_ACCOUNT_ID,
+            organization_id: OUTRA_ORG,
+            status: "CONNECTED",
+            seller_id: 123456,
+            slug: "outra-loja",
+            connected_at: "2026-08-01T00:00:00.000Z",
+            backfill_covered_until: null,
+          },
+          error: null,
+        }),
+      );
+
+      const outcome = await handler(ENVELOPE, { logger, payload: item.payload });
+
+      expect(outcome).toEqual({
+        status: "failed",
+        retryable: false,
+        reason: "conta não pertence à organização do job",
+      });
     });
   }
 });

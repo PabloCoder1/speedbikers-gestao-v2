@@ -134,9 +134,14 @@ function fakeShopee(opcoes: { paginas: unknown[][]; repete?: boolean; erro?: str
   };
 }
 
-function rodar(loja: Loja | null, shopee: ReturnType<typeof fakeShopee>, opcoes: { erroNaGravacao?: string } = {}) {
+function rodar(
+  loja: Loja | null,
+  shopee: ReturnType<typeof fakeShopee>,
+  opcoes: { erroNaGravacao?: string; envelopeOrganizationId?: string; enqueueError?: Error } = {},
+) {
   const { db, gravado } = fakeDb(loja, opcoes);
   const enfileirados: EnqueueRequest[] = [];
+  const lines: string[] = [];
   const handler = createShopeeReturnsSyncHandler({
     db,
     client: shopee.client,
@@ -144,6 +149,10 @@ function rodar(loja: Loja | null, shopee: ReturnType<typeof fakeShopee>, opcoes:
     now: () => NOW,
     enqueuer: {
       enqueue: (request) => {
+        if (opcoes.enqueueError !== undefined) {
+          return Promise.reject(opcoes.enqueueError);
+        }
+
         enfileirados.push(request);
 
         return Promise.resolve({ deduplicated: false });
@@ -151,10 +160,15 @@ function rodar(loja: Loja | null, shopee: ReturnType<typeof fakeShopee>, opcoes:
     } as ShopeeReturnsSyncDeps["enqueuer"],
   });
 
-  return handler(ENVELOPE, {
-    logger: createLogger({}, { sink: () => undefined }),
+  const envelope =
+    opcoes.envelopeOrganizationId === undefined
+      ? ENVELOPE
+      : { ...ENVELOPE, organizationId: opcoes.envelopeOrganizationId };
+
+  return handler(envelope, {
+    logger: createLogger({}, { sink: (line) => lines.push(line) }),
     payload: { shopeeShopId: LOJA_ID },
-  }).then((outcome) => ({ outcome, gravado, enfileirados }));
+  }).then((outcome) => ({ outcome, gravado, enfileirados, lines }));
 }
 
 const LOJA: Loja = {
@@ -243,5 +257,43 @@ describe("shopee.returns.sync (D-447)", () => {
     const desconectada = await rodar({ ...LOJA, status: "DISCONNECTED" }, fakeShopee({ paginas: [] }));
 
     expect(desconectada.outcome).toEqual({ status: "done", processed: 0 });
+  });
+
+  it("D-795: marco no futuro (desvio de relógio) ou inválido nunca produz janela invertida nem RangeError", async () => {
+    const futuro = new Date((AGORA_S + 3600) * 1000).toISOString();
+    const shopeeFuturo = fakeShopee({ paginas: [[]] });
+    const resFuturo = await rodar({ ...LOJA, returns_synced_until: futuro }, shopeeFuturo);
+
+    expect(resFuturo.outcome).toEqual({ status: "done", processed: 0 });
+    expect(shopeeFuturo.listas[0]?.get("update_time_from")).toBe(String(AGORA_S - 600));
+    expect(shopeeFuturo.listas[0]?.get("update_time_to")).toBe(String(AGORA_S));
+
+    const shopeeInvalido = fakeShopee({ paginas: [[]] });
+    const resInvalido = await rodar({ ...LOJA, returns_synced_until: "data-invalida" }, shopeeInvalido);
+
+    expect(resInvalido.outcome).toEqual({ status: "done", processed: 0 });
+    expect(shopeeInvalido.listas[0]?.get("update_time_from")).toBe(String(AGORA_S - 90 * 86400));
+    expect(shopeeInvalido.listas[0]?.get("update_time_to")).toBe(String(AGORA_S - 90 * 86400 + 15 * 86400));
+  });
+
+  it("D-818: recusa sem repetir quando a loja pertence a outra organização", async () => {
+    const shopee = fakeShopee({ paginas: [[]] });
+    const { outcome, enfileirados } = await rodar(LOJA, shopee, {
+      envelopeOrganizationId: "99999999-9999-4999-8999-999999999999",
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(shopee.listas).toEqual([]);
+    expect(enfileirados).toEqual([]);
+  });
+
+  it("D-818: falha transitória ao enfileirar próxima janela devolve retryable=true e registra log", async () => {
+    const shopee = fakeShopee({ paginas: [[]] });
+    const { outcome, lines } = await rodar(LOJA, shopee, {
+      enqueueError: new Error("cloud tasks timeout"),
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(lines.join("\n")).toContain("shopee_returns_enqueue_failed");
   });
 });

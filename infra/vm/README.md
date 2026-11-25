@@ -34,7 +34,7 @@ Os objetos de compras/importação conferem com as migrations versionadas.
 Detalhes e limites da validação:
 [handoff de integração](../../docs/archive/handoffs/2026-11-18_integracao-compras-importacao.md).
 
-Não reaplicar essa faixa. O catálogo não informa o canal da aplicação; ela
+Não reaplicar essa faixa. Depois dela, `20261119180000` (D-792) e `20261123180000` (D-858, por SSH em 23/11, com o registro no histórico na mesma transação) também estão no histórico. O catálogo não informa o canal da aplicação; ela
 não deve ser atribuída ao workflow `migrations-producao.yml`.
 
 ## Backups anteriores à aplicação
@@ -85,9 +85,19 @@ ausentes antes do SQL `20261119120000`. Esse SQL foi executado em uma
 transação na cópia, sem registrar sua versão no histórico. O contêiner
 isolado e o volume descartável foram removidos após o ensaio.
 
-A listagem de 20/11 encontrou três dumps diários, de 18 a 20/11,
-totalizando 540.814.378 bytes. O bucket tem versionamento e soft delete
-de sete dias. A configuração consultada tem zero regras de lifecycle.
+Em 22/11, uma segunda geração diária (`1795328157907250`, 192.128.482
+bytes) passou por restore integral em PostgreSQL 17.6 isolado, com
+`pg_restore --no-owner --exit-on-error`. O MD5 e o tamanho coincidiram
+com o objeto do GCS, o TOC teve 2.814 entradas e o restore terminou em
+91,26 segundos. A cópia tinha 324 migrations até `20261119180000`, RLS
+nas 97 tabelas de `public`, zero índices inválidos e zero divergências
+entre ledger e projeção de estoque na organização restaurada. O ensaio
+usou roles locais e preservou as permissões do dump. O contêiner e o
+arquivo temporário foram removidos após a verificação.
+
+A consulta de 22/11 confirmou os três dumps de 20 a 22/11 e uma regra
+de ciclo de vida de 35 dias para `diario/`. O bucket tem versionamento e
+soft delete de sete dias.
 
 Para ativar o alerta, executar a sondagem fora da VM do banco, com uma
 identidade de leitura, depois da janela diária e encaminhar falhas ao
@@ -122,7 +132,9 @@ do commit `6def173a` e identidade `sb-backup-probe`. O Cloud Scheduler
 A execução acionada pelo Scheduler `sb-backup-check-v8vjq` terminou
 com sucesso. A repetição da falha sintética (`sb-backup-check-x66xz`)
 abriu o incidente `0.of9jh2tr03e9` às 22:41 BRT. O e-mail do Google Cloud
-Alerting chegou ao canal autorizado. Evidências no
+Alerting chegou ao canal autorizado. As sondagens automáticas de 21/11
+(`sb-backup-check-nqcw2`) e 22/11 (`sb-backup-check-8zv48`) registraram
+`ok` para os respectivos dumps. Evidências no
 [checkpoint Sentinel](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351).
 
 ## Fluxo oficial pendente de reconciliação
@@ -132,7 +144,7 @@ duas aprovações de `producao`. Ele não foi adaptado nem executado sobre a VM.
 Antes de nova migration: identificar o destino real, comparar histórico e
 objetos, produzir plano de diferenças e obter as aprovações do fluxo oficial.
 Não usar `db push`, `--include-all` nem repair para repetir ou encobrir a
-aplicação manual. Migração do workflow e mudanças na VM ficam em outra fatia.
+aplicação manual.
 
 ### Comparar o histórico com o candidato
 
@@ -163,11 +175,50 @@ e de cada migration pendente. Na segunda aprovação, extraia o catálogo
 novamente e verifique o mesmo plano no checkout do commit aprovado:
 
 ```sh
-node infra/vm/check-migration-catalog.mjs --plan < catalogo-migrations.txt
-node infra/vm/check-migration-catalog.mjs --expect-plan "$PLAN_ID" < catalogo-atual.txt
+node infra/vm/check-migration-catalog.mjs --plan --bind-head < catalogo-migrations.txt
+node infra/vm/check-migration-catalog.mjs --expect-plan "$PLAN_ID" --bind-head < catalogo-atual.txt
 ```
 
 `PLAN_ID` é o `plan.id` do JSON da primeira etapa. Uma mudança nas versões
 aplicadas ou no conteúdo ou nome de um SQL pendente reprova a verificação.
-O ID cobre o catálogo e os SQLs pendentes. Registre também o SHA do commit e
-o ambiente de origem do catálogo na revisão.
+Com `--bind-head` nas duas etapas, o ID também inclui o commit do
+checkout, registrado em `plan.revision`. O verificador recusa SQLs
+alterados ou sem rastreamento. Registre o ambiente de origem do
+catálogo na revisão.
+
+Para gerar o mesmo plano pelo GitHub Actions, dispare **Preflight de migrations
+da VM** pela CLI, na branch que contém o commit candidato. O envio em JSON
+preserva as quebras de linha do arquivo exportado. O formulário web tem um
+campo de linha única e pode alterar essa entrada:
+
+```sh
+jq -Rs '{catalogo: .}' catalogo-migrations.txt |
+  gh workflow run migrations-producao.yml --ref "$BRANCH_CANDIDATA" --json
+```
+
+Confira o SHA da execução antes de aceitar o artefato `plano-migrations-vm`.
+Se houver lacunas, a execução falha e o relatório fica no log da etapa. O
+workflow usa o catálogo informado. A extração novamente da VM e a conferência
+do ID continuam obrigatórias antes da aplicação aprovada.
+
+
+### Publicação do candidato #378 e aceite
+
+O plano de publicação na VM foi aprovado em 23/11. A consulta em
+leitura de 24/11 encontrou 325 versões até `20261123180000`. O SQL do
+#384 foi incorporado ao candidato. As quatro versões temporárias
+são anteriores à última aplicada. O candidato inclui o workflow de preflight
+para a VM.
+
+1. Registrar no Dev as versões definitivas dos quatro SQLs, regenerar os
+   tipos e repetir a CI no SHA candidato. Conferir o destino da esteira
+   e testar o upgrade de um backup recente da VM em cópia descartável.
+2. Gerar e registrar um novo plano da VM com catálogo, SHA e ID. Antes
+   de qualquer escrita, conferir novamente os três, o backup
+   recuperável e a revisão anterior de cada serviço.
+3. Depois da publicação, registrar as revisões esperadas com o tráfego
+   efetivo de API e worker, o deploy web e o catálogo aplicado. Conferir
+   uma jornada autenticada de pedidos, estoque e faturamento, o fluxo
+   de convite ou recuperação Auth e os agendamentos no banco. Comparar
+   backlog e falhas com a leitura anterior ao deploy. O dono ou gestor
+   registra o aceite com as evidências dessa observação.

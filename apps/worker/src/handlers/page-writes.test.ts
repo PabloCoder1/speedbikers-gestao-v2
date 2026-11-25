@@ -182,6 +182,23 @@ describe("escritas em lote por página (D-190)", () => {
     expect(exclusoes[1]?.filtros).toEqual({ order_id: [3], "position>=": 2 });
   });
 
+  it("pedido repetido na página deduplica tails pela última ocorrência sem apagar itens recém-gravados (D-798)", async () => {
+    const writes = novaPagina(ORG);
+
+    writes.orders.push({ id: 7, organization_id: ORG } as never, { id: 7, organization_id: ORG } as never);
+    writes.items.push(itemDe(7, 0) as never, itemDe(7, 0) as never, itemDe(7, 1) as never);
+    writes.tails.push({ orderId: 7, fromPosition: 1 }, { orderId: 7, fromPosition: 2 });
+
+    const { db, chamadas } = dbFalso();
+
+    await flushPageWrites(db, writes);
+
+    const exclusoes = chamadas.filter((c) => c.verbo === "delete");
+
+    expect(exclusoes).toHaveLength(1);
+    expect(exclusoes[0]?.filtros).toEqual({ order_id: [7], "position>=": 2 });
+  });
+
   it("falha na gravação dos pedidos ABORTA antes de tocar nos itens", async () => {
     const writes = novaPagina(ORG);
 
@@ -211,5 +228,24 @@ describe("escritas em lote por página (D-190)", () => {
     await flushPageWrites(db, novaPagina(ORG));
 
     expect(chamadas).toEqual([]);
+  });
+
+  it("fatia order_items.delete().in('order_id', ...) em lotes de até 100 pedidos para evitar HTTP 414 (D-828)", async () => {
+    const writes = novaPagina(ORG);
+
+    for (let id = 1; id <= 250; id += 1) {
+      writes.tails.push({ orderId: id, fromPosition: 1 });
+    }
+
+    const { db, chamadas } = dbFalso();
+
+    await flushPageWrites(db, writes);
+
+    const exclusoes = chamadas.filter((c) => c.verbo === "delete");
+
+    expect(exclusoes).toHaveLength(3);
+    expect((exclusoes[0]?.filtros.order_id as number[]).length).toBe(100);
+    expect((exclusoes[1]?.filtros.order_id as number[]).length).toBe(100);
+    expect((exclusoes[2]?.filtros.order_id as number[]).length).toBe(50);
   });
 });

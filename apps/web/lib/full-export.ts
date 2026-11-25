@@ -51,7 +51,9 @@ export function fullRowsToCsv(rows: readonly FullExportRow[]): string {
       numero(row.daily_rate),
       numero(row.full_quantity),
       // Sem venda não há cobertura: a célula diz isso em vez de ficar vazia.
-      row.coverage_days === null ? cell(formatCoverage(null)) : numero(row.coverage_days),
+      row.coverage_days === null || !Number.isFinite(row.coverage_days)
+        ? cell(formatCoverage(null))
+        : numero(row.coverage_days),
       numero(row.local_quantity),
       cell(formatDateTime(row.captured_at)),
     ].join(";"),

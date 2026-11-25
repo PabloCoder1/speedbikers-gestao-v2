@@ -67,11 +67,12 @@ export function respostaDeRepublicacaoValida(payload: unknown): boolean {
 }
 
 /**
- * POST autenticado sem corpo para confirmar a aplicação de lote ou NF-e,
+ * POST autenticado para confirmar a aplicação de lote ou NF-e,
  * recuperando erro de sessão, rede, HTTP ou corpo 200 não confirmado.
  */
 export async function confirmarAplicacaoNaApi(
   caminho: string,
+  corpo?: { markAbsent: boolean },
 ): Promise<{ ok: true } | { ok: false; mensagem: string }> {
   const sessao = await lerTokenDeSessao("Sua sessão expirou. Entre de novo.");
 
@@ -82,7 +83,11 @@ export async function confirmarAplicacaoNaApi(
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}${caminho}`, {
       method: "POST",
-      headers: { authorization: `Bearer ${sessao.token}` },
+      headers: {
+        authorization: `Bearer ${sessao.token}`,
+        ...(corpo === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(corpo === undefined ? {} : { body: JSON.stringify(corpo) }),
     });
 
     const payload: unknown = await response.json().catch(() => null);

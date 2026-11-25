@@ -30,6 +30,7 @@ import {
   summarizePagedWindow,
 } from "../../../lib/price-filters";
 import { resolverContaSolicitada } from "../../../lib/postgrest-search";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/request-membership";
 
@@ -81,7 +82,8 @@ export default async function PrecosPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
-  const filters = resolvePriceFilters(await searchParams);
+  const query = await searchParams;
+  const filters = resolvePriceFilters(query);
   const supabase = await createClient();
 
   const membershipPromise = currentMembership();
@@ -108,7 +110,7 @@ export default async function PrecosPage({
               titulo="Não foi possível verificar sua organização."
               descricao="Tente recarregar a página; nenhum registro foi alterado."
               detalhe={membershipError.message}
-              acao={{ href: "/precos", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+              acao={{ href: mesmaUrl("/precos", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
             />
           ) : (
             <EstadoDaTela

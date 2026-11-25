@@ -46,10 +46,11 @@ export function isAdjustmentLocation(value: unknown): value is AdjustmentLocatio
  */
 export function adjustmentDelta(mode: AdjustmentMode, quantity: number, currentBalance: number): number | null {
   if (!Number.isFinite(quantity) || quantity < 0) return null;
+  if (mode === "BALANCO" && !Number.isFinite(currentBalance)) return null;
 
   const delta = mode === "ENTRADA" ? quantity : mode === "SAIDA" ? -quantity : quantity - currentBalance;
 
-  return delta === 0 ? null : delta;
+  return !Number.isFinite(delta) || delta === 0 ? null : delta;
 }
 
 const MODE_PREFIX: Readonly<Record<AdjustmentMode, string>> = {

@@ -69,13 +69,26 @@ async function resolveWindowFrom(
     throw new Error(`falha ao ler o checkpoint de sync_runs: ${lastRun.error.message}`);
   }
 
+  const nowMs = now.getTime();
+  const parseTimestamp = (value: string | null | undefined): number | null => {
+    if (value == null) return null;
+
+    const ms = Date.parse(value);
+
+    return Number.isFinite(ms) ? ms : null;
+  };
+
   if (lastRun.data !== null) {
-    return floorToHour(new Date(lastRun.data.latest_record_at ?? lastRun.data.started_at));
+    const candidateMs = parseTimestamp(lastRun.data.latest_record_at) ?? parseTimestamp(lastRun.data.started_at);
+
+    if (candidateMs !== null) {
+      return floorToHour(new Date(Math.min(candidateMs, nowMs)));
+    }
   }
 
-  const fallback = connectedAt ?? new Date(now.getTime() - 24 * 3_600_000).toISOString();
+  const fallbackMs = parseTimestamp(connectedAt) ?? nowMs - 24 * 3_600_000;
 
-  return floorToHour(new Date(fallback));
+  return floorToHour(new Date(Math.min(fallbackMs, nowMs)));
 }
 
 export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHandler {
@@ -99,6 +112,7 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
       logger: context.logger,
       missingEvent: "sync_orders_window_account_missing",
       mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
     });
 
     if ("outcome" in resolvedAccount) {
@@ -178,7 +192,12 @@ export function createSyncOrdersWindowHandler(deps: SyncOrdersWindowDeps): JobHa
       );
     } catch (error) {
       const finishedAt = deps.now?.() ?? new Date();
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+      const errorClass =
+        error instanceof MercadoLivreApiError
+          ? error.errorClass
+          : error instanceof z.ZodError
+            ? "not_retryable"
+            : "retryable";
       const reason = error instanceof Error ? error.message : "erro desconhecido ao buscar pedidos";
 
       await recordSyncRunFailure(deps.db, {

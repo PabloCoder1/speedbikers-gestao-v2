@@ -234,6 +234,8 @@ const EVENT_TYPE: Record<string, string> = {
   // D-411 -- o alerta NOVO de severidade alta da central; o tipo do alerta
   // (frete, Ads, produto) vem na linha, de `after.kind`.
   "central.alert.opened": "Alerta novo na central",
+  // D-858 -- a venda que saiu abaixo da margem mínima da marca.
+  "sale.margin.below": "Venda abaixo da margem",
   // D-110 -- primeiro evento de atendimento; vocabulario separado de
   // SUPPORT_CASE_EVENT (abaixo), que e auditoria interna do case.
   "support.claim.disputed": "Reclamação entrou em mediação",

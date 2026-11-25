@@ -12,7 +12,7 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 | A04 | P1 · CONFIRMADO por teste | `apps/api/src/shopee-push.ts`, `POST /push/shopee`, `packages/observability/src/logger.ts`. O corpo recusado fornecia nomes de campos e `code` sem validação. JSON profundamente aninhado retornava 500 em teste. Cancelamento assinado também escrevia `data` inteiro | Controle externo de conteúdo e volume por log e risco de exposição do payload. Correção local mantém o diagnóstico com nomes conhecidos e código numérico, descarta `data` e preserva o ACK e o comportamento de filas |
 | A05 | P1 · CORRIGIDO localmente (D-657) | Reproduzida a transferência de loja entre organizações com duas transações PostgreSQL em cada marketplace | Uma RPC por callback grava loja e credenciais do lote com verificação do dono no conflito. Testes confirmaram bloqueio entre transações, reconexão, rollback e permissões. Validar após a publicação |
 | A06 | P1 · CORRIGIDO localmente para tentativas novas (D-658) | `support-reply.ts` podia deixar PENDING após falha da fila. Duas entregas concorrentes alcançavam o POST e o cliente HTTP repetia 429/500 | A mesma confirmação retoma a fila original, com identidade e conteúdo conferidos. Uma atualização condicional autoriza um único POST, e o HTTP usa uma tentativa. Legado e envio de resultado incerto exigem conciliação |
-| A07 | P1 · CONFIRMADO no GitHub | A API de proteção devolveu 404 `Branch not protected` para `main` e a consulta de regras devolveu `[]`. O alias de produção da Vercel acompanha a `main` | A publicação pode ocorrer sem um check obrigatório na ref. Configuração do GitHub precisa ser revisada com o responsável. O workflow de migrations tem dois gates separados no ambiente `producao` |
+| A07 | P1 · PROTEÇÃO CONFIRMADA no GitHub | Em 24/11, a API confirmou PR obrigatório, quatro checks vinculados ao GitHub Actions e bloqueio de force-push e exclusão na `main` | A regra permite bypass de administradores. O alias de produção da Vercel acompanha a `main` |
 | A08 | P2 · NECESSITA INVESTIGAÇÃO | [Banco](DATABASE_MAP.md) e [candidatos](CLEANUP_CANDIDATES.md) documentam estruturas com consumidores estáticos limitados. Uso real, retenção, planos e estatísticas ficaram pendentes | Ausência de uso no código não comprova remoção segura. Repetir com catálogo acessível e janela de observação suficiente |
 | A09 | P3 · CONFIRMADO | `apps/web/app/(app)/sugestoes/actions.ts` descartava os tipos já presentes em `packages/db/src/types.ts` | Casts impediam a checagem de operações de escrita. Correção local voltou a usar o contrato tipado |
 | A10 | P2 · CONFIRMADO na configuração | As revisões Cloud Run `api-00038-qsf` e `worker-00056-wjk` apontam para `dc69d1fb`, 51 commits atrás da base auditada | O código da `main` e os serviços configurados têm revisões diferentes. Após recuperar a operação, verificar a compatibilidade das migrations e preparar o deploy previsto no projeto |
@@ -185,3 +185,17 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 - A11 · [Uso de getSession no Supabase Auth](https://supabase.com/docs/reference/javascript/auth-getsession).
 - A12 · [Hono](https://github.com/advisories/GHSA-5r4p-p66f-jhc7), [adaptador Node](https://github.com/advisories/GHSA-rmxm-3fg6-px4f) e [fast-xml-parser](https://github.com/advisories/GHSA-474x-hrwr-fgx4).
 - [CI da base auditada](https://github.com/PabloCoder1/speedbikers-gestao-v2/actions/runs/39819868730) e [workflow de migrations de produção observado](https://github.com/PabloCoder1/speedbikers-gestao-v2/actions/runs/39817649217).
+
+## Revisão do candidato em 24/11
+
+- **P2 · D-882.** O endpoint respondia HTTP 200 após uma falha de fila interromper os alertas das organizações seguintes. A regressão verifica avanço, log individual, HTTP 503 e retentativa deduplicada. O Scheduler ativo tem duas retentativas com backoff de 30 a 120 s.
+- **P2 · D-881.** O runbook orienta enviar o catálogo pela CLI via JSON. O procedimento preserva as linhas do arquivo e a validação de SHA, histórico e hashes.
+- **M05.** O worker em tráfego está no SHA `5a49133b`, cujo multiget usa `/items`. A janela posterior começa quando o SHA com `/items/bulk` estiver em tráfego.
+- **SMTP.** A versão mais recente das cinco referências de D-858 está habilitada. O worker atual carrega host, usuário, senha e porta. O remetente é opcional e usa o usuário SMTP quando ausente. Entrega e Auth da VM seguem pendentes.
+
+- **P1 · D-803.** A integração convertia `Infinity` em lista vazia antes da primeira chamada. Os leitores ML e Shopee do SKU dependem desse valor para paginar até o fim. Reproduzido com 1.002 linhas e corrigido no leitor comum. Passaram 52 testes focados. O Playwright completo valida o efeito nas jornadas.
+
+- **P2 · D-883.** A CI 45395072874 perdeu os traces de falha ao buscar o diretório do repórter HTML. A reprodução local com o repórter de lista gerou o ZIP em `test-results`. Ajustado no #378.
+
+- **M04 · D-812 e D-813.** #378 integra contratos compartilhados dos jobs e projeções de catálogo, estoque e devoluções. Persistência, handlers e primeira validação com loja continuam em aberto.
+- **P1 · D-814.** #378 inclui as guardas de organização e a retomada de falha transitória na fila dos handlers revisados no #343.

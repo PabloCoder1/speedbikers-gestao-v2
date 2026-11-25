@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { markNotificationRead } from "../app/(app)/notificacoes/actions";
+import { markAllNotificationsRead, markNotificationRead } from "../app/(app)/notificacoes/actions";
 import { deletePreference, updatePreference } from "../app/(app)/notificacoes/preferencias/actions";
 
 const m = vi.hoisted(() => ({
   cliente: vi.fn(),
   tabela: vi.fn(),
+  rpc: vi.fn(),
   atualizar: vi.fn(),
   apagar: vi.fn(),
   filtrar: vi.fn(),
@@ -23,7 +24,7 @@ beforeEach(() => {
   m.atualizar.mockReturnValue(consulta);
   m.apagar.mockReturnValue(consulta);
   m.tabela.mockReturnValue({ update: m.atualizar, delete: m.apagar });
-  m.cliente.mockResolvedValue({ from: m.tabela });
+  m.cliente.mockResolvedValue({ from: m.tabela, rpc: m.rpc });
 });
 
 const PREF_ID = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
@@ -95,3 +96,45 @@ for (const caso of [
     });
   });
 }
+
+describe("marcar notificações visíveis em lote", () => {
+  it("usa o escopo visível e devolve o total do banco mesmo sem filtros", async () => {
+    m.rpc.mockResolvedValue({ data: 2, error: null });
+
+    expect(await markAllNotificationsRead()).toEqual({ ok: true, message: null, marked: 2 });
+    expect(m.rpc).toHaveBeenCalledExactlyOnceWith("mark_notifications_read", {
+      p_severity: null,
+      p_event_type_prefix: null,
+      p_ml_account_id: null,
+    });
+    expect(m.tabela).not.toHaveBeenCalled();
+    expect(m.revalidar).toHaveBeenCalledExactlyOnceWith("/notificacoes");
+  });
+
+  it("preserva o filtro de loja e o zero retornado em uma repetição", async () => {
+    m.rpc.mockResolvedValue({ data: 0, error: null });
+    expect(await markAllNotificationsRead({
+      severity: "critico",
+      family: "stock",
+      account: null,
+      loja: NOTIF_ID,
+    })).toEqual({ ok: true, message: null, marked: 0 });
+    expect(m.rpc).toHaveBeenCalledExactlyOnceWith("mark_notifications_read", {
+      p_severity: "critico",
+      p_event_type_prefix: "stock.",
+      p_ml_account_id: null,
+      p_shopee_shop_id: NOTIF_ID,
+    });
+  });
+
+  it("preserva a mensagem de falha sem revalidar", async () => {
+    m.rpc.mockResolvedValue({ data: null, error: { message: "erro interno" } });
+
+    expect(await markAllNotificationsRead()).toEqual({
+      ok: false,
+      message: "Não foi possível marcar todas como lidas.",
+      marked: null,
+    });
+    expect(m.revalidar).not.toHaveBeenCalled();
+  });
+});

@@ -44,7 +44,7 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   // Sem ler `ml_accounts`, `?conta=<uuid>` cairia em "todas as contas" em silêncio.
   if (accounts !== null && accounts.error !== null) {
-    return NextResponse.json({ error: { code: "accounts_read_failed", message: accounts.error.message } }, { status: 502 });
+    return NextResponse.json({ error: { code: "accounts_read_failed" } }, { status: 502 });
   }
 
   // Conta desconhecida (ou de outra organização) vira "sem filtro" antes de
@@ -56,7 +56,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   const { data, error } = await loadPriceExportData(supabase, organizationId, filters, conta?.id ?? null, now);
 
   if (error !== null || data === null) {
-    return NextResponse.json({ error: { code: "read_failed", message: error?.message } }, { status: 502 });
+    return NextResponse.json({ error: { code: "read_failed" } }, { status: 502 });
   }
 
   const buffer = await buildPriceChangesWorkbook({

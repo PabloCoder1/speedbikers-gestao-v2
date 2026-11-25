@@ -19,6 +19,8 @@ describe("adjustmentDelta", () => {
     expect(adjustmentDelta("ENTRADA", 0, 12)).toBeNull();
     expect(adjustmentDelta("SAIDA", -2, 12)).toBeNull();
     expect(adjustmentDelta("ENTRADA", Number.NaN, 12)).toBeNull();
+    expect(adjustmentDelta("BALANCO", 5, Number.NaN)).toBeNull();
+    expect(adjustmentDelta("BALANCO", 5, Number.POSITIVE_INFINITY)).toBeNull();
   });
 });
 

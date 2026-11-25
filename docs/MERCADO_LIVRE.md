@@ -55,7 +55,7 @@ Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta
 | Itens do vendedor (recomendado) | `GET /users/{user_id}/items/search` | `read`, "Publicação e sincronização" | `offset`/`limit` padrão 50; `search_type=scan` + `scroll_id` acima de 1000, até 100/página, scroll expira em 5 min | secao 2.3 | 2026-08-21 |
 | Itens do vendedor (legado) | `GET /sites/{site_id}/search?seller_id=...` | `read` | idem acima | secao 2.3 | 2026-08-21 — documentação indica substituição gradual pelo endpoint acima |
 | Filtro por user product | `GET /users/{seller_id}/items/search?user_product_id=MLBU1,MLBU2` | `read`, privado | — | secao 2.3 | 2026-08-20 |
-| Multiget de itens | `GET /items/bulk?ids=ID1,ID2&attributes=body.id,...` | `read` | até **20 ids** por chamada | seção 2.14 | 2026-11-19 |
+| Multiget de itens | `GET /items/bulk?ids=ID1,ID2` | `read` | até **20 ids** por chamada | seção 2.14 | 2026-11-19 |
 | Item único | `GET /items/{item_id}` | `read` | — | secao 2.3 | 2026-08-20, campos de listing (`title`/`status`/`price`/`available_quantity`/`category_id`) confirmados em 2026-08-23 (D-058) |
 | Variações de um item | `GET /items/{item_id}/variations` | `read` | — | secao 2.3 | 2026-08-21 |
 | Variação específica | `GET /items/{item_id}/variations/{variation_id}` | `read` | — | secao 2.3 | 2026-08-21 |
@@ -593,6 +593,9 @@ GET /users/{id}/items/search?search_type=scan&scroll_id=<mesmo id>   # seguintes
 ```
 
 - O `scroll_id` **expira em 5 minutos** e deve ser o MESMO em todas as chamadas.
+- Se a varredura atingir 500 páginas com o cursor aberto, o snapshot registra
+  falha e encerra antes da hidratação. A descoberta usa IDs únicos, inclusive
+  quando as páginas se sobrepõem.
 - No fim da lista o retorno é `null` — **a doc não diz qual campo** vira null.
 - *"remova o deslocamento"* (`offset`).
 
@@ -625,12 +628,12 @@ Defeito da própria doc: existe uma 11ª entrada de `available_orders` cujo `id`
 ### Multiget — a segunda fase
 
 ```
-GET /items/bulk?ids=A,B,C&attributes=body.id,body.title,body.status,body.price
+GET /items/bulk?ids=A,B,C
 ```
 
 - **Máximo de 20 ids por chamada.**
 - A resposta traz `id`, `status_code` e `body` por entrada. O cliente normaliza `status_code` para `code` antes de devolver ao worker.
-- Cada campo de `attributes` recebe o prefixo `body.`.
+- O cliente omite `attributes`. A sonda de 25/11 encontrou apenas `body` quando pediu `attributes=body.…`, sem a identidade e o status exigidos pelo worker.
 
 ⚠️ **`include_attributes=all` é do item singular, não está documentado no multiget.** E ele é **crítico para vinculação**: *"No caso que deseje consultar o seller custom field deverá enviar o parâmetro `include_attributes=all`"* — ou seja, o `seller_custom_field` (nossa melhor pista de SKU) pode não vir sem ele. Combinar os dois é inferência; medir.
 
@@ -654,7 +657,11 @@ A V3 guarda `listings.sub_status` e `listings.deleted_at` e esconde o excluído 
 - a notificação `items`, que agora tem job próprio (`sync.listing.item`) e relê aquele anúncio na hora;
 - depois de cada varredura inteira, a releitura do que a V3 tem vivo e a varredura não listou.
 
-No multiget, o item que não volta com 200 é relido sozinho, e só o 404 dessa leitura vale como "não existe mais".
+No bulk, só um 404 isolado com o ID pedido confirma a exclusão. O cliente
+descarta IDs fora do pedido e envelopes duplicados. O worker só grava um
+200 quando o ID do corpo coincide com o do envelope. Em lote múltiplo,
+IDs sem envelope aceito ou com código de erro são relidos isoladamente.
+Um 200 com corpo inválido conta como falha do item.
 
 Desde a D-631 b o excluído também sai das contagens (/produtos, curadoria, /contas, integridade de vínculo), da queda por anúncio e do alerta de frete, e a conferência da republicação o bloqueia (`EXCLUIDO_NO_MERCADO_LIVRE`).
 

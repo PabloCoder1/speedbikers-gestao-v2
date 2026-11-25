@@ -15,4 +15,12 @@ describe("lastBusinessDays", () => {
   it("atravessa a virada do mês", () => {
     expect(lastBusinessDays(7, new Date("2026-10-02T15:00:00Z"))).toEqual({ from: "2026-09-26", to: "2026-10-02" });
   });
+
+  it("normaliza dias não finitos ou fracionários sem lançar RangeError", () => {
+    const agora = new Date("2026-09-18T15:00:00Z");
+
+    expect(lastBusinessDays(Number.NaN, agora)).toEqual({ from: "2026-09-18", to: "2026-09-18" });
+    expect(lastBusinessDays(Number.POSITIVE_INFINITY, agora)).toEqual({ from: "2026-09-18", to: "2026-09-18" });
+    expect(lastBusinessDays(3.9, agora)).toEqual({ from: "2026-09-16", to: "2026-09-18" });
+  });
 });

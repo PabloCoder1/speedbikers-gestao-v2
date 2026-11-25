@@ -26,6 +26,12 @@ describe("lerMedidas", () => {
     expect(lerMedidas(null)).toBeNull();
     expect(lerMedidas(undefined)).toBeNull();
   });
+
+  it("D-800: rejeita medidas que estouram para Infinity no lado, peso ou volume", () => {
+    expect(lerMedidas(`${"9".repeat(310)}x20x30,500`)).toBeNull();
+    expect(lerMedidas(`10x20x30,${"9".repeat(310)}`)).toBeNull();
+    expect(lerMedidas(`${"1" + "0".repeat(110)}x${"1" + "0".repeat(110)}x${"1" + "0".repeat(110)},500`)).toBeNull();
+  });
 });
 
 describe("pacoteDoEnvio", () => {

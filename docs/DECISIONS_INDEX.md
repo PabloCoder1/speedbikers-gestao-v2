@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **689** (D-001 a D-792).
+Decisões registradas: **757** (D-001 a D-883).
 
 ## Por domínio
 
-### atendimento (69)
+### atendimento (72)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -87,8 +87,11 @@ Decisões registradas: **689** (D-001 a D-792).
 - **D-770** — Edição de itens de NF-e e saída manual separam erro transitório, exigem linha afetada e fatiamento em lotes na API
 - **D-778** — Autorização no servidor em `claimAction`, fail-closed em Server Actions/Caixa de Entrada e escape de curingas `ILIKE`
 - **D-781** — Encerra últimos `getSession()` diretos em clientes web e valida corpo `200 OK` em aplicação, republicação e narração IA
+- **D-788** — Invariantes de tempo e finitude em `@sb/domain` (`remote-transition`, `support-events`, `sales-anomaly`, `calculadora-preco`)
+- **D-805** — Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
+- **D-808** — API: receptor autenticado `POST /push/tiktok-shop` (`M04`, fatia 3)
 
-### banco/rls (50)
+### banco/rls (54)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -140,8 +143,12 @@ Decisões registradas: **689** (D-001 a D-792).
 - **D-766** — Saída Manual e itens editáveis na conferência, sem migration
 - **D-769** — Ordem de migrations validada por upgrade incremental
 - **D-790** — Um índice único atende a timeline do Full
+- **D-820** — Web Server Actions: `auth.getUser()` fail-closed nas 5 telas restantes e saneamento de erro SQL na triagem
+- **D-826** — Web exportações CSV/XLSX: eliminação de vazamento de `error.message` bruto do Postgres no HTTP 502
+- **D-830** — Web faturamento/vendas: eliminação de `error.message` bruto do Postgres no DOM
+- **D-881** — Workflow de migrations de produção gera o plano da VM
 
-### estoque (58)
+### estoque (65)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -201,8 +208,15 @@ Decisões registradas: **689** (D-001 a D-792).
 - **D-776** — Captura de estoque Full fatia `.in(inventory_id)` em lotes de 100 e elimina varredura histórica completa de `fulfillment_stock_snapshots`
 - **D-783** — Server Components falham fechado em erro de contas/organização (`/precos`, `/full`, `/atendimento/perguntas`), escapam `ILIKE` e limitam `.in()` em `/atendimento`
 - **D-792** — Receber o pedido de compra dá entrada no estoque, e a conferência da invoice cria o SKU que falta
+- **D-799** — Domínio e web: calendário real em datas de negócio e períodos, PDFs/NF-e, preflight/corpo de republicação, cobertura, saúde e CSV
+- **D-802** — Domínio, API e Web: ledger/UpSeller, diretório de contas e indicadores/saúde fail-closed
+- **D-803** — Domínio, API e Web: reversões de estoque, enqueue, filtros ABC, paginação RPC e utilitários web
+- **D-809** — Domínio TikTok Shop: projeção de pedidos, margem oficial V3 e plano de baixa de estoque com guarda D-497 (`M04`)
+- **D-813** — Domínio TikTok Shop: projeção de catálogo/estoque e motor idempotente de devoluções (`M04`)
+- **D-850** — Full mantém 30 dias de capturas brutas online e permite recuperar o arquivo
+- **D-862** — O kit que leva um componente fora do catálogo conta no aviso da Central
 
-### interface (76)
+### interface (79)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -280,8 +294,11 @@ Decisões registradas: **689** (D-001 a D-792).
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
+- **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
+- **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
+- **D-869** — Lançar custo no pedido de compra é idempotente pela requisição
 
-### mercado-livre (134)
+### mercado-livre (151)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -416,9 +433,26 @@ Decisões registradas: **689** (D-001 a D-792).
 - **D-772** — Paginação, fatiamento `.in()` e liberação garantida de trava no estoque Shopee, catálogo ML e hidratação Shopee do worker
 - **D-780** — Worker falha fechado em erro de gravação de visitas, registra `sync_runs` no backfill financeiro e protege unlock de refresh ML/Shopee
 - **D-782** — Endurecimento da API em convites (corrida 23505), webhook ML (`user_id`/`questionId`/enqueue), cotação de frete e resposta do SAC
+- **D-789** — Hardening em `@sb/mercado-livre` e `@sb/shopee` (cifra AES-GCM 128-bit, paginação Ads, mensagens pós-venda, HTTP 200 não-JSON, OAuth retry e parsers Shopee)
 - **D-791** — O cliente usa o endpoint bulk de anúncios do Mercado Livre
+- **D-793** — Isolamento de falhas de enqueue em agendadores/relist, validação de epoch TikTok e hardening OAuth/push na API
+- **D-795** — Worker: telemetria best-effort (`sync_runs`/`domain_events`) e `sync-central-alerts` blindados contra transporte, IDs seguros ML e proteção de janelas/datas Shopee e Ads
+- **D-796** — Marketplaces e worker: limite de TTL OAuth, evento de relist blindado contra transporte, datas/checkpoints de pedidos ML e reconciliação SAC
+- **D-797** — Worker: proteção contra Flate zip bomb em PDF, isolamento de ZodError/transporte em visitas e Full, guardas de backfill e parse NF-e
+- **D-800** — API, Worker e Web: hardening de Copiloto, OAuth Shopee, logística/pacote/anomalias e helpers de métricas
+- **D-801** — Domínio, Worker e Web: finitude em eventos/inventário/suporte, estoque Full no preflight de relist e parsers/filtros web
+- **D-807** — TikTok Shop: camada transacional de leitura, webhook e coordenador de refresh em `@sb/tiktok-shop` (`M04`)
+- **D-815** — Worker `service_role`: isolamento multi-tenant `envelope.organizationId` em 7 handlers críticos de escrita, importação, relist, logística e webhook
+- **D-816** — Worker `service_role`: `expectedOrganizationId` centralizado em `resolveMlAccountRead` e isolamento em 9 handlers do Mercado Livre
+- **D-817** — Worker `service_role`: isolamento multi-tenant e proteção de continuação `enqueue()` em 3 handlers financeiros/backfill ML
+- **D-819** — Núcleo worker e OAuth TikTok: `readAllPages` contra laço infinito em `NaN`, `delaySeconds` no `enqueue` e validação de `state`/`code`
+- **D-821** — API OAuth callbacks: padronização de `state`/`code` em branco no Mercado Livre e Shopee
+- **D-822** — Web `/contas`: painel Lojas TikTok Shop e conector OAuth (`M04`)
+- **D-825** — Worker `relist-prepare` e `relist-measurement`: isolamento multi-tenant e proteção de eventos de republicação
+- **D-831** — Worker `ml-token.ts` e `shopee-token.ts`: `decryptToken` fail-closed (`retryable: false`) e liberação da trava
+- **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
-### outros (113)
+### outros (129)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -533,12 +567,28 @@ Decisões registradas: **689** (D-001 a D-792).
 - **D-775** — Autenticação da API recusa múltiplas organizações e separa 503 de 401/403; OIDC exige `email_verified`; unlock de `shopee.orders.sync` protegido no `finally`
 - **D-777** — Backfills internos respondem 503 em erro de banco, rotas D-766 usam `erroInterno` com `request_id` e callback Shopee exige inteiro seguro positivo
 - **D-784** — Demais Server Components web falham fechado em erro de contas/organização e BuscaSku trata rejeição de transporte
+- **D-811** — Web: falha fechada em `removeMember`, hardening de `POST /api/vitals` e busca de SKU em NF-e/Saída Manual
+- **D-823** — Web `/integracoes`: cartão TikTok Shop na Central de Integrações (`M04`)
+- **D-824** — Web `/sincronizacao`: seção `Lojas TikTok Shop` e saúde da autorização (`M04`)
+- **D-829** — API `copilot-chat.ts`: sanitização de erros internos de ferramentas no `tool_result`
+- **D-851** — Central de Notificações usa ID para desempatar horários iguais
+- **D-852** — Cartões da Central de Notificações contam e abrem o mesmo escopo
+- **D-853** — Marcar todas como lidas usa o escopo visível da Central
+- **D-854** — Emblema de notificações usa visibilidade da Central e consulta limitada a 100
+- **D-855** — Contagem das notificações na Home segue a visibilidade da Central
+- **D-856** — Atividade recente da Home limita a lista aos eventos visíveis
+- **D-860** — O produto que sai da planilha de produtos do UpSeller fica fora do catálogo, nunca apagado
+- **D-864** — O formulário de pedido de compra sobrevive à Server Action que não responde
+- **D-865** — O detalhe do pedido de compra sobrevive à Server Action que não responde
+- **D-866** — "Já fiz o pedido" e o cadastro de fornecedor sobrevivem à Server Action que não responde
+- **D-868** — Produção avisa por e-mail quando o disco da VM enche ou quando api, web ou auth saem do ar
+- **D-880** — Preflight da VM vincula o plano ao commit do candidato
 
 ### processo/docs (1)
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (70)
+### vendas/métricas (77)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -610,8 +660,15 @@ Decisões registradas: **689** (D-001 a D-792).
 - **D-720** — Margem por SKU em todos os marketplaces, com o consolidado pela soma dos valores
 - **D-721** — A avaliação de compra junta giro, idade, ruptura, margem e pedidos sobrepostos
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
+- **D-798** — Contratos, API e Worker: janelas de datas no Copiloto, lookup de ferramenta/NF-e/suspensão blindados, papéis/dedupe de claims, cauda de pedidos e `attempt` do worker
+- **D-810** — API TikTok Shop: agendador paginado de pedidos e adaptador Supabase de refresh de token (`M04`)
+- **D-827** — Worker `persist-order`: fatiamento de `orders.in()` e escopo `organization_id` no caminho quente de pedidos
+- **D-858** — Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
+- **D-859** — O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
+- **D-867** — A importação de pedidos anteriores sobrevive à Server Action que não responde
+- **D-882** — Agendamento de margem percorre todas as organizações com alerta ativo
 
-### worker/infra (118)
+### worker/infra (129)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -731,4 +788,15 @@ Decisões registradas: **689** (D-001 a D-792).
 - **D-760** — O pedido feito fora do sistema é um pedido de compra comum, com origem e referência externa
 - **D-761** — "Já fiz o pedido" passa pelo caminho canônico e devolve os candidatos a duplicidade em vez de criar
 - **D-779** — Logger estruturado redige `message`, protege referências circulares e serializa `Error` em qualquer profundidade
+- **D-785** — Tentar de novo preserva o recorte da URL via `mesmaUrl` e as 10 telas operacionais restantes separam `membership.error`
+- **D-786** — Worker verifica erro ao avançar checkpoint de `backfill.orders`, registra `sync_runs` em `sync.order-financials`, pagina `order_items` em `backfill.order-user-products` e preserva retry em `sync-central-alerts`
+- **D-787** — Hardening do worker em persistência/varredura do SAC (`claims`, `messages`, `reply`) e erro transitório na recusa de `nfe.import.apply`
+- **D-794** — Telemetria `@sb/db` (`recordJobRun`/`recordAiRun`) blindada contra transporte e isolamento de enqueue nos 13 agendadores/backfills restantes da API
+- **D-812** — Contratos compartilhados de fila do TikTok Shop em `@sb/contracts` e alinhamento da API (`M04`)
+- **D-814** — Worker `service_role`: isolamento multi-tenant `envelope.organizationId`, escopo explícito de consultas, lotes de upsert e enqueue protegido em 7 handlers
+- **D-818** — Worker `service_role`: `expectedOrganizationId` centralizado em `lerLojaConectada` e proteção de `enqueue()` em 5 handlers Shopee
+- **D-828** — Worker `page-writes.ts`: fatiamento em lotes de 100 na exclusão da cauda de `order_items`
+- **D-857** — Avisos em tempo real respeitam o ciclo da sessão
+- **D-863** — "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
+- **D-883** — Preservar os traces das falhas Playwright na CI
 

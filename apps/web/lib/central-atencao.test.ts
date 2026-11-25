@@ -224,4 +224,66 @@ describe("rotuloDaContagem", () => {
     expect(rotuloDaContagem("otimizacao", 12)).toBe("12 oportunidades de otimização");
     expect(rotuloDaContagem("oportunidade", 1)).toBe("1 oportunidade de escala");
   });
+
+  it("D-804: contagens e diferenças não finitas são ignoradas em montarAtencao e contarPorSeveridade", () => {
+    const baseAds = sinaisAds({ critico: 0, abaixo_meta: 0, atencao: 0, escala: 0 });
+    const baseFrete = detector({ forte: 0, provavel: 2, atencao: 0, excesso_14_dias: null });
+    const itens = montarAtencao(
+      entrada({
+        sinaisAds: {
+          ...baseAds,
+          resumo: {
+            ...baseAds.resumo,
+            critico: Number.POSITIVE_INFINITY,
+            abaixo_meta: Number.POSITIVE_INFINITY,
+            atencao: Number.POSITIVE_INFINITY,
+            escala: Number.POSITIVE_INFINITY,
+          },
+        },
+        detector: {
+          ...baseFrete,
+          resumo: {
+            ...baseFrete.resumo,
+            forte: Number.POSITIVE_INFINITY,
+            provavel: 2,
+            atencao: Number.POSITIVE_INFINITY,
+            excesso_14_dias: Number.POSITIVE_INFINITY,
+          },
+        },
+        produtos: {
+          ...PRODUTOS,
+          skusMargemNegativa: Number.POSITIVE_INFINITY,
+          skusAbaixoDaMargem: Number.POSITIVE_INFINITY,
+        },
+        margem: {
+          ...MARGEM_EM_QUEDA,
+          variacao: {
+            anterior: 0.25,
+            diferenca: Number.NaN,
+            relativa: null,
+            direcao: "desce",
+            relevante: true,
+            tom: "perigo",
+          },
+        },
+        meta: null,
+      }),
+    );
+
+    expect(itens).toHaveLength(1);
+    expect(itens[0]?.categoria).toBe("Frete");
+    expect(itens[0]?.texto).toBe("2 anúncios têm provável problema de frete.");
+    expect(
+      contarPorSeveridade([
+        ...itens,
+        {
+          severidade: "critico",
+          categoria: "Ads",
+          quantidade: Number.POSITIVE_INFINITY,
+          texto: "x",
+          href: "/central/ads",
+        },
+      ]),
+    ).toEqual({ critico: 0, atencao: 2, otimizacao: 0, oportunidade: 0 });
+  });
 });

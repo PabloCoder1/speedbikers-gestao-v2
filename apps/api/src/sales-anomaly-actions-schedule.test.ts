@@ -125,4 +125,23 @@ describe("triggerSalesAnomalyActionsDetection", () => {
     expect(outcome).toEqual({ organizationsScanned: 0, enqueued: 0, deduplicated: 0 });
     expect(enqueued).toHaveLength(0);
   });
+
+  it("D-794: falha ao enfileirar um job não impede os demais nem a outra organização e sinaliza failed para 503", async () => {
+    const { deps: d, enqueued } = deps();
+    const base = d.enqueuer.enqueue;
+    d.enqueuer = {
+      enqueue: (request) =>
+        request.organizationId === "org-1" && request.jobType === "diagnostics.detect-sales-anomalies"
+          ? Promise.reject(new Error("fila indisponível"))
+          : base(request),
+    };
+
+    await expect(triggerSalesAnomalyActionsDetection(d)).resolves.toEqual({
+      organizationsScanned: 2,
+      enqueued: 7,
+      deduplicated: 0,
+      failed: true,
+    });
+    expect(enqueued).toHaveLength(7);
+  });
 });

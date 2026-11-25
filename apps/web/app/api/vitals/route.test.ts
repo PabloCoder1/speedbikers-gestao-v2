@@ -69,12 +69,25 @@ describe("POST /api/vitals", () => {
   it.each([
     { name: "UNKNOWN", value: 1, path: "/" },
     { name: "CLS", value: Number.NaN, path: "/" },
+    { name: "LCP", value: -1, path: "/" },
+    { name: "CLS", value: -0.01, path: "/vendas" },
     { name: "INP", value: 1, path: "vendas" },
+    { name: "LCP", value: 1, path: "//evil.example/vendas" },
+    { name: "LCP", value: 1, path: "/vendas?token=secreto" },
+    { name: "LCP", value: 1, path: "/vendas#secao" },
+    { name: "LCP", value: 1, path: "/vendas\nweb_vital forged" },
+    { name: "LCP", value: 1, path: "/vendas\r\nX" },
+    { name: "LCP", value: 1, path: "/vendas\u0000" },
+    { name: "LCP", value: 1, path: "/vendas\\a" },
+    { name: "LCP", value: 1, path: "/vendas espaco" },
     { name: "LCP", value: 1, path: "/", softNav: "yes" },
     { name: "LCP", value: 1, path: "/", softNav: null },
+    [],
   ])("rejects invalid payload %#", async (payload) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const response = await post(payload);
 
     expect(response.status).toBe(400);
+    expect(info).not.toHaveBeenCalled();
   });
 });

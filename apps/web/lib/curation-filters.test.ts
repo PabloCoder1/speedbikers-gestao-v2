@@ -128,4 +128,27 @@ describe("tradução para a RPC", () => {
     expect(toCurationRpcArgs({ ...base, estado: "todos" }).p_classified).toBeUndefined();
     expect(toCurationRpcArgs({ ...base, estado: "virtual" }).p_classified).toBe("VIRTUAL");
   });
+
+  it("D-804: chaves de Object.prototype na URL não atravessam as listas fechadas nem vazam para a RPC", () => {
+    const filtros = resolveCurationFilters({
+      estado: "toString",
+      sinal: "valueOf",
+      tipo: "constructor",
+      situacao: "hasOwnProperty",
+      anuncios: "toString",
+      vendas: "constructor",
+      ordem: "hasOwnProperty",
+    });
+
+    expect(filtros.estado).toBe("todos");
+    expect(filtros.sinal).toBeNull();
+    expect(filtros.tipo).toBeNull();
+    expect(filtros.situacao).toBeNull();
+    expect(filtros.anuncios).toBeNull();
+    expect(filtros.vendas).toBeNull();
+    expect(filtros.ordem).toBe("curadoria");
+    expect(resolveOrdem("toString")).toBe("curadoria");
+    expect(toCurationRpcArgs(filtros).p_classified).toBeUndefined();
+    expect(toCurationRpcArgs(filtros).p_order).toBe("curadoria");
+  });
 });

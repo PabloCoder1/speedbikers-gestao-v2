@@ -62,6 +62,8 @@ const KIND_LABELS: Readonly<Record<string, string>> = {
   shopee_prejuizo: "Produto no prejuízo na Shopee",
   // D-627 (C-78): o estoque da Shopee diferente do saldo da V3; o atalho é o da D-609 (D-632).
   shopee_divergencia: "Divergência de estoque na Shopee",
+  // D-861: o SKU fora do catálogo (D-860) que ainda tem anúncio ativo vinculado.
+  fora_do_catalogo_anunciado: "Fora do catálogo com anúncio ativo",
 };
 
 /** Os `kind` que são problema por definição, sem direção a ler. */
@@ -74,6 +76,7 @@ const PROBLEMAS: ReadonlySet<string> = new Set([
   "shopee_ruptura",
   "shopee_prejuizo",
   "shopee_divergencia",
+  "fora_do_catalogo_anunciado",
 ]);
 
 /**

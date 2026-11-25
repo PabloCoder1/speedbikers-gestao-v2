@@ -61,6 +61,12 @@ describe("vocabulário de período", () => {
   it("`7` como NÚMERO não passa — a URL entrega string, e aceitar os dois esconderia um chamador errado", () => {
     expect(resolvePeriodDays(7)).toBe(30);
   });
+
+  it("string com sufixo ou decimal não passa por parseInt parcial (D-799)", () => {
+    expect(resolvePeriodDays("30abc")).toBe(30);
+    expect(resolvePeriodDays("7abc")).toBe(30);
+    expect(resolvePeriodDays("15.9")).toBe(30);
+  });
 });
 
 describe("janela pedida pela URL (D-356)", () => {
@@ -90,5 +96,7 @@ describe("janela pedida pela URL (D-356)", () => {
   it("personalizado invertido ou malformado vira o padrão COM aviso", () => {
     expect(resolvePeriodRange({ from: "2026-09-10", to: "2026-09-01" }, HOJE)).toMatchObject({ days: 30, invalidCustom: true });
     expect(resolvePeriodRange({ from: "10/09/2026", to: "2026-09-11" }, HOJE)).toMatchObject({ days: 30, invalidCustom: true });
+    expect(resolvePeriodRange({ from: "2026-02-31", to: "2026-03-05" }, HOJE)).toMatchObject({ days: 30, invalidCustom: true });
+    expect(resolvePeriodRange({ from: "2026-09-01", to: "2026-13-01" }, HOJE)).toMatchObject({ days: 30, invalidCustom: true });
   });
 });

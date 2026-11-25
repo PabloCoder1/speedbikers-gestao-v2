@@ -33,6 +33,9 @@ import type { CelulaPdf, LinhaPdf, PedacoPdf } from "@sb/domain";
  */
 
 const LIMITE_STREAMS = 4000;
+/** Teto por stream e total inflado por PDF (D-797): evita zip bomb Flate derrubar o container de 512 MiB. */
+const MAX_INFLATED_STREAM_BYTES = 4 * 1024 * 1024;
+const MAX_TOTAL_INFLATED_BYTES = 16 * 1024 * 1024;
 
 /**
  * Stream de CONTEÚDO ou de imagem? Um stream de conteúdo é quase todo ASCII
@@ -62,8 +65,9 @@ function inflarStreams(bytes: Uint8Array): string[] {
   const streams: string[] = [];
 
   let posicao = 0;
+  let totalInflado = 0;
 
-  while (streams.length < LIMITE_STREAMS) {
+  while (streams.length < LIMITE_STREAMS && totalInflado < MAX_TOTAL_INFLATED_BYTES) {
     const inicio = buffer.indexOf("stream", posicao);
 
     if (inicio === -1) break;
@@ -82,14 +86,36 @@ function inflarStreams(bytes: Uint8Array): string[] {
 
     posicao = fim + "endstream".length;
 
-    try {
-      const inflado = inflateSync(bruto).toString("latin1");
+    const limiteDoStream = Math.min(MAX_INFLATED_STREAM_BYTES, MAX_TOTAL_INFLATED_BYTES - totalInflado);
 
-      if (pareceTexto(inflado)) streams.push(inflado);
-    } catch {
+    try {
+      const inflado = inflateSync(bruto, { maxOutputLength: limiteDoStream });
+
+      totalInflado += inflado.byteLength;
+
+      const texto = inflado.toString("latin1");
+
+      if (pareceTexto(texto)) streams.push(texto);
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "ERR_BUFFER_OUT_OF_BOUNDS"
+      ) {
+        continue;
+      }
+
+      if (bruto.byteLength > limiteDoStream) {
+        continue;
+      }
+
       const texto = bruto.toString("latin1");
 
-      if (texto.includes("Tj") || texto.includes("TJ")) streams.push(texto);
+      if (texto.includes("Tj") || texto.includes("TJ")) {
+        totalInflado += bruto.byteLength;
+        streams.push(texto);
+      }
     }
   }
 

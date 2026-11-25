@@ -136,15 +136,25 @@ export async function flushPageWrites(db: AdminClient, writes: PageWrites): Prom
   // uma chamada por pedido sem precisar supor que a contagem é sempre igual.
   const porCorte = new Map<number, number[]>();
 
-  for (const tail of writes.tails) {
+  // Deduplica por pedido pela última ocorrência (mesma regra de `orders`/`items`)
+  // para que uma ocorrência anterior com menos itens não apague itens recém-gravados.
+  for (const tail of ultimaPorChave(writes.tails, (entry) => String(entry.orderId))) {
     porCorte.set(tail.fromPosition, [...(porCorte.get(tail.fromPosition) ?? []), tail.orderId]);
   }
 
+  // D-828: fatia cada grupo de `order_id` em lotes de 100 para não estourar a
+  // URI do PostgREST (HTTP 414) em páginas grandes.
+  const TAIL_DELETE_BATCH_SIZE = 100;
+
   for (const [fromPosition, orderIds] of porCorte) {
-    assertWritten(
-      await db.from("order_items").delete().in("order_id", orderIds).gte("position", fromPosition),
-      `order_items.delete da cauda em lote (${String(orderIds.length)} pedidos, posicao >= ${String(fromPosition)})`,
-    );
+    for (let offset = 0; offset < orderIds.length; offset += TAIL_DELETE_BATCH_SIZE) {
+      const lote = orderIds.slice(offset, offset + TAIL_DELETE_BATCH_SIZE);
+
+      assertWritten(
+        await db.from("order_items").delete().in("order_id", lote).gte("position", fromPosition),
+        `order_items.delete da cauda em lote (${String(lote.length)} pedidos, posicao >= ${String(fromPosition)})`,
+      );
+    }
   }
 
   if (writes.events.length > 0) {

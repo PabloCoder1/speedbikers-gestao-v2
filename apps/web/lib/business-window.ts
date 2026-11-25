@@ -13,6 +13,8 @@ import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
  */
 export function lastBusinessDays(dias: number, agora: Date = new Date()): { from: string; to: string } {
   const to = toSalesMetricDate(agora);
+  const truncado = Number.isFinite(dias) ? Math.trunc(dias) : 1;
+  const diasValidos = Number.isSafeInteger(truncado) ? Math.max(truncado, 1) : 1;
 
-  return { from: shiftBusinessDate(to, -(Math.max(dias, 1) - 1)), to };
+  return { from: shiftBusinessDate(to, -(diasValidos - 1)), to };
 }

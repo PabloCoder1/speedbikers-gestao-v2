@@ -80,7 +80,13 @@ export function detectClaimSupportEvents(input: ClaimSupportEventInput): DomainE
   // Por Date, NUNCA lexicográfico: o Mercado Livre carimba com offset
   // (`-04:00`/`-03:00`) e a época vem em `Z`. Comparar as strings suprimiria
   // um claim nascido às `18:30-04:00` (= 22:30Z) contra uma época de 21:00Z.
-  if (new Date(input.openedAt).getTime() < new Date(input.notifyEpoch).getTime()) {
+  // D-788: exige instantes finitos para `NaN < epochMs` não burlar a época
+  // nem gerar evento com `occurredAt` inválido.
+  const openedMs = Date.parse(input.openedAt);
+  const epochMs = Date.parse(input.notifyEpoch);
+  const lastActivityMs = Date.parse(input.lastActivityAt);
+
+  if (!Number.isFinite(openedMs) || !Number.isFinite(epochMs) || !Number.isFinite(lastActivityMs) || openedMs < epochMs) {
     return [];
   }
 

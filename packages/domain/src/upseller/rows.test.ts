@@ -315,4 +315,10 @@ describe("mapStockRow", () => {
   it("valida a presença das colunas obrigatórias", () => {
     expect(missingColumns(index, STOCK_COLUMNS)).toEqual([]);
   });
+
+  it("recusa estouro não finito ao somar colunas de trânsito", () => {
+    const row = ["X", "t", "ESTOQUE LOJA", null, 0, 1e308, 1e308, 0, 1, 1, null, null, null];
+
+    expect(mapStockRow(row, index).ok).toBe(false);
+  });
 });

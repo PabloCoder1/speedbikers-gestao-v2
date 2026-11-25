@@ -11,20 +11,24 @@ BUCKET_RAW="${PROJECT_ID}-raw-ml"
 BUCKET_ERP="${PROJECT_ID}-erp-imports"
 BUCKET_DOCS="${PROJECT_ID}-documents"
 
+bucket_exists() {
+  grep -Fxq -- "$1" <<< "${EXISTING_BUCKETS}"
+}
+
 create_bucket() {
   local name="$1"
+  shift
 
-  if gc storage buckets describe "gs://${name}" >/dev/null 2>&1; then
+  if bucket_exists "${name}"; then
     skip "${name}"
     return
   fi
 
-  # Sem acesso público, em nenhuma hipótese: estes buckets guardam payload
-  # comercial, planilha de estoque e documento fiscal.
+  # Estes buckets guardam payload comercial, estoque e documentos fiscais.
   gc storage buckets create "gs://${name}" \
     --location "${REGION}" \
     --uniform-bucket-level-access \
-    --public-access-prevention >/dev/null
+    --public-access-prevention "$@" >/dev/null
 
   ok "${name}"
 }
@@ -33,15 +37,12 @@ step "Pré-condições"
 require_auth
 require_project
 
-step "Buckets"
-create_bucket "${BUCKET_RAW}"
-create_bucket "${BUCKET_ERP}"
-create_bucket "${BUCKET_DOCS}"
+if ! EXISTING_BUCKETS="$(gc storage buckets list --format='value(name)' | tr -d '\r')"; then
+  fail "Não foi possível listar os buckets em ${PROJECT_ID}."
+fi
 
-step "Ciclo de vida do payload bruto (D-030)"
-# 90 dias em classe quente, depois classe fria. Regra declarativa do bucket, não
-# rotina de expurgo em código — foi assim que a V2 ficou presa com raw_payload
-# dentro das duas maiores tabelas do banco, sem conseguir limpar.
+# D-030: 90 dias em classe quente e depois COLDLINE. O comando update
+# substitui todas as regras, por isso instalamos a regra apenas na criação.
 LIFECYCLE_FILE="$(mktemp)"
 trap 'rm -f "${LIFECYCLE_FILE}"' EXIT
 
@@ -56,8 +57,31 @@ cat > "${LIFECYCLE_FILE}" <<'JSON'
 }
 JSON
 
-gc storage buckets update "gs://${BUCKET_RAW}" --lifecycle-file="${LIFECYCLE_FILE}" >/dev/null
-ok "${BUCKET_RAW}: STANDARD -> COLDLINE aos 90 dias"
+if bucket_exists "${BUCKET_RAW}"; then
+  if ! lifecycle="$(gc storage buckets describe "gs://${BUCKET_RAW}" --format='json(lifecycle_config)')"; then
+    fail "Não foi possível consultar o lifecycle de ${BUCKET_RAW}."
+  fi
+  if ! node -e '
+    const { readFileSync } = require("node:fs");
+    const { isDeepStrictEqual } = require("node:util");
+    try {
+      const expected = JSON.parse(readFileSync(process.argv[1], "utf8")).rule[0];
+      const current = JSON.parse(readFileSync(0, "utf8")).lifecycle_config?.rule;
+      if (!Array.isArray(current) || !current.some((rule) => isDeepStrictEqual(rule, expected))) {
+        process.exitCode = 1;
+      }
+    } catch {
+      process.exitCode = 1;
+    }
+  ' "${LIFECYCLE_FILE}" <<< "${lifecycle}"; then
+    fail "Lifecycle de ${BUCKET_RAW} não confirma D-030. Revise a configuração existente antes de continuar."
+  fi
+fi
+
+step "Buckets"
+create_bucket "${BUCKET_RAW}" "--lifecycle-file=${LIFECYCLE_FILE}"
+create_bucket "${BUCKET_ERP}"
+create_bucket "${BUCKET_DOCS}"
 
 step "Permissões por bucket"
 # Menor privilégio: cada identidade recebe acesso apenas ao bucket que usa, no

@@ -74,7 +74,7 @@ async function loadProjectedBalances(db: AdminClient, organizationId: string): P
 }
 
 export function createVerifyLedgerIntegrityHandler(deps: VerifyLedgerIntegrityDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -82,6 +82,10 @@ export function createVerifyLedgerIntegrityHandler(deps: VerifyLedgerIntegrityDe
     }
 
     const { organizationId } = parsed.data;
+
+    if (organizationId !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "organização do payload diverge do envelope" };
+    }
     const now = deps.now?.() ?? new Date();
 
     // Paginado desde D-131 pelo mesmo motivo da projeção logo abaixo: a soma

@@ -475,4 +475,34 @@ describe("requestListingRelistRetry (D-364)", () => {
     expect(semPermissao).toEqual({ status: "not_found" });
     expect(requests).toHaveLength(0);
   });
+
+  it("D-793: falha no enfileiramento devolve error estruturado em prepare, execute e retry", async () => {
+    const failingEnqueuer: Enqueuer = {
+      enqueue: () => Promise.reject(new Error("Cloud Tasks indisponível")),
+    };
+
+    const prep = await requestListingRelist(deps(fakeDb(), failingEnqueuer), ADMIN, REQUEST);
+    expect(prep).toEqual({ status: "error", reason: "Cloud Tasks indisponível" });
+
+    const exec = await requestListingRelistExecution(
+      deps(fakeDb({ operationStatus: "REQUESTED" }), failingEnqueuer),
+      ADMIN,
+      RELIST_ID,
+    );
+    expect(exec).toEqual({ status: "error", reason: "Cloud Tasks indisponível" });
+
+    const retry = await requestListingRelistRetry(
+      deps(
+        fakeDb({
+          operationStatus: "RELIST_FAILED",
+          failureReason: RECUSA_GRAVADA,
+          lastFailedReason: "POST_RECUSADO",
+        }),
+        failingEnqueuer,
+      ),
+      ADMIN,
+      RELIST_ID,
+    );
+    expect(retry).toEqual({ status: "error", reason: "Cloud Tasks indisponível" });
+  });
 });

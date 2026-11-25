@@ -68,4 +68,18 @@ describe("get_all_cpc_ads_daily_performance (D-449)", () => {
     expect(toShopeeAdsDate("2026-10-14")).toBe("14-10-2026");
     expect(fromShopeeAdsDate("14-10-2026")).toBe("2026-10-14");
   });
+
+  it("D-789: recusa datas malformadas ou inexistentes antes de chamar a API ou gravar", async () => {
+    expect(() => toShopeeAdsDate("2026/10/14")).toThrow();
+    expect(() => toShopeeAdsDate("2026-02-31")).toThrow();
+    expect(() => fromShopeeAdsDate("nao-e-data")).toThrow();
+    expect(() => fromShopeeAdsDate("31-02-2026")).toThrow();
+
+    const { client, urls } = clienteCom({ request_id: "x", response: [] });
+
+    await expect(
+      getAllCpcAdsDailyPerformance(client, SHOP, { startDate: "2026/10/01", endDate: "2026/10/14" }),
+    ).rejects.toThrow();
+    expect(urls).toHaveLength(0);
+  });
 });

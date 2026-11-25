@@ -69,4 +69,19 @@ describe("indexByOffset — a trava do alinhamento entre períodos", () => {
   it("série vazia produz mapa vazio, sem lançar", () => {
     expect(indexByOffset([], "2026-07-01").size).toBe(0);
   });
+
+  it("ignora pontos inválidos ou anteriores ao início do período sem derrubar o gráfico", () => {
+    const mapa = indexByOffset(
+      [
+        { metric_date: "2026-06-30", valor: 1 },
+        { metric_date: "2026-02-31", valor: 2 },
+        { metric_date: "2026-07-03", valor: 30 },
+      ],
+      "2026-07-01",
+    );
+
+    expect(mapa.size).toBe(1);
+    expect(mapa.get(2)?.valor).toBe(30);
+    expect(indexByOffset([{ metric_date: "2026-07-01", valor: 1 }], "2026-02-31").size).toBe(0);
+  });
 });

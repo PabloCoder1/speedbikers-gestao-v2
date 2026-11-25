@@ -124,4 +124,23 @@ describe("computeReconciliationAdjustments", () => {
 
     expect(day1[0]?.movement.idempotencyKey).not.toBe(day2[0]?.movement.idempotencyKey);
   });
+
+  it("D-801: recusa quantidade não finita (NaN/Infinity) com RangeError em vez de gerar movimento corrompido", () => {
+    expect(() =>
+      computeReconciliationAdjustments(
+        [{ skuId: "sku-a", locationKind: "LOCAL", quantity: Number.NaN }],
+        [],
+        BUSINESS_DATE,
+        OCCURRED_AT,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      computeReconciliationAdjustments(
+        [{ skuId: "sku-a", locationKind: "LOCAL", quantity: 10 }],
+        [{ skuId: "sku-a", locationKind: "LOCAL", quantity: Number.POSITIVE_INFINITY }],
+        BUSINESS_DATE,
+        OCCURRED_AT,
+      ),
+    ).toThrow(RangeError);
+  });
 });

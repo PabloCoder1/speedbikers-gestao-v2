@@ -72,7 +72,7 @@ export type NotificationSeverity = (typeof NOTIFICATION_SEVERITIES)[number];
  * catálogo, e uma opção que hoje devolve vazio é diferente de uma opção que
  * não existe — a primeira responde "não houve", a segunda não responde nada.
  */
-export const NOTIFICATION_FAMILIES = ["listing", "stock", "order", "support", "sync", "ai", "central"] as const;
+export const NOTIFICATION_FAMILIES = ["listing", "stock", "order", "support", "sync", "ai", "central", "sale"] as const;
 
 export type NotificationFamily = (typeof NOTIFICATION_FAMILIES)[number];
 
@@ -84,6 +84,8 @@ const FAMILY_LABEL: Record<NotificationFamily, string> = {
   sync: "Sincronização",
   ai: "Copiloto e IA",
   central: "Central do negócio",
+  // D-858: a venda abaixo da margem.
+  sale: "Venda",
 };
 
 export function notificationFamilyLabel(family: NotificationFamily): string {
@@ -208,6 +210,20 @@ export function buildNotificationHref(
     },
     override.page === undefined ? 1 : next.page,
   );
+}
+
+/** Os cartões contam toda a Central e levam à primeira página desse recorte. */
+export function buildNotificationUnreadKpiHref(
+  current: NotificationFilters,
+  severity: NotificationSeverity | null = null,
+): string {
+  return buildNotificationHref(current, {
+    state: "nao-lidas",
+    severity,
+    family: null,
+    account: null,
+    loja: null,
+  });
 }
 
 /** Quantas dimensões estão recortando — o "Limpar N filtros" da toolbar. */

@@ -46,6 +46,7 @@ rodar nao >/dev/null
 grep -Fxq 'update v3-heartbeat' "${fixture}/writes"
 grep -Fxq 'create v3-reconcile-orders' "${fixture}/writes"
 grep -Fxq 'create v3-shopee-orders' "${fixture}/writes"
+grep -Fxq 'create v3-low-margin-sales' "${fixture}/writes"
 [ "$(grep -c '^update ' "${fixture}/writes")" -eq 1 ]
-[ "$(grep -c '^create ' "${fixture}/writes")" -eq 17 ]
-printf 'ok    inventário decide por nome completo, preservando os 18 jobs\n'
+[ "$(grep -c '^create ' "${fixture}/writes")" -eq 18 ]
+printf 'ok    inventário decide por nome completo, preservando os 19 jobs\n'

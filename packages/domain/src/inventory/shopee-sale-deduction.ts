@@ -111,14 +111,27 @@ export function computeShopeeStockMovements(order: ShopeeSaleOrder, inputs: Shop
   if (order.paidAt === null) return VAZIO;
 
   const saleAt = order.paidAt;
+
+  if (!Number.isFinite(saleAt.getTime())) {
+    throw new RangeError(`computeShopeeStockMovements: paidAt inválido no pedido ${order.orderSn}`);
+  }
+
+  const cancelado = order.status === SHOPEE_CANCELADO;
+
+  if (cancelado && !Number.isFinite(order.updatedAt.getTime())) {
+    throw new RangeError(`computeShopeeStockMovements: updatedAt inválido no pedido cancelado ${order.orderSn}`);
+  }
+
   const vendas: StockMovementDraft[] = [];
 
   for (const item of order.items) {
-    // Item sem vínculo: nada a baixar (como no ML).
-    if (item.skuId === null || item.quantity <= 0) continue;
+    // Item sem vínculo ou com quantidade inválida: nada a baixar (como no ML).
+    if (item.skuId === null || !Number.isFinite(item.quantity) || item.quantity <= 0) continue;
 
     if (item.skuKind === "KIT") {
       for (const component of item.components) {
+        if (!Number.isFinite(component.quantity) || component.quantity <= 0) continue;
+
         vendas.push({
           skuId: component.componentSkuId,
           qtyDelta: -(item.quantity * component.quantity),
@@ -139,7 +152,6 @@ export function computeShopeeStockMovements(order: ShopeeSaleOrder, inputs: Shop
   }
 
   const armazem = isArmazemDaShopee(order.fulfillmentFlag);
-  const cancelado = order.status === SHOPEE_CANCELADO;
   const precaptura = { cutoffFor: inputs.cutoffFor, recordedSale: inputs.recordedSale, recordedReversals: [] };
   const estornosPreCaptura: StockMovementDraft[] = [];
   const estornosArmazem: StockMovementDraft[] = [];

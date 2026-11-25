@@ -82,7 +82,14 @@ describe("resolverPeriodoCentral", () => {
   });
 
   it("personalizado inválido cai no padrão e avisa", () => {
-    for (const query of [{ from: "2026-09-10" }, { from: "2026-09-10", to: "2026-09-01" }, { from: "2026-10-01", to: "2026-10-05" }, { from: "ontem", to: "hoje" }]) {
+    for (const query of [
+      { from: "2026-09-10" },
+      { from: "2026-09-10", to: "2026-09-01" },
+      { from: "2026-10-01", to: "2026-10-05" },
+      { from: "ontem", to: "hoje" },
+      { from: "2026-02-31", to: "2026-03-05" },
+      { from: "2026-09-01", to: "2026-02-30" },
+    ]) {
       const p = resolverPeriodoCentral(query, HOJE);
 
       expect(p.invalido).toBe(true);

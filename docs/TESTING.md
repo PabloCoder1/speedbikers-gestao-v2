@@ -85,6 +85,10 @@ Não acontece toda vez: depende de o seed começar antes de o `reset` ter avisad
 
 **Armadilha conhecida (2026-09-10):** rodar a suíte de INTEGRAÇÃO deixa o Auth local quebrado até o próximo `db reset`. Os fixtures de RLS inserem em `auth.users` por SQL, e `confirmation_token` nasce **NULO** — o GoTrue lê aquela coluna como `string` e responde **500** em `GET /admin/users` (`"converting NULL to string is unsupported"`) para a listagem INTEIRA, não só para a linha ruim. Quem depende de `auth.admin.listUsers` para de funcionar: `e2e/seed.ts` (que procura o usuário pelo e-mail) e o convite de D-296. A ordem segura é **integração e e2e nunca compartilharem o mesmo banco sem reset entre elas**. E a lição vale além do teste: **linha de `auth.users` criada por SQL envenena a listagem do projeto todo** — quem criar usuário fora do GoTrue precisa gravar `''`, não `NULL`.
 
+**Traces de falha:** a CI envia `apps/web/test-results/` no artefato
+`playwright-test-results` quando a etapa Playwright falha. Abra o arquivo
+`trace.zip` com `pnpm --filter web exec playwright show-trace <caminho>`.
+
 **Armadilha conhecida (2026-09-11):** o Playwright sobe `pnpm run start`, que serve o `.next` **ja construido** -- e com `reuseExistingServer` fora do CI. Editar a tela e rodar a suite na sequencia testa o BUILD ANTERIOR: a assercao nova fica vermelha e o codigo esta certo. Aconteceu em D-309 com duas assercoes (uma cor e um paragrafo novos). Depois de mexer em `app/`, `components/` ou `lib/`, a ordem e `pnpm build` **antes** de `playwright test` -- e derrubar o `next start` que sobrou, senao o reuso serve o build velho mesmo apos o build novo.
 
 **Armadilha conhecida (2026-09-12):** `apps/web/.env.local` pode apontar `NEXT_PUBLIC_SUPABASE_URL` para o projeto **Dev**, e `NEXT_PUBLIC_*` é embutida **no build**. Um `pnpm run build` sem as variáveis locais exportadas manda o login do e2e para o Dev, onde o usuário do seed não existe: os 136 casos reprovam em "E-mail ou senha incorretos." e o GoTrue local **não recebe um `/token` sequer** (é assim que se reconhece — `docker logs supabase_auth_...` sem login nenhum da rodada). O seed passa, porque usa a chave de serviço local, e isso torna a falha enganosa. Não se edita o `.env.local` de quem trabalha contra o Dev; exporta-se o que a CI exporta, **antes** do build (D-320):
@@ -169,3 +173,41 @@ Complementa `docs/PROMPT_MASTER.md` §33. Uma feature só está pronta quando, c
 - Cobertura mínima percentual como métrica de qualidade — cobre-se o que tem risco, não o que sobe o número.
 - Testes de snapshot de interface, frágeis e de baixo sinal.
 - Mock do Postgres. Integração usa banco real local.
+
+### Observação da fila gerenciada em operação normal (Q03)
+
+Em 23/11, uma leitura do Cloud Logging nas últimas 24 horas encontrou 24
+eventos `job_enqueued` da API e 24 `ping_received` do worker para
+`system.ping`. Os 24 pares coincidiram pelo identificador do job. A amostra
+vai de 22/11 13:00 UTC a 23/11 12:00 UTC. A diferença entre os dois eventos
+teve p95 de 5,934 s e máximo de 17,853 s. A medição cobre a chegada ao
+handler, incluindo espera até a execução do worker.
+Uma transação somente leitura na VM encontrou 24 execuções com IDs distintos,
+todas `done`, em `job_runs` no mesmo recorte horário.
+
+A consulta usou apenas heartbeats agendados e nenhum job adicional foi
+disparado. O ensaio local de carga representativa da aplicação está no
+PR #382.
+
+### Retentativa na fila gerenciada isolada (Q03)
+
+Em 23/11, uma fila exclusiva em `southamerica-east1` entregou **48 de 48
+tarefas sintéticas** a um Cloud Run interno descartável. O destino devolveu
+`503` na primeira tentativa de 16 tarefas. As **16** retornaram `204` na
+retentativa, houve 48 respostas bem-sucedidas em 64 tentativas e a fila
+terminou vazia. Reenfileirar um nome conhecido retornou `409`. Entre a
+primeira e a última chamada registrada passaram 112,24 s. A fila tinha
+teto de 10 despachos/s e 4 simultâneos.
+
+A rodada inicial comprovou o `409` e os 16 `503`, mas o prazo de coleta
+de 115 s acabou antes de a fila esvaziar. A nova rodada reduziu a
+concorrência e ampliou o prazo de observação. A desaceleração após `503`
+é compatível com o comportamento descrito pelo
+[Google Cloud](https://docs.cloud.google.com/tasks/docs/manage-cloud-task-scaling).
+
+A carga funcional de 1.088 requisições foi exercitada no stack local
+(#382). No Google Cloud, a sondagem usou apenas a fila e o destino de
+teste, com conta de serviço exclusiva sem papel no projeto. A concessão
+temporária para criar o serviço foi retirada. Fila, serviço, imagem e
+conta de serviço foram removidos. Q04 e V03 cobrem o aceite operacional
+da aplicação.

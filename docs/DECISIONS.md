@@ -20161,7 +20161,7 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 **Decisão:** a aba que é invoice é reconhecida pelo conteúdo, não pelo nome: há colunas numéricas em que quantidade × preço = valor em pelo menos duas linhas (tolerância de meio por cento). Quantidade e preço se separam pelo título acima (Quantity / Unit Price), depois pelos decimais. Os outros papéis vêm do conteúdo: 8 dígitos é NCM, PCS/SETS/PRS é unidade, código parecido com o S/C do cabeçalho é a referência, token com dígito e quase sem repetição é o código, o texto mais longo é a descrição. O resto vira observação. O cabeçalho do documento (tipo, número, data, S/C, B/L, contêiner, entrega) é guardado por linha; data só vira ISO quando não é ambígua.
 
 - **Referência:** a coluna do pedido; sem ela, o S/C único do cabeçalho; sem S/C, o número da proforma (a proforma é o pedido); vários S/C sem coluna deixam "a informar". Nunca inventada; o usuário pode trocar o padrão da aba.
-- **Moeda:** USD só com "$" ou "USD" no documento; sem marca, desconhecida.
+- **Moeda:** USD só com "$" ou "USD" no documento; sem marca, desconhecida. *Nota de 19/11:* a marca também vale quando está só no formato numérico da célula (`\$#,##0.0`, `[$$-409]`, `"US$"`; `R$` dá BRL). Há proforma real que mostra o "$" apenas pela formatação e saía sem moeda. O leitor de .xlsx abre `styles.xml` e o de .xls lê FORMAT/XF só para isso. O texto do documento continua mandando sobre o formato; `[$-409]` (idioma sem símbolo) e os formatos internos do Excel, que dependem do idioma do computador, não declaram moeda.
 - **Lista de embalagem** repete a invoice: quando o arquivo tem aba de invoice, a PL começa desmarcada.
 - **Conferência:** a soma lida é comparada ao TOTAL do documento e a diferença vira aviso (há proforma real cujo TOTAL impresso não fecha com os próprios itens; o sistema não corrige o documento).
 - **.xls:** leitor BIFF8 próprio no navegador (CFB, SST com CONTINUE, LABELSST, NUMBER, RK, MULRK, FORMULA com valor em cache). Arquivo protegido por senha ou BIFF5 é recusado com mensagem.
@@ -20334,6 +20334,8 @@ Reprodução pré-correção em `apps/web/lib/chamar-api.test.ts` registrou 3 fa
 
 **Validação.** O teste local com envelope novo falhava no parser antigo. O corte passa os testes do cliente e do worker. Falta confirmar as leituras em produção após publicação autorizada.
 
+**Sonda de produção (25/11).** No mesmo anúncio, dois GETs de `/items/bulk` responderam 200. Com `attributes=body.…`, o envelope tinha apenas `body`. Sem projeção, tinha `id`, `status_code` e `body`. O cliente de catálogo pede a resposta completa e mantém o status e o ID obrigatórios. A regressão verifica a ausência do parâmetro e a rejeição de um envelope sem esses campos.
+
 ## D-782 - Endurecimento da API em convites (corrida 23505), webhook ML (`user_id`/`questionId`/enqueue), cotação de frete e resposta do SAC
 
 Quatro falhas confirmadas em módulos críticos de `apps/api/src`:
@@ -20365,3 +20367,961 @@ Três falhas confirmadas nos demais Server Components operacionais/comerciais de
 3. **Spinner travado em rejeição de transporte em `BuscaSku` (`apps/web/app/(app)/vinculacoes/busca-sku.tsx`):** `buscar()` chamava `createClient().from("skus")...` sem `try/catch/finally`, deixando `buscando = true` travado e lançando rejeição não tratada se a requisição falhasse na rede. Agora trata erro de transporte em `try/catch/finally` preservando a guarda contra resposta fora de ordem (`este === pedido.current`).
 
 Reprodução pré-correção em `apps/web/lib/server-pages-seguranca.test.ts` registrou 5 falhas (`5 failed | 5 passed (10)`); após a correção, `@sb/web` passou integralmente em `typecheck`, `eslint`, `vitest` (`150` arquivos / `1.575` testes) e nas 7 guardas estáticas (incluindo `check:waterfalls` em 115 arquivos).
+
+## D-850 - Full mantém 30 dias de capturas brutas online e permite recuperar o arquivo
+
+**23/11/2026 · Full, retenção.** Permanecem online todas as capturas dos
+últimos 30 dias, a primeira e a última de cada sequência de estado igual
+e a última por dia comercial, organização, conta, inventário, anúncio,
+variação e SKU. O fechamento usa o fuso America/Sao_Paulo. O complemento
+bruto fica em arquivo restrito com restauração verificável. A política
+aprovada não estabelece expiração automática para esse arquivo.
+
+O [ensaio P03](PERFORMANCE.md#tamanho-de-full-e-telemetria-na-vm-sentinel-p03-23112026)
+conferiu a partição dos dados, a restauração do complemento e o
+comportamento diante de escrita concorrente e rollback. A aplicação na
+VM depende da migration e do procedimento operacional de arquivo e restore.
+
+## D-851 - Central de Notificações usa ID para desempatar horários iguais
+
+**23/11/2026 · Central de Notificações.** A lista mantém a ordem
+decrescente de chegada e usa `notification_id` como segundo critério.
+No PostgreSQL 17, 350 notificações de um único destinatário com o mesmo
+horário retornaram ordens diferentes em uma leitura por índice e em uma
+leitura sequencial. As duas leituras passaram a devolver a mesma página
+com o desempate. As contagens e os filtros continuam usando o mesmo
+recorte. Como o destinatário é fixado por RLS, o ID é único na lista.
+
+## D-852 - Cartões da Central de Notificações contam e abrem o mesmo escopo
+
+**23/11/2026 · Central de Notificações.** Os três cartões de não lidas
+abrem a primeira página da Central inteira, conservando apenas a
+severidade do cartão. A loja selecionada antes ficava nas três URLs e
+reduzia o destino a um conjunto menor do que o número exibido.
+
+A contagem geral usa também o join com `domain_events`, sujeito à RLS,
+mesmo quando a lista está filtrada. Em PostgreSQL isolado, a contagem
+direta retornou seis vínculos sem leitura. A contagem com o join
+retornou três eventos visíveis, excluindo um evento de conta, um de loja
+e um de organização sem acesso. O histórico combinado preservou listas
+por loja e contagens por severidade no ensaio.
+
+## D-853 - Marcar todas como lidas usa o escopo visível da Central
+
+**23/11/2026 · Central de Notificações.** A ação geral chama a mesma
+RPC das ações filtradas. O join com `domain_events` aplica a RLS dos
+eventos e a função devolve a contagem de linhas alteradas. A atualização
+direta anterior filtrava só o destinatário. Se um vínculo continuasse
+no histórico após a perda de acesso a uma conta ou loja, essa atualização
+também o marcava, apesar de ele estar fora da lista e da contagem.
+
+No ensaio PostgreSQL com a RPC do repositório, a escrita direta alterou
+três vínculos próprios. A RPC marcou os dois eventos visíveis, preservou
+o terceiro vínculo e o de outro destinatário e retornou zero ao repetir.
+A escrita continua usando a assinatura existente, com a loja opcional.
+
+## D-854 - Emblema de notificações usa visibilidade da Central e consulta limitada a 100
+
+**23/11/2026 · Cabeçalho.** A consulta de não lidas usa o relacionamento
+com `domain_events`, sujeito à RLS dos eventos. Lê até 100 resultados sob
+a sessão do usuário. O emblema mostra a contagem até 99 e depois
+`99+`. O rótulo acessível também usa “mais de 99”. O PostgREST devolve só
+o campo nulo `read_at` para identificar a quantidade de linhas devolvidas.
+A leitura começa em paralelo com as demais. O atalho é renderizado
+antes da resposta, e o emblema chega por Suspense. A Central segue
+responsável pelo total exato.
+
+No backup, a contagem exata com o join teve mediana de 585 ms no
+cenário de acesso simulado. A consulta limitada a 100 usou o índice
+parcial de não lidas no ensaio sintético. O PostgREST devolveu 0, 99 e
+100 linhas conforme a visibilidade. [Medição](PERFORMANCE.md#contagem-visível-no-cabeçalho-d-854).
+
+## D-855 - Contagem das notificações na Home segue a visibilidade da Central
+
+**23/11/2026 · Visão Geral.** O cartão de não lidas usa contagem exata
+com os eventos visíveis pela RLS. Seu link abre a Central em não lidas.
+A consulta inicia junto das demais. Só a seção Atenção necessária
+aguarda o total, pela fronteira de Suspense que já aguarda a cobertura.
+Se houver erro na leitura, o cartão continua mostrando a falha.
+
+No PostgREST isolado, o destinatário tinha quatro vínculos sem leitura
+e dois eventos visíveis. A contagem anterior devolveu quatro, e a nova
+devolveu os mesmos dois que a lista abriu. A renderização isolada da
+Home devolveu os indicadores enquanto a contagem estava pendente e
+depois renderizou o cartão com o número e o link esperados. A medição
+de custo do join em cópia do backup está em D-854 no PERFORMANCE.
+
+## D-856 - Atividade recente da Home limita a lista aos eventos visíveis
+
+**23/11/2026 · Visão Geral.** A lista usa joins internos com a
+notificação e o evento para aplicar RLS antes de selecionar as cinco
+linhas mais recentes. Empates na data de chegada são ordenados pelo
+ID. A data exibida continua sendo a do fato. A leitura segue em
+paralelo com os outros dados e o painel aguarda a própria resposta
+por Suspense.
+
+No PostgREST isolado, a projeção anterior retornou cinco vínculos
+sem evento visível. A nova retornou cinco eventos mais antigos,
+com conta e data do fato preservadas, em ordem estável. O teste
+de renderização confirmou que os indicadores chegaram antes da
+resposta da atividade.
+
+## D-857 - Avisos em tempo real respeitam o ciclo da sessão
+
+**23/11/2026 · Notificações.** O callback de leitura verifica se a
+assinatura segue ativa antes da consulta e após a resposta. O
+cabeçalho remonta os avisos quando muda o identificador do usuário,
+reiniciando os grupos e os temporizadores. Uma simulação em memória
+confirmou que uma resposta tardia deixava um aviso e um temporizador
+após o encerramento da assinatura. Com a guarda, callbacks encerrados
+são ignorados e a assinatura ativa continua exibindo avisos.
+
+Os testes de navegação passaram a localizar o cartão de não lidas
+pelo rótulo e a confirmar o filtro no destino. A CI de 20b6e4c8 havia
+reprovado três casos que buscavam a URL antiga sem o filtro de D-855.
+
+## D-880 - Preflight da VM vincula o plano ao commit do candidato
+
+**24/11/2026 · Publicação na VM.** As duas etapas do roteiro usam
+`--bind-head` para incluir o HEAD verificado no manifesto do plano.
+O mesmo catálogo e conteúdo SQL passam a gerar outro ID quando muda
+o commit. O preflight recusa alterações e arquivos SQL sem rastreamento,
+inclusive os ignorados. A opção preserva o modo anterior da CLI para
+comparações locais. Identificar a origem do catálogo ainda faz parte
+do roteiro.
+
+Testes locais cobriram o commit inalterado, outro commit com SQL
+idêntico e arquivos alterados, preparados ou ignorados. O ensaio
+com as 324 versões lidas do Git base manteve as quatro lacunas
+temporárias bloqueadas, sem consultar a VM.
+
+## D-858 - Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
+
+**Contexto:** o dono quer saber de cada venda que sai abaixo da margem, sem abrir a Curva ABC. A margem é a de 5F e da regra 5X: (recebido − custo) ÷ preço, com o custo na data da venda. As marcas importadas (Navetec, Off Racer, Off Volt) custam mais para repor e têm meta maior.
+
+**Decisão (do dono, 23/11):**
+
+- **Metas:** 40% para as marcas importadas, 30% para o resto. Ficam em `margin_alert_settings` (uma linha por empresa, editável por ADMIN e GESTOR em `/central/limites`), com a lista de marcas e até 20 e-mails. A meta é estrita: margem exatamente igual à meta não avisa.
+- **Marca é a do fornecedor.** Vale `skus.supplier_brand`, comparada por `private.chave_da_marca` (maiúsculas, só letras e dígitos). `skus.brand` é a CATEGORIA do UpSeller e é ignorada. O kit é importado quando algum componente for. SKU sem marca do fornecedor é julgado pela meta dos demais.
+- **Só a venda coberta é julgada**, como na 5X: no ML, pedido de uma linha, com comissão e frete observados e custo conhecido; na Shopee, o pedido coberto de SKU único de `get_shopee_faturamento_pedidos`. Pedido sem frete ainda não é julgado e entra na rodada em que o frete chegar. Venda sem custo não vira alerta.
+- **Um alerta por pedido.** `detectar_vendas_abaixo_da_margem` (só `service_role`) varre os últimos 7 dias desde `active_since`, grava `sale_margin_alerts` (único por empresa, canal e pedido) e um `domain_events` `sale.margin.below` (importante). O sino sai do fan-out de sempre, pela conta ou loja. Venda anterior à ativação nunca avisa.
+- **E-mail fora da transação.** O job `diagnostics.detect-low-margin-sales` roda de hora em hora pela rota `/internal/schedule/metrics-refresh`, sem job novo de Scheduler. Ele manda **um** e-mail por rodada com as vendas novas (destinatários em cópia oculta, por SMTP). Falha de SMTP não desfaz o alerta: tenta de novo até 5 vezes; SMTP sem configurar deixa o e-mail pendente, e pendente há mais de 48 h vira `skipped`. O sino nunca depende do e-mail.
+- **E-mail é a exceção ao "in-app apenas" de `NOTIFICATIONS.md` §8**, restrita a este alerta. Os endereços vivem só no banco, nunca no repositório.
+
+**Consequência:** o worker ganha `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (Secret Manager), `SMTP_PORT` (465), `ALERT_EMAIL_FROM` e `WEB_APP_URL`. Sem as três primeiras, o worker sobe e o alerta fica só no sino. Pedido de várias linhas no ML e de vários SKUs na Shopee não é julgado, porque o frete não se divide por produto (5E).
+
+**Alternativas rejeitadas:** usar `skus.brand`, que é a categoria do UpSeller e marcaria produto errado como importado; um e-mail por venda, que enche a caixa num dia de promoção; disparar e-mail dentro do trigger do banco, que prenderia a escrita do pedido à disponibilidade do SMTP; avisar com custo desconhecido como zero, que mostraria margem cheia em vez de "não sei".
+
+## D-881 - Workflow de migrations de produção gera o plano da VM
+
+**24/11/2026 · Publicação.** O workflow histórico D-334 apontava para o Supabase
+hospedado. O candidato reaproveita o disparo manual para comparar o catálogo
+exportado da VM com o checkout e publicar o plano com SHA e hashes. Entrada
+inválida ou divergência de histórico reprova a execução.
+
+A etapa usa somente o catálogo informado e acesso de leitura ao repositório.
+O operador extrai novamente o catálogo na VM e confere o plano antes da
+aplicação aprovada. A CI do Dev mantém seu fluxo próprio.
+
+## D-882 - Agendamento de margem percorre todas as organizações com alerta ativo
+
+**24/11/2026 · Alertas.** O PostgREST limita respostas a 1.000 linhas.
+A consulta do agendamento de margem passa a paginar pela chave primária
+`organization_id` e termina a leitura antes de enfileirar. Uma página com
+erro faz o agendamento retornar falha. A chave de deduplicação horária é
+preservada. Testes cobrem 1.001 organizações e erro na segunda página.
+
+Na fila, cada organização tem tratamento próprio. Uma falha registra o ID
+no log, preserva a contagem dos jobs aceitos e permite tentar os próximos.
+A rota dedicada de D-859 devolve 503 se a fila do alerta
+falhar. Na retentativa dentro da hora, as chaves horárias deduplicam os jobs
+aceitos na rodada anterior. A regressão exercita a rota nas duas rodadas.
+
+## D-785 - Tentar de novo preserva o recorte da URL via `mesmaUrl` e as 10 telas operacionais restantes separam `membership.error`
+
+Duas frentes de fechamento nos Server Components de `apps/web/app/(app)` (fora do domínio de `/compras`/`/reposicao`/`/importacoes`/`/fornecedores`), incorporando a revisão cruzada P2 do Codex no PR `#343`:
+
+1. **Preservação integral do recorte no "Tentar de novo" (`mesmaUrl`):** na revisão do PR `#343`, o Codex apontou que `erroConta` em `/curva-abc` usava `href: "/curva-abc"` literal, derrubando `?contas=` e demais parâmetros ao clicar em tentar novamente. A auditoria das telas de D-783/D-784 encontrou o mesmo padrão em outras oito telas (`/anuncios`, `/anuncios/shopee`, `/faturamento/multicanal`, `/vendas/multicanal`, `/vendas/shopee`, `/vinculacoes`, `/precos` e `/full`), além do erro de leitura de `/central/limites`. Todas passaram a usar `mesmaUrl("<caminho>", query)` para repetir exatamente o recorte pedido na URL.
+2. **Separação de `membership.error` nas 10 telas operacionais restantes (`/central/ads`, `/central/frete`, `/central/limites`, `/central/metas`, `/contas`, `/estoque`, `/estoque/movimentacoes`, `/notas-fiscais`, `/sincronizacao` e `/usuarios`):** erro transitório de `currentMembership()` não é mais mascarado como "sem organização" nem cai silenciosamente em "SÓ LEITURA" com padrões locais (como em `/central/limites` e `/central/metas`); todas passam a retornar `EstadoDaTela tipo="erro"` com `mesmaUrl` (ou rota própria) e detalhe do erro.
+
+Reprodução pré-correção em `apps/web/lib/server-pages-seguranca.test.ts` registrou `2 failed | 10 passed (12)`; após a correção, `@sb/web` passou em `typecheck`, `eslint`, `test` (`150` arquivos / `1.577` testes) e nas 7 guardas estáticas.
+
+## D-786 - Worker verifica erro ao avançar checkpoint de `backfill.orders`, registra `sync_runs` em `sync.order-financials`, pagina `order_items` em `backfill.order-user-products` e preserva retry em `sync-central-alerts`
+
+Quatro falhas de confiabilidade e paginação reproduzidas e corrigidas em handlers agendados/backfill do worker (`apps/worker/src/handlers/`, sem sobreposição com PRs abertos do Codex ou do Claude):
+
+1. **Perda silenciosa de checkpoint em `backfill.orders` (`backfill-orders.ts`):** o `UPDATE ml_accounts SET backfill_covered_until = chunkTo` rodava depois de `recordSyncRunSuccess` e ignorava completamente `.error`. Em falha transitória de banco, o job devolvia `done` e enfileirava o próximo pedaço com o checkpoint antigo. Agora o checkpoint é gravado antes de registrar sucesso ou enfileirar o próximo pedaço; em erro do banco, registra `recordSyncRunFailure` (`retryable`) e devolve `{ status: "failed", retryable: true }`.
+2. **Telemetria ausente em falha de leitura de `sync.order-financials` (`sync-order-financials.ts`):** as duas chamadas `readAllPages` (`orders` e checkpoint `order_financials`) estavam fora do `try/catch`, lançando exceção sem gravar `sync_runs`/`sync_errors` (mesma classe de D-780). Movidas para dentro do `try/catch`, registrando falha em `sync_runs` e devolvendo `{ status: "failed", retryable: true }`.
+3. **Falha rígida em 1.000 linhas em `backfill.order-user-products` (`backfill-order-user-products.ts`):** a leitura de `order_items` por lote de 200 pedidos não paginava e abortava com erro permanente ao atingir `1.000` itens (média de 5+ itens por pedido). Substituída por `readAllPages` com ordenação estável por `id` (`.order("id").range(from, to)`), lendo lotes de qualquer tamanho sem truncar nem abortar.
+4. **Supressão de retry em falha mista de `diagnostics.sync-central-alerts` (`sync-central-alerts.ts`):** quando uma fonte falhava com erro transitório (`statement_timeout`) e outra retornava resposta fora do contrato, `retryable: !foraDoContrato` virava `false`, impedindo o retry da fonte transitória. Agora rastreia `erroTransitorio` separadamente e retorna `retryable: erroTransitorio || !foraDoContrato` (só `false` quando todas as falhas forem de contrato).
+
+Reprodução pré-correção nas quatro suítes registrou `4 failed | 38 passed (42)`; após a correção, `@sb/worker` passou integralmente em `typecheck`, `eslint` e `vitest` (`68` arquivos / `1.106` testes).
+
+## D-787 - Hardening do worker em persistência/varredura do SAC (`claims`, `messages`, `reply`) e erro transitório na recusa de `nfe.import.apply`
+
+Seis falhas concretas reproduzidas por TDD e corrigidas em `apps/worker/src/handlers/` (sem sobreposição com PRs abertos do Codex ou do Claude):
+
+1. **Erro silencioso ao derivar SKUs de claim (`persist-support-claim.ts`):** `linkOrder` verificava `if (items.error === null)` e ignorava silenciosamente falhas transitórias ao ler `order_items`, pulando os vínculos `ORDER_DERIVED` de SKU (usados por `detect-support-pattern-actions.ts`) e ainda apagando o vínculo fallback `EXTERNAL` antes de devolver `linkMode: "TYPED"`. Agora lança `persistenceError` quando `items.error !== null`, preservando o fallback até a derivação concluir.
+2. **`externalCaseId` inválido/inseguro em conversa avulsa (`persist-support-conversation.ts`):** quando `packId === null`, o handler fazia `.eq("id", Number(projection.case.externalCaseId))` sem validar inteiro seguro positivo — `""` e `"0"` viravam `0` (chegando a vincular um pedido `id = 0` como `TYPED`), texto virava `NaN` e inteiros acima de `MAX_SAFE_INTEGER` eram arredondados. Agora valida `/^[1-9][0-9]*$/` + `Number.isSafeInteger` antes de consultar `orders`, caindo em vínculo `EXTERNAL` se inválido.
+3. **Inflação de `remoteTotal` e comparação lexicográfica de checkpoint em `ml-support-claims-fetch.ts`:** `remoteTotal` somava `response.paging.total` em TODA página de cada papel (`respondent`/`complainant`), multiplicando o total pelo número de páginas (ex.: 250 em 3 páginas virava 750); e `latestRecordAt` comparava ISO strings lexicograficamente, falhando entre fusos distintos do ML (`-04:00` vs `+00:00`) e permitindo propagação de data inválida para `new Date(...)` em `sync-support-claims-reconcile.ts`. Agora soma `paging.total` uma única vez por papel na página `0` (só somando `claims.length` quando `paging.total` estiver ausente) e compara `latestRecordAt` por instante real (`Date.parse` + `Number.isFinite`).
+4. **Paginação por `page * PAGE_LIMIT` e página 0 vazia em `sync-support-messages.ts`:** `readWholeConversation` calculava `offset: page * PAGE_LIMIT`, pulando mensagens quando a API devolve páginas menores que `100` (ex.: `50` mensagens → próxima chamada pedia `offset = 100` e pulava `50..99`), e disparava uma segunda requisição mesmo quando a página `0` voltava vazia com `total > 0`. Agora encerra imediatamente quando `first.messages.length === 0` e avança `offset: messages.length` (alinhado a `ml-support-questions-fetch.ts`).
+5. **`external_case_id` inválido passando em `send-support-reply.ts`:** `Number(external_case_id)` aceitava `""`, `"0"`, `"-5"` e `" 123 "` como `Number.isSafeInteger`, chegando a chamar `/questions/0` e `/answers`. Agora exige `/^[1-9][0-9]*$/` e `Number.isSafeInteger(questionId) && questionId > 0`, encerrando em `escopo` sem tocar na rede.
+6. **Update `FAILED` não conferido em `nfe-import-apply.ts`:** quando `recusaDoDocumentoGravado` recusava nota de venda de marketplace, `documents.update({ status: "FAILED", ... })` ignorava `.error` e retornava `retryable: false`, podendo deixar o documento preso em `APPLYING` após erro transitório de banco. Agora checa `failed.error !== null` e retorna `{ status: "failed", retryable: true, reason: failed.error.message }`.
+
+Reprodução pré-correção nas seis suítes registrou `14 failed | 90 passed (104)`; após a correção, `@sb/worker` passou integralmente em `typecheck`, `eslint` e `vitest` (`68` arquivos / `1.120` testes).
+
+## D-788 - Invariantes de tempo e finitude em `@sb/domain` (`remote-transition`, `support-events`, `sales-anomaly`, `calculadora-preco`)
+
+Quatro falhas de borda reproduzidas por TDD e corrigidas em funções puras de `packages/domain/src/` (fora do domínio `purchasing/` do Claude e sem sobreposição com PRs abertos do Codex):
+
+1. **Comparação lexicográfica de timestamps em `evaluateConversationRemoteTransition` (`support/remote-transition.ts`):** `outbound >= inbound` e `inbound > outbound` comparavam ISO strings diretamente. Quando `lastInboundAt` e `lastOutboundAt` chegavam com fusos distintos (ex.: cliente respondeu às `16:00-03:00` = `19:00Z`, 1 hora depois do vendedor às `18:00+00:00`), o texto lexicográfico invertia quem falou por último — deixando de reabrir o case para `NOVO` ou oscilando em empate de instante (`15:00-03:00` vs `18:00Z`). Agora converte com `Date.parse` + `Number.isFinite` e ignora timestamps inválidos em vez de emitir transição corrompida.
+2. **Bypass da época por `NaN` em `detectClaimSupportEvents` (`events/support-events.ts`):** `new Date(input.openedAt).getTime() < new Date(input.notifyEpoch).getTime()` avaliava `NaN < epochMs` como `false`, deixando um `openedAt` malformado furar a trava de época ou emitir evento com `occurredAt` inválido (`Invalid Date`). Agora exige `Number.isFinite` para `openedAt`, `notifyEpoch` e `lastActivityAt`, mantendo silêncio seguro diante de data ilegível.
+3. **Propagação de `NaN`/`Infinity` em `diagnoseSalesAnomaly` e `estimateImpactBrl` (`diagnostics/sales-anomaly.ts`):** `NaN` atravessava as guardas `< 4`, `<= 0` e `Math.abs(zScore) < 2`, gerando diagnóstico falso com `zScore: NaN` e `unitsDelta: NaN`; `estimateImpactBrl` devolvia `NaN`/`Infinity` para entradas não finitas ou preço negativo. Agora ambas exigem entradas finitas (e `averagePrice >= 0` em `estimateImpactBrl`), devolvendo `null` fora da faixa.
+4. **Finitude e não negatividade em `calcularPreco` (`pricing/calculadora-preco.ts`):** no ramo Mercado Livre, `freteMl` e `tarifaFixaMl` validavam apenas `undefined`/`null`, aceitando `NaN`, `Infinity` ou valores negativos como `{ ok: true, recebido: NaN, resultado: NaN, margem: NaN }`. Agora exigem `Number.isFinite(...)` e `>= 0` (alinhado às guardas de `preco` e `custo`).
+
+Reprodução pré-correção nas quatro suítes registrou `7 failed | 61 passed (68)`; após a correção, `@sb/domain` passou integralmente em `typecheck`, `eslint` e `vitest` (`46` arquivos / `745` testes).
+
+## D-789 - Hardening em `@sb/mercado-livre` e `@sb/shopee` (cifra AES-GCM 128-bit, paginação Ads, mensagens pós-venda, HTTP 200 não-JSON, OAuth retry e parsers Shopee)
+
+Nove falhas concretas reproduzidas por TDD e corrigidas em `@sb/mercado-livre` e `@sb/shopee` (sem sobreposição com `items.ts`/`index.ts` de `#377` nem `products.ts`/`orders.ts` de `#379`/`#380`):
+
+1. **Truncamento de `authTag` AES-256-GCM em `decryptToken` (`packages/mercado-livre/src/token-cipher.ts`, CWE-347):** `createDecipheriv("aes-256-gcm", key, iv)` sem `authTagLength: 16` nem guarda de tamanho mínimo aceitava tags truncadas de até 4 bytes (32 bits), reproduzido em teste com `DEP0182` do Node.js. Agora recusa `raw.byteLength < IV_BYTES + AUTH_TAG_BYTES` e fixa `{ authTagLength: AUTH_TAG_BYTES }`.
+2. **Paginação, duplicidade e laço infinito em `fetchProductAdsCampaigns` (`packages/mercado-livre/src/product-ads.ts`):** avançava `offset += 50` fixo (pulando campanhas se a API devolver menos que 50), não deduplicava campanhas deslocadas entre páginas (gerando erro Postgres `21000` no `upsert` em lote de `sync-ads-campaigns.ts`) e não tinha guarda para página repetida com `paging.total` inflado nem teto de páginas. Agora deduplica em `Map<number, ProductAdsCampaign>`, avança `offset += pagina.results.length`, encerra em `novas === 0 || campanhasPorId.size >= pagina.paging.total` e aplica teto de `200` páginas.
+3. **Duplicidade de `support_cases` por zeros à esquerda e `RangeError` em `messages.ts` (`packages/mercado-livre/src/messages.ts`):** `parseConversationResource` devolvia `packOrOrderId` cru sem chamar `normalizeRemoteId` (criando `message:pack:000011122344` duplicado em `/messages/unread` e aceitando `"/packs/0/sellers/..."`); e `mapPackMessagesToSupportProjection`/`messageOccurredAt` lançavam `RangeError: Invalid time value` em datas inválidas e convertiam `packId` sem checar inteiro positivo seguro. Agora normaliza via `normalizeRemoteId`, filtra timestamps finitos (`Number.isFinite`) com fallback para `observedAtIso` e valida `packId` como inteiro positivo seguro.
+4. **HTTP `200` não-JSON em `http-client.ts` e `oauth.ts` (`@sb/mercado-livre`) + socket leak no retry OAuth:** respostas `200 OK` com HTML/corpo truncado de proxy lançavam `SyntaxError` bruto em vez de `MercadoLivreApiError` com `errorClass: "retryable"` (alinhado ao `D-773` da Shopee/TikTok), chamando `onFailure` em `http-client.ts` sem vazar credenciais; e `postToken` (`oauth.ts`) passa a cancelar `response.body` antes do backoff em `429`/`5xx`.
+5. **Finitude em promoções (`packages/mercado-livre/src/promotions.ts`):** `effectivePromotionalPrice`, `positivo` e `numero` passam a exigir `Number.isFinite`, descartando `NaN`/`Infinity`.
+6. **Parsers e assinatura em `@sb/shopee` (`shop.ts`, `ads.ts`, `push.ts`):** `shopeeEpochToIso` exige `Number.isFinite` e valida `data.getTime()` (evitando `RangeError` em `Infinity`/`1e20`); `toShopeeAdsDate`/`fromShopeeAdsDate` validam formato e calendário real (`Date.UTC`) antes de enviar à API ou persistir; `shopeePushSchema` exige `Number.isSafeInteger` em strings numéricas e `verifyPushSignature` rejeita `partnerKey` vazia.
+
+Reprodução pré-correção registrou `7 failed | 162 passed (169)` em `@sb/mercado-livre` e `4 failed | 37 passed (41)` em `@sb/shopee`; após a correção, `@sb/mercado-livre` (`14` arquivos / `169` testes) e `@sb/shopee` (`8` arquivos / `41` testes) passaram integralmente em `typecheck`, `eslint` e `vitest`.
+
+## D-793 - Isolamento de falhas de enqueue em agendadores/relist, validação de epoch TikTok e hardening OAuth/push na API
+
+Cinco falhas concretas reproduzidas por TDD e corrigidas em `apps/api/src/` e `packages/tiktok-shop/src/` (sem sobreposição com PRs abertos do Codex ou do Claude):
+
+1. **Epoch fora da faixa de `Date` derrubando OAuth TikTok (`packages/tiktok-shop/src/auth.ts` + `apps/api/src/tiktok-shops.ts`):** `tiktokShopTokenSchema` aceitava `access_token_expire_in`/`refresh_token_expire_in` até `Number.MAX_SAFE_INTEGER` (`9e15`), mas `new Date(segundos * 1000).toISOString()` lança `RangeError: Invalid time value` acima de `8_640_000_000_000`, derrubando `completeTikTokConnect` com HTTP `500` não tratado. Agora o schema limita o teto a `8_640_000_000_000` (caindo no `try/catch` de `getAccessToken` -> `{ status: "rejected" }`) e `tiktokEpochToIso` valida finitude e faixa segura explicitamente.
+2. **Exceção não tratada de `enqueuer.enqueue` nas 3 operações de republicação (`apps/api/src/relist.ts`):** `requestListingRelist`, `requestListingRelistExecution` e `requestListingRelistRetry` deixavam falhas do Cloud Tasks escaparem sem log estruturado nem retorno `{ status: "error" }` (que `app.ts` roteia para `erroInterno()` com `request_id`). Agora todas as três envolvem o enqueue em `try/catch` com logs `relist_*_enqueue_failed`.
+3. **Falha de enqueue em uma conta abortando as demais nos agendadores (`reconcile.ts`, `account-reconcile-schedule.ts`, `listings-schedule.ts`, `shopee-orders-schedule.ts`):** um erro de Cloud Tasks na primeira conta/loja interrompia o laço inteiro, deixando todas as outras sem enfileirar na rodada. Agora cada conta/tarefa é isolada em `try/catch` (registrando `*_enqueue_failed`), segue para as demais contas e devolve `failed: true` (HTTP `503` via `respostaDoAgendador`) para o Cloud Scheduler retentar com deduplicação idempotente.
+4. **Escopos OAuth e erro silencioso em `ml-accounts.ts`:** `token.scope.split(" ")` gravava `[""]` em escopo vazio ou espaços repetidos (agora `token.scope.trim().split(/\s+/).filter(Boolean)`); `markError` passa a verificar `updated.error !== null` e registrar `ml_account_mark_error_failed`.
+5. **`shop_id <= 0` consultando banco no push Shopee (`apps/api/src/shopee-push.ts`):** `receiveShopeePush` agora rejeita `push.shop_id <= 0` como `invalid_payload` antes de consultar `shopee_shops`.
+
+Reprodução pré-correção registrou `1 failed | 11 passed (12)` em `@sb/tiktok-shop` e `8 failed | 76 passed (84)` nas 8 suítes de `@sb/api`; após a correção, `@sb/tiktok-shop` (`1` arquivo / `12` testes) e `@sb/api` (`43` arquivos / `581` testes) passaram integralmente em `build`/`typecheck`, `eslint` e `vitest`.
+
+## D-794 - Telemetria `@sb/db` (`recordJobRun`/`recordAiRun`) blindada contra transporte e isolamento de enqueue nos 13 agendadores/backfills restantes da API
+
+Duas frentes de resiliência reproduzidas por TDD e corrigidas em `packages/db/src/` e `apps/api/src/` (30 arquivos, zero conflito com `#378` e zero interseção com todos os PRs temáticos do Codex e do Claude):
+
+1. **Contrato "nunca lança" em `recordJobRun` e `recordAiRun` (`packages/db/src/job-runs.ts`, `packages/db/src/ai-runs.ts`):** ambas as funções documentavam explicitamente `**Nunca lança.**`, mas faziam `await client.from(...).insert(...)` fora de `try/catch`. Uma rejeição de transporte/fetch (`TypeError: fetch failed`) lançava exceção não tratada, podendo derrubar a resposta HTTP do worker (`apps/worker/src/app.ts`) ou do Copiloto após a operação principal já ter terminado. Agora ambas envolvem o `insert` em `try/catch` e devolvem `{ ok: false, reason }` também em erro de transporte.
+2. **Isolamento de falhas de `enqueuer.enqueue()` nos 13 agendadores e backfills restantes de `apps/api/src/`:** completando o padrão de `D-793` para **17/17 agendadores e backfills da API**, `ads-schedule.ts`, `ai-budget-schedule.ts`, `balance-reconcile-schedule.ts`, `decision-outcomes-schedule.ts`, `fulfillment-schedule.ts`, `ledger-integrity-schedule.ts`, `listing-visits-schedule.ts`, `metrics-refresh-schedule.ts`, `order-financials-schedule.ts`, `order-logistics-schedule.ts`, `sales-anomaly-actions-schedule.ts`, `order-financials-backfill.ts` e `order-user-products-backfill.ts` agora isolam cada `enqueuer.enqueue()` por conta/organização/tarefa em `try/catch`, registram log estruturado `*_enqueue_failed`, seguem enfileirando os demais itens da rodada e retornam `failed: true` (HTTP `503` ao Cloud Scheduler) para retry idempotente por `dedupeKey`.
+
+Reprodução pré-correção registrou `2 failed | 28 passed (30)` em `@sb/db` e `13 failed | 56 passed (69)` nas 13 suítes de `@sb/api`; após a correção, `@sb/db` (`6` arquivos / `30` testes) e `@sb/api` (`43` arquivos / `594` testes) passaram integralmente em `build`/`typecheck`, `eslint` e `vitest`.
+
+## D-795 - Worker: telemetria best-effort (`sync_runs`/`domain_events`) e `sync-central-alerts` blindados contra transporte, IDs seguros ML e proteção de janelas/datas Shopee e Ads
+
+Nove handlers/utilitários de `apps/worker/src/handlers/` (18 arquivos, zero interseção com qualquer PR aberto do Codex ou do Claude) endurecidos via TDD:
+
+1. **Telemetria `sync_runs`/`sync_errors` e `domain_events` blindadas contra erro de transporte (`sync-runs.ts`, `domain-events.ts`):** `recordSyncRunSuccess`, `recordSyncRunFailure` e `recordDomainEvents` documentavam que falhas de gravação são logadas e nunca lançadas, mas chamavam `db.from(...).insert/upsert(...)` sem `try/catch`. Em falha de rede (`TypeError: fetch failed`), um sync já concluído estourava 5xx retryable, uma falha `not_retryable` virava retryable (e pulava `sync_errors`) e uma lista de `domain_events` abortava após o primeiro rascunho. Agora cada escrita tem `try/catch` independente (preservando a tentativa de gravar `sync_errors` com `sync_run_id: null` e os rascunhos restantes de `domain_events`).
+2. **Validação de IDs inteiros positivos seguros em webhooks e mensagens ML (`webhook-received.ts`, `sync-support-messages.ts`):** `ORDER_RESOURCE_PATTERN`, `CLAIM_RESOURCE_PATTERN` e `packOrOrderId` aceitavam `"0"`, `"000"` e inteiros acima de `Number.MAX_SAFE_INTEGER`, desperdiçando chamadas à API do ML (ou estourando `RangeError` em `mapPackMessagesToSupportProjection`). Agora recusam IDs não positivos/inseguros com `retryable: false` sem chamar o ML e normalizam zeros à esquerda.
+3. **Janelas de `shopee.escrow-releases.sync` e `shopee.returns.sync` protegidas contra desvio de relógio e marco inválido (`shopee-escrow-releases-sync.ts`, `shopee-returns-sync.ts`):** um marco no futuro (`marco > now`) produzia janela invertida (`deS > ateS`), e um carimbo ilegível gerava `NaN`/`RangeError`. Agora o marco é limitado por `Math.min(marcoS, agoraS)` quando finito, recuando com segurança para a primeira leitura quando inválido.
+4. **Data malformada em `shopee.ads.sync` (`shopee-ads-sync.ts`):** `fromShopeeAdsDate(d.date)` (endurecido em `D-789` para lançar `RangeError`) rodava fora do `try/catch`. Agora uma data inválida da Shopee cai em `proximoCiclo({ status: "failed", retryable: false })` sem lançar 5xx nem gravar cobertura parcial.
+5. **Isolamento de erro de transporte por fonte em `diagnostics.sync-central-alerts` (`sync-central-alerts.ts`):** cada chamada `sincronizar_alertas_central` por fonte agora fica em `try/catch`, registrando `erroTransitorio = true` e continuando nas demais fontes de `FONTES_ALERTAS`.
+6. **Classificação de erro de contrato no `catch` externo de `sync.ads.campaigns` (`sync-ads-campaigns.ts`):** `ProductAdsFormatoInesperado` e `z.ZodError` nas leituras de anunciante/campanhas passam a ser gravados como `not_retryable` (alinhado ao tratamento por campanha), evitando retries inúteis.
+
+Reprodução pré-correção nas nove suítes registrou `12 failed | 65 passed (77)`; após a correção, `@sb/worker` passou integralmente em `typecheck`, `eslint` e `vitest` (`68` arquivos / `1.132` testes).
+
+## D-796 - Marketplaces e worker: limite de TTL OAuth, evento de relist blindado contra transporte, datas/checkpoints de pedidos ML e reconciliação SAC
+
+Cinco frentes de resiliência reproduzidas por TDD e corrigidas em `@sb/mercado-livre`, `@sb/shopee`, `apps/api/src/` e `apps/worker/src/handlers/` (15 arquivos, zero interseção com os 60 PRs abertos do Codex, do Claude e do `#383`):
+
+1. **Teto de TTL em tokens OAuth ML e Shopee (`packages/mercado-livre/src/oauth.ts`, `packages/shopee/src/auth.ts`):** `expires_in` / `expire_in` só exigiam `positive()` sem limite superior; valores absurdos faziam `new Date(now + ttl * 1000).toISOString()` lançar `RangeError: Invalid time value` não tratado em `completeShopeeConnect` ou na renovação de token. Ambos agora limitam o TTL a `MAX_TOKEN_TTL_SECONDS = 3_153_600_000` (100 anos), rejeitando TTLs fora da faixa já na validação do payload.
+2. **Auditoria best-effort em `relist-execute.ts` (`apps/worker/src/handlers/relist-execute.ts`):** `transition()` fazia `await db.from("listing_relist_events").insert(...)` sem `try/catch`; uma rejeição de transporte na gravação do evento de auditoria abortava o fluxo depois que a transição CAS em `listing_relists` já havia sido aplicada, podendo disparar falso `RELIST_FAILED` ou reexecutar o passo anterior. Agora o `insert` de auditoria fica em `try/catch` (registrando `relist_event_not_recorded`) sem derrubar a transição confirmada.
+3. **Datas inválidas e desvio de relógio em pedidos ML (`order-schema.ts`, `ml-orders-fetch.ts`, `sync-orders-window.ts`):** `orderSchema.date_created` agora exige `Number.isFinite(Date.parse(value))` (pedidos com data corrompida viram `partial` em vez de derrubar a janela); `ml-orders-fetch.ts` valida `Date.parse(order.date_last_updated)` finito antes de avançar `latestRecordAt`; `sync-orders-window.ts` limita `resolveWindowFrom` contra desvio de relógio futuro (`Math.min(candidateMs, nowMs)`) e timestamps inválidos, além de classificar `z.ZodError` em `/orders/search` como `"not_retryable"`.
+4. **Checkpoint de reconciliação de reclamações SAC (`sync-support-claims-reconcile.ts`):** protege o cursor `stored` contra timestamp no futuro (`Math.min(storedMs, now.getTime())`) e datas inválidas (recuando para a janela padrão de 7 dias), e classifica `z.ZodError` como `"not_retryable"`.
+5. **Reconciliação de perguntas SAC (`sync-support-questions-reconcile.ts`):** exige `/^[1-9][0-9]*$/` + `Number.isSafeInteger` em `external_case_id`, isola erros de `enqueuer.enqueue()` por pergunta em `try/catch` (registrando `sync_support_questions_recheck_failed` e seguindo nas demais perguntas pendentes) e classifica `z.ZodError` como `"not_retryable"`.
+
+Reprodução pré-correção confirmou falha em todas as frentes; após a correção, `@sb/mercado-livre` (`170`), `@sb/shopee` (`42`), `@sb/api` (`595`) e `@sb/worker` passaram integralmente em `build`/`typecheck`, `eslint` e `vitest`.
+
+## D-797 - Worker: proteção contra Flate zip bomb em PDF, isolamento de ZodError/transporte em visitas e Full, guardas de backfill e parse NF-e
+
+Sete módulos de `apps/worker/src/` (15 arquivos, zero interseção com os 60 PRs abertos do Codex, do Claude e do `#383`) endurecidos via TDD:
+
+1. **Proteção contra Flate zip bomb em PDF (`apps/worker/src/documentos/pdf-texto.ts`, CWE-409):** `inflateSync(bruto)` era chamado sem limite de saída num container Cloud Run de 512 MiB, permitindo OOM com um PDF malicioso ou corrompido. Agora aplica `MAX_INFLATED_STREAM_BYTES = 4 * 1024 * 1024` via `{ maxOutputLength }` e teto acumulado `MAX_TOTAL_INFLATED_BYTES = 16 * 1024 * 1024` por PDF, ignorando streams que disparam `ERR_BUFFER_OUT_OF_BOUNDS` sem cair em fallback sem limite.
+2. **Visitas de anúncios (`listing-visits-schema.ts`, `ml-listing-visits-fetch.ts`):** valida prefixo de data de calendário real (`Date.UTC`) e `total: z.number().int().nonnegative()`; isola `z.ZodError` por anúncio junto com `MercadoLivreApiError` (`not_retryable`) para que um anúncio malformado não interrompa os demais; deduplica `timeWindow.results` por `metric_date` em `Map` antes do `.upsert(...)` (evitando erro Postgres `21000`).
+3. **Captura do Full (`ml-fulfillment-fetch.ts`):** isola `z.ZodError` por item em `/items/{id}` e `/inventories/{id}/stock/fulfillment` (`itemsFailed += 1` com `absentStatus: null`, sem registrar falso 404/403); envolve `upsert` e `delete` best-effort de `fulfillment_item_absences` em `updateItemAbsences` com `try/catch` para que erros de transporte não abortem a captura dos retratos.
+4. **Reconciliação de mensagens não lidas (`sync-support-messages-reconcile.ts`):** classifica `z.ZodError` de `/messages/unread` como `"not_retryable"`.
+5. **Backfill de pedidos (`backfill-orders.ts`):** classifica `z.ZodError` como `"not_retryable"` e protege `connected_at` inválido (falha `retryable: false`) e `backfill_covered_until` inválido (fallback para `now - RETENTION_MS`) sem lançar `RangeError`.
+6. **Backfill de `user_product_id` (`backfill-order-user-products.ts`):** isola falhas por dia de `enqueuer.enqueue()` para `analytics.recompute` em `try/catch` (registrando `backfill_order_user_products_recompute_enqueue_failed`), garantindo que os demais dias tocados, `sync_runs` e o encadeamento do próximo lote concluam normalmente (já que `order_items.sku_id` foi persistido e repetir o lote não recuperaria `diasTocados`).
+7. **Parse de NF-e (`nfe-import-parse.ts`):** envolve `lerPdf`/`lerXml` em `try/catch` para que exceções inesperadas do parser marquem o documento como `FAILED` (`retryable: false`, `documento_parse_invalido`) em vez de retornar 5xx retentável e deixá-lo preso em `PARSING`.
+
+Reprodução pré-correção nas sete suítes registrou `7 failed (7)` arquivos (`10 failed | 131 passed (141)`); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `340` arquivos / `4.369` testes unitários, com `@sb/worker` em `68` / `1.150`) e `pnpm run build` (`10/10`).
+
+## D-798 - Contratos, API e Worker: janelas de datas no Copiloto, lookup de ferramenta/NF-e/suspensão blindados, papéis/dedupe de claims, cauda de pedidos e `attempt` do worker
+
+Nove falhas concretas reproduzidas por TDD e corrigidas em `@sb/contracts`, `@sb/api` e `@sb/worker` (`19` arquivos, todos idênticos à base do candidato `#378` — zero conflito com `#378`, `#383` e a frente do Claude `#347`):
+
+1. **Inversão de janela `dateFrom > dateTo` nas ferramentas do Copiloto (`packages/contracts/src/copilot-tools.ts`):** os 7 schemas de entrada com intervalo civil (`salesSummaryInputSchema`, `salesPeriodComparisonInputSchema`, `salesAccountComparisonInputSchema`, `salesSkuDeclinesInputSchema`, `listingPerformanceInputSchema`, `marketplaceSalesSummaryInputSchema` e `marketplaceSkuSalesInputSchema`) aceitavam `dateFrom > dateTo`, produzindo `daysRequested <= 0` e falso `visitsCoverage: "COMPLETA"` em `runListingPerformance` ou intervalos invertidos em comparações. Todos agora exigem `dateFrom <= dateTo`.
+2. **Lookup de ferramenta herdada de `Object.prototype` no chat do Copiloto (`apps/api/src/copilot-chat.ts`):** `RUNNERS[toolUse.name]` retornava funções herdadas (`toString`, `constructor`) como truthy e derrubava o stream SSE com `TypeError` em vez de responder `{ is_error: true, content: "ferramenta desconhecida" }`. Agora usa `Object.hasOwn(RUNNERS, toolUse.name)`.
+3. **Falha de transporte na base de conhecimento do Copiloto (`apps/api/src/copilot-generation.ts`):** `fetchValidatedKnowledge` prometia degradar para `[]` sem derrubar a sugestão, mas não envolvia a consulta em `try/catch`. Agora captura falhas de transporte e segue com lista vazia.
+4. **Upload concorrente (`23505`), erro de leitura e rollback blindado em NF-e (`apps/api/src/nfe-import.ts`, `apps/api/src/confirm-import-apply.ts`):** `receiveNfeUpload` trata corrida `23505` em `documents.insert` relendo o vencedor e devolvendo `duplicate` (em vez de `rejected` 400); `confirmNfeApply` separa erro do banco (`nfe_apply_lookup_failed` -> `rejected`) de ausência real (`not_found`); os três rollbacks pós-falha de `enqueuer.enqueue()` envolvem a escrita de reversão em `try/catch`, registrando `*_rollback_failed` sem mascarar o erro original do enqueue.
+5. **Auditoria pós-suspensão em erro de transporte (`apps/api/src/member-suspension.ts`):** envolve `organization_access_events.insert` em `try/catch`, preservando o retorno honesto `{ status: "error", reason: "acesso suspenso/reativado, mas o histórico não registrou: ..." }` após o ban já aplicado no Auth.
+6. **Papéis invertidos (`cancel_sale`) e erro Postgres `21000` em reclamações SAC (`apps/worker/src/handlers/claim-support-projection.ts`):** `resolveReplyState` procurava `role === "respondent"` (lendo as `available_actions` do COMPRADOR em claims abertos pelo vendedor como `cancel_sale`); agora busca `type === "seller"` (com fallback para `role === "respondent"` apenas quando `type` falta). E `mapClaimMessagesToProjection` deduplica por `externalMessageKey` antes do batch `.upsert()` (`ON CONFLICT DO UPDATE`), eliminando erro Postgres `21000` em mensagens do mesmo segundo.
+7. **Cauda duplicada de pedido na mesma página (`apps/worker/src/handlers/page-writes.ts`):** `writes.tails` não deduplicava por `orderId` (ao contrário de `writes.orders` e `writes.items`), podendo apagar itens recém-gravados se o mesmo pedido reaparecesse na página com mais itens. Agora aplica `ultimaPorChave` por `orderId`.
+8. **Cabeçalho `X-CloudTasks-TaskRetryCount` vazio/não decimal (`apps/worker/src/job-outcome.ts`):** `Number("") === 0` transformava cabeçalho vazio/espaços em `attempt = 1` (mascarando o `envelope.attempt`) e aceitava notação científica/hexadecimal (`"1e20"`, `"0x10"`). Agora exige `/^\d+$/` e `Number.isSafeInteger`.
+9. **Classificação de `ZodError` em `sync.listing.item` (`apps/worker/src/handlers/sync-listing-item.ts`):** `ZodError` de resposta fora do contrato agora retorna `retryable: false` em vez de consumir 8 tentativas da fila.
+
+Reprodução pré-correção registrou `7 failed (7)` em `@sb/contracts`, `7 failed | 74 passed (81)` em `@sb/api` e `5 failed | 65 passed (70)` em `@sb/worker` (`9/9` arquivos vermelhos); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `341` arquivos / `4.387` testes unitários) e `pnpm run build` (`10/10`).
+
+## D-799 - Domínio e web: calendário real em datas de negócio e períodos, PDFs/NF-e, preflight/corpo de republicação, cobertura, saúde e CSV
+
+Doze módulos puros de `@sb/domain` e `@sb/web` (`24` arquivos no total, zero sobreposição contra todos os 50 PRs abertos — todos os 23 arquivos existentes byte-idênticos à base do candidato `#378`) endurecidos via TDD:
+
+1. **Datas de negócio e validação de calendário (`packages/domain/src/metrics/business-date.ts`, `apps/web/lib/period.ts`, `apps/web/lib/central-periodo.ts`):** `parseBusinessDate` fazia `Date.UTC` sem checar ida e volta de ano/mês/dia, fazendo `"2026-02-31"` virar `"2026-03-03"` em silêncio, e `shiftBusinessDate` aceitava `days` não inteiro/não finito (`1.5`, `NaN`, `Infinity`). Foi exportada `isValidBusinessDate(date)` (usada em `parseBusinessDate` e no restante do domínio e web) e exigido `Number.isSafeInteger(days)` em `shiftBusinessDate`. Na web, `resolvePeriodRange` e `resolverPeriodoCentral` passaram a validar `isValidBusinessDate` (devolvendo `invalidCustom: true`/`invalido: true` em vez de repassar `"2026-02-31"` ao Postgres `22008` ou lançar exceção) e `resolvePeriodDays` passou a exigir `/^\d+$/` (recusando `"7abc"` e `"15.9"` aceitos por `Number.parseInt`).
+2. **Documentos PDF e XML de NF-e (`packages/domain/src/documentos/{danfe,saida-upseller,envio-full-ml}.ts`, `packages/domain/src/nfe/parse.ts`):** em `saida-upseller.ts`, quando o PDF não trazia linha `"Observação"`, `findIndex(...) + 1` resultava em `0` e capturava a primeira linha do documento (`"Pedido de Saída"`) como observação em `referencia` — agora verifica `indiceObservacao !== -1`; além disso, `saida-upseller.ts` e `danfe.ts` validam data civil real (`isValidBusinessDate`) e hora/minuto (`0..23`/`0..59`) antes de montar `emitidoEm`, devolvendo `null` em vez de ISO inválido; `envio-full-ml.ts` restringe quantidades a inteiros seguros positivos (`> 0`); `nfe/parse.ts` recusa `qCom <= 0`, `vUnCom < 0`, `vProd < 0` e prefixo de data inexistente em `ide/dhEmi` (como `"2026-02-31T10:00:00-03:00"`).
+3. **Preflight e corpo de republicação ML (`packages/domain/src/listings/{relist-preflight,relist-body}.ts`):** `readLegibleVariation` exigia apenas `/^\d+$/` e `Number.isFinite(price)`, aprovando `id = 0` e `price <= 0` antes do fechamento irreversível do anúncio pai — agora exige `id > 0` e `price > 0`. `buildRelistBody` agora falha fechado (`null`) para `listing_type_id` vazio, preço `<= 0`/não finito (raiz ou variação com estoque) ou `id` de variação inválido.
+4. **Simulador de cobertura (`packages/domain/src/inventory/coverage-simulation.ts`):** `assertNonNegative` verificava apenas `value < 0`, deixando `NaN` e `Infinity` passarem (`NaN < 0 === false`). Agora exige `Number.isFinite(value) && value >= 0`, trata overflow de divisão em `computeCoverageDays` devolvendo `null` e rejeita produto não finito em `simulateRequiredQuantity`.
+5. **Frescor de sincronização e saúde (`packages/domain/src/events/freshness.ts`, `apps/web/lib/sync-health.ts`):** `classifySyncFreshness` e `verdictFromCadence` deixam de classificar `Date`/timestamp inválido (`NaN`) como `"critico"`, devolvendo `"nunca_sincronizado"`/`"nunca"`; `calculateBackfillProgress` verifica `Number.isFinite(now.getTime())` antes de `.toISOString()`; `resourceLabel`, `classifyJobFreshness` e `classifyResourceFreshness` protegem consultas de mapa com `Object.hasOwn` (evitando `"toString"`/`"constructor"` caírem em `"critico"`); `failureRateLabel` recusa contagens negativas ou não finitas.
+6. **Exportação CSV (`apps/web/lib/csv.ts`, `apps/web/lib/csv.test.ts`):** `csvNumber` devolve `""` para `NaN`, `Infinity` e `-Infinity` (evitando `"NaN"`, `"∞"` e `"-∞"` com prefixo `-` nas planilhas).
+
+Reprodução pré-correção registrou `11/11` arquivos vermelhos (`7 failed` / `9` testes em `@sb/domain` + `4 failed` / `7` testes em `@sb/web`); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `342` arquivos / `4.401` testes unitários) e `pnpm run build` (`10/10`).
+
+## D-800 - API, Worker e Web: hardening de Copiloto, OAuth Shopee, logística/pacote/anomalias e helpers de métricas
+
+Nove módulos de `@sb/api`, `@sb/worker` e `@sb/web` (`18` arquivos no total, zero sobreposição com o candidato `#378` em `4516afe2`, todos os PRs temáticos do Codex, `#383` e a frente de compras do Claude `#347`) endurecidos via TDD:
+
+1. **Copiloto API (`apps/api/src/copilot.ts`):** `handleCopilotQuery` consultava `TOOLS[request.tool]` sem `Object.hasOwn`, lançando `TypeError` para ferramentas desconhecidas ou chaves herdadas de `Object.prototype` (`"toString"`, `"constructor"`) em vez de devolver HTTP `400` (`unknown_tool`); `runSkuReplenishment` repassava `p_search: input.sku` sem `trim()` para `get_purchase_suggestions` enquanto comparava `input.sku.trim().toUpperCase()` depois; `runListingPerformance` calculava `daysRequested` via `Date.parse(...)` cru (permitindo rollover silencioso em `"2026-02-31"` ou `daysRequested <= 0` em intervalo invertido) em vez de validar previamente via `businessDateRangeLength` de `@sb/domain` antes de consultar o banco.
+2. **OAuth Shopee na API (`apps/api/src/shopee-shops.ts`):** `completeShopeeConnect` aceitava `code` em branco e `shopId`/`mainAccountId` não positivos, fracionários ou acima de `Number.MAX_SAFE_INTEGER` (chegando a chamar a Shopee e conectar `shopId: 0`). Agora valida `code.trim() !== ""` e inteiro positivo seguro (`Number.isSafeInteger(n) && n > 0`) nos parâmetros e na filtragem defensiva de `token.shop_id_list`.
+3. **Logística Full, medidas de pacote e anomalias de vendas no Worker (`apps/worker/src/handlers/{sync-order-logistics,shipment-package,detect-sales-anomaly-actions}.ts`):** `pedidoDe` em `sync-order-logistics.ts` aceitava `"0"` (consultando `orders.id = 0`) e preservava zeros à esquerda (`"0009001"` não casava com `String(pedido.id)` `"9001"` no mapa do ledger) — agora exige inteiro seguro positivo e normaliza via `String(numeric)`; `lerMedidas` em `shipment-package.ts` não barrava estouro para `Infinity` em lados, peso ou `volumeCm3` — agora exige `Number.isFinite` em todas as dimensões e no volume; `detect-sales-anomaly-actions.ts` construía `new Date(event.occurred_at)` sem validar `Number.isNaN(occurredAt.getTime())`, fazendo `toEvidence` lançar `RangeError: Invalid time value` e derrubar o diagnóstico inteiro da organização quando um único evento tinha data corrompida — agora descarta timestamps inválidos com segurança.
+4. **Helpers de faturamento, variação, tempo relativo e geometria de gráfico na Web (`apps/web/lib/{faturamento,variacao,tempo-relativo,sales-chart-geometry}.ts`):** `lerFaturamento` aceitava `margem_minima` vazia (`""`/`"   "` virando `0`), zero ou negativa (causando divisão `0 / 0 = NaN` em `escalaDasMargens`), `tomDaMargem(NaN)` caía em `"ok"` (verde), `participacao` devolvia `NaN`/`0` para não finitos e `escalaDasMargens`/`barraDaMargem` propagavam `NaN` — todos agora exigem valores finitos (e `margem_minima > 0`); `avaliarVariacao` rejeita `NaN`/`Infinity` devolvendo `null`; `tempoRelativo` checa `Number.isFinite(agora.getTime())` evitando `RangeError` em `Intl.RelativeTimeFormat.format(NaN, "year")`; `tetoDaEscala` filtra valores finitos e `yPct` devolve `100` (linha de base) para `valor` não finito ou `teto <= 0`/não finito.
+
+Reprodução pré-correção registrou `9/9` arquivos vermelhos (`11/11` novos casos: `4 failed` em `@sb/api`, `3 failed` em `@sb/worker` e `4 failed` em `@sb/web`); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `342` arquivos / `4.412` testes unitários), `pnpm run build` (`10/10`) e `pnpm audit --prod --audit-level high` (saída `0`).
+
+## D-801 - Domínio, Worker e Web: finitude em eventos/inventário/suporte, estoque Full no preflight de relist e parsers/filtros web
+
+Treze módulos independentes de `@sb/domain`, `@sb/worker` e `@sb/web` (`26` arquivos no total, todos 100% byte-idênticos ao candidato `#378` em `647565ac`/`8bf37e2f` e com zero sobreposição contra os 47 PRs abertos) endurecidos via TDD:
+
+1. **Eventos de anúncio, preço Shopee e Full (`packages/domain/src/events/{listing-events,shopee-price-events,fulfillment-events}.ts`):** `NaN !== NaN` e `NaN === NaN` faziam preços/quantidades `NaN` ou `Infinity` emitirem eventos falsos `listing.price.changed`, `listing.available_quantity.changed` e `stock.replenished`, enquanto `Date` inválida em `syncedAt`/`readAt`/`capturedAt` lançava `RangeError: Invalid time value`. Todos agora exigem timestamps finitos (`Number.isFinite(date.getTime())`) e quantidades/preços finitos antes de gerar rascunhos.
+2. **Padrões de SAC, máquina de estados do relist e invariantes de estoque (`packages/domain/src/{diagnostics/support-patterns,listings/relist,inventory/reconciliation,inventory/ledger-integrity}.ts`):** `detectSupportPatterns` agora exige `openClaims` finito (`NaN` furava `< 3`), sanitiza `openMediations` e descarta `linkedOrdersTotalBrl` não finito ou `<= 0` (evitando `"R$ NaN em risco de reembolso"`); `canTransitionRelist` usa `Object.hasOwn(TRANSITIONS, from)` evitando `TypeError` em estado desconhecido ou chaves de `Object.prototype` (`"toString"`, `"constructor"`); `computeReconciliationAdjustments` e `computeLedgerIntegrityDivergences` falham fechado com `RangeError` diante de quantidade `NaN`/`Infinity` em vez de gerar `AJUSTE_RECONCILIACAO` com `qtyDelta: NaN` ou divergência falsa.
+3. **Leitura ao vivo do estoque Full no preflight de republicação (`apps/worker/src/handlers/relist-full-stock.ts` + novo `relist-full-stock.test.ts`):** `fullStockResponseSchema` passa a exigir `inventory_id` não vazio e `available_quantity`/`not_available_quantity` inteiros não negativos (`z.number().int().nonnegative()`), impedindo que números negativos cancelem estoque Full real antes do fechamento irreversível do anúncio pai, e codifica `inventoryId` com `encodeURIComponent` na URL.
+4. **Ads, cascata Shopee, metas/alíquota, limites da Central e paginação web (`apps/web/lib/{ads,faturamento-multicanal,metas-imposto,limites-central,filters}.ts`):** `tomDoRoas` devolve `"neutro"` para `NaN`/`Infinity` (antes retornava `"ok"` verde); `montarCascataShopee` devolve `null` diante de qualquer valor ou componente não finito (sem propagar `NaN` nas barras); `numeroDigitado` rejeita pontuação sem dígitos ou malformada (`"..."`, `".."`, `"1..000"`, `"1.2.3"`, `","`, `".5"`, `"5."`), `rotuloDoMes` valida calendário real via `lerData` sem lançar `RangeError` e `formatarAliquota` devolve `"—"` para não finitos; `lerLimites` rejeita arrays, strings vazias (`""`/`"   "` virando `0`) e linhas que violem os `CHECK`s voltando a `LIMITES_PADRAO`; `resolvePageParam` exige `Number.isSafeInteger`, `resolvePageSize` exige `/^\d+$/` (recusando `"0x32"`, `"5e1"`, `" 50 "`) e `summarizePagedWindow` protege `totalCount`/`pageSize` não finitos ou `<= 0`.
+
+Reprodução pré-correção registrou `13/13` arquivos vermelhos (`14/14` novos casos: `7 failed` em `@sb/domain`, `2 failed` em `@sb/worker` e `5 failed` em `@sb/web`); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `343` arquivos / `4.426` testes unitários), `pnpm run build` (`10/10`) e `pnpm audit --prod --audit-level high` (saída `0`).
+
+## D-802 - Domínio, API e Web: ledger/UpSeller, diretório de contas e indicadores/saúde fail-closed
+
+Doze módulos independentes de `@sb/domain`, `@sb/api` e `@sb/web` (`24` arquivos no total, todos 100% byte-idênticos ao candidato `#378` em `8bf37e2f` e com zero sobreposição contra todos os PRs abertos — `numero-ptbr.ts` do `#355` e `ranking-produtos.ts` do `#378` foram explicitamente deixados de fora) endurecidos via TDD:
+
+1. **Normalização UpSeller (`packages/domain/src/upseller/normalize.ts`):** `cell` chamava `value.toISOString()` para qualquer `Date`, lançando `RangeError: Invalid time value` em datas inválidas — agora devolve `null` quando `!Number.isFinite(value.getTime())`; `normalizeUnit` usa `Object.hasOwn(UNIT_ALIASES, upper)`; `parseOriginCode` exige dígito fiscal exato (`/^[0-8]$/`), recusando `"1abc"`, `"2.9"` e `"+1"`; `parseDecimal` substitui `parseFloat` permissivo por validação estrita de decimal (`COMMA_DECIMAL`/`DOT_DECIMAL`), recusando `"174abc"`, `"12.34.56"`, `"1..000,50"` e literais hexadecimais `"0x10"`.
+2. **Invariantes do ledger de estoque (`packages/domain/src/inventory/{nfe-application,sale-deduction,shopee-sale-deduction,reversal-limit}.ts`):** `computeNfeApplicationMovements` e `computeSaleDeductions` agora lançam `RangeError` fail-closed diante de `occurredAt`/`saleAt` inválido ou quantidade `<= 0`/não finita (em itens ou componentes de KIT), evitando `qtyDelta` nulo, `NaN`, inversão de sinal ou falso `ESTORNO_PRE_CAPTURA` quando `NaN > exportedAt` falhava; `computeShopeeStockMovements` valida `paidAt` (e `updatedAt` em `CANCELLED`) com `RangeError` e descarta quantidades não finitas ou componentes `<= 0`; `reversedQuantity`, `remainingToReverse`, `excessReversed` e `excessReversalShares` lançam `RangeError` diante de `quantity` negativa/não finita, `qtyDelta` não finito ou `occurredAt` inválido (impedindo contaminação por `NaN` e ordenação não determinística).
+3. **Diretório de contas ML na API (`apps/api/src/account-directory.ts`):** `createAccountDirectory.resolve` retorna `null` imediatamente para `sellerId` não positivo, fracionário ou inseguro (`!Number.isSafeInteger(sellerId) || sellerId <= 0`), evitando recargas desnecessárias de `ml_accounts` a cada 30 s sob requisições inválidas; `loadAccountsFromDb` ignora igualmente `seller_id` fora desse contrato.
+4. **Ads, ajuste de estoque, sanitização, indicadores da Central e saúde Shopee (`apps/web/lib/{sinais-ads,stock-adjustment,sanitize,central-indicadores,ads-shopee,saude-loja-shopee}.ts`):** `pisoDoRoas` rejeita `""`/`"   "` (que virava `0`) e valores `<= 0` voltando a `LIMITES_PADRAO.roasPisoDaMeta`, `estimar`/`roasDeEquilibrio` exigem finitude e `lerCampanhaSinal` exige denominadores finitos e `> 0` antes de chamar `relativo` (evitando `"∞%"`/`"NaN%"`); `adjustmentDelta` exige `Number.isFinite(currentBalance)` no modo `BALANCO` (evitando delta `NaN`); `sanitizeErrorText` falha fechado em `null` quando `Math.floor(max)` não é finito ou `< 1` (antes `max = 0` fazia `slice(0, -1) + "…"`, vazando quase toda a mensagem); `central-indicadores.ts` exige finitude em `contribuicao`, `formatRoas` (`"—"` em vez de `"NaNx"`/`"∞x"`) e `decomporMargem` (onde `receita_coberta = Infinity` com `margem_venda = 1` fechava a identidade falsa) e usa `Object.hasOwn(ABERTURA, preset)` em `montarResumo` (impedindo vazamento de `"toString"`/`"constructor"`); `ads-shopee.ts` trata não finitos como ausentes em `estadoAdsLoja`, `diasForaDaRazao` e `diasDasBarras`; `saude-loja-shopee.ts` falha fechado para `"Nunca lida"` (`tom: "neutro"`) quando `agora` ou `orders_synced_at`/`connected_at` é inválido (antes caía em `tom: "ok"` / `"Pedidos em dia"`) e valida finitude em `avisoDaAutorizacao`.
+
+Reprodução pré-correção registrou `12/12` arquivos vermelhos (`14/14` novos casos: `5` arquivos / `7 failed` em `@sb/domain`, `1` arquivo / `1 failed` em `@sb/api` e `6` arquivos / `6 failed` em `@sb/web`); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `343` arquivos / `4.439` testes unitários), `pnpm run build` (`10/10`) e `pnpm audit --prod --audit-level high` (saída `0`).
+
+## D-803 - Domínio, API e Web: reversões de estoque, enqueue, filtros ABC, paginação RPC e utilitários web
+
+Doze módulos independentes de `@sb/domain`, `@sb/api` e `@sb/web` (`24` arquivos no total, todos 100% byte-idênticos ao candidato `#378` em `8bf37e2f` e com zero sobreposição contra todos os PRs abertos e `#384` na `main`) endurecidos via TDD:
+
+1. **Reversões de cancelamento e devolução no ledger (`packages/domain/src/inventory/{cancellation-reversal,return-reversal}.ts`):** `planCancellationReversals` e `computeCancellationMovements` agora validam `Number.isFinite(date.getTime())` para `order.occurredAt`, `input.occurredAt`, `saleAt` e `transition.cancelledAt` (lançando `RangeError` fail-closed em vez de permitir que `NaN <= exportedAt` / `NaN > exportedAt` burlem o corte pré-captura ou emitam movimentos/trios com data inválida); `computeReturnReversal` e `computeUnreversedReturn` exigem `occurredAt` válido (`RangeError`) e normalizam `totalQuantity`/`returnQuantity` com `toFinitePositive` (exigindo números finitos `> 0` para que `totalQuantity = 0, returnQuantity = 0` ou `returnQuantity = Infinity` jamais disparem estorno integral, preservando compatibilidade com strings numéricas de payloads crus).
+2. **Atraso de tarefas Cloud Tasks na API (`apps/api/src/enqueue.ts`):** `delaySeconds` agora exige `Number.isFinite(delaySeconds) && delaySeconds >= 0` (lançando `RangeError` para negativo, `NaN` ou `Infinity`) e aplica `Math.floor(delaySeconds)` para que `scheduleTime.seconds` seja sempre inteiro válido no protobuf do Cloud Tasks.
+3. **Filtros ABC, paginação RPC e utilitários web (`apps/web/lib/{abc-filters,campanhas,central-meta,decision-format,business-window,rpc-pages,vendas-multicanal,sku-coverage-display,support-case-reference}.ts`):**
+   - `abc-filters.ts`: `resolveAbcPeriod` exige `/^\d+$/` (recusando `"30abc"`/`"30.5"`) e `resolveAbcCustomRange` valida calendário civil real via `isValidBusinessDate` de `@sb/domain` (impedindo `"2026-02-31"`/`"2026-04-31"` de chegar ao Postgres `22008`).
+   - `campanhas.ts`: `rotuloDoTipo` usa `Object.hasOwn(TIPOS, type)` (impedindo vazamento de `Object.prototype` via `"toString"`/`"constructor"`), `lerCampanhas` rejeita arrays explicitamente e `precoDaCampanha`/`quemPaga` exigem `Number.isFinite` em todos os campos numéricos.
+   - `central-meta.ts`: `ritmoDaMeta` exige finitude em `diferenca_ritmo`/`esperado_ate_ontem`/`dias_completos > 0` e em `atrasoDaMeta >= 0`; `rotuloDoDiaDaSemana` usa `Object.hasOwn`; `fraseDaDataComercial` filtra `dia.fator` finito e exige finitude em `efeito`/`efeito_no_mes`.
+   - `decision-format.ts`: `formatDecisionSnapshot` guarda `units_sold_7d`, `avg_price_7d` e `stock_local` com `typeof v === "number" && Number.isFinite(v)`, exibindo `"—"` em vez de `"undefined"` ou `"R$ NaN"`.
+   - `business-window.ts`: `lastBusinessDays` normaliza `dias` não finito/fracionário/inseguro (`Math.max(Math.trunc(dias), 1)` ou `1`) antes de chamar `shiftBusinessDate` sem lançar `RangeError`.
+   - `rpc-pages.ts`: `lerPaginasDaRpc` normaliza `limiteMaximo = Number.isFinite(teto) ? Math.floor(teto) : 0` (eliminando laço infinito / OOM `RangeError: Invalid array length` reproduzido com `teto = Infinity` e `p_limit` fracionário em `teto = 2.9`) e recorta lotes excedentes a `restante`.
+     No candidato, essa guarda também pulou chamadas válidas dos detalhes de SKU, que usam `Infinity` para ler todos os anúncios. A correção preserva esse modo, o limite de 1.000 por chamada e o recorte para tetos finitos. O teste percorre 1.002 linhas até a página vazia.
+   - `vendas-multicanal.ts`: `valorOuTraco` devolve `"—"` para não finitos; `pontosDoTotal` trata `receita_bruta` não finita como ausente (`semReceita`); `antesDoHistoricoShopee` valida `isValidBusinessDate(dataInicial) && isValidBusinessDate(hoje)` (devolvendo `false` sem lançar `RangeError`).
+   - `sku-coverage-display.ts`: `descreverCobertura` exige finitude de todas as entradas numéricas (devolvendo `SEM_LINHA` em vez de propagar `RangeError` de `coverage-simulation.ts` ou exibir `"NaN dias"`) e valida `Number.isFinite(entrada.units30Shopee)`.
+   - `support-case-reference.ts`: apara e recusa `sku_id`/`skus.sku`/`listings.item_id`/`external_entity_id` em branco, exige `order_id` inteiro seguro positivo (`> 0`) e codifica segmentos de URL com `encodeURIComponent` em `/skus/...` e `/anuncios/...`.
+
+Reprodução pré-correção registrou `12/12` arquivos vermelhos (`13/13` novos casos: `2` arquivos / `2 failed` em `@sb/domain`, `1` arquivo / `1 failed` em `@sb/api` e `9` arquivos / `10 failed` em `@sb/web`, incluindo `RangeError: Invalid array length` real em `rpc-pages.test.ts` após 8,12 s -> 16 ms corrigido); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `343` arquivos / `4.450` testes unitários), `pnpm run build` (`10/10`) e `pnpm audit --prod --audit-level high` (saída `0`).
+
+## D-804 - Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
+
+Doze módulos independentes de `@sb/domain`, `@sb/api` e `@sb/web` (`24` arquivos no total, todos 100% byte-idênticos ao candidato `#378` em `8bf37e2f` e com zero sobreposição contra todos os PRs abertos e o PR `#384` `D-858` recém-integrado na `main` em `5a49133b` — deixando de fora `tiktok-shops.ts`, `movement-filters.ts`, `action-evidence.ts` e `price-filters.ts` por sobreposição com `#378`/`#321`/`#310`) endurecidos via TDD:
+
+1. **Eventos de orçamento de IA e cancelamento de pedido (`packages/domain/src/events/{ai-budget,order-events}.ts`):** `evaluateAiBudget` agora exige `occurredAt` finita (`Number.isFinite(occurredAt.getTime())`), `organizationId.trim() !== ""` e `month` no formato civil válido `/^\d{4}-(0[1-9]|1[0-2])$/` (lançando `RangeError` fail-closed antes de emitir `dedupKey` ou `Invalid Date`); `detectOrderStatusEvents` agora valida `occurredAt` finita e `order.id` inteiro seguro positivo (`Number.isSafeInteger(order.id) && order.id > 0`, `RangeError`) quando uma transição de cancelamento gera evento (preservando o retorno `[]` em pedidos não cancelados com `date_last_updated` corrompida, conforme `D-796`).
+2. **Allowlist de IP do webhook ML (`apps/api/src/ip-allowlist.ts`):** `extractClientIp` passa a inspecionar estritamente o último segmento após a última vírgula de `X-Forwarded-For` — uma vírgula final vazia (`"54.88.218.97, "`) agora falha fechado em `undefined` em vez de recuar para uma entrada anterior controlada pelo cliente; `createIpAllowlistVerifier` apara espaços e descarta entradas vazias da lista permitida.
+3. **Filtros e utilitários web (`apps/web/lib/{curation-filters,document-filters,full-filters,action-filters,shopee-sales,central-atencao,detector-frete,listings-view,quem-paga-frete}.ts`):**
+   - `curation-filters.ts`: substitui os 4 operadores `bruto in ...` por `Object.hasOwn(..., bruto)` (impedindo `/produtos?estado=toString&tipo=constructor&sinal=valueOf&ordem=hasOwnProperty` de atravessar listas fechadas e enviar funções de `Object.prototype` à RPC).
+   - `document-filters.ts`: `documentTypeLabel` usa `Object.hasOwn(DOCUMENT_TYPE_LABELS, raw)` (impedindo retorno de `[Function toString]`).
+   - `full-filters.ts`: `coverageTom` devolve `"neutro"` (em vez de `"ok"` verde) e `formatCoverage` devolve `"sem venda"` (em vez de `"NaN dias"`/`"+90 dias"`/`"-∞ dias"`) para não finitos; `coverageOf` exige entradas e resultados finitos.
+   - `action-filters.ts`: `readFacet` e `facetEntries` rejeitam arrays, usam `Object.hasOwn` e filtram contagens não finitas (`NaN`/`±Infinity`).
+   - `shopee-sales.ts`: `hrefDoPedidoShopee` apara e recusa `loja` em branco e valida calendário civil real via `isValidBusinessDate`; `origemDoSkuShopee` usa `Object.hasOwn(ORIGENS_DO_SKU, vinculoVia)`.
+   - `central-atencao.ts`: `montarAtencao` e `contarPorSeveridade` exigem contagens/diferenças finitas positivas (evitando `"∞ campanhas..."`, `"R$ ∞"`, `"NaN p.p."` e contaminação dos totais por severidade).
+   - `detector-frete.ts`: `lerDetectorFrete` usa `Object.hasOwn` e valida `janela.{inicio,corte,fim}` via `isValidBusinessDate`; `diasEntre` devolve `0` (nunca `NaN`) em datas inválidas; `motivosDoAlerta` exige entradas/razões finitas e usa `Object.hasOwn(ROTULO_DA_FAIXA, a.faixa)`.
+   - `listings-view.ts`: `recorteConversion` e `revenueShare` devolvem `null` para entradas ou divisões não finitas.
+   - `quem-paga-frete.ts`: usa `Object.hasOwn` no parser e em `rotuloDaLogistica`; `fracao` e `frasesDoQuemPaga` exigem entradas/razões finitas.
+
+Reprodução pré-correção registrou `12/12` arquivos vermelhos (`12/12` novos casos: `2` arquivos / `2 failed` em `@sb/domain`, `1` arquivo / `1 failed` em `@sb/api` e `9` arquivos / `9 failed` em `@sb/web`); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `343` arquivos / `4.462` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` e `pnpm audit --prod --audit-level high` (saída `0`).
+
+## D-805 - Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
+
+Doze módulos puros de `apps/web/lib/` (`24` arquivos no total, todos 100% byte-idênticos ao candidato `#378` em `fb8b8ffe` e com zero sobreposição contra `origin/main` `#384` `D-858`, `#383`, `#347` e todos os PRs abertos do Codex) endurecidos via TDD:
+
+1. **Gráficos XLSX nativos (`apps/web/lib/xlsx-charts.ts`):** `columnLetter(col)` agora exige `Number.isSafeInteger(col) && col >= 1` (lançando `RangeError`, eliminando laço infinito em `columnLetter(Infinity)` e saída corrompida/vazia para `0`, negativos, decimais e `NaN`); `rangeRef` valida `firstRow >= 1` e `lastRow >= firstRow` inteiros seguros (`RangeError`); `escapeXml` remove caracteres de controle ilegais no XML 1.0 (`0x00–0x08`, `0x0B`, `0x0C`, `0x0E–0x1F`, `0xFFFE`, `0xFFFF`) via `stripInvalidXmlChars`; `preenchimento(cor)` e `linha(cor)` escapam `cor` com `escapeXml`.
+2. **Anúncios e diagnóstico do SKU (`apps/web/lib/{sku-listings,sku-diagnostico,sku-shopee,sku-curation}.ts`):**
+   - `sku-listings.ts`: `acaoDeVinculo` protege `ROTULO_FORMA` com `Object.hasOwn` (impedindo retorno de `[Function toString]` em chaves de `Object.prototype`); `lerVinculos` descarta arrays e `id` vazio/só com espaços.
+   - `sku-diagnostico.ts`: `acimaDoTeto` exige `menor` e `maior` finitos (eliminando `acimaDoTeto(10, Infinity) === true`); `precoEfetivo`, `estoqueAnunciado`, `temEstoqueInterno`, `comPromocaoAtiva` e `compararPrecoDaConta` descartam valores não finitos e `catalogo-velho` usa `!Number.isFinite(idade)`.
+   - `sku-shopee.ts`: `hrefDaPaginaDosPedidos` codifica `skuId` com `encodeURIComponent` e exige `Number.isSafeInteger(pagina) && pagina > 1` (evitando `?pedidos=Infinity`/`?pedidos=2.5`).
+   - `sku-curation.ts`: `parseSelecao` apara cada ID antes de filtrar vazios e deduplicar (recusando IDs só com espaços).
+3. **Shopee, Copiloto, templates, saúde da API, vínculo e documentos (`apps/web/lib/{shopee-listings,shopee-export,apply-template,copiloto-ferramentas,api-health,vinculo-sugestao,documents-overview}.ts`):**
+   - `shopee-listings.ts`: `formatShopeeMoney` devolve `"—"` para não finitos; `recorteDeVendasShopee` exige `recorte_unidades` finito e sanitiza `receita`/`semReceita`; `resumoDoCatalogoShopee` devolve `null` quando `anuncios` ou `vinculados` não é finito.
+   - `shopee-export.ts`: `anunciosShopeeParaCsv` protege `ESTADO_DO_VINCULO` com `Object.hasOwn` e exige finitude em `item_id`/`model_id`.
+   - `apply-template.ts`: recusa `limit` não finito (`NaN`) ou negativo sem burlar o teto de comprimento.
+   - `copiloto-ferramentas.ts`: `rotuloDaFerramenta` usa `Object.hasOwn(ROTULO, ferramenta)`.
+   - `api-health.ts`: `apiBaseUrl` apara espaços e barras finais (evitando `//health` e fetch em string só com espaços); `fetchApiHealth` exige objeto JSON plano (devolvendo `null` para arrays, `null` e primitivos).
+   - `vinculo-sugestao.ts`: `lerSugestoesDoAnuncio` recusa `link_id` em branco; `montarAlvo` ignora `unidades` não finitas e `skuId`/`sku`/`sellerSku` em branco.
+   - `documents-overview.ts`: `lerContagens` e `lerLinha` usam `Object.hasOwn` (recusando campos herdados de protótipo); `proximoPassoDoDocumento` normaliza `total_items`/`resolved_items` não finitos ou negativos para `0` (evitando `"Vincular NaN de Infinity"`).
+
+Reprodução pré-correção registrou `12/12` arquivos vermelhos (`20/20` novos casos em `@sb/web`); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `343` arquivos / `4.477` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` e `pnpm audit --prod --audit-level high` (saída `0`).
+
+## D-806 - Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
+
+Doze módulos puros de `packages/domain/src/upseller/` e `apps/web/lib/` (`24` arquivos no total, todos 100% byte-idênticos ao candidato `#378` em `fb8b8ffe` e com zero sobreposição contra `origin/main` `#384` `D-858`, `#383`, `#347` e todos os PRs abertos do Codex) endurecidos via TDD:
+
+1. **Parsers UpSeller (`packages/domain/src/upseller/{rows,apply,listing-ref,supplier-brand}.ts`):**
+   - `rows.ts`: `mapStockRow` recusa estouro não finito (`Infinity`) na soma `transitPurchase + transitTransfer`.
+   - `apply.ts`: `str()`, `bool()`, `numberOrNull()`, `isActive`, `ref` e `kind` exigem propriedades próprias (`Object.hasOwn`), e `str()` apara espaços nas bordas (impedindo `componentSkuKey: " K "` de burlar a trava de auto-componente de kit e espaços em `sku`/`supplierBrand` de violarem constraints do Postgres).
+   - `listing-ref.ts`: `isMercadoLivreStore` exige `/^mercado-ml\s*-/i` e `storeLabel` devolve `null` para `"mercado-ML"` sem nome de loja (eliminando a criação de uma conta falsa `"ML"`/`"ml"`).
+   - `supplier-brand.ts`: `doTituloOuSku` compara `PREFIXOS_DE_SKU` preservando o hífen (em vez de passar o prefixo por `buscavel()`, que transformava `"RT-"` em `"RT"` e classificava falsamente SKUs como `"RTA01"`).
+2. **Visões, etapas, exportações, alinhamento de série e paginação web (`apps/web/lib/{products-overview,vinculacoes-visao,erp-import-steps,nfe-steps,full-export,vendas-export,series-alignment,listings-dashboard}.ts`):**
+   - `products-overview.ts`: `lerContagens`, `lerPresenca`, `lerLista`, `lerLinha` e `lerVisaoProdutos` usam `Object.hasOwn`; `opcoesDeLista` normaliza `limite` não finito ou `<= 0` para `0` (evitando `slice(0, -1)`).
+   - `vinculacoes-visao.ts`: `lerConta` e `lerVisaoVinculacoes` usam `Object.hasOwn`; `tonsDasContas` deduplica IDs repetidos preservando o primeiro tom sem deslocar contas seguintes.
+   - `erp-import-steps.ts` e `nfe-steps.ts`: normalizam contagens não finitas/negativas para `0` via `contagemSegura`; `nfe-steps.ts` ignora `semBaixaPorRegra` só com espaços.
+   - `full-export.ts`: trata `coverage_days` não finito como `"sem venda"`, consistente com `formatCoverage`.
+   - `vendas-export.ts`: protege `ORDEM_NO_DIA` e `NOME_DO_MARKETPLACE` com `Object.hasOwn` (eliminando vazamento de `[Function toString]` e `TypeError` em marketplace desconhecido) e envolve `new URL(...)` em `hrefDaExportacao` com `try/catch`.
+   - `series-alignment.ts`: `indexByOffset` valida `isValidBusinessDate(periodStart)` e descarta pontos inválidos ou anteriores a `periodStart` sem lançar `RangeError`.
+   - `listings-dashboard.ts`: `pageNumbers` recusa `totalPages` não finito/`< 1` (`[]`) e normaliza `totalPages`/`current` com `Math.floor` (eliminando `[1, 2, "…", Infinity]` e páginas fracionárias).
+
+Reprodução pré-correção registrou `12/12` arquivos vermelhos (`4` domain + `8` web); após a correção, o monorepo completo passou em `pnpm run check` (`37/37`, `343` arquivos / `4.488` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` e `pnpm audit --prod --audit-level high` (saída `0`).
+
+## D-859 - O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
+
+**Contexto:** D-858 julgava as vendas de hora em hora, pela rota do piso de métricas. Na primeira rodada de produção, a Shopee pôs dezenas de vendas no sino de uma vez, e o dono prefere receber o resumo em horário fixo. O ML, além disso, só ficava julgável depois da varredura diária do frete das 9h30.
+
+**Decisão (do dono, 24/11):**
+
+- **Duas rodadas por dia, às 8h e às 17h de Brasília, todos os dias.** O job `v3-low-margin-sales` (`0 8,17 * * *`) chama `/internal/schedule/low-margin-sales`. Cada rodada julga as vendas novas, cria os avisos do sino e manda o e-mail. A rota do piso de métricas volta a pedir só o recálculo (D-304).
+- **O frete do ML chega antes de cada rodada.** `v3-order-financials-sweep` passa de `30 9 * * *` para `30 6,16 * * *`. A varredura pula o pedido já capturado, então a segunda rodada só lê o que entrou depois da primeira; 6h30 fica antes das visitas das 7h, que disputam o mesmo rate limit.
+- **E-mail em lotes de 200 vendas, até 5 por rodada.** Meio dia junta mais vendas que as 50 de um e-mail de D-858. O que passar de mil fica para a rodada seguinte.
+- **A conta não muda:** margem = (valor líquido recebido − custo do produto) × 100 ÷ valor de venda, com as metas de D-858 (40% importadas, 30% demais).
+
+**Consequência:** a venda do ML feita depois das 16h30 só aparece na rodada das 8h do dia seguinte; a da Shopee, na rodada seguinte à sincronização do pedido. A saúde do job passa a esperar até 15 h entre rodadas.
+
+**Alternativas rejeitadas:** julgar de hora em hora e só segurar o e-mail, que deixaria o sino tocando o dia todo; manter a varredura do frete às 9h30, que deixaria o ML da noite fora da rodada das 8h.
+
+## D-860 - O produto que sai da planilha de produtos do UpSeller fica fora do catálogo, nunca apagado
+
+**Contexto:** a aplicação de um lote PRODUCTS só criava e atualizava os SKUs que estavam no arquivo. O produto que o dono tirou do UpSeller continuava ativo na V3, com o último saldo da planilha de estoque, e seguia na Reposição pedindo compra de algo que não existe mais. O dono perguntou se uma planilha nova apagaria os que sumiram, e achava que deveria.
+
+**Decisão (do dono, 23/11, sobre o desenho apresentado):**
+
+- **Marcar, não apagar.** O SKU é referenciado por pedidos, vínculos, pedidos de compra e pelo ledger de estoque; apagar quebraria esse histórico. O ausente ganha `is_active` falso e `erp_absent_since`/`erp_absent_batch_id` (migration `20261124100000`). O `is_active` falso leva o produto para "Inativo" em toda tela que já trata a situação; a coluna nova diz por quê, e as telas mostram "Fora do catálogo" (selo em `/produtos`, selo e aviso em `/skus/[id]`).
+- **Quem é julgado.** Só o SKU PRODUTO que já veio numa planilha de produtos APLICADA (`products_batch_absent_sku_ids`). O criado pela invoice (D-792) e o kit do arquivo de kits nunca entram. "Presente" é qualquer linha OK da planilha nova com a mesma `sku_key`: a linha de produto só deixa de ser OK quando não tem SKU, e essa não diz de qual produto se trata.
+- **Quem decide é quem confirma.** A conferência de uma planilha de produtos mostra quantos ficariam fora (com saldo, com anúncio vinculado, já marcados, que voltam) e uma caixa "esta planilha é o catálogo completo". Ela vem marcada até 10% do catálogo conhecido e desmarcada acima disso, com o aviso de exportação parcial: um filtro ou uma página exportada por engano desativaria produtos que existem. A escolha segue no corpo de `POST /v1/erp-imports/:id/apply` (`markAbsent`) e no payload do job, e não numa coluna: vale para aquela aplicação só.
+- **Volta sozinho.** O SKU marcado PELA PLANILHA que reaparece numa planilha posterior perde a marca, com ou sem a caixa; o `is_active` volta a ser o que o UpSeller manda, porque a própria aplicação o grava antes da marcação rodar.
+- **O saldo não vira zero.** Ausência de dado não é zero: o saldo continua o último que veio, e a página do SKU diz isso. A Reposição deixa o marcado de fora por uma linha em `get_purchase_suggestions` (`and sk.erp_absent_since is null`), que `get_replenishment_overview`, `get_purchase_analysis` e as sugestões do pedido de compra herdam.
+- **Idempotente.** `apply_products_batch_absences(lote, marcar)` (só `service_role`) marca só quem ainda não tem marca e acumula `absent_marked`/`absent_cleared` no lote; a reentrega do job soma zero. `absent_marked` nulo quer dizer "não pedido", diferente de zero marcado. Marcação pedida que falha deixa o lote em APPLYING e pede nova tentativa; sem marcação pedida, a falha de tirar a marca de quem voltou só é registrada em log.
+- **Marca à mão em Produtos (pedido do dono no mesmo dia: "seleciono a categoria e eu mesmo marco").** O dono recusou arquivar e excluir em lote e pediu a mesma etiqueta, posta por ele. A barra de lote de `/produtos` ganhou o menu **Catálogo** ("Marcar fora do catálogo" e "Voltar ao catálogo"), com o painel de conferência que diz a consequência e o Desfazer do marcar. A escrita é `set_skus_out_of_catalog(org, ids, fora)`, no desenho de `set_skus_supplier_brand` (D-133): até 500 por vez, ADMIN e GESTOR, desfecho por linha (migration `20261124110000`). A marca ganhou origem (`erp_absent_source`: PLANILHA ou MANUAL) e guarda o `is_active` de antes (`erp_absent_was_active`). A marca MANUAL não sai com a planilha: o produto que o UpSeller ainda lista continua fora, e `apply_products_batch_absences` reafirma o `is_active` falso depois que a aplicação o regrava; a prévia não o conta como volta. Tirar a marca à mão devolve o `is_active` guardado, e marcar à mão o que a planilha já marcou não troca a origem (JA_DECIDIDO). Devolver ao catálogo não tem Desfazer: marcar de novo trocaria uma marca da planilha por manual.
+
+**Ordem de publicação:** migration de produção → worker → api → web. A web e a api toleram a migration ausente (sem prévia, a conferência fica como era e a confirmação sai sem corpo, lida como "não marcar"). O worker antigo descartaria o `markAbsent` em silêncio, por isso vai antes da api.
+
+**Alternativas rejeitadas:** apagar o SKU (quebra pedidos, vínculos e ledger); arquivar ou excluir em lote na tela de Produtos (o dono preferiu a mesma etiqueta à mão; excluir de vez só serviria ao SKU sem histórico nenhum); zerar o saldo do ausente (ausência de dado não é zero, e a planilha de estoque é outro arquivo); reaproveitar só o `is_active` sem coluna nova (perderia a diferença entre "inativo no UpSeller" e "saiu da exportação", e a volta automática não saberia quem tirar); marcar sempre, sem a caixa (uma exportação parcial desativaria o catálogo inteiro); estender a regra a kits e ao arquivo de estoque nesta fatia (cada arquivo tem o seu sentido de ausência e fica para depois, como o aviso na Central de Ações de produto fora do catálogo com anúncio ativo).
+
+**Numeração:** registrada como D-795 no PR #383 (23/11) e renumerada para D-860 em 24/11, porque o Gemini Sentinel usa D-795 no candidato #378. As migrations passaram de `20261123150000`/`160000` para `20261124100000`/`110000`, depois da `20261123180000` da main; nenhuma tinha sido aplicada.
+
+## D-861 - O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
+
+**Contexto:** a D-860 tira da Reposição o SKU fora do catálogo, mas deixou para depois o aviso de quem ainda tem anúncio ativo. Esse anúncio continua vendendo um produto que a empresa tirou do UpSeller ou marcou à mão como fora. A prévia da conferência só conta quantos têm vínculo, e só no momento de aplicar a planilha.
+
+**Decisão:**
+
+- **A fonte:** `sincronizar_alertas_central` ganha `fora_do_catalogo_anunciado` (seção 4.8, migration `20261124120000`). O corpo é o da `20261021150000` (D-627), que era a última definição na main, no candidato #378 e na branch do Gemini em 24/11.
+- **O sinal:** SKU com `erp_absent_since` (planilha ou à mão) que tem pelo menos um anúncio ativo vinculado.
+  - **Mercado Livre:** o vínculo de `get_sku_listings` (o SKU resolvido em `listings` e o vínculo ITEM), com o anúncio `active` e `deleted_at` nulo (D-631 b).
+  - **Shopee:** a unidade de anúncio NORMAL, de loja live, vinculada ao SKU.
+- **A ação:** uma por SKU (`subject_key` = id do SKU, `sku_id` preenchido, sem conta nem loja, porque o SKU pode estar em várias).
+  - Severidade média, sem notificação. Confiança alta, porque o fato é certo. Impacto nulo.
+  - O saldo de quem saiu da planilha para de se atualizar, por isso não serve para graduar a severidade. Ausência não vira zero: sem saldo registrado, a evidência diz isso.
+- **A evidência:** desde quando e por quê o SKU está fora, quantos anúncios ativos em cada canal, o último saldo local e a lista dos 20 primeiros anúncios.
+- **A recomendação** segue a origem da marca. Para a da planilha: pausar o anúncio, ou cadastrar o produto de novo no UpSeller (a próxima planilha tira a marca). Para a manual: pausar o anúncio, ou voltar o SKU ao catálogo em Produtos.
+- **Encerramento:** o ciclo de vida comum (5.4). Quem volta ao catálogo, ou fica sem anúncio ativo, encerra 3 dias depois, com o motivo escrito.
+- **Tela:** o rótulo "Fora do catálogo com anúncio ativo" (problema) em `packages/domain`. Os atalhos são o Dashboard do SKU, "Anúncios do SKU" (`/skus/[id]?aba=anuncios`) e "Produtos" pela busca do código.
+- **Worker:** `FONTES_ALERTAS` ganha a fonte, por último.
+
+**Fora desta fatia:** o kit cujo componente saiu do catálogo, e o anúncio que não está vinculado a SKU nenhum (esse já é a Central de Vinculações).
+
+**Ordem de publicação:** depende das migrations da D-860 (`20261124100000` e `20261124110000`). A ordem é: migration `20261124120000` → worker → web. O worker antigo não pede a fonte, e nada quebra. O worker novo antes da migration teria só essa fonte recusada a cada rodada, e o job voltaria para a fila. A web sozinha só ganha o rótulo e os atalhos.
+
+**Alternativas rejeitadas:** severidade alta com notificação (o dono já decidiu ao marcar, e um aviso por SKU no sino viraria ruído); uma ação por anúncio (o mesmo SKU em várias contas abriria várias ações para uma decisão só); julgar pelo saldo (congelado para quem saiu da planilha); pausar o anúncio sozinho (escrita visível ao cliente é decisão do dono).
+
+**Verificação:**
+- Integração (`fora-do-catalogo-na-central.integration.test.ts`, 7 testes):
+  - só A e B são detectados;
+  - não entram o anúncio pausado, o excluído, o SKU no catálogo, o SKU sem anúncio e a Shopee fora do ar;
+  - a evidência e a recomendação seguem a origem da marca;
+  - a mesma rodada no mesmo dia não duplica;
+  - quem volta ao catálogo encerra no 3º dia com o motivo;
+  - a função continua sem grant para `authenticated` e `anon`.
+- Unitários: o rótulo, os atalhos e as 8 chamadas do worker.
+
+## D-862 - O kit que leva um componente fora do catálogo conta no aviso da Central
+
+**Contexto:** a D-861 deixou de fora o kit cujo componente saiu do catálogo. A venda do kit baixa o estoque dos componentes (`sku_components`), então o anúncio ativo do kit também vende o produto que a empresa deixou de ter. O kit nunca recebe a marca: a D-860 só marca PRODUTO.
+
+**Decisão:**
+
+- **Mesma fonte e mesma ação.** `fora_do_catalogo_anunciado` passa a contar, para cada SKU fora do catálogo, os anúncios ativos dele e os anúncios ativos de todo kit que o leva como componente. A regra do anúncio é a mesma de cada canal: o vínculo de `get_sku_listings` no Mercado Livre e a unidade NORMAL de loja live na Shopee. A migration é a `20261124130000`, com o corpo da `20261124120000`; só a seção 4.8 muda.
+- **Uma ação por SKU fora do catálogo**, e não uma por kit. A decisão é uma só, a do componente. Abrir uma ação por kit espalharia a mesma decisão pela Central.
+- **Evidência:** `anuncios_de_kit` conta quantos anúncios são de kit. Cada anúncio de kit traz o código dele em `kit_sku`, e a lista põe primeiro os do próprio SKU. O texto diz quantos são de kit.
+- **Recomendação:** com anúncio de kit, ganha "No kit que leva o SKU, troque o componente no UpSeller ou pause o anúncio do kit."
+- **Sem mudança no worker nem na web:** a fonte é a mesma, e a tela já mostra a evidência e a recomendação escritas no banco.
+
+**Ordem de publicação:** depois da `20261124120000`, a migration `20261124130000`. Nada mais a publicar.
+
+**Alternativas rejeitadas:** uma ação por kit (a mesma decisão em várias linhas); marcar o kit como fora do catálogo (o kit continua existindo no UpSeller e pode trocar o componente); contar o kit só quando todos os componentes saíram (basta um faltar para o kit não poder ser montado).
+
+**Verificação:**
+- Integração (`fora-do-catalogo-na-central.integration.test.ts`, 8 testes): o H, fora do catálogo, só vende por dois kits (um no ML e um na Shopee) e é detectado com os dois. O kit que leva um componente do catálogo não entra.
+- A ordem da lista é determinística, primeiro os do próprio SKU e depois os de kit. A primeira versão ordenava pelo UUID do kit e variava entre rodadas.
+- `@sb/db test:integration`: 1.237 testes, duas rodadas com `db reset`.
+
+## D-863 - "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
+
+**Contexto:** no ensaio de 24/11 do S04, o dono entrou e aceitou convite, mas não achou o "Esqueci a senha". A tela nunca o teve. D-296 e D-302 decidiram que o acesso volta pelo link gerado em `/usuarios`, porque o Auth não tinha SMTP. A leitura do Auth da VM de produção, em 24/11, mostra que isso continua verdade: `GOTRUE_SMTP_HOST=supabase-mail`, o capturador de testes do Compose, com remetente `admin@example.com`. Um botão ligado hoje responderia "pedido recebido" e o e-mail não chegaria a ninguém.
+
+**Decisão:**
+
+- **O botão existe, atrás de uma chave do servidor.**
+  - "Esqueci a senha" aparece na entrada só com `RECUPERACAO_SENHA_POR_EMAIL=1`, lida pela página `/login` a cada requisição.
+  - Sem a variável, a tela fica como antes, com a nota de pedir o link a quem administra.
+- **O fim do caminho é o que já existe.**
+  - O pedido usa `resetPasswordForEmail` com volta para `/login`.
+  - O e-mail traz a sessão no fragmento com `type=recovery`, e a pessoa cai no "Crie uma nova senha" do link de `/usuarios` (`invite-hash.ts`).
+  - Não há rota nova nem endereço novo na lista de redirecionamentos.
+- **Fluxo implícito, e não PKCE.**
+  - O cliente de `@supabase/ssr` usa PKCE: o link voltaria com `?code=`, e a troca exige o verificador guardado no navegador que pediu. Quem pede no computador e abre o e-mail no celular ficaria sem acesso.
+  - O pedido sai de um cliente próprio (`createRecoveryClient`), implícito e sem sessão.
+- **A tela não diz quem tem acesso.**
+  - O Auth responde sucesso para e-mail que não existe, e a tela mostra "Pedido recebido" nos dois casos, pela mesma razão do "E-mail ou senha incorretos.".
+  - Só o limite de envios (429) tem texto próprio, porque pede outra ação: esperar.
+
+**Para ligar em produção (atos do dono):**
+1. Na VM `sb-db`, trocar o SMTP do serviço `auth` pelo servidor de e-mail do alerta de margem (segredos `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` e `SMTP_PASSWORD`). As variáveis são `GOTRUE_SMTP_HOST`, `GOTRUE_SMTP_PORT`, `GOTRUE_SMTP_USER` e `GOTRUE_SMTP_PASS`.
+2. Trocar o remetente: `GOTRUE_SMTP_ADMIN_EMAIL` para um endereço da empresa e `GOTRUE_SMTP_SENDER_NAME` para `Speed Bikers Gestão`.
+3. Recriar o container `supabase-auth` e conferir um envio real para um e-mail próprio.
+4. Na Vercel `speedbikers-prod`, criar `RECUPERACAO_SENHA_POR_EMAIL=1` em Production e publicar de novo.
+
+**Alternativas rejeitadas:**
+- Ligar o botão sem SMTP: promete um e-mail que não chega.
+- Mandar o link pelo SMTP do worker, com rota pública própria: seria um endpoint sem autenticação para proteger contra abuso, quando o Auth já tem limite e resposta neutra.
+- Tratar o `?code=` do PKCE: o link falharia em outro navegador.
+
+**Verificação:**
+- Unitários: `recuperar-senha.test.ts`, com 6 testes da chave, da volta e do desfecho.
+- e2e (`recuperar-senha.spec.ts`, 3 testes, com a suíte subindo a `web` com a chave ligada):
+  - o pedido interceptado leva o e-mail digitado na entrada, volta para `/login` e vai sem desafio PKCE;
+  - o 429 mostra o limite;
+  - o link de recuperação da Admin API leva a "Crie uma nova senha", a senha nova entra e a antiga é recusada.
+- O e-mail de verdade não é testado, porque o Supabase local não tem capturador ligado (`[local_smtp]`). O envio real é o passo 3 do dono.
+
+**Em produção (24/11):** o dono fez os quatro passos. O Auth da VM usa o mesmo Gmail do alerta de margem, pela porta 465 com senha de app. O remetente é a própria conta, porque o Gmail não aceita outro endereço no `From`, e o nome é `Speed Bikers Gestão`. O `.env` anterior ficou guardado na VM como `.env.antes-smtp-20261124`. Na publicação seguinte, o `/login` de produção passou a mostrar "Esqueci a senha". O dono pediu a recuperação, recebeu o e-mail e trocou a senha.
+
+## D-807 - TikTok Shop: camada transacional de leitura, webhook e coordenador de refresh em `@sb/tiktok-shop` (`M04`)
+
+Para avançar o fechamento da pendência `M04` (peso 8, livre) sem introduzir migrations bloqueadas enquanto o Supabase Dev permanece `INACTIVE` e sem alterar `pnpm-lock.yaml`, o pacote `@sb/tiktok-shop` (`30319b7c`) ganhou a camada transacional completa só-leitura sobre os contratos oficiais conferidos em `docs/TIKTOK_SHOP.md` e `partner.tiktokshop.com`:
+
+1. **Erros oficiais, `Retry-After` e decimais (`client.ts`):** expõe `TIKTOK_ERROR_CODES` (§5), `parseRetryAfterMs` (segundos inteiros ou HTTP-date, bloqueando o parse espúrio `Date.parse("-5")` do V8), `TikTokShopApiError.retryAfterMs`, predicados `isRateLimitError`/`isTokenExpiredError`/`isScopeMissingError`, `parseTikTokDecimal` (estrito, nunca convertendo ausência em zero) e validação de caminho relativo/relógio finito.
+2. **Renovação coordenada (`auth.ts`):** `isDefinitiveRefreshRefusal` (restringe derrubada da loja a códigos definitivos de revogação/expiração, preservando D-414 para 5xx/429/rede/escopo) e `refreshTikTokTokenWithLock` (coordenador agnóstico de banco com folga de 30 min, trava de 60 s, revalidação pós-trava, liberação em `try/catch` e erro de gravação pós-consumo como não retentável, espelhando `shopee-token.ts` D-414/D-417/D-780).
+3. **Webhooks (§10, `webhook.ts`):** constantes dos 6 tipos oficiais, `signWebhook`/`verifyWebhookSignature` (`HMAC-SHA256(app_secret, app_key + rawBody)` em hex, sem `Bearer`, comparação em tempo constante antes do parse), `tiktokWebhookSchema` e `parseTikTokWebhookData`.
+4. **Pedidos (§6/§13, `orders.ts`):** `searchOrdersPage` (`POST /order/202309/orders/search`, `page_size` 1..100, guarda contra janela invertida e cursor repetido), `getOrderDetail` (`GET /order/202507/orders?ids=...`, até 50 IDs deduplicados), descarte estrito de PII do comprador (`cpf`, `cpf_name`, `buyer_email`, `recipient_address`) e `aggregateTikTokLineItems` (agrega `line_items[]` 1 linha/unidade em quantidades por SKU, preservando `combined_listing_skus` e mantendo valores ausentes como `null`).
+5. **Financeiro (§7, `finance.ts`), Catálogo/Estoque (§8, `products.ts`) e Devoluções/Cancelamentos (§9, `returns.ts`):** `getStatementsPage` (`202309`), `getOrderStatementTransactions` (`202501`, com `fee_per_item_sold_amount` do Brasil), `getUnsettledOrdersPage` (`202507`), `searchProductsPage` (`202502`), `getProductDetail` (`202309`), `searchInventory` (`202309`, limites de 100 produtos / 600 SKUs), `searchReturnsPage`/`searchCancellationsPage` (`202602`, `page_size` 10..50, sem PII) e `normalizeTikTokCancelStatus` (`_CANCEL` -> `_CANCELLED`).
+
+TDD RED (`6 failed | 1 passed (7)` arquivos) -> GREEN (`7/7` arquivos, `33/33` testes, `typecheck`, `lint` e `build` verdes). Zero conflito contra `#378` (`034ffb34`), `#383` e `#385`.
+
+## D-808 - API: receptor autenticado `POST /push/tiktok-shop` (`M04`, fatia 3)
+
+Completa a dupla de URLs reservadas no Partner Center do TikTok Shop (`docs/TIKTOK_SHOP.md` §1 e §10) sem migrations novas (`43ccb988`):
+
+1. **`apps/api/src/tiktok-push.ts` + `apps/api/src/app.ts`:** expõe `POST /push/tiktok-shop` (com teste negativo 404 para `GET` e rotas vizinhas conforme `docs/API.md`). Verifica `verifyWebhookSignature(appSecret, appKey, rawBody, authorization)` em tempo constante ANTES do `JSON.parse`, respondendo HTTP `401` em assinatura ausente/inválida/com prefixo `Bearer` sem consultar o banco nem vazar segredos nos logs.
+2. **Ciclo de eventos e resiliência:** registra eventos de autorização (tipos `6` e `7`), consulta `tiktok_shops` por `shop_id` (devolvendo HTTP `503` em falha transitória de banco ou fila para acionar as retentativas de 2 min/30 min/3 h/12 h do TikTok Shop), coalesce eventos de pedido/cancelamento (tipos `1` e `11` -> `tiktok.orders.sync`) e devolução (tipo `12` -> `tiktok.returns.sync`) em janela de 5 min (`TIKTOK_PUSH_WINDOW_S = 300`) quando `enqueuer` está ativo e responde `200` com corpo vazio em até 3 s.
+3. **Ligação segura em `apps/api/src/index.ts`:** ativa `tiktokPush` com `TIKTOK_SHOP_APP_KEY` + `TIKTOK_SHOP_APP_SECRET` em modo observação autenticado (`enqueuer` omitido) até as tabelas transacionais e os handlers do worker entrarem, evitando enfileirar tipos de job desconhecidos no Cloud Tasks.
+
+TDD RED (`tiktok-push.test.ts` falhando por módulo ausente) -> GREEN (`7/7` testes em `tiktok-push.test.ts`; monorepo `pnpm run check` `37/37` com `350` arquivos / `4.517` testes unitários, `pnpm run build` `10/10`, 7 guardas web e `pnpm audit --prod --audit-level high` saída `0`). `git merge-tree` confirmou zero conflito contra `#378` (`034ffb34`) e `#383`.
+
+## D-809 - Domínio TikTok Shop: projeção de pedidos, margem oficial V3 e plano de baixa de estoque com guarda D-497 (`M04`)
+
+Para avançar o fechamento da pendência `M04` (peso 8) sem criar migrations enquanto o Supabase Dev (`nmgccyqquwxecqffsidr`) está `INACTIVE` e sem tocar em `pnpm-lock.yaml`, implementamos a camada pura de domínio do TikTok Shop em `packages/domain/src/tiktok-shop/` (exportada em `packages/domain/src/index.ts`, commit `f2c4c50c`):
+
+1. **`order-projection.ts` (`projectTikTokOrder`):** normaliza os 9 estados oficiais (`UNPAID`, `ON_HOLD`, `PARTIALLY_SHIPPING`, `AWAITING_SHIPMENT`, `AWAITING_COLLECTION`, `IN_TRANSIT`, `DELIVERED`, `COMPLETED`, `CANCELLED` + alias `CANCEL`), diferencia `FULFILLMENT_BY_TIKTOK` (`FBT`) de `LOCAL`, deriva a data de negócio em `America/Sao_Paulo` via `toSalesMetricDate`, agrega `line_items[]` (1 item por unidade) por `(productId, skuId, sellerSku)` preservando `combined_listing_skus` (kits/bundles) e omite estritamente PII do comprador (CPF, nome, e-mail, endereço).
+2. **`financial-margin.ts` (`computeTikTokOrderMargin`, `consolidateTikTokMargins`):** aplica a fórmula oficial da V3 (`((netReceivedBrl - cogsBrl) / grossAmountBrl) * 100`), distingue financeiro `REALIZADO` (extrato/transação `202501`) de `ESTIMADO`, mantém ausência de custo/recebimento como `null` (nunca `0`) e consolida margem ponderada pela receita bruta coberta (`receitaTotalBrl` vs `receitaCobertaBrl`).
+3. **`stock-deduction.ts` (`planTikTokOrderStockDeduction`):** aplica explicitamente a trava de D-497 (`orderDeductionEnabled: false` enquanto as vendas entram via NF-e e o CNPJ do TikTok não entra em `INTERMEDIADORES_COM_BAIXA_PELO_PEDIDO`), protege janela pré-captura (`createdAt <= initialStockCapturedAt`), não gera saída local para `FBT`, aguarda fim de `ON_HOLD` (1 h de arrependimento) e planeja reversão idempotente em `CANCELLED`.
+
+TDD RED (`3 failed`) -> GREEN (`@sb/domain` `49/49` arquivos / `787/787` testes, `tsc`, `eslint` e `build` verdes).
+
+## D-810 - API TikTok Shop: agendador paginado de pedidos e adaptador Supabase de refresh de token (`M04`)
+
+Sobre as tabelas existentes da fatia 1 (`20261022170000_create_tiktok_shop_tables.sql`: `tiktok_shops` e `tiktok_credentials`) e o coordenador `refreshTikTokTokenWithLock` (`D-807`), entregamos em `apps/api/src/` (commit `2e778a02`) os dois componentes de infraestrutura da API exigidos por `M04`:
+
+1. **`tiktok-orders-schedule.ts` + `POST /internal/schedule/tiktok-orders` (`app.ts`, `docs/API.md`, `docs/TIKTOK_SHOP.md`):** lê lojas conectadas (`status = 'CONNECTED'`) com paginação determinística por chave (`> 1.000` lojas), enfileira `tiktok.orders.sync` e `tiktok.items.sync` (com atraso `TIKTOK_ITEMS_DELAY_S = 300`, espelhando `shopee-orders-schedule.ts`), isola falhas de `enqueuer.enqueue()` por loja devolvendo `failed: true` (HTTP `503` ao Cloud Scheduler) sem bloquear as demais lojas e fica protegido atrás do gate `503 not_configured` no `index.ts` até os handlers do worker entrarem.
+2. **`tiktok-token-store.ts` (`createSupabaseTikTokTokenStore`):** implementa `TikTokTokenStore` sobre `tiktok_credentials`/`tiktok_shops` com AES-256-GCM (`encryptToken`/`decryptToken`), trava otimista CAS por `(refresh_locked_until, refresh_token_ciphertext)` (impedindo sobrescrita de reconexão concorrente), falha fechada (`retryable: false`) em ciphertext corrompido, marcação de `tiktok_shops.status = 'ERROR'` apenas em recusa definitiva (`36004004`) e preservação de `CONNECTED` em falhas transitórias (`429`/rede).
+
+TDD RED (`2 failed`) -> GREEN (`tiktok-orders-schedule.test.ts` `4/4`, `tiktok-token-store.test.ts` `4/4`, `@sb/api` `46/46` arquivos / `624/624` testes).
+
+## D-811 - Web: falha fechada em `removeMember`, hardening de `POST /api/vitals` e busca de SKU em NF-e/Saída Manual
+
+Auditoria focada em segurança, integridade de dados e falhas silenciosas em rotas e Server Actions da web fora das áreas reservadas ao Claude/Codex (commit `4241b18a`):
+
+1. **`apps/web/app/(app)/usuarios/actions.ts` (`removeMember` + novo `actions.test.ts`):** falha fechado quando `supabase.auth.getUser()` retorna erro ou usuário ausente antes de apagar o vínculo; pagina `ml_accounts` em blocos de `500` ordenados por `id` (evitando truncamento silencioso em `1.000` linhas); fatia o `DELETE` em `user_account_permissions` em lotes de `100` UUIDs; e deixa de mascarar `contas.error !== null` como `{ ok: true }` (agora revalida `/usuarios` e informa a falha parcial de limpeza das permissões).
+2. **`apps/web/app/api/vitals/route.ts` + `route.test.ts`:** rejeita com HTTP `400` payloads em array (`[]`), valores negativos (`value < 0`), caminhos protocol-relative (`//...`), query strings (`?`), fragmentos (`#`), contrabarras (`\`), espaços e caracteres de controle (`<= 0x20` / `0x7f`), bloqueando log injection e vazamento acidental de parâmetros na telemetria preservando rotas válidas truncadas em 120 caracteres.
+3. **`apps/web/app/(app)/notas-fiscais/[id]/document-item-row.tsx` e `apps/web/app/(app)/notas-fiscais/saida-manual/saida-manual-form.tsx`:** passam a avaliar o mínimo de 2 caracteres **após** `termoSeguroParaOr(termo)` (impedindo termos como `"%%"` ou `"(("` de virarem `""` e consultarem `.or("sku_key.ilike.%%,...")` retornando SKUs arbitrários), incrementam `ultimaBusca.current` ao limpar termos curtos para descartar respostas atrasadas e envolvem a busca de `document-item-row.tsx` em `try/catch` para não travar `searching = true` em erro de transporte.
+
+TDD RED (`3 failed`, `16 failed | 28 passed (44)`) -> GREEN (`3 passed`, `44 passed (44)`). Verificação completa do monorepo pós-`4241b18a`: `pnpm run check` (`37/37`, `356` arquivos / `4.556` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree` confirmando **zero conflito** para os 5 commits (`30319b7c 43ccb988 f2c4c50c 2e778a02 4241b18a`) em sequência sobre `#378` (`034ffb34`).
+
+## D-883 - Preservar os traces das falhas Playwright na CI
+
+A suíte usa o repórter de lista e retém traces em `apps/web/test-results`. A coleta apontava para `playwright-report`, que exige um repórter HTML. A CI 45395072874 registrou que o diretório estava ausente.
+
+Uma falha sintética no Chromium 1.62.1 gerou `test-results/.../trace.zip` sem criar `playwright-report`. A CI guarda os resultados por sete dias quando a etapa Playwright falha. O job usa a stack local e dados de teste.
+
+## D-812 - Contratos compartilhados de fila do TikTok Shop em `@sb/contracts` e alinhamento da API (`M04`)
+
+Seguindo o mesmo padrão arquitetural de `webhook-topics.ts` (D-179), centralizamos os nomes de job, schemas de payload e geradores determinísticos de `dedupeKey` do TikTok Shop em `packages/contracts/src/tiktok-jobs.ts` (exportado em `packages/contracts/src/index.ts`, commit `ce3d2d63`), eliminando o risco de divergência entre a borda (`apps/api`) e os futuros consumidores (`apps/worker`):
+
+1. **Nomes, janelas e schemas estritos (`packages/contracts/src/tiktok-jobs.ts`):** expõe `TIKTOK_JOB_TYPES` (`tiktok.orders.sync`, `tiktok.items.sync`, `tiktok.order.fetch`, `tiktok.returns.sync`, `tiktok.financials.sync`), `TIKTOK_PUSH_WINDOW_S = 300`, `TIKTOK_ITEMS_DELAY_S = 300`, `isTikTokJobType`, schemas Zod para os 5 payloads (com `z.uuid()` em `tiktokShopId` e strings aparadas não vazias) e `parseTikTokJobPayload` com proteção `Object.hasOwn`.
+2. **Geradores determinísticos de coalescência e `dedupeKey`:** `tiktokPushWindowBucket`, `tiktokPushDedupeKey`, `tiktokScheduleDedupeKey` (com validação de calendário real no prefixo `YYYY-MM-DDTHH`) e `tiktokOrderFetchDedupeKey`, todos falhando fechado com `RangeError` em entradas inválidas e compatíveis com `toTaskName`.
+3. **Alinhamento da API (`apps/api/src/{tiktok-push,tiktok-orders-schedule}.{ts,test.ts}`):** reexportam as constantes e utilizam os geradores de `@sb/contracts`, com testes de contrato ponta a ponta validando via `parseTikTokJobPayload` todos os payloads produzidos pela API.
+
+TDD RED (`1 failed`) -> GREEN (`@sb/contracts` `3/3` arquivos / `22/22` testes; `@sb/api` `2/2` arquivos / `12/12` testes).
+
+## D-813 - Domínio TikTok Shop: projeção de catálogo/estoque e motor idempotente de devoluções (`M04`)
+
+Concluímos a camada pura de domínio do TikTok Shop em `packages/domain/src/tiktok-shop/` (commits `f5d7f7d0` e `0072e5ac`), mantendo zero migrations novas enquanto o Supabase Dev (`nmgccyqquwxecqffsidr`) permanece `INACTIVE`:
+
+1. **`catalog-projection.ts` (`classifyTikTokProductStatus`, `projectTikTokProductCatalog`):** classifica de forma total os estados oficiais de produto (`ACTIVATE`, `SELLER_DEACTIVATED`, `PLATFORM_DEACTIVATED`, `FREEZE`, `FAILED`, `DELETED`, `DRAFT`, `PENDING`) sem vazamento de `Object.prototype`; projeta variações (`skus[]`) ou unidade sintética quando sem variações; normaliza `sellerSkuKey` (`trim().toUpperCase()`); prioriza estoque de `POST /product/202309/inventory/search` com fallback na soma finita de depósitos e preserva ausência de preço/estoque como `null` (nunca `0`).
+2. **`returns-projection.ts` (`normalizeTikTokReturnStatus`, `classifyTikTokReturnKind`, `isTikTokReturnCompleted`, `projectTikTokReturn`, `tiktokReturnKeyOf`, `planTikTokReturnStockReversal`):** unifica `_CANCEL` -> `_CANCELLED`, classifica `RETORNO_FISICO` (nome compatível com a guarda `movement-type-check.test.ts` de `@sb/db`), `APENAS_REEMBOLSO` e `CANCELAMENTO`, agrega `return_line_items[]` unitários sem PII com data de negócio em `America/Sao_Paulo`, e planeja movimentos de reposição respeitando a guarda D-497 (`orderDeductionEnabled`), retorno físico concluído, exclusão de `REFUND_ONLY`/`FBT`/pré-corte UpSeller e teto físico das unidades vendidas menos cancelamentos/devoluções anteriores (excluindo `ownKey` para idempotência).
+
+TDD RED (`2 failed`) -> GREEN (`@sb/domain` `51/51` arquivos / `795/795` testes; `@sb/db` `6/6` arquivos / `30/30` testes incluindo `movement-type-check.test.ts`).
+
+## D-814 - Worker `service_role`: isolamento multi-tenant `envelope.organizationId`, escopo explícito de consultas, lotes de upsert e enqueue protegido em 7 handlers
+
+Auditoria de segurança multi-tenant e integridade em 7 handlers do worker que rodam sob `service_role` (fora das frentes do Codex/Claude, commit `fcc5010f`):
+
+1. **Guarda `envelope.organizationId` em 6 handlers organizacionais (`reconcile-balances.ts`, `verify-ledger-integrity.ts`, `check-ai-budget.ts`, `detect-support-pattern-actions.ts`, `measure-decision-outcomes.ts`, `detect-sales-anomaly-actions.ts`):** espelhando `analytics-recompute.ts`, passam a recusar com `{ status: "failed", retryable: false, reason: "organização do payload diverge do envelope" }` qualquer job cujo `payload.organizationId` divirja do envelope autenticado — impedindo leitura ou escrita cruzada sob `service_role`.
+2. **Escopo explícito de organização em `measure-decision-outcomes.ts`:** adiciona `.eq("organization_id", organizationId)` nas leituras de `action_outcomes` e `actions` (antes filtradas apenas por `.in("action_decision_id" / "id", ...)` sob `service_role`).
+3. **Lotes e finitude em `detect-support-pattern-actions.ts`:** fatia `actions.upsert` em lotes de `500` via `chunk(actionRows, 500)` e exige `typeof amount === "number" && Number.isFinite(amount)` ao somar `orders.total_amount`.
+4. **Isolamento de loja e enqueue em `shopee-order-financials-sync.ts`:** recusa com `retryable: false` quando `loja.organization_id !== envelope.organizationId` e envolve `deps.enqueuer.enqueue()` da continuação de lote cheio em `try/catch`, registrando `shopee_order_financials_enqueue_failed` e devolvendo `{ status: "failed", retryable: true }` em vez de rejeição não tratada.
+
+TDD RED (`7 failed (7)` / `7 failed | 71 passed (78)`) -> GREEN (`7 passed (7)` / `78 passed (78)`). Verificação completa do monorepo pós-`0072e5ac`: `pnpm run check` (`37/37`, `359` arquivos / `4.577` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` e `pnpm audit --prod --audit-level high` (saída `0`).
+
+## D-864 - O formulário de pedido de compra sobrevive à Server Action que não responde
+
+**Contexto:** em `/compras/novo` e `/compras/[id]/editar`, o `submit()` chamava `createPurchaseOrder` e `updatePurchaseOrderDraft` sem `try`. Se a Server Action falhava no transporte (rede caída, servidor reiniciando, resposta perdida), a promessa rejeitava, `setBusy(false)` nunca rodava e o botão ficava em "Salvando…" para sempre, sem aviso. A única saída era recarregar a tela, e o rascunho digitado se perdia. Na varredura de falha de transporte do PLAN, este era o arquivo de compras que faltava.
+
+**Decisão:**
+
+- **A falha de transporte libera o formulário, com o que foi digitado.** As duas chamadas ficam num `try`. No `catch` a tela mostra um aviso, devolve o botão e não apaga nada.
+- **Cada ação tem a sua mensagem, porque a nova tentativa se comporta de jeitos diferentes.**
+  - **Criar:** "Não foi possível confirmar a criação do pedido. Tente de novo: se ele já tiver sido criado, o mesmo pedido é aberto, sem duplicar." A criação é idempotente pelo `requestId` (D-722), e o formulário manda o mesmo `requestId` na nova tentativa. Se a primeira chegou ao banco, a repetição abre esse pedido.
+  - **Salvar a edição:** "Não foi possível confirmar se as alterações foram salvas. Abra o pedido para conferir antes de salvar de novo." A edição confere o `updated_at` lido (D-722). Se a primeira tentativa gravou, a repetição é recusada como alteração no meio, então o texto manda conferir antes.
+- **Sem migration e sem mudança de contrato.** As RPCs e as Server Actions ficam como estão.
+
+**Alternativas rejeitadas:**
+- Mensagem genérica única: na edição, ela faria a pessoa repetir e receber a recusa de alteração no meio sem entender por quê.
+- Tentar de novo automaticamente: na edição, a repetição seria recusada se a primeira tivesse gravado, e a tela não tem como saber.
+
+**Verificação (`pedido-compra.spec.ts`, stack local isolada, depois de `db reset` e seed):**
+- Novo pedido: o servidor recebe o POST e a resposta é cortada antes de chegar à tela. O aviso aparece, o botão volta, o código digitado continua, e existe exatamente 1 pedido. A nova tentativa abre esse pedido, e continua existindo só 1.
+- Edição: o POST é bloqueado antes do servidor. O aviso aparece, o botão volta, e a nova tentativa grava a quantidade nova.
+- Vermelho/verde: sem o `try`, os 2 testes falham esperando o aviso. Com o `try`, a spec inteira passa (6 testes).
+- Os itens dos testes novos têm custo: um pedido sem custo entraria na contagem "1 de 1 sem custo" que `compras.spec.ts` afirma. As specs de compras, reposição e fornecedores passam juntas (31 testes).
+
+## D-815 - Worker `service_role`: isolamento multi-tenant `envelope.organizationId` em 7 handlers críticos de escrita, importação, relist, logística e webhook
+
+Continuação da auditoria de isolamento multi-tenant sob `service_role` no worker (fora dos arquivos em diff no `#378`, commit `daa30b3a`):
+
+1. **Importação ERP/NF-e (`erp-import-parse.ts`, `nfe-import-parse.ts`, `nfe-import-apply.ts`):** recusam com `{ status: "failed", retryable: false, reason: "... pertence a outra organização" }` antes de qualquer download no Storage, parse ou baixa de estoque/ledger quando `batch.organization_id` ou `document.organization_id` diverge de `envelope.organizationId`.
+2. **Republicação e detecção de queda (`relist-execute.ts`, `listing-sales-drop.ts`):** recusam com `retryable: false` quando `operation.organization_id` ou `payload.organizationId` diverge de `envelope.organizationId`, bloqueando chamada externa ao Mercado Livre ou escrita de alerta/evento em organização divergente.
+3. **Logística e webhook ML (`sync-order-logistics.ts`, `webhook-received.ts`):** conferem `account.organization_id === envelope.organizationId` antes de consultar/atualizar pedidos ou enfileirar/processar eventos do webhook, devolvendo `retryable: false` em divergência.
+
+TDD RED (`7 failed (7)` / `7 failed | 191 passed (198)`) -> GREEN (`7 passed (7)` / `198 passed (198)`), com `@sb/worker` `tsc`/`eslint`/`build` aprovados.
+
+## D-816 - Worker `service_role`: `expectedOrganizationId` centralizado em `resolveMlAccountRead` e isolamento em 9 handlers do Mercado Livre
+
+Centralizamos a guarda de fronteira multi-tenant para leitura de `ml_accounts` no helper compartilhado `resolveMlAccountRead` (commit `ce980cdc`), mantendo assinatura retrocompatível com `sync-listings-snapshot.ts` no `#378`:
+
+1. **Helper compartilhado (`apps/worker/src/handlers/ml-account-read.ts`):** aceita `expectedOrganizationId?: string` opcional e recusa com `{ ok: false, outcome: { status: "failed", retryable: false, reason: "conta do Mercado Livre pertence a outra organização" } }` sempre que `account.organization_id !== expectedOrganizationId`.
+2. **Adoção em 9 handlers ML intocados pelo `#378` (`backfill-orders.ts`, `sync-ads-campaigns.ts`, `sync-fulfillment-snapshot.ts`, `sync-listing-visits-snapshot.ts`, `sync-orders-window.ts`, `sync-support-claims-reconcile.ts`, `sync-support-messages-reconcile.ts`, `sync-support-questions-reconcile.ts`, `webhook-received.ts`):** todos passam `expectedOrganizationId: envelope.organizationId` em `resolveMlAccountRead`, bloqueando qualquer acesso `service_role` cross-tenant antes de token refresh, chamadas à API ML ou persistência.
+
+TDD RED (`9 failed | 21 passed (30)` em `ml-account-read.test.ts`) -> GREEN (`69/69` arquivos / `1.183/1.183` testes no `@sb/worker`). Verificação completa do monorepo pós-`ce980cdc`: `pnpm run check` (`37/37`, `359` arquivos / `4.594` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `6/6` commits pendentes com `0` conflitos sobre `#378` (`c1ef6afd`).
+
+## D-817 - Worker `service_role`: isolamento multi-tenant e proteção de continuação `enqueue()` em 3 handlers financeiros/backfill ML
+
+Fechamos o isolamento multi-tenant e a resiliência da continuação de fila em 3 handlers ML sob `service_role` (fora do diff do `#378`, commit `e895084c`):
+
+1. **Guarda `account.organization_id !== envelope.organizationId` (`retryable: false`) em `backfill-order-financials.ts`, `backfill-order-user-products.ts` e `sync-order-financials.ts`:** impede leitura externa, gravação de `order_financials`/`order_items` ou enfileiramento de continuação quando a conta ML pertence a outra organização.
+2. **Proteção `try/catch` no `enqueuer.enqueue()` de continuação em `backfill-order-financials.ts` e `backfill-order-user-products.ts`:** registra `backfill_order_financials_enqueue_failed` / `backfill_order_user_products_enqueue_failed` e devolve `{ status: "failed", retryable: true }` em falha transitória do Cloud Tasks em vez de lançar rejeição não tratada após `recordSyncRunSuccess`.
+
+TDD RED (`3 failed (3)` / `5 failed | 31 passed (36)`) -> GREEN (`36/36` testes), com `@sb/worker` `tsc`/`eslint`/`build` aprovados.
+
+## D-818 - Worker `service_role`: `expectedOrganizationId` centralizado em `lerLojaConectada` e proteção de `enqueue()` em 5 handlers Shopee
+
+Centralizamos o isolamento multi-tenant Shopee em `apps/worker/src/handlers/shopee-comum.ts` mantendo retrocompatibilidade com `shopee-orders-sync.ts` no `#378` (commit `5dfeeebf`):
+
+1. **`lerLojaConectada(..., expectedOrganizationId?: string)` (`shopee-comum.ts` + novo `shopee-comum.test.ts`):** recusa com `{ outcome: { status: "failed", retryable: false, reason: "loja da Shopee pertence a outra organização" } }` quando `expectedOrganizationId` é informado e diverge de `loja.organization_id`.
+2. **Adoção em 5 handlers Shopee (`shopee-ads-sync.ts`, `shopee-escrow-releases-sync.ts`, `shopee-items-hydrate.ts`, `shopee-items-sync.ts`, `shopee-returns-sync.ts`):** todos propagam `envelope.organizationId` para `lerLojaConectada`.
+3. **Proteção `try/catch` no `enqueuer.enqueue()` de continuação em 4 handlers (`shopee-escrow-releases-sync.ts`, `shopee-returns-sync.ts`, `shopee-items-sync.ts`, `shopee-items-hydrate.ts`):** registram log `*_enqueue_failed` e devolvem `{ status: "failed", retryable: true }` em falha transitória do Cloud Tasks.
+
+TDD RED (`4 failed (4)` / `10 failed | 16 passed (26)`) -> GREEN (`5/5` arquivos / `44/44` testes incluindo `shopee-catalogo.test.ts`).
+
+## D-819 - Núcleo worker e OAuth TikTok: `readAllPages` contra laço infinito em `NaN`, `delaySeconds` no `enqueue` e validação de `state`/`code`
+
+Corrigimos três falhas de borda no núcleo do worker e no callback OAuth do TikTok Shop (commit `570b6e45`):
+
+1. **`apps/worker/src/read-all-pages.ts`:** exige `Number.isFinite(requested) && requested >= 1` e aplica `Math.floor(requested)` antes do `Math.min(..., POSTGREST_MAX_ROWS)` — eliminando laço infinito real reproduzido com `pageSize: Number.NaN` (`Math.min(NaN, 1000)` era `NaN` e `NaN < 1` era `false`) e `.range()` fracionário.
+2. **`apps/worker/src/enqueue.ts` (+ novo `enqueue.test.ts`):** espelha `apps/api/src/enqueue.ts` (`D-803`), rejeitando `delaySeconds` negativo, `NaN` ou `Infinity` com `RangeError` antes do Cloud Tasks e truncando valores fracionários com `Math.floor`.
+3. **`apps/api/src/tiktok-shops.ts`:** recusa `state` em branco (`trim() === ""`) com `{ status: "invalid_state" }` sem consultar `tiktok_oauth_states` e recusa `code` em branco antes de chamar `getAccessToken`.
+
+TDD RED (`3/3` arquivos / `4 failed`) -> GREEN (`10/10` worker + `10/10` API). Verificação completa do monorepo pós-`570b6e45`: `pnpm run check` (`37/37`, `361` arquivos / `4.614` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `5/5` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-865 - O detalhe do pedido de compra sobrevive à Server Action que não responde
+
+**Contexto:** a varredura das Server Actions sem `try` nas telas de compras (24/11), feita na `main` e no candidato #378, achou o detalhe `/compras/[id]` inteiro desprotegido. São sete chamadas: as quatro transições do painel (aprovar, marcar como enviado, receber tudo, cancelar), o recebimento parcial, a etapa logística, lançar e excluir custo, previsão e referência. Quando a ação não respondia, o botão ficava em "Registrando…" ou "Salvando…" para sempre. Nas duas chamadas com `.then` sem tratamento de erro (etapa e excluir custo), a rejeição escapava sem aviso nenhum. A saída era recarregar a tela e perder o que tinha sido digitado. Na mesma tela, o texto do recebimento parcial ainda dizia que "receber aqui não soma estoque local", o que deixou de ser verdade com a D-792.
+
+**Decisão:**
+
+- **Toda falha de transporte vira aviso, botão liberado e campos preservados.** Onde a repetição pode não ser inofensiva, a tela também relê o pedido, para a pessoa ver se a primeira tentativa chegou.
+- **O texto de cada aviso segue o que a nova tentativa faz no banco:**
+  - **Transições do painel:** as quatro RPCs conferem o status. Se a primeira gravou, a repetição é recusada ("não está em trânsito"), sem receber nem cancelar duas vezes. O aviso manda conferir a situação do pedido.
+  - **Recebimento parcial:** idempotente pelo `requestId` (D-724), que só muda depois de um sucesso. A repetição é reconhecida e não dá entrada duas vezes no estoque.
+  - **Lançar custo NÃO é idempotente.** `upsert_purchase_order_cost` com `id: null` cria uma linha nova, e repetir depois de uma resposta perdida lança o custo duas vezes, inflando o custo de chegada e a margem. O aviso diz isso, e a releitura mostra o custo já gravado.
+  - **Etapa e previsão:** repetir grava o mesmo valor de novo. A previsão pode ganhar um segundo registro no histórico, sem efeito no número.
+  - **Referência externa:** só grava quando o pedido ainda não tem uma, então a repetição seria recusada. O aviso manda conferir.
+  - **Excluir custo:** o aviso manda conferir a lista antes de excluir de novo.
+- **O recebimento parcial passa a dizer a verdade:** a quantidade sai do trânsito e entra no estoque local, e a conciliação com o UpSeller continua acertando o saldo pelo ERP (D-792, D-029).
+- **Sem migration e sem mudança de contrato.**
+
+**Alternativas rejeitadas:**
+- Tornar o custo idempotente com `requestId` agora: exige migration e mudança da RPC, e a publicação no banco da VM depende do dono. Fica registrado como próximo passo possível. O aviso e a releitura já impedem a duplicação às cegas.
+- Repetir sozinho depois da falha: no custo, duplicaria. Nas transições, a repetição recusada mostraria um erro sem contexto.
+
+**Verificação (`pedido-compra.spec.ts`, stack local isolada, `db reset` e seed):**
+- Quatro testes novos, com itens em texto livre para não mexer no saldo do SKU do seed:
+  - aprovar com o POST bloqueado: aviso, botão liberado, e a nova tentativa aprova;
+  - recebimento parcial com a resposta cortada depois de o servidor gravar: aviso, quantidade preservada, `quantity_received` igual a 2. Na nova tentativa continua 2, com um único evento de recebimento;
+  - custo com a resposta cortada: aviso, botão liberado, um custo só no banco, e a releitura mostra o valor na lista;
+  - previsão com o POST bloqueado: aviso, data preservada, e a nova tentativa salva.
+- Vermelho/verde: com os três componentes da `main`, os 4 testes falham esperando o aviso. Com a correção, as specs de compras, estoque, fornecedores e reposição passam juntas (38 testes).
+
+## D-866 - "Já fiz o pedido" e o cadastro de fornecedor sobrevivem à Server Action que não responde
+
+**Contexto:** a mesma varredura da D-865 achou mais cinco chamadas sem `try` em reposição e fornecedores:
+- **"Já fiz o pedido"** (`ja-fiz-pedido.tsx`): registrar, vincular a referência e acrescentar ao pedido externo. O diálogo não fecha enquanto grava (`useDialogo(..., !gravando)`), e a falha de transporte deixava `gravando` ligado. A tela inteira ficava presa sob o diálogo até recarregar.
+- **Cadastro e edição do fornecedor** (`supplier-form.tsx`): a chamada roda dentro de `startTransition`, e a rejeição ia para a fronteira de erro. O formulário era trocado pela tela de erro, com tudo o que foi digitado.
+- **Produto do fornecedor** (`produtos-fornecidos.tsx`): o botão ficava preso.
+
+**Decisão:**
+
+- **Toda falha de transporte vira aviso, botão liberado e campos preservados**, e o diálogo volta a fechar.
+- **O texto segue o que a repetição faz no banco:**
+  - **Registrar e acrescentar** levam o mesmo `requestId` (D-761): a repetição devolve o mesmo pedido ou o mesmo acréscimo, e o aviso diz que pode tentar de novo.
+  - **Vincular a referência** é recusado se ela já foi gravada. O aviso manda abrir o pedido e conferir.
+  - **Fornecedor novo:** o nome é único por empresa (`suppliers_org_name_unique`). Se a primeira tentativa gravou, repetir é recusado como nome repetido, então o aviso manda conferir a lista. Na edição, `update_supplier` regrava os mesmos valores.
+  - **Produto do fornecedor:** `upsert_supplier_sku` grava por fornecedor e SKU, e repetir regrava a mesma linha.
+- **Sem migration e sem mudança de contrato.**
+
+**Verificação (`reposicao-fornecedor-transporte.spec.ts`, stack local isolada, `db reset` e seed):**
+- "Já fiz o pedido" com o POST bloqueado: aviso, "Registrar pedido" liberado, quantidade preservada, e "Cancelar" fecha o diálogo.
+- Fornecedor novo com o POST bloqueado: aviso, botão liberado, nome preservado e nenhum fornecedor gravado.
+- O POST é bloqueado antes do servidor, então nada é gravado e a sugestão do SKU do seed fica intacta para as outras specs. A repetição segura de registrar já é provada por `pedido-ja-feito.spec.ts`.
+- Vermelho/verde: com os componentes da `main`, os 2 testes falham esperando o aviso.
+- **Não exercitado em e2e:** vincular referência, acrescentar ao pedido externo e o produto do fornecedor. Os três recebem o mesmo `try`, conferido por leitura e pelo typecheck.
+
+## D-867 - A importação de pedidos anteriores sobrevive à Server Action que não responde
+
+**Contexto:** o último ponto da varredura da D-865 nas frentes de compras é a importação de planilha (`/compras/importar`), com seis chamadas sem `try`. São o envio da planilha e, na conferência, corrigir a linha, buscar SKU, criar o SKU da linha, criar os SKUs do lote e registrar a referência. Quando a ação não respondia, o botão ficava em "Enviando…" ou "Criando…" para sempre. No envio, recarregar perdia a planilha já lida no navegador. A busca de SKU deixava a rejeição escapar sem aviso.
+
+**Decisão:**
+
+- **Toda falha de transporte vira aviso, botão liberado e campos preservados.**
+- **As seis ações aceitam a repetição, e o aviso diz isso:**
+  - **Envio:** `create_purchase_import_batch` reconhece o arquivo pelo SHA-256 (com trava por empresa e arquivo). Se a primeira tentativa criou o lote, a repetição abre esse lote ("existente"), sem duplicar as linhas.
+  - **Corrigir linha:** regrava os mesmos campos.
+  - **Criar SKU (da linha ou do lote):** o código que já existe só é vinculado (D-792), então a repetição não cria um segundo SKU.
+  - **Registrar a referência:** `commit_purchase_import_group` usa um `requestId` fixo por lote e referência, e as linhas registradas saem do grupo. A repetição volta "nada novo a registrar", nunca um segundo pedido. A tela também relê o lote.
+  - **Buscar SKU:** é só leitura; o aviso pede para buscar de novo.
+- **Sem migration e sem mudança de contrato.**
+
+**Verificação (`importacao-transporte.spec.ts`, stack local isolada, `db reset` e seed):**
+- A planilha tem só um código novo, fora do catálogo: nenhum pedido é registrado, e o saldo e a sugestão do SKU do seed não mudam.
+- Envio com a resposta cortada depois de o servidor gravar: aviso e botão liberado. A nova tentativa abre o mesmo lote, com `?existente=1` e o aviso "Este arquivo já tinha sido importado". A chave de serviço não lê `purchase_import_rows` (sem GRANT, de propósito), então a prova é a da tela.
+- Criar os SKUs do lote com a resposta cortada: aviso e botão liberado. A nova tentativa só vincula, e existe um SKU só com aquele código.
+- Vermelho/verde: com os componentes da `main`, o teste falha esperando o aviso do envio. Com a correção, as 13 specs de importação, compras, estoque, fornecedores e reposição rodaram juntas: 48 passaram, e este teste falhou só na leitura direta de `purchase_import_rows` (42501), trocada pelo aviso da tela. Ele passou na rodada seguinte, na mesma base.
+- **Não exercitado em e2e:** corrigir linha, buscar SKU, criar o SKU de uma linha e registrar a referência. Recebem o mesmo `try`, conferido por leitura, lint e typecheck. A repetição segura do registro é a do banco, já provada por `importar-pedidos-anteriores.spec.ts` ("não duplicar").
+
+## D-868 - Produção avisa por e-mail quando o disco da VM enche ou quando api, web ou auth saem do ar
+
+**Contexto:** o I04 do fechamento pedia vigilância externa da produção. Até 24/11, o Cloud Monitoring do `speedbikers-prod` tinha só o alerta da sondagem do backup diário (`sb-backup-check`) e nenhuma verificação de disponibilidade. Um disco cheio na VM `sb-db` derruba o Postgres. A api, a web e o Auth podem cair sem que ninguém fique sabendo antes de um usuário reclamar.
+
+**Decisão:** o dono autorizou em 24/11, e os recursos foram criados pela API do Monitoring. Tudo avisa no mesmo canal de e-mail do alerta de backup.
+
+- **Disco da `sb-db`.** A política dispara quando `agent.googleapis.com/disk/percent_used` (`state=used`) do `/dev/sda1` fica acima de 85% por 10 minutos, no máximo por minuto.
+  - O JSON saiu do gerador do Codex (`infra/vm/disk-alert-policy.mjs`, na `codex/sentinel-infra-vm-integrada`), sem nenhuma edição.
+  - `/dev/sda1` é o disco do sistema e dos dados; `/dev/sda15` é a partição de boot. Na criação, o `/dev/sda1` estava em 30%.
+  - Se o agente parar de publicar a métrica, o alerta não dispara (`NO_OP`). Essa falha aparece em outros sinais: a sondagem do backup e a verificação do auth.
+- **Três verificações de disponibilidade**, a cada 5 minutos, com 10 s de limite, por HTTPS com certificado validado:
+
+  | Verificação | Endereço | Resposta saudável |
+  |---|---|---|
+  | api | Cloud Run `api`, `/health` | 200 |
+  | web | `speedbikers-prod.vercel.app/login` | 200 |
+  | auth | Caddy da VM, `/auth/v1/health` | **401** |
+
+  - O auth responde 401 porque o Kong pede a chave. O 401 prova que o Caddy, o Kong e o certificado estão de pé, sem pôr chave nenhuma na verificação.
+  - Um 502 ou a falta de resposta é a falha.
+- **Uma política de alerta para as três**, com uma condição por verificação. Ela dispara quando mais de uma região falha na janela de 20 minutos. Uma região ruim sozinha não acorda ninguém.
+
+**Alternativas rejeitadas:**
+- Verificar o auth com a chave publicável: colocaria uma chave na configuração do Monitoring, sem ganho sobre o 401.
+- Alertar já na primeira região que falha: transforma oscilação de rede em e-mail.
+- Uma política por verificação: são três e-mails iguais para o mesmo canal; a condição no corpo do e-mail já diz qual caiu.
+
+**Verificação:**
+- Nos primeiros minutos, a série `uptime_check/check_passed` registrou 36 aprovações em 36 na api e na web e 35 em 35 no auth, sem nenhuma falha.
+- A série de disco da instância tem pontos atuais para os dois dispositivos.
+- Os alertas não foram forçados a disparar. O primeiro e-mail real só chega quando houver um incidente.
+
+## D-869 - Lançar custo no pedido de compra é idempotente pela requisição
+
+**Contexto:** `upsert_purchase_order_cost` com `p_id` nulo sempre inseria. Se a resposta da Server Action se perdia depois de o banco gravar, repetir lançava o mesmo custo duas vezes, e o custo de chegada e a margem subiam. A D-865 só avisava ("confira a lista antes de lançar de novo"), e o #395 fez o aviso sobreviver à releitura. O dono aprovou a correção no banco em 24/11.
+
+**Decisão:**
+
+- **A inclusão aceita `p_request_id`.** O navegador gera esse identificador por intenção de lançamento, como no pedido (D-722).
+  - A mesma requisição no mesmo pedido devolve o custo já lançado, sem linha nova e sem evento `COSTS_UPDATED` novo.
+  - A coluna `purchase_order_costs.request_id` é única por pedido. Linhas antigas ficam nulas.
+- **A mesma requisição com outros dados é recusada.** A repetição nunca pode esconder um valor diferente do que foi gravado.
+  - A tela gera uma requisição nova quando a pessoa muda qualquer campo.
+- **`p_request_id` é só da inclusão.** Junto com `p_id` (edição), é recusado. Editar já regrava os mesmos campos.
+- **Compatível com a tela anterior.** O parâmetro é opcional, e a chamada sem ele insere como antes. A função de 8 argumentos sai, para o PostgREST não ter duas assinaturas candidatas para a mesma chamada.
+- **Publicação em duas partes**, para a produção nunca ficar quebrada:
+  1. a migration (`20261124140000_custo_do_pedido_idempotente.sql`) entra na `main` e é aplicada em produção;
+  2. só depois a tela passa a mandar o `requestId`. Mandar um parâmetro que a função de produção não tem dá PGRST202 e derruba o lançamento.
+
+**Alternativas rejeitadas:**
+- Deduplicar por conteúdo (mesmo tipo, valor e moeda num intervalo curto): bloquearia dois custos legítimos iguais, como dois fretes de mesmo valor.
+- Devolver o custo já gravado mesmo com dados diferentes: esconderia da pessoa que o valor gravado não é o que ela vê no formulário.
+- Manter as duas assinaturas: a chamada sem `p_request_id` casaria com as duas.
+
+**Verificação:** `compras-inteligentes.integration.test.ts` cobre:
+- a repetição devolve o mesmo custo, com uma linha e um evento;
+- outro valor com a mesma requisição é recusado;
+- sem requisição, cada chamada lança um custo, como antes;
+- a requisição na edição é recusada;
+- a mesma requisição em outro pedido é outra inclusão;
+- o analista não lança.
+
+**Em produção (24/11):** a migration foi aplicada pela VM `sb-db` numa transação só (`psql -1`), com o registro em `schema_migrations`, depois dos 4 jobs obrigatórios verdes na `main` (`f4c0be64`). Na conferência:
+- a função tem os 9 argumentos;
+- `authenticated` executa e `anon` não;
+- a coluna `request_id` existe.
+
+A tela que manda a requisição é o #397.
+
+## D-820 - Web Server Actions: `auth.getUser()` fail-closed nas 5 telas restantes e saneamento de erro SQL na triagem
+
+Fechamos o tratamento de erro de sessão em todas as Server Actions restantes fora da frente de compras/reposição (commit `d3045b86`):
+
+1. **Separação de falha transitória de Auth vs sessão expirada (`atendimento/actions.ts`, `atendimento/conhecimento/actions.ts`, `atendimento/templates/actions.ts`, `notificacoes/preferencias/actions.ts`, `sugestoes/actions.ts`):** seguem o padrão de `acoes/actions.ts` (`D-778`), distinguindo `401`/`403`/`AuthSessionMissingError` ("Sessão expirada") de erro transitório 5xx/rede ("Não foi possível confirmar sua sessão — tente de novo") em 6 Server Actions (`assignToMe`, `createKnowledgeEntry`, `setKnowledgeStatus`, `createTemplate`, `createPreference`, `createSuggestion`).
+2. **Anti-vazamento em `atendimento/actions.ts` (`describeError`):** substitui `return error.message` por mensagens fixas em português, evitando expor UUIDs ou nomes internos de tabela vindos de exceções do Postgres.
+
+TDD RED (`2 failed` em novo `apps/web/lib/server-actions-auth.test.ts`) -> GREEN (`2/2`), com `@sb/web` `tsc` e `eslint` aprovados.
+
+## D-821 - API OAuth callbacks: padronização de `state`/`code` em branco no Mercado Livre e Shopee
+
+Alinhamos os callbacks OAuth de Mercado Livre (`apps/api/src/ml-accounts.ts`) e Shopee (`apps/api/src/shopee-shops.ts`) ao hardening aplicado no TikTok Shop (`D-819`, commit `26fb2bf7`):
+
+1. **`state` em branco (`trim() === ""`):** devolve `{ status: "invalid_state" }` imediatamente sem consultar `ml_oauth_states` ou `shopee_oauth_states`.
+2. **`code` em branco (`trim() === ""`) e normalização:** `completeConnect` (`ml-accounts.ts`) recusa `code` só com espaços antes de chamar `exchangeCodeForToken`, e ambos os callbacks enviam `code.trim()`.
+
+TDD RED (`2 failed | 33 passed (35)`) -> GREEN (`35/35`). Verificação completa do monorepo pós-`26fb2bf7`: `pnpm run check` (`37/37`, `362` arquivos / `4.618` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `7/7` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-822 - Web `/contas`: painel Lojas TikTok Shop e conector OAuth (`M04`)
+
+Fechamos a lacuna de interface da fatia 1 do TikTok Shop (`D-645`), expondo na tela `/contas` (`Contas e lojas`) a visualização e o conector OAuth sobre `tiktok_shops` e `POST /v1/tiktok-shop/connect` (commit `dec79edd`):
+
+1. **Conector OAuth (`apps/web/app/(app)/contas/tiktok-connect-button.tsx`):** espelha `ShopeeConnectButton` reutilizando `iniciarConexaoOAuth({ caminho: "/v1/tiktok-shop/connect" })`, visível apenas para `ADMIN`, sem expor App Key/App Secret no navegador e com proteção contra `503`, JSON inválido em `200 OK` e falha de rede.
+2. **Faixa e helpers (`apps/web/lib/contas-e-lojas.{ts,test.ts}`):** adiciona `autorizacaoTikTokVencendo` (aviso oficial de 30 dias de `docs/TIKTOK_SHOP.md` §4), `lojaTikTokRequerAtencao`, `isTikTokSchemaMissing`, `rotuloTipoVendedorTikTok` (`LOCAL`/`CROSS_BORDER`) e estende `celulasDeContasELojas` com 4º argumento opcional `lojasTikTok` — preservando 100% da compatibilidade com a suíte E2E existente quando a lista está vazia e exibindo `· N do TikTok Shop` (ou aviso de falha sem fingir zero) quando há lojas conectadas.
+3. **Leitura paralela e painel em `/contas` (`apps/web/app/(app)/contas/page.tsx`):** consulta `tiktok_shops` no mesmo `Promise.all` (zero waterfall, aprovado em `check:waterfalls`) e renderiza o painel `Lojas TikTok Shop` com tabela `.sb-table` e `TikTokConnectButton`.
+
+TDD RED (`2 failed | 5 passed (7)`) -> GREEN (`7/7`). Verificação completa pós-`dec79edd`: `pnpm run check` (`37/37`, `362` arquivos / `4.620` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` (`check:waterfalls` 115, `check:control-styles` 543, `check:navegacao-suave` 207), `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `8/8` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-823 - Web `/integracoes`: cartão TikTok Shop na Central de Integrações (`M04`)
+
+Adicionamos o terceiro canal (`tiktok_shop`) à Central de Integrações (`/integracoes`, commit `8e439358`), respeitando todas as invariantes de `D-232`:
+
+1. **Adaptador puro (`apps/web/lib/integrations.{ts,test.ts}`):** adiciona `TikTokShopInput` e o cartão `tiktok_shop` (8ª região): `connection` nunca fica `ok` apenas pela flag `CONNECTED` (fica `observado` sem sincronização, `atencao` quando `auth_expires_at` vence em até 30 dias, `erro` com `last_error` sanitizado, `nao_configurado` para `ADMIN` sem lojas e `nao_verificavel` em erro de leitura ou não-`ADMIN`); `sync` acompanha os 4 jobs canônicos (`tiktok.{orders,items,returns,financials}.sync`, ficando `sem_atividade` até rodarem); `configuration` é sempre `nao_verificavel` (Secret Manager / Partner Center); aponta para `/contas`.
+2. **Leitura paralela e E2E (`apps/web/app/(app)/integracoes/page.tsx`, `apps/web/e2e/integracoes.spec.ts`):** lê `tiktok_shops` no mesmo `Promise.all` (zero waterfall, aprovado em `check:waterfalls`) e atualiza `integracoes.spec.ts` para `toHaveCount(8)` com asserções explícitas no cartão `TikTok Shop`.
+
+TDD RED (`3 failed | 36 passed (39)`) -> GREEN (`39/39`, incluindo todas as invariantes adversas de D-232). Verificação completa pós-`8e439358`: `pnpm run check` (`37/37`, `362` arquivos / `4.623` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `9/9` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-824 - Web `/sincronizacao`: seção `Lojas TikTok Shop` e saúde da autorização (`M04`)
+
+Fechamos a visibilidade operacional do terceiro canal também em `/sincronizacao` (commit `789aa4cb`):
+
+1. **Helper puro (`apps/web/lib/saude-loja-tiktok.{ts,test.ts}`):** espelha `saude-loja-shopee.ts` com `avisoDaAutorizacaoTikTok` (aviso oficial de 30 dias `UPCOMING_AUTHORIZATION_EXPIRATION` em `atencao` e `Autorização vencida` em `perigo`, tolerante a datas inválidas) e `vereditoDaLojaTikTok` (nunca declara verde sem sincronização transacional observada — usa `neutro` `"Conectada (aguardando sync)"`, `atencao` se vencendo, `perigo` em erro ou vencida).
+2. **Leitura paralela e seção condicional (`apps/web/app/(app)/sincronizacao/page.tsx`):** lê `tiktok_shops` no mesmo `Promise.all` (zero waterfall, aprovado em `check:waterfalls`), adiciona o atalho `#tiktok` na navegação interna e renderiza a seção `Lojas TikTok Shop` apenas quando `lojasTikTok.length > 0` (100% retrocompatível com `e2e/sincronizacao.spec.ts`).
+
+TDD RED (`saude-loja-tiktok.test.ts` fail) -> GREEN (`3/3`). Verificação completa pós-`789aa4cb`: `pnpm run check` (`37/37`, `363` arquivos / `4.626` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `10/10` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-825 - Worker `relist-prepare` e `relist-measurement`: isolamento multi-tenant e proteção de eventos de republicação
+
+Fechamos duas brechas de segurança/resiliência no fluxo de republicação sob `service_role` (commit `77cc4969`):
+
+1. **`apps/worker/src/handlers/relist-prepare.ts`:** valida `account.data.organization_id !== envelope.organizationId` (`status: "failed", retryable: false`) antes de consultar `listing_relists` ou chamar o Mercado Livre, e envolve ambos os `listing_relist_events.insert` (`REQUESTED` e `PREFLIGHT_FAILED`) em `try/catch` para que falha de transporte pós-insert de `listing_relists` registre `relist_event_not_recorded` sem derrubar o job para retry com `23505`.
+2. **`apps/worker/src/handlers/relist-measurement.ts`:** restringe explicitamente as leituras `service_role` de `sku_listing_links` e `action_decisions` por `.eq("organization_id", operation.organization_id)`.
+
+TDD RED (`3 failed | 4 passed (7)`) -> GREEN (`29/29` incluindo novo `relist-prepare-hardening.test.ts` compatível com `/items` e `/items/bulk` do `#378`).
+
+## D-826 - Web exportações CSV/XLSX: eliminação de vazamento de `error.message` bruto do Postgres no HTTP 502
+
+Removemos o vazamento direto de mensagens internas do Postgres/PostgREST (`error.message`) em todos os 17 caminhos de erro HTTP `502` das 7 rotas de exportação (`anuncios/exportar`, `anuncios/shopee/exportar`, `curva-abc/export/xlsx`, `full/exportar`, `precos/export/xlsx`, `vendas/exportar`, `vendas/shopee/exportar` — commit `9db9a602`), substituindo por mensagens fixas em português nas rotas CSV e códigos estruturados sem detalhe interno nas rotas JSON XLSX.
+
+TDD RED (`1 failed | 4 passed (5)` em `apps/web/lib/export-routes.test.ts`) -> GREEN (`5/5`, cobrindo todos os 17 ramos de falha).
+
+## D-827 - Worker `persist-order`: fatiamento de `orders.in()` e escopo `organization_id` no caminho quente de pedidos
+
+Fechamos a última consulta `.in("id", orderIds)` sem lote em `apps/worker/src/handlers/persist-order.ts` (`prefetchOrders`, commit `f46c8ec1`):
+
+1. **`prefetchOrders`:** fatia `.from("orders").in("id", lote)` em lotes paralelos de `PEDIDOS_POR_CONSULTA` (`25`, mesmo padrão de `order_items`/`stock_movements`/`domain_events`) e adiciona `.eq("organization_id", context.organizationId)` em `orders` e nas duas consultas de `sku_listing_links` (`ITEM` e `USER_PRODUCT`).
+2. **`persistOrder` (sem prefetch):** adiciona `.eq("organization_id", context.organizationId)` na leitura pontual de `orders`.
+
+TDD RED (`2 failed` em novo `persist-order-hardening.test.ts`) -> GREEN (`158/158` somando `persist-order.test.ts`). Verificação completa pós-`f46c8ec1`: `pnpm run check` (`37/37`, `365` arquivos / `4.632` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` sequencial provando `13/13` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-828 - Worker `page-writes.ts`: fatiamento em lotes de 100 na exclusão da cauda de `order_items`
+
+Fatiado `db.from("order_items").delete().in("order_id", lote).gte("position", fromPosition)` em lotes de `100` pedidos (`TAIL_DELETE_BATCH_SIZE = 100`, commits `4b2e1de7` + `78e9f323`), prevenindo estouro de URI do PostgREST (HTTP 414) em páginas grandes.
+
+TDD RED (`1 failed | 9 passed (10)`) -> GREEN (`10/10` em `apps/worker/src/handlers/page-writes.test.ts`).
+
+## D-829 - API `copilot-chat.ts`: sanitização de erros internos de ferramentas no `tool_result`
+
+Alinhamos `apps/api/src/copilot-chat.ts` ao padrão de `apps/api/src/copilot.ts` (commit `e49ddbb1`): apenas `CopilotToolError` expõe sua mensagem no `tool_result` enviado ao modelo; exceções inesperadas (Postgres/PostgREST/rede) são registradas em `deps.logger.error("copilot_chat_tool_failed", ...)` e devolvem a mensagem fixa `"falha ao executar a ferramenta"`, eliminando vazamento `CWE-209`.
+
+TDD RED (`1 failed | 23 passed (24)`) -> GREEN (`24/24` em `apps/api/src/copilot-chat.test.ts`).
+
+## D-830 - Web faturamento/vendas: eliminação de `error.message` bruto do Postgres no DOM
+
+Removidos todos os 13 pontos em que `error.message` bruto do Postgres/PostgREST era renderizado diretamente em `<EstadoDaTela detalhe={...} />` ou `detalhe:` em `apps/web/app/(app)/faturamento/multicanal.tsx` (9), `apps/web/app/(app)/faturamento/repasse-shopee.tsx` (2) e `apps/web/app/(app)/vendas/shopee/devolucoes.tsx` (2), protegidos por guarda estática em `apps/web/lib/ui-anti-leak.test.ts` (commit `2cd22da7`).
+
+TDD RED (`3 failed (3)`) -> GREEN (`3/3`). Verificação completa pós-`78e9f323`: `pnpm run check` (`37/37`, `366` arquivos / `4.637` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` sequencial provando `17/17` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-831 - Worker `ml-token.ts` e `shopee-token.ts`: `decryptToken` fail-closed (`retryable: false`) e liberação da trava
+
+Fechamos os últimos 6 pontos sem `try/catch` em torno de `decryptToken` no repositório (`apps/worker/src/handlers/ml-token.ts` e `apps/worker/src/handlers/shopee-token.ts`, commit `0599064d`), alinhando-os a `ml-accounts.ts`, `pricing-quote.ts` (`D-782`) e `tiktok-token-store.ts` (`D-810`):
+
+1. Um `access_token_ciphertext` ou `refresh_token_ciphertext` corrompido (ou cifrado com chave rotacionada) não lança mais exceção criptográfica não tratada (HTTP 500 com retentativa infinita no Cloud Tasks) nem cai no ramo `retryable: true` de `refreshAccessToken`.
+2. Quando a trava de refresh já foi adquirida, o handler solta a trava (`await release()` / `await soltar()`) e devolve `{ ok: false, retryable: false, reason }` sem vazar detalhes criptográficos e sem chamar OAuth externo.
+
+TDD RED (`2 failed | 25 passed (27)`) -> GREEN (`27/27`). Verificação completa pós-`0599064d`: `pnpm run check` (`37/37`, `366` arquivos / `4.639` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` sequencial provando `13/13` commits pendentes (`D-820..D-831`, após integração de `D-815..D-819` em `034dfe01`) com `0` conflitos sobre `#378` (`034dfe01`).

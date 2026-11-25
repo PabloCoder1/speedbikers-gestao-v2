@@ -18,6 +18,7 @@ vi.mock("./supabase/server", () => ({ createClient: m.createClient }));
 interface FakeRouteDb {
   membershipResult?: { data: unknown; error: { message: string } | null };
   tables?: Record<string, { data: unknown; error: { message: string } | null }>;
+  rpcError?: { message: string } | null;
 }
 
 function makeDb(config: FakeRouteDb) {
@@ -29,6 +30,7 @@ function makeDb(config: FakeRouteDb) {
       select: () => self,
       order: () => self,
       eq: () => self,
+      range: () => self,
       then: (resolve: (v: unknown) => void) => {
         resolve(result);
       },
@@ -46,8 +48,9 @@ function makeDb(config: FakeRouteDb) {
     rpc: (name: string) => {
       rpcs.push(name);
       if (name === "get_current_membership") return Promise.resolve(membership);
+      if (config.rpcError) return chain({ data: null, error: config.rpcError });
 
-      return Promise.resolve({ data: [], error: null });
+      return chain({ data: [], error: null });
     },
     from: (table: string) => {
       tablesRead.push(table);
@@ -133,6 +136,111 @@ describe("rotas de exportação: erro de contas não derruba filtro e erro de me
       const response = await chamar();
 
       expect(response.status, nome).toBe(503);
+    }
+  });
+
+  it("nenhuma das 7 rotas de exportação vaza error.message bruto do Postgres/PostgREST no HTTP 502 (D-826)", async () => {
+    const segredo = "relation public.secret_internal_table violates RLS policy";
+    const erroInterno = { data: null, error: { message: segredo } };
+
+    const casos: readonly [string, FakeRouteDb, () => Promise<Response>][] = [
+      [
+        "/anuncios/exportar (contas)",
+        { tables: { ml_accounts: erroInterno } },
+        () => exportarAnuncios(new NextRequest("http://localhost/anuncios/exportar")),
+      ],
+      [
+        "/anuncios/exportar (rpc)",
+        { rpcError: { message: segredo } },
+        () => exportarAnuncios(new NextRequest("http://localhost/anuncios/exportar")),
+      ],
+      [
+        "/anuncios/shopee/exportar (lojas)",
+        { tables: { shopee_shops: erroInterno } },
+        () => exportarAnunciosShopee(new NextRequest("http://localhost/anuncios/shopee/exportar")),
+      ],
+      [
+        "/anuncios/shopee/exportar (rpc)",
+        { rpcError: { message: segredo } },
+        () => exportarAnunciosShopee(new NextRequest("http://localhost/anuncios/shopee/exportar")),
+      ],
+      [
+        "/curva-abc/export/xlsx (contas ML)",
+        { tables: { ml_accounts: erroInterno } },
+        () => exportarCurvaAbc(new Request("http://localhost/curva-abc/export/xlsx")),
+      ],
+      [
+        "/curva-abc/export/xlsx (contas multicanal)",
+        { tables: { marketplace_accounts: erroInterno } },
+        () => exportarCurvaAbc(new Request("http://localhost/curva-abc/export/xlsx?marketplace=todos")),
+      ],
+      [
+        "/curva-abc/export/xlsx (rpc)",
+        { rpcError: { message: segredo } },
+        () => exportarCurvaAbc(new Request("http://localhost/curva-abc/export/xlsx")),
+      ],
+      [
+        "/full/exportar (rpc)",
+        { rpcError: { message: segredo } },
+        () => exportarFull(new NextRequest("http://localhost/full/exportar")),
+      ],
+      [
+        "/precos/export/xlsx (contas)",
+        { tables: { ml_accounts: erroInterno } },
+        () => exportarPrecos(new Request("http://localhost/precos/export/xlsx?conta=aaaaaaaa-0000-4000-8000-000000000001")),
+      ],
+      [
+        "/precos/export/xlsx (rpc)",
+        { rpcError: { message: segredo } },
+        () => exportarPrecos(new Request("http://localhost/precos/export/xlsx")),
+      ],
+      [
+        "/vendas/exportar todos (contas)",
+        { tables: { marketplace_accounts: erroInterno } },
+        () => exportarVendas(new NextRequest("http://localhost/vendas/exportar?tabela=dia&marketplace=todos")),
+      ],
+      [
+        "/vendas/exportar todos (tabela=conta rpc)",
+        { rpcError: { message: segredo } },
+        () => exportarVendas(new NextRequest("http://localhost/vendas/exportar?tabela=conta&marketplace=todos")),
+      ],
+      [
+        "/vendas/exportar todos (tabela=dia rpc)",
+        { rpcError: { message: segredo } },
+        () => exportarVendas(new NextRequest("http://localhost/vendas/exportar?tabela=dia&marketplace=todos")),
+      ],
+      [
+        "/vendas/exportar ml (contas)",
+        { tables: { ml_accounts: erroInterno } },
+        () => exportarVendas(new NextRequest("http://localhost/vendas/exportar?tabela=dia&marketplace=ml")),
+      ],
+      [
+        "/vendas/exportar ml (rpc)",
+        { rpcError: { message: segredo } },
+        () => exportarVendas(new NextRequest("http://localhost/vendas/exportar?tabela=dia&marketplace=ml")),
+      ],
+      [
+        "/vendas/shopee/exportar (lojas)",
+        { tables: { shopee_shops: erroInterno } },
+        () => exportarVendasShopee(new NextRequest("http://localhost/vendas/shopee/exportar")),
+      ],
+      [
+        "/vendas/shopee/exportar (rpc)",
+        { rpcError: { message: segredo } },
+        () => exportarVendasShopee(new NextRequest("http://localhost/vendas/shopee/exportar")),
+      ],
+    ];
+
+    for (const [nome, config, chamar] of casos) {
+      const { db } = makeDb(config);
+      m.createClient.mockResolvedValue(db);
+
+      const response = await chamar();
+      const body = await response.text();
+
+      expect(response.status, nome).toBe(502);
+      expect(body, nome).not.toContain(segredo);
+      expect(body, nome).not.toContain("RLS");
     }
   });
 });

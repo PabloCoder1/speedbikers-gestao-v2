@@ -123,7 +123,7 @@ Granularidade: por usuário, por `event_type`, por severidade mínima e por cont
 - Diff legível (`antes → depois`) só para os quatro tipos de evento com formato de `before`/`after` já documentado (`listing.price/title/available_quantity.changed`, `listing.status.paused`/`.reactivated`) — os demais mostram só o rótulo do evento.
 - **Filtro por severidade, tipo e conta — FEITO em D-393**, com o número que D-269 exigia antes de deixá-los entrar: 54.306 notificações no Dev, **13.810 críticas (25,4%)** espalhadas por 544 páginas, e **60,4% da caixa num tipo só** (`listing.available_quantity.changed`). Tipo entrou como FAMÍLIA (o prefixo antes do primeiro ponto — seis, contra 24 tipos no catálogo), e o recorte de lido/não lido de D-290 continua em pílula, não em menu. A lista ganhou cabeçalho de dia, e o dia é o da **chegada**, não o do fato: 541 das 54.306 têm os dois em dias civis diferentes, com atraso de até 32 dias.
 - **Filtro por período — RECUSADO com número (D-393)**, registrado como candidata: o Dev inteiro cabe em 21 dias (24/08 a 14/09; o ambiente está pausado desde D-350), então "últimos 7 dias" devolveria zero e se leria como tela quebrada. Entra quando a série tiver tamanho.
-- **Escrita em lote dentro do recorte — FEITA em D-393**, pela RPC `mark_notifications_read` (`security invoker`, migration `20260923200000`): quem filtra uma família limpa AQUELA e deixa as críticas por ler. Sem recorte a escrita continua sendo o `update` direto sob RLS de D-074.
+- **Escrita em lote dentro do recorte — FEITA em D-393**, pela RPC `mark_notifications_read` (`security invoker`, migration `20260923200000`): quem filtra uma família limpa AQUELA e deixa as críticas por ler. Desde D-853, a mesma RPC marca as notificações visíveis da Central quando a ação é feita sem filtro e retorna a quantidade alterada.
 - **Escrita em lote por loja Shopee — D-491** (migration `20261020130000`, em produção desde 20/10): `mark_notifications_read` ganha `p_shopee_shop_id` no fim, com o significado dos outros recortes (nulo = sem recorte), para o lote seguir o recorte por loja da D-604. Conta e loja juntas não marcam nada: o evento tem uma origem só.
 - Agrupamento por janela (item 5) continua sendo concern de toast/exibição em tempo real, não da lista histórica.
 - Distinção entre alteração automática e manual **quando a origem puder ser identificada** — **hoje ela NÃO pode** (medido em D-393): `domain_events.source` tem dois valores nesta base, `sync` (41.517) e `system` (12.789), e nenhum evento de usuário. O filtro existiria com um lado sempre vazio.
@@ -133,6 +133,8 @@ Granularidade: por usuário, por `event_type`, por severidade mínima e por cont
 ## 8. Escopo excluído
 
 Sem e-mail, sem push de navegador, sem WhatsApp, sem SMS. **In-app apenas.**
+
+**Exceção única: D-858.** O alerta de venda abaixo da margem (`sale.margin.below`) também vai por e-mail, para a lista de `margin_alert_settings`. O sino continua sendo a fonte; o e-mail é cópia, mandado fora da transação, e falhar não desfaz o alerta. Os dois saem juntos, às 8h e às 17h (D-859). Nenhum outro evento ganha e-mail sem decisão própria.
 
 Notificação por canal externo traz um universo próprio de problemas — bounce, opt-out, rate limit de provedor, conformidade — e não está nos requisitos.
 

@@ -27,14 +27,18 @@ export interface AiRunInsert {
 export type RecordResult = { ok: true } | { ok: false; reason: string };
 
 export async function recordAiRun(client: AdminClient, run: AiRunInsert): Promise<RecordResult> {
-  // `as never`: `ai_runs` ainda não existe em `Database` (types.ts não
-  // regenerado, ver comentário de `AiRunInsert` acima). Remover o cast
-  // junto com a troca de `AiRunInsert` para `TablesInsert<"ai_runs">`.
-  const { error } = await client.from("ai_runs" as never).insert(run as never);
+  try {
+    // `as never`: `ai_runs` ainda não existe em `Database` (types.ts não
+    // regenerado, ver comentário de `AiRunInsert` acima). Remover o cast
+    // junto com a troca de `AiRunInsert` para `TablesInsert<"ai_runs">`.
+    const { error } = await client.from("ai_runs" as never).insert(run as never);
 
-  if (error !== null) {
-    return { ok: false, reason: error.message };
+    if (error !== null) {
+      return { ok: false, reason: error.message };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "erro de transporte ao gravar ai_runs" };
   }
-
-  return { ok: true };
 }

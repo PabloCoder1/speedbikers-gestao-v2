@@ -29,6 +29,15 @@ describe("simulateCoverageDays", () => {
     expect(() => simulateCoverageDays(10, -1)).toThrow(RangeError);
   });
 
+  it("rejeita NaN e Infinity em estoque e venda média diária e trata overflow de divisão (D-799)", () => {
+    expect(() => simulateCoverageDays(Number.NaN, 5)).toThrow(RangeError);
+    expect(() => simulateCoverageDays(Number.POSITIVE_INFINITY, 5)).toThrow(RangeError);
+    expect(() => simulateCoverageDays(10, Number.NaN)).toThrow(RangeError);
+    expect(() => simulateRequiredQuantity(Number.NaN, 5)).toThrow(RangeError);
+    expect(() => simulateRequiredQuantity(Number.POSITIVE_INFINITY, 5)).toThrow(RangeError);
+    expect(simulateCoverageDays(1e308, 1e-10).coverageDays).toBeNull();
+  });
+
   it("devolve as premissas usadas junto do resultado — nunca só o número isolado", () => {
     const result = simulateCoverageDays(60, 4);
 

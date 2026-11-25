@@ -225,6 +225,13 @@ describe("POST /push/shopee (D-453)", () => {
     expect((await cenario({ falhaAoEnfileirar: true }).enviar(PEDIDO)).status).toBe(503);
     expect((await cenario().enviar("não é json")).status).toBe(200);
     expect((await cenario().enviar('{"shop_id":727720655}')).status).toBe(200);
+
+    // D-793: shop_id zero ou negativo é payload inválido, sem consultar o banco.
+    const semConsulta = cenario();
+    expect((await semConsulta.enviar('{"code":3,"shop_id":0}')).status).toBe(200);
+    expect((await semConsulta.enviar('{"code":3,"shop_id":-5}')).status).toBe(200);
+    expect(semConsulta.filtros).toEqual([]);
+    expect(semConsulta.enfileirados).toEqual([]);
   });
 
   it("sem a Shopee configurada: 503; não passa pela allowlist de IP do Mercado Livre", async () => {

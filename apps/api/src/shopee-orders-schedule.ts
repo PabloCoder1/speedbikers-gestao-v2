@@ -50,6 +50,7 @@ export async function triggerShopeeOrdersSync(deps: ShopeeOrdersScheduleDeps): P
 
   let enqueued = 0;
   let deduplicated = 0;
+  let enqueueFailed = false;
 
   for (const loja of lojas.data) {
     // O catálogo sai 5 minutos depois: os pedidos renovam o token primeiro, e
@@ -58,24 +59,43 @@ export async function triggerShopeeOrdersSync(deps: ShopeeOrdersScheduleDeps): P
       ["shopee.orders.sync", "shopee-orders", undefined],
       ["shopee.items.sync", "shopee-items", ITEMS_DELAY_S],
     ] as const) {
-      const result = await deps.enqueuer.enqueue({
-        jobType,
-        organizationId: loja.organization_id,
-        dedupeKey: `${prefixo}:${loja.id}:hora:${hora}`,
-        queue: "backfill",
-        payload: { shopeeShopId: loja.id },
-        ...(atraso === undefined ? {} : { delaySeconds: atraso }),
-      });
+      try {
+        const result = await deps.enqueuer.enqueue({
+          jobType,
+          organizationId: loja.organization_id,
+          dedupeKey: `${prefixo}:${loja.id}:hora:${hora}`,
+          queue: "backfill",
+          payload: { shopeeShopId: loja.id },
+          ...(atraso === undefined ? {} : { delaySeconds: atraso }),
+        });
 
-      if (result.deduplicated) {
-        deduplicated += 1;
-      } else {
-        enqueued += 1;
+        if (result.deduplicated) {
+          deduplicated += 1;
+        } else {
+          enqueued += 1;
+        }
+      } catch (error) {
+        enqueueFailed = true;
+        deps.logger.error("shopee_orders_schedule_enqueue_failed", {
+          shopee_shop_id: loja.id,
+          job_type: jobType,
+          reason: error instanceof Error ? error.message : "falha ao enfileirar tarefa Shopee",
+        });
       }
     }
   }
 
-  deps.logger.info("shopee_orders_schedule_triggered", { shops_scanned: lojas.data.length, enqueued, deduplicated });
+  deps.logger.info("shopee_orders_schedule_triggered", {
+    shops_scanned: lojas.data.length,
+    enqueued,
+    deduplicated,
+    ...(enqueueFailed ? { failed: true } : {}),
+  });
 
-  return { shopsScanned: lojas.data.length, enqueued, deduplicated };
+  return {
+    shopsScanned: lojas.data.length,
+    enqueued,
+    deduplicated,
+    ...(enqueueFailed ? { failed: true as const } : {}),
+  };
 }

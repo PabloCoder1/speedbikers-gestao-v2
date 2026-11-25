@@ -33,6 +33,18 @@ export type ShopeeTokenResult =
 const REFRESH_BUFFER_MS = 10 * 60 * 1000;
 const REFRESH_LOCK_MS = 60 * 1000;
 
+/**
+ * Decifra uma credencial Shopee sem vazar detalhe criptográfico nem derrubar o
+ * handler com erro não tratado (D-831).
+ */
+function tryDecryptToken(ciphertext: string, key: Buffer): string | null {
+  try {
+    return decryptToken(ciphertext, key);
+  } catch {
+    return null;
+  }
+}
+
 export async function ensureShopeeAccessToken(
   deps: ShopeeTokenDeps,
   loja: { id: string; shopId: number },
@@ -53,7 +65,17 @@ export async function ensureShopeeAccessToken(
   }
 
   if (new Date(lida.data.access_token_expires_at).getTime() - now.getTime() > REFRESH_BUFFER_MS) {
-    return { ok: true, accessToken: decryptToken(lida.data.access_token_ciphertext, deps.encryptionKey) };
+    const accessToken = tryDecryptToken(lida.data.access_token_ciphertext, deps.encryptionKey);
+
+    if (accessToken === null) {
+      return {
+        ok: false,
+        retryable: false,
+        reason: "credencial da loja Shopee cifrada inválida ou chave incompatível; conecte de novo",
+      };
+    }
+
+    return { ok: true, accessToken };
   }
 
   // A trava, atômica, devolvendo a credencial do MOMENTO da trava.
@@ -99,14 +121,36 @@ export async function ensureShopeeAccessToken(
   if (new Date(travada.data.access_token_expires_at).getTime() - now.getTime() > REFRESH_BUFFER_MS) {
     await soltar();
 
-    return { ok: true, accessToken: decryptToken(travada.data.access_token_ciphertext, deps.encryptionKey) };
+    const accessToken = tryDecryptToken(travada.data.access_token_ciphertext, deps.encryptionKey);
+
+    if (accessToken === null) {
+      return {
+        ok: false,
+        retryable: false,
+        reason: "credencial da loja Shopee cifrada inválida ou chave incompatível; conecte de novo",
+      };
+    }
+
+    return { ok: true, accessToken };
+  }
+
+  const refreshToken = tryDecryptToken(travada.data.refresh_token_ciphertext, deps.encryptionKey);
+
+  if (refreshToken === null) {
+    await soltar();
+
+    return {
+      ok: false,
+      retryable: false,
+      reason: "refresh_token da loja Shopee cifrado inválido ou chave incompatível; conecte de novo",
+    };
   }
 
   let token;
 
   try {
     token = await refreshAccessToken(deps.client, {
-      refreshToken: decryptToken(travada.data.refresh_token_ciphertext, deps.encryptionKey),
+      refreshToken,
       shopId: loja.shopId,
     });
   } catch (error) {

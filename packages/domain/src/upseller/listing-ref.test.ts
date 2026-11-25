@@ -97,10 +97,16 @@ describe("filtro de canal (D-037)", () => {
 
   it("descarta loja vazia", () => {
     expect(isMercadoLivreStore(null)).toBe(false);
+    expect(isMercadoLivreStore("mercado-ML")).toBe(false);
+    expect(isMercadoLivreStore("mercado-mlX-Loja")).toBe(false);
   });
 });
 
 describe("rótulo e slug da loja", () => {
+  it("prefixo mercado-ML sem nome de loja vira null, nunca uma conta falsa 'ml'", () => {
+    expect(storeLabel("mercado-ML")).toBeNull();
+    expect(storeSlug("mercado-ML")).toBeNull();
+  });
   it.each([
     ["mercado-ML- Speedbikers (loja 1)", "Speedbikers (loja 1)", "speedbikers-loja-1"],
     ["mercado-ML - SbMotos", "SbMotos", "sbmotos"],

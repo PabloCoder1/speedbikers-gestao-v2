@@ -151,6 +151,11 @@ export async function completeConnect(
   params: CallbackParams,
 ): Promise<CallbackOutcome> {
   const now = deps.now?.() ?? new Date();
+  const state = params.state.trim();
+
+  if (state === "") {
+    return { status: "invalid_state" };
+  }
 
   // Consumo ATÔMICO: um único UPDATE com as três condições na cláusula WHERE,
   // não um SELECT seguido de UPDATE. Duas chamadas concorrentes com o mesmo
@@ -159,7 +164,7 @@ export async function completeConnect(
   const claimed = await deps.db
     .from("ml_oauth_states")
     .update({ consumed_at: now.toISOString() })
-    .eq("state", params.state)
+    .eq("state", state)
     .is("consumed_at", null)
     .gt("expires_at", now.toISOString())
     .select("organization_id, ml_account_id, code_verifier_ciphertext")
@@ -174,8 +179,9 @@ export async function completeConnect(
     ml_account_id: mlAccountId,
     code_verifier_ciphertext: codeVerifierCiphertext,
   } = claimed.data;
+  const code = params.code?.trim() ?? "";
 
-  if (params.error !== undefined || params.code === undefined) {
+  if (params.error !== undefined || code === "") {
     await markError(deps, organizationId, mlAccountId, `autorização negada: ${params.error ?? "code ausente"}`);
 
     return { status: "rejected", reason: "autorização negada no Mercado Livre" };
@@ -206,7 +212,7 @@ export async function completeConnect(
   try {
     token = await exchangeCodeForToken(
       deps.oauth,
-      params.code,
+      code,
       deps.requestOptions ?? {},
       codeVerifier,
     );
@@ -229,7 +235,7 @@ export async function completeConnect(
     p_access_token_ciphertext: encryptToken(token.access_token, deps.encryptionKey),
     p_refresh_token_ciphertext: encryptToken(token.refresh_token, deps.encryptionKey),
     p_access_token_expires_at: new Date(now.getTime() + token.expires_in * 1000).toISOString(),
-    p_scopes: token.scope.split(" "),
+    p_scopes: token.scope.trim().split(/\s+/).filter(Boolean),
   });
 
   if (connected.error?.code === "PT409") {
@@ -289,10 +295,17 @@ async function markError(
   reason: string,
 ): Promise<void> {
   // O filtro no UPDATE protege a conexão que outro callback pode ter gravado.
-  await deps.db
+  const updated = await deps.db
     .from("ml_accounts")
     .update({ status: "ERROR", last_error: reason.slice(0, 2000) })
     .eq("id", mlAccountId)
     .eq("organization_id", organizationId)
     .neq("status", "CONNECTED");
+
+  if (updated.error !== null) {
+    deps.logger.error("ml_account_mark_error_failed", {
+      ml_account_id: mlAccountId,
+      reason: updated.error.message,
+    });
+  }
 }

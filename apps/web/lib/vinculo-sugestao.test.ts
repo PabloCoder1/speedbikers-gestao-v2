@@ -46,6 +46,7 @@ describe("lerSugestoesDoAnuncio", () => {
   it("fora do contrato é recusado inteiro", () => {
     expect(lerSugestoesDoAnuncio({ variacoes: [{ pedidos: "8" }], vinculos: [] })).toBeNull();
     expect(lerSugestoesDoAnuncio({ variacoes: [] })).toBeNull();
+    expect(lerSugestoesDoAnuncio({ variacoes: [], vinculos: [{ link_id: "   ", variation_id: null, sku_id: null, sku: null }] })).toBeNull();
     expect(lerSugestoesDoAnuncio(null)).toBeNull();
   });
 });
@@ -117,5 +118,18 @@ describe("planejarVinculo", () => {
 
     expect(plano).toMatchObject({ forma: "inteiro", completo: false });
     expect(plano.alvos[0]?.opcoes).toEqual([]);
+  });
+
+  it("ignora unidades não finitas e SKUs em branco para não corromper a sugestão nem a ordenação", () => {
+    const plano = planejarVinculo(
+      sugestoes([
+        vista({ unidades: Number.NaN, skuId: "   ", sku: "   ", sellerSku: "   " }),
+        vista({ unidades: 4, skuId: "sku-ok", sku: "OK-1", sellerSku: "OK-1" }),
+      ]),
+    );
+
+    expect(plano.alvos[0]?.unidades).toBe(4);
+    expect(plano.alvos[0]?.sugestao?.sku).toBe("OK-1");
+    expect(plano.alvos[0]?.semCadastro).toEqual([]);
   });
 });

@@ -32,6 +32,8 @@ function fakeDb(options: {
   orders?: OrderRow[];
   capturedOrderIds?: number[];
   accountStatus?: string;
+  ordersError?: { message: string };
+  capturedError?: { message: string };
 }): {
   db: SyncOrderFinancialsDeps["db"];
   upserted: Record<string, unknown>[];
@@ -48,13 +50,16 @@ function fakeDb(options: {
     access_token_expires_at: new Date(NOW.getTime() + 3_600_000).toISOString(),
   };
 
-  function rangeChain(rows: unknown[]): unknown {
+  function rangeChain(rows: unknown[], error?: { message: string }): unknown {
     const self = {
       eq: () => self,
       in: () => self,
       gte: () => self,
       order: () => self,
-      range: (from: number, to: number) => Promise.resolve({ data: rows.slice(from, to + 1), error: null }),
+      range: (from: number, to: number) =>
+        Promise.resolve(
+          error !== undefined ? { data: null, error } : { data: rows.slice(from, to + 1), error: null },
+        ),
     };
 
     return self;
@@ -89,11 +94,11 @@ function fakeDb(options: {
         }
 
         if (table === "orders") {
-          return rangeChain(orders);
+          return rangeChain(orders, options.ordersError);
         }
 
         if (table === "order_financials") {
-          return rangeChain(capturedRows);
+          return rangeChain(capturedRows, options.capturedError);
         }
 
         return singleChain(null);
@@ -190,6 +195,7 @@ function run(
   client: MercadoLivreClient,
   sleeps: number[] = [],
   lines: string[] = [],
+  envelopeOrganizationId?: string,
 ) {
   const handler = createSyncOrderFinancialsHandler({
     db,
@@ -204,7 +210,10 @@ function run(
     },
   });
 
-  return handler(ENVELOPE, {
+  const envelope =
+    envelopeOrganizationId === undefined ? ENVELOPE : { ...ENVELOPE, organizationId: envelopeOrganizationId };
+
+  return handler(envelope, {
     logger: createLogger({}, { sink: (line) => lines.push(line) }),
     payload: { mlAccountId: ML_ACCOUNT_ID },
   });
@@ -482,5 +491,34 @@ describe("sync.order-financials — o contrato de /orders/{id}/discounts (D-229)
     expect(upserted.map((row) => row.order_id)).toEqual([9201, 9203]);
     expect(syncRuns[0]).toMatchObject({ resource: "order_financials", status: "partial", items_processed: 2 });
     expect(String(syncRuns[0]?.reason)).toContain("1 pedido(s) com resposta fora do contrato");
+  });
+
+  it("falha de banco ao ler orders ou checkpoint de order_financials registra sync_runs failed e retorna retryable (D-786)", async () => {
+    const falhaPedidos = fakeDb({ ordersError: { message: "statement timeout on orders" } });
+    const { client } = fakeClient();
+
+    const outPedidos = await run(falhaPedidos.db, client);
+    expect(outPedidos).toMatchObject({ status: "failed", retryable: true });
+    expect(falhaPedidos.syncRuns[0]).toMatchObject({ resource: "order_financials", status: "failed" });
+
+    const falhaCheckpoint = fakeDb({
+      orders: [{ id: 9301, shipping_id: null }],
+      capturedError: { message: "statement timeout on order_financials" },
+    });
+
+    const outCheckpoint = await run(falhaCheckpoint.db, client);
+    expect(outCheckpoint).toMatchObject({ status: "failed", retryable: true });
+    expect(falhaCheckpoint.syncRuns[0]).toMatchObject({ resource: "order_financials", status: "failed" });
+  });
+
+  it("D-817: recusa sem repetir quando a conta pertence a outra organização", async () => {
+    const { db, upserted } = fakeDb({ orders: [{ id: 9001, shipping_id: 5001 }] });
+    const { client, calls } = fakeClient({ costsBySender: [10] });
+
+    const outcome = await run(db, client, [], [], "99999999-9999-4999-8999-999999999999");
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(calls).toEqual([]);
+    expect(upserted).toEqual([]);
   });
 });

@@ -908,3 +908,66 @@ O candidato combina a base `a81f5235`, #336, D-782 a D-784 do #343, as sete corr
 No PostgreSQL 17 isolado, o histórico inicial tinha 324 migrations até `20261119180000`. O dry-run com os nomes originais recusou as quatro anteriores à base. A cópia temporária `20261119180001` a `20261119180004` aplicou NF-e, ERP, índice de Full e retenção, nesta ordem, e chegou a 328 versões. O dry-run final ficou limpo. Os nomes originais seguem no Git enquanto o Dev hospedado estiver inativo e o catálogo-alvo não for reconciliado.
 
 A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da notificação e a publicação coordenada ficam pendentes.
+
+### 24/11/2026 · Retomada do candidato #378
+
+- O candidato `2ae7a4b4` integra `origin/main` em `5a49133b` e está empilhado em #364 (`fcaf257d`). A worktree isolada `codex/sentinel-integracao-20261124` preserva o trabalho staged e unstaged do checkout histórico `v3` (`9642d921`).
+- D-882 reproduzido na rota com HTTP 200. A correção `9f0fc8ef` marcou a falha de enqueue como retentável, seguiu para a segunda organização e verificou recuperação e deduplicação na mesma hora. D-881 usa o catálogo com quebras de linha preservadas pela CLI.
+- O ensaio regional `9d0af86b` e as 19 fatias do Gemini foram incorporados. Quatro conflitos entre os documentos de decisão foram reconciliados. A Curva ABC já tinha o ajuste local e o merge preservou as contribuições de saúde da sincronização. Sem diff de migrations contra `2ae7a4b4`.
+- Claude: #329 permanece draft. #384 de margem foi integrado na main. #347 de compras e #383 de catálogo continuam com seus responsáveis. A presença de worktrees não confirma atividade de sessões. #377 reúne #368 e #376 para M05.
+- Cloud Run confirmou 100% de tráfego em `api-00042-7bl` e `worker-00060-z8h`, ambos no SHA `5a49133b`. Scheduler de métricas ativo com duas retentativas. Secret Manager confirmou somente o estado ENABLED das cinco referências SMTP. Supabase Dev confirmou INACTIVE. Quatro migrations definitivas, publicação e aceite continuam pendentes.
+- O inventário calculou 155/226 (68,58%), 28/43 entregas. V01 segue condicionado ao registro definitivo e ao ensaio de upgrade da VM com o novo SHA.
+
+- Verificação integrada local em `de846564`: check 37/37 (4 tarefas de cache), build 10/10 (7 de cache), seis testes do preflight e documentação com 720 decisões indexadas. A CI do SHA anterior `2ae7a4b4` concluiu os quatro jobs e omitiu o apply Dev. Cloud Monitoring listou apenas a política habilitada de backup, com zero uptime checks. A VM estava ativa com `e2-standard-2` e disco de 50 GB.
+
+### 24/11/2026 · Regressão da composição e validação independente
+
+- O Playwright de `f9b9ec26` (45395072874) passou 367 testes e falhou 15. D-803 tratava `Infinity` como zero, apesar de os leitores ML e Shopee do SKU usarem esse teto para ler todos os anúncios. A regressão de 1.002 linhas falhou antes do ajuste. O teste de Contas depende do estado que a jornada de vínculo Shopee restaura ao terminar. O novo corte precisa validar os dois fluxos em conjunto.
+- O #377 foi reconciliado com a main em `87636bf9`. Os quatro checks passaram (45396006316), com aplicação de migrations no Dev omitida. Issue #367 tem a janela de 63 HTTP 403 em seis horas e o requisito de preservação do SMTP. A publicação isolada depende de autorização.
+
+### 24/11/2026 · Composição com a main de produção
+
+- O corte `034ffb34` passou a CI `45399007243` com 402 jornadas Playwright, 1.229 testes de integração PostgreSQL e 42 projeções PostgREST. A nova base `9670cde3` incorpora D-859 a D-862 e a correção de invoice #347. A publicação funcional dessa base está registrada no #388.
+- D-882 continua na rota dedicada de margem de D-859, com 503 por falha de fila, paginação, dedupe e tentativa das demais organizações. A composição mantém a confirmação protegida e o parâmetro `markAbsent` até o worker. O teste de erro de transporte da Central verifica também a execução da fonte D-861 após a falha de frete. O #377, separado, foi atualizado para `2d9a06d2` sobre a mesma base e segue na CI `45434819641`.
+- Gemini em `879ac5b9`, com D-807 a D-811 preparados. Revisar D-808/D-810 sobre a API da nova base antes de incorporar. Os dois projetos Supabase hospedados responderam INACTIVE. O Dev bloqueia quatro timestamps definitivos do candidato.
+
+- A CI de `da2139f0` encontrou o teste simulado que ainda esperava 18 agendamentos após D-859. A expectativa agora valida os 19 jobs e a criação de `v3-low-margin-sales`. Os sete scripts de provisionamento simulados passaram localmente. A correção altera apenas teste e documentação.
+
+### 24/11/2026 · D-863 e fatias Gemini D-807–D-811
+
+- `origin/main` em `d21fb902` (#389). O #378 permanece empilhado no #364 (`fcaf257d`), branch remota `codex/sentinel-candidato-v3-catalogo`, worktree `codex/sentinel-integracao-20261124`. A composição D-863 em `e482d9f4` passou check 37/37 (34 em cache), build 10/10 (9 em cache) e docs:check. O SHA anterior `b68dda60` teve quatro jobs verdes na CI 45439871885.
+- Fonte do batch Gemini #343: `30319b7c`, `43ccb988`, `f2c4c50c`, `2e778a02` e `4241b18a`. No único conflito, a tabela da API ganhou a linha TikTok e conservou as duas cadências de D-859. Sem novas migrations ou filas. O webhook pode observar com as credenciais existentes. O agendador transacional aguarda handlers e tabelas.
+- Após a integração D-807–D-811, check 37/37 (16 em cache), build 10/10 (7 em cache) e docs:check. Suítes: cliente TikTok 33, domínio 788, API 638, web 1.727 e worker 1.186. A CI 45441658929 de `main` falhou antes dos testes SQL ao iniciar o Docker na porta 60022. O #377 passou o mesmo job com migrations idênticas.
+- O #377 (`codex/sentinel-ml-catalogo-integrado`) subiu para `0f7a98de`, CI 45444838540. Check 37/37 em cache, build 10/10 (9 em cache), docs:check e comparação de arquivos do worker, cliente Mercado Livre e migrations sem diferenças em relação a `2d9a06d2`.
+- Reservas: Gemini D-812 (contratos de jobs); Claude conserva Auth D-863 e sua frente funcional; Codex conserva a composição #378 e M05 #377. O estado externo foi verificado pelo Git e pelos PRs. Reservas e branches dos demais agentes seguem sob controle de seus respectivos responsáveis.
+- Fechamento em 155/226 (68,58%), 28/43 entregas. Aceite M04 depende de persistência e jornadas integradas. O Dev pausado impede os quatro registros definitivos. M05 aguarda aprovação do rollout isolado; V02 e V03 aguardam a esteira e o aceite do dono. Próxima etapa: verificar os quatro jobs de cada SHA e, em seguida, revisar os contratos D-812 quando publicados.
+- O batch Gemini foi registrado em `5fb20839`. D-883 corrige a coleta de traces no mesmo #378. O ensaio Chromium 1.62.1, com uma asserção intencionalmente vermelha e página sintética, produziu um ZIP de 6.441 bytes. A investigação do bind da porta 60022 foi encaminhada para o PR já existente #340.
+- O primeiro dispatch de `e2c7b8dc` recusou o ID `playwright` duplicado com a etapa de versão. O reparo usa `playwright_e2e` para os testes e preserva a chave de cache.
+
+### 24/11/2026 · Segundo batch Gemini D-812–D-814
+
+- O primeiro batch está em `c1ef6afd`, CI 45446906931. Gemini publicou novo corte `eb2eb34e` no #343 durante essa execução.
+- Origem da segunda integração: `ce3d2d63`, `f5d7f7d0`, `fcc5010f` e `0072e5ac`. Inclui os contratos de fila TikTok, as projeções de catálogo e devolução e sete guardas de escopo do worker. Nenhuma alteração de migrations ou lockfile.
+- D-815 fica na frente Gemini. D-863 continua sob Claude com SMTP real como dependência. O Codex mantém #377, #378 e #340. O #340 foi reconciliado em `8edf669d` com dois testes do alocador de portas, check, build e docs:check aprovados. CI 45446867460.
+- Check 37/37 (16 em cache), build 10/10 (7 em cache) e docs:check. O check somou 4.699 testes, com 22 nos contratos, 796 no domínio, 639 na API, 1.193 no worker e 1.727 na web.
+- As correções Shopee #379 e #380 e a fixture #373 já estão no histórico do candidato. #381 e #382 seguem como evidências de P02 e Q03 referenciadas no inventário.
+- M04 ainda precisa de tabelas versionadas, handlers, ligação da fila e teste integrado da loja. V01 aguarda as quatro versões definitivas e o ensaio de upgrade da VM. O inventário permanece em 155/226 (68,58%), 28/43 entregas.
+- CI externa concluída com quatro jobs verdes em `c1ef6afd` (45446906931), `0f7a98de` (45444838540) e `8edf669d` (45446867460). Os dois PRs isolados tiveram 346 E2E cada. O runner Linux do #340 escolheu 61021/61022. O dispatch seguinte do #378 valida o segundo batch inteiro no SHA final.
+
+### Continuidade em 25/11/2026
+
+- A composição de D-864 sobre `ff0de2c9` ficou em `55e20b5b`. Check 37/37, build 10/10 e docs:check.
+- D-815 a D-819 do #343: `daa30b3a`, `ce980cdc`, `e895084c`, `5dfeeebf`, `570b6e45`. Check 37/37, build 10/10 e docs:check. Conteúdo de migrations, lockfile e workflows preservado.
+- O dono prevê a retomada do Supabase Pro em 01/12/2026. Confirmar o Dev saudável antes de registrar versões oficiais.
+- A próxima fatia de M04 tem o caso de reconexão durante refresh encaminhado ao Gemini. [Coordenação](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/343#issuecomment-7140347544)
+
+### Composição de 25/11
+
+- Claude até D-869 sobre `f4c0be64`. O #394 documenta o aceite do dono para recuperação de senha. Em leitura, conferidos HTTP 200 com “Esqueci a senha”, três políticas ativas e três uptime checks. O catálogo da VM confirmou `20261124140000`.
+- Gemini `ad78823a`, decisões D-820 a D-830 integradas no #378 com doze patches após D-819. D-831 segue sob Gemini. A regressão de reconexão de M04 foi encaminhada no #343.
+- Inventário em 163/226 (72,12%), 30/43. S04 e I04 contabilizam oito pontos. M05 continua em validação no #377.
+- O #397 foi composto em `2b893b9f` com check 37/37, build 10/10 e docs:check. Vercel READY em `8f39cddc`.
+- D-831, commit Gemini `0599064d`. D-832 permanece reservado. O teste de reconexão OAuth de M04 segue no #343.
+- #377 `cf6dae2d`: sonda real explicou a ausência do envelope sob projeção. Um anúncio foi processado na revisão isolada. O candidato incorpora a correção sem as etapas experimentais intermediárias.
+- M05 validado em produção com o código do #377 em `cf6dae2d`. O bulk completo foi conferido, a reconciliação encerrou nas contas agendadas e as exceções recuperadas pelo job regular. A consulta cruzou as falhas anteriores com as listagens atualizadas. O #377 foi reconciliado com a main em `dfbce8f3`, com os arquivos do worker e cliente idênticos ao corte publicado.
+- A CI do código composto é 45606453406 para `c5882974`. O checkpoint de aceite altera somente documentação. Fechamento técnico recalculado em 168/226 (74,34%), 31/43.

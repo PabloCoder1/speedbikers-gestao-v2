@@ -34,7 +34,7 @@ export interface NfeApplyDeps {
 }
 
 export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -57,6 +57,10 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
 
     if (document.data === null) {
       return { status: "failed", retryable: false, reason: `documento ${documentId} não existe` };
+    }
+
+    if (document.data.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "documento não pertence à organização do job" };
     }
 
     if (document.data.status === "APPLIED") {
@@ -148,10 +152,16 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
     });
 
     if (recusa !== null) {
-      await deps.db
+      const failed = await deps.db
         .from("documents")
         .update({ status: "FAILED", last_error: recusa.motivo, last_error_code: recusa.codigo })
         .eq("id", documentId);
+
+      // D-787: falha transitória ao marcar o documento como FAILED não pode
+      // retornar `retryable: false`, senão o documento ficaria preso em APPLYING.
+      if (failed.error !== null) {
+        return { status: "failed", retryable: true, reason: failed.error.message };
+      }
 
       return { status: "failed", retryable: false, reason: recusa.motivo };
     }

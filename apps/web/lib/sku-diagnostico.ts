@@ -128,6 +128,8 @@ export const TETO_DISPERSAO_PCT = 10;
 
 /** (maior − menor) ÷ menor > teto, em centavos inteiros: sem o resíduo do ponto flutuante (D-630). */
 export function acimaDoTeto(menor: number, maior: number): boolean {
+  if (!Number.isFinite(menor) || !Number.isFinite(maior)) return false;
+
   const menorCentavos = Math.round(menor * 100);
   const maiorCentavos = Math.round(maior * 100);
 
@@ -159,7 +161,11 @@ function endereco(anuncio: AnuncioDoSku): string {
  * descartado antes de chegar aqui).
  */
 function precoEfetivo(anuncio: AnuncioDoSku): number | null {
-  return anuncio.promotional_price ?? anuncio.price;
+  if (anuncio.promotional_price !== null && Number.isFinite(anuncio.promotional_price)) {
+    return anuncio.promotional_price;
+  }
+
+  return anuncio.price !== null && Number.isFinite(anuncio.price) ? anuncio.price : null;
 }
 
 export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku {
@@ -173,7 +179,10 @@ export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku
   const outros = anuncios.filter((a) => a.status !== null && a.status !== "active" && a.status !== "paused");
   const contas = new Set(anuncios.map((a) => a.ml_account_id)).size;
 
-  const estoqueAnunciado = anuncios.reduce((total, a) => total + (a.available_quantity ?? 0), 0);
+  const estoqueAnunciado = anuncios.reduce(
+    (total, a) => total + (a.available_quantity !== null && Number.isFinite(a.available_quantity) ? a.available_quantity : 0),
+    0,
+  );
 
   /*
     1. ANÚNCIO ATIVO COM ZERO ANUNCIADO — crítico, e é o mais direto de todos:
@@ -202,7 +211,11 @@ export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku
     ATENÇÃO e não crítico é que pausar pode ter sido deliberado.
   */
   const temEstoqueInterno =
-    estoqueInterno !== null && !estoqueInterno.virtual && estoqueInterno.local + estoqueInterno.full > 0;
+    estoqueInterno !== null &&
+    !estoqueInterno.virtual &&
+    Number.isFinite(estoqueInterno.local) &&
+    Number.isFinite(estoqueInterno.full) &&
+    estoqueInterno.local + estoqueInterno.full > 0;
 
   if (temEstoqueInterno) {
     for (const anuncio of pausados) {
@@ -256,7 +269,7 @@ export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku
 
     const idade = agora.getTime() - Date.parse(anuncio.synced_at);
 
-    if (Number.isNaN(idade) || idade <= limiteMs) continue;
+    if (!Number.isFinite(idade) || idade <= limiteMs) continue;
 
     problemas.push({
       chave: `catalogo-velho:${anuncio.item_id}`,
@@ -308,7 +321,9 @@ export function diagnosticarSku(entrada: EntradaDoDiagnostico): DiagnosticoDoSku
   // Quantos anúncios entraram com o promocional em vez do cadastrado — só
   // para a frase do problema poder dizer que a promoção JÁ foi descontada,
   // em vez de deixar quem lê achar que a tela esqueceu dela.
-  const comPromocaoAtiva = comPreco.filter((a) => a.promotional_price !== null).length;
+  const comPromocaoAtiva = comPreco.filter(
+    (a) => a.promotional_price !== null && Number.isFinite(a.promotional_price),
+  ).length;
 
   let precos: RetratoDePrecos | null = null;
 

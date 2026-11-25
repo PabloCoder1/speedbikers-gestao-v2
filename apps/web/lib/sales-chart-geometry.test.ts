@@ -77,4 +77,12 @@ describe("caminho", () => {
   it("série vazia dá caminho vazio", () => {
     expect(caminho([])).toBe("");
   });
+
+  it("D-800: valores não finitos não contaminam tetoDaEscala nem yPct", () => {
+    expect(tetoDaEscala([10, Number.NaN, Number.POSITIVE_INFINITY, 40])).toBeCloseTo(44);
+    expect(tetoDaEscala([Number.NaN])).toBe(1);
+    expect(yPct(Number.NaN, 44)).toBe(100);
+    expect(yPct(10, 0)).toBe(100);
+    expect(yPct(10, Number.NaN)).toBe(100);
+  });
 });

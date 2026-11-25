@@ -77,4 +77,18 @@ describe("createIpAllowlistVerifier", () => {
     expect(verifier.verify("10.0.0.1").ok).toBe(true);
     expect(verifier.verify("54.88.218.97,169.254.1.1").ok).toBe(false);
   });
+
+  it("D-804: vírgula final vazia não recua para IP forjado anterior e allowlist apara espaços/ignora vazios", () => {
+    expect(extractClientIp("54.88.218.97, ")).toBeUndefined();
+    expect(extractClientIp("54.88.218.97,")).toBeUndefined();
+
+    const defaultVerifier = createIpAllowlistVerifier();
+
+    expect(defaultVerifier.verify("54.88.218.97, ")).toEqual({ ok: false, ip: undefined });
+
+    const customVerifier = createIpAllowlistVerifier([" 10.0.0.1 ", "", "   "]);
+
+    expect(customVerifier.verify("10.0.0.1")).toEqual({ ok: true, ip: "10.0.0.1" });
+    expect(customVerifier.verify("")).toEqual({ ok: false, ip: undefined });
+  });
 });

@@ -8,7 +8,7 @@ const ORG = "11111111-0000-4000-8000-000000000001";
 const SKU_A = "aaaaaaaa-0000-4000-8000-00000000000a";
 
 const logger = createLogger({}, { sink: () => undefined });
-const envelope = { jobId: "j1" } as never;
+const envelope = { jobId: "j1", organizationId: ORG } as never;
 
 function skuLink(caseId: string, options: { mediation?: boolean; skuId?: string } = {}) {
   return {
@@ -119,11 +119,11 @@ function fakeDb(options: {
   return { db, upserted, inSizes, orderedBy };
 }
 
-async function run(options: Parameters<typeof fakeDb>[0]) {
+async function run(options: Parameters<typeof fakeDb>[0] & { payload?: unknown }) {
   const { db, upserted, inSizes, orderedBy } = fakeDb(options);
   const handler = createDetectSupportPatternActionsHandler({ db });
 
-  const outcome = await handler(envelope, { payload: { organizationId: ORG }, logger });
+  const outcome = await handler(envelope, { payload: options.payload ?? { organizationId: ORG }, logger });
 
   return { outcome, upserted, inSizes, orderedBy };
 }
@@ -223,5 +223,30 @@ describe("detect-support-pattern-actions (D-116)", () => {
     expect(Math.max(...inSizes)).toBeLessThanOrEqual(200);
     expect(inSizes.reduce((sum, size) => sum + size, 0)).toBe(1200);
     expect(upserted[0]?.[0]?.estimated_impact_brl).toBe(30);
+  });
+
+  it("D-814: recusa divergência entre organizationId do payload e do envelope e fatia actions.upsert em lotes de até 500", async () => {
+    const outraOrg = "22222222-0000-4000-8000-000000000002";
+    const mismatch = await run({ payload: { organizationId: outraOrg }, skuLinks: [skuLink("c1"), skuLink("c2"), skuLink("c3")] });
+
+    expect(mismatch.outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(mismatch.upserted).toHaveLength(0);
+
+    const manyLinks = Array.from({ length: 505 }, (_, i) => {
+      const skuId = `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
+
+      return [0, 1, 2].map((k) => ({
+        support_case_id: `case-${String(i)}-${String(k)}`,
+        sku_id: skuId,
+        skus: { sku: `SKU-${String(i)}`, title: `Item ${String(i)}` },
+        support_cases: { internal_status: "NOVO", channel: "CLAIM", is_mediation: false },
+      }));
+    }).flat();
+
+    const batched = await run({ skuLinks: manyLinks, orderLinks: [] });
+
+    expect(batched.outcome).toEqual({ status: "done", processed: 505 });
+    expect(batched.upserted).toHaveLength(2);
+    expect(batched.upserted.every((batch) => batch.length <= 500)).toBe(true);
   });
 });

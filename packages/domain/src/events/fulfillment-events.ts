@@ -37,6 +37,10 @@ export function detectFulfillmentEvents(
   previous: FulfillmentCapture | null,
   current: FulfillmentCapture,
 ): DomainEventDraft[] {
+  if (!Number.isFinite(current.capturedAt.getTime()) || !Number.isFinite(current.quantity)) {
+    return [];
+  }
+
   const events: DomainEventDraft[] = [];
   const capturedAtKey = current.capturedAt.toISOString();
 
@@ -54,7 +58,8 @@ export function detectFulfillmentEvents(
     });
   }
 
-  const wasDepleted = previous !== null && previous.quantity === 0;
+  const hasFinitePrevious = previous !== null && Number.isFinite(previous.quantity);
+  const wasDepleted = hasFinitePrevious && previous.quantity === 0;
   const isDepleted = current.quantity === 0;
 
   if (isDepleted && !wasDepleted) {

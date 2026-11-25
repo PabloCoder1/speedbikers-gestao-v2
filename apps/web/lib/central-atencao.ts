@@ -93,12 +93,16 @@ function comOrdem(href: string, ordem: "prejuizo" | "menor_margem"): string {
   return `${href}${href.includes("?") ? "&" : "?"}ordem=${ordem}`;
 }
 
+function positivoFinito(n: number | null | undefined): n is number {
+  return typeof n === "number" && Number.isFinite(n) && n > 0;
+}
+
 export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
   const itens: ItemDeAtencao[] = [];
   const ads = e.sinaisAds?.resumo ?? null;
   const frete = e.detector?.resumo ?? null;
 
-  if (ads !== null && ads.critico > 0) {
+  if (ads !== null && positivoFinito(ads.critico)) {
     itens.push({
       severidade: "critico",
       categoria: "Ads",
@@ -108,7 +112,7 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
     });
   }
 
-  if (e.produtos !== null && e.produtos.skusMargemNegativa > 0) {
+  if (e.produtos !== null && positivoFinito(e.produtos.skusMargemNegativa)) {
     itens.push({
       severidade: "critico",
       categoria: "Produtos",
@@ -118,7 +122,7 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
     });
   }
 
-  if (frete !== null && frete.forte > 0) {
+  if (frete !== null && positivoFinito(frete.forte)) {
     itens.push({
       severidade: "critico",
       categoria: "Frete",
@@ -128,11 +132,10 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
     });
   }
 
-  if (frete !== null && frete.provavel > 0) {
-    const excesso =
-      frete.excesso_14_dias !== null && frete.excesso_14_dias > 0
-        ? ` — nos que pedem revisão, cerca de ${formatCurrency(frete.excesso_14_dias)} de frete a mais em 14 dias`
-        : "";
+  if (frete !== null && positivoFinito(frete.provavel)) {
+    const excesso = positivoFinito(frete.excesso_14_dias)
+      ? ` — nos que pedem revisão, cerca de ${formatCurrency(frete.excesso_14_dias)} de frete a mais em 14 dias`
+      : "";
 
     itens.push({
       severidade: "atencao",
@@ -143,7 +146,7 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
     });
   }
 
-  if (ads !== null && ads.abaixo_meta > 0) {
+  if (ads !== null && positivoFinito(ads.abaixo_meta)) {
     itens.push({
       severidade: "atencao",
       categoria: "Ads",
@@ -160,7 +163,9 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
     margem.variacao !== null &&
     margem.variacao.relevante &&
     margem.variacao.tom === "perigo" &&
-    margem.valor !== null
+    margem.valor !== null &&
+    Number.isFinite(margem.valor) &&
+    Number.isFinite(margem.variacao.diferenca)
   ) {
     itens.push({
       severidade: "atencao",
@@ -183,7 +188,7 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
     });
   }
 
-  if (ads !== null && ads.atencao > 0) {
+  if (ads !== null && positivoFinito(ads.atencao)) {
     itens.push({
       severidade: "otimizacao",
       categoria: "Ads",
@@ -193,7 +198,7 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
     });
   }
 
-  if (frete !== null && frete.atencao > 0) {
+  if (frete !== null && positivoFinito(frete.atencao)) {
     itens.push({
       severidade: "otimizacao",
       categoria: "Frete",
@@ -203,10 +208,14 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
     });
   }
 
-  if (e.produtos !== null) {
+  if (
+    e.produtos !== null &&
+    Number.isFinite(e.produtos.skusAbaixoDaMargem) &&
+    Number.isFinite(e.produtos.skusMargemNegativa)
+  ) {
     const apertados = e.produtos.skusAbaixoDaMargem - e.produtos.skusMargemNegativa;
 
-    if (apertados > 0) {
+    if (positivoFinito(apertados)) {
       itens.push({
         severidade: "otimizacao",
         categoria: "Produtos",
@@ -217,7 +226,7 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
     }
   }
 
-  if (ads !== null && ads.escala > 0) {
+  if (ads !== null && positivoFinito(ads.escala)) {
     itens.push({
       severidade: "oportunidade",
       categoria: "Ads",
@@ -239,7 +248,9 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
 export function contarPorSeveridade(itens: readonly ItemDeAtencao[]): Record<Severidade, number> {
   const contagem: Record<Severidade, number> = { critico: 0, atencao: 0, otimizacao: 0, oportunidade: 0 };
 
-  for (const item of itens) contagem[item.severidade] += item.quantidade;
+  for (const item of itens) {
+    if (positivoFinito(item.quantidade)) contagem[item.severidade] += item.quantidade;
+  }
 
   return contagem;
 }

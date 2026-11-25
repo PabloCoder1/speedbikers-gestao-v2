@@ -6761,6 +6761,36 @@ body > .sb-atualizando-barra {
   margin-bottom: var(--sb-space-3);
 }
 
+/* D-863: o "Esqueci a senha" e a volta ficam à direita, em texto, sem disputar
+   com o botão principal. */
+.sb-text-button.sb-login-esqueci,
+.sb-text-button.sb-login-voltar {
+  justify-self: end;
+  margin-top: -0.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sb-secondary);
+  cursor: pointer;
+}
+
+.sb-text-button.sb-login-voltar {
+  justify-self: center;
+  margin-top: 0;
+}
+
+.sb-text-button.sb-login-esqueci:hover,
+.sb-text-button.sb-login-voltar:hover {
+  text-decoration: underline;
+}
+
+.sb-login-enviado p {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+}
+
 .sb-login-nota {
   margin: var(--sb-space-4) 0 0;
   padding-top: var(--sb-space-3);
@@ -17409,6 +17439,15 @@ td.sb-pco-num-linha {
 .sb-import-apply-text { flex: 1 1 20rem; margin: 0; font-size: 0.875rem; }
 .sb-import-apply-actions { display: flex; flex-wrap: wrap; gap: var(--sb-space-2); }
 .sb-import-apply-error { flex-basis: 100%; margin: 0; color: var(--sb-danger); font-size: 0.875rem; }
+/* D-860: produtos que não vieram na planilha de produtos (conferência). */
+.sb-import-apply-ausentes { display: flex; flex-basis: 100%; gap: var(--sb-space-2); align-items: flex-start; font-size: 0.875rem; line-height: 1.5; }
+.sb-import-apply-ausentes input { margin-top: 0.2rem; flex: none; }
+.sb-import-apply-alerta { color: var(--sb-accent-ink); }
+.sb-import-fora { margin-top: var(--sb-space-3); }
+.sb-import-fora-nota { margin: var(--sb-space-2) 0 0; font-size: 0.8125rem; line-height: 1.5; color: var(--sb-text-soft); }
+.sb-import-fora-alerta { margin: var(--sb-space-2) 0 0; padding: var(--sb-space-2) var(--sb-space-3); border-radius: var(--sb-radius); background: var(--sb-accent-soft); color: var(--sb-accent-ink); font-size: 0.8125rem; line-height: 1.5; }
+.sb-import-fora-tabela { margin-top: var(--sb-space-3); overflow-x: auto; }
+.sb-skud-fora { margin: 0 0 var(--sb-space-3); }
 
 /* PEDIDO DE COMPRA — detalhe (lote 4 do pente fino, 18/09): classes no lugar do estilo inline. */
 .sb-pod-section { margin-top: var(--sb-space-3); }

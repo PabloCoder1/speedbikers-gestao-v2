@@ -104,4 +104,13 @@ describe("descreverCobertura", () => {
     expect(r.valor).toBe("—");
     expect(r.ressalva).toBe("não calculada para este SKU");
   });
+
+  it("entradas não finitas falham fechado em 'não calculada' sem exibir 'NaN dias'", () => {
+    const r = descreverCobertura({ ...SEED, local: Number.NaN });
+
+    expect(r.dias).toBeNull();
+    expect(r.valor).toBe("—");
+    expect(r.ressalva).toBe("não calculada para este SKU");
+    expect(descreverCobertura({ ...SEED, units30Shopee: Number.POSITIVE_INFINITY }).titulo).not.toContain("Infinity");
+  });
 });

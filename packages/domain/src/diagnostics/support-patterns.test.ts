@@ -46,4 +46,16 @@ describe("detectSupportPatterns (D-116)", () => {
     expect(finding?.impactBrl).toBeNull();
     expect(finding?.evidencias.some((item) => item.tipo === "valor_em_risco")).toBe(false);
   });
+
+  it("D-801: ignora openClaims não finito e não emite valor_em_risco com NaN/Infinity ou não positivo", () => {
+    expect(detectSupportPatterns([{ ...BASE, openClaims: Number.NaN }])).toEqual([]);
+    expect(detectSupportPatterns([{ ...BASE, openClaims: Number.POSITIVE_INFINITY }])).toEqual([]);
+
+    const [finding] = detectSupportPatterns([{ ...BASE, linkedOrdersTotalBrl: Number.NaN }]);
+    expect(finding?.impactBrl).toBeNull();
+    expect(finding?.evidencias.some((item) => item.tipo === "valor_em_risco")).toBe(false);
+
+    const [findingInf] = detectSupportPatterns([{ ...BASE, linkedOrdersTotalBrl: Number.POSITIVE_INFINITY }]);
+    expect(findingInf?.impactBrl).toBeNull();
+  });
 });

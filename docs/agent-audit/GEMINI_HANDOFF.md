@@ -2,6 +2,8 @@
 
 Checkpoint das entregas do **Gemini Sentinel** em colaboração ativa com o **Codex Sentinel**. Nenhuma branch anterior do Codex (`codex/*`), da `main`, da `v3` ou da frente do Claude Code foi apagada ou reescrita; todo o trabalho do Gemini permanece isolado na branch `agent/gemini-sentinel` e publicado em PR de rascunho no GitHub para revisão cruzada e integração limpa.
 
+Em 24/11, o candidato #378 incorporou D-807–D-831 do #343, com base `8f39cddc`. D-832 continua na frente Gemini. O acionamento transacional do worker aguarda handlers e migrations. [Checkpoint do candidato](SESSION_LOG.md#24112026--d-863-e-fatias-gemini-d-807d-811)
+
 ## 1. Git, branch, worktree e coordenação de equipe
 
 | Item | Estado verificado |
@@ -85,3 +87,11 @@ git cherry-pick 157553df 4d2a90e1 9d3c9280
   1. Incorporar `157553df` (`D-782`), `4d2a90e1` (`D-783`) e `9d3c9280` (`D-784`) no candidato `#336` (que já consolidou `D-770..D-781`, `#338`, `#340`, `#342`/`D-791` e `#341`), além de `#345` (sondagem de backup diário) após CI verde.
   2. Quando o Supabase Dev (`nmgccyqquwxecqffsidr`) voltar a ficar ativo: registrar as 4 migrations pendentes da Sentinel (`D-750`, `D-752`, `D-790`, `D-768`) com timestamps definitivos pós-`20261119120000`, regenerar tipos em coordenação com compras (`#344`) e rodar a CI remota do candidato integrado (`V01`).
   3. Atos do dono e ambiente remoto ([STATE_AND_COMPLETION_2026-11-18.md](STATE_AND_COMPLETION_2026-11-18.md)): proteção da branch `main` (`S05`), workflow de migrations para a VM `sb-db` (`I05`), agendamento/alerta da sondagem de backup (`I03`), Monitoring/uptime checks (`I04`), Auth/SMTP (`S04`), benchmark representativo na VM (`P02`), estoque Shopee/TikTok (`M03`/`M04`/`M05`) e deploy coordenado (`migrations -> worker -> API -> web`, `V02`/`V03`).
+
+## 6. Integração de 24/11 no candidato #378
+
+Sobre `2ae7a4b4`, o candidato recebeu 19 commits de código até `b04bdcea` (D-785–D-789 e D-793–D-806). Os SHAs de origem constam nos commits. Os arquivos compartilhados da Curva ABC e de saúde da sincronização mantêm as alterações do candidato e do Gemini. O índice foi regenerado com as 19 decisões. [Handoff de origem do #343](https://github.com/PabloCoder1/speedbikers-gestao-v2/blob/b04bdceacecf3b9359965accf43fdac477b71a0d/docs/agent-audit/GEMINI_HANDOFF.md).
+
+D-807 continua reservado pelo Gemini nos doze módulos do checkpoint de origem. D-795 é a decisão do Gemini no candidato. O #383 entrou na main com o ID D-860. A decisão D-795 do Gemini permanece no candidato. D-858 de margem fica com o ID publicado na main. O preflight da VM permanece em D-880/D-881.
+
+**Revisão de integração de D-803.** O leitor `lerPaginasDaRpc` aceita `Infinity` para buscar todos os anúncios de um SKU, em páginas de até 1.000 linhas. A regressão foi reproduzida no Playwright e em teste focado no candidato. A correção está no #378. O Gemini pode incorporar esse ajuste em sua branch sem alterar os tetos finitos de exportação.

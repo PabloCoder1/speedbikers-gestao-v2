@@ -241,12 +241,15 @@ export function recorteDeVendasShopee(
   // lida, não há o que resumir -- e o resumo não vira zero (D-067).
   const unidades = primeira?.recorte_unidades;
 
-  if (unidades === undefined || unidades === null) return null;
+  if (typeof unidades !== "number" || !Number.isFinite(unidades)) return null;
+
+  const receitaBruta = primeira?.recorte_receita;
+  const semReceitaBruta = primeira?.recorte_unidades_sem_receita;
 
   return {
     unidades,
-    receita: primeira?.recorte_receita ?? null,
-    semReceita: primeira?.recorte_unidades_sem_receita ?? 0,
+    receita: typeof receitaBruta === "number" && Number.isFinite(receitaBruta) ? receitaBruta : null,
+    semReceita: typeof semReceitaBruta === "number" && Number.isFinite(semReceitaBruta) ? semReceitaBruta : 0,
   };
 }
 
@@ -304,7 +307,7 @@ const NUMERO = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximu
  * o número com o código ao lado — em vez de supor real.
  */
 export function formatShopeeMoney(valor: number | null, moeda: string | null): string {
-  if (valor === null) return "—";
+  if (valor === null || !Number.isFinite(valor)) return "—";
 
   const codigo = moeda?.trim().toUpperCase() ?? "";
 
@@ -360,7 +363,9 @@ export function shopeeImageUrl(url: string | null): string | null {
  * loja vazia que ninguém olhou.
  */
 export function resumoDoCatalogoShopee(anuncios: number | null, vinculados: number | null): string | null {
-  if (anuncios === null || vinculados === null) return null;
+  if (anuncios === null || vinculados === null || !Number.isFinite(anuncios) || !Number.isFinite(vinculados)) {
+    return null;
+  }
 
   return `${formatCount(anuncios)} ${anuncios === 1 ? "anúncio" : "anúncios"} · ${formatCount(vinculados)} ${
     vinculados === 1 ? "vinculado" : "vinculados"

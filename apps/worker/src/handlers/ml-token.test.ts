@@ -306,4 +306,43 @@ describe("ensureAccessToken: a credencial vale a partir da trava (auditoria de 2
       retryable: true,
     });
   });
+
+  it("D-831: ciphertext corrompido ou chave incompatível falha fechado (retryable=false) e solta a trava", async () => {
+    const { deps: depsLeitura } = fakeDb({
+      naTrava: {
+        ...RENOVADA_POR_OUTRA,
+        access_token_ciphertext: "ciphertext-corrompido",
+      },
+    });
+    // Caminho 1: access_token ainda válido mas corrompido na leitura inicial (chave errada)
+    const { deps: depsChaveErrada } = fakeDb({ naTrava: RENOVADA_POR_OUTRA });
+    await expect(
+      ensureAccessToken(
+        { ...depsChaveErrada, encryptionKey: randomBytes(32) },
+        CONTA,
+        new Date(AGORA.getTime() - 2 * 3600_000),
+      ),
+    ).resolves.toMatchObject({ ok: false, retryable: false });
+
+    // Caminho 2: access_token renovado por outra execução mas corrompido na trava
+    await expect(ensureAccessToken(depsLeitura, CONTA, AGORA)).resolves.toMatchObject({
+      ok: false,
+      retryable: false,
+    });
+
+    // Caminho 3: refresh_token corrompido na trava — solta trava e não chama OAuth
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const { deps: depsRefresh, atualizacoes } = fakeDb({
+      naTrava: {
+        ...VENCENDO,
+        refresh_token_ciphertext: "ciphertext-corrompido",
+      },
+    });
+    await expect(ensureAccessToken(depsRefresh, CONTA, AGORA)).resolves.toMatchObject({
+      ok: false,
+      retryable: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(atualizacoes.at(-1)?.row).toEqual({ refresh_locked_until: null, refresh_lock_id: null });
+  });
 });

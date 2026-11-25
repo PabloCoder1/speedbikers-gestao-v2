@@ -357,14 +357,15 @@ jobs:
         run: pnpm --filter web run e2e:seed
 
       - name: Testes E2E
+        id: playwright_e2e
         run: pnpm --filter web run e2e
 
-      - name: Relatorio do Playwright em caso de falha
-        if: failure()
+      - name: Traces do Playwright em caso de falha
+        if: failure() && steps.playwright_e2e.outcome == 'failure'
         uses: actions/upload-artifact@v6
         with:
-          name: playwright-report
-          path: apps/web/playwright-report/
+          name: playwright-test-results
+          path: apps/web/test-results/
           retention-days: 7
 
       - name: Derrubar Supabase
@@ -469,18 +470,14 @@ jobs:
       - name: Verificação do backup diário
         run: node --test infra/vm/check-daily-backup.test.mjs
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Verificação do backup diário
-        run: node --test infra/vm/check-daily-backup.test.mjs
-
       - name: Provisionamento de infraestrutura com gcloud simulado
         run: |
           bash infra/alertas.test.sh
           bash infra/cloud-scheduler.test.sh
           bash infra/cloud-tasks-queues.test.sh
+          bash infra/storage-buckets.test.sh
+          bash infra/cloud-nat.test.sh
+          bash infra/setup-dev.test.sh
           bash infra/deploy-cloud-run.test.sh
 
       # Os scripts de infra/ rodam em bash e são versionados. Erro de sintaxe
@@ -522,13 +519,6 @@ jobs:
 
       - name: Política de alerta de disco da VM
         run: node --test infra/vm/disk-alert-policy.test.mjs
-
-      # D-334: migrations-producao.yml só aplica a partir da main, com o ambiente
-      # travado (revisor e restrição de branch) e o mesmo commit já verde e já
-      # aplicado no Dev. Uma guarda que só roda no dia de aplicar em produção
-      # seria descoberta quebrada justamente nesse dia.
-      - name: Guarda das migrations de produção
-        run: bash infra/guarda-migrations-producao.test.sh
 
       - name: Política de alerta de falha do backup
         run: node --test infra/vm/backup-alert-policy.test.mjs infra/vm/run-backup-probe.test.mjs

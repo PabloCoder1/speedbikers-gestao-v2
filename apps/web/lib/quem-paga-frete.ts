@@ -52,7 +52,7 @@ function registro(valor: unknown): Registro {
 }
 
 function numeroOuNulo(r: Registro, chave: string): number | null {
-  if (!(chave in r)) throw new ForaDoContrato(chave);
+  if (!Object.hasOwn(r, chave)) throw new ForaDoContrato(chave);
 
   const v = r[chave];
 
@@ -72,7 +72,7 @@ function numero(r: Registro, chave: string): number {
 }
 
 function texto(r: Registro, chave: string): string {
-  const v = r[chave];
+  const v = Object.hasOwn(r, chave) ? r[chave] : undefined;
 
   if (typeof v !== "string") throw new ForaDoContrato(chave);
 
@@ -137,14 +137,16 @@ const LOGISTICA: Readonly<Record<string, string>> = {
 
 /** O nome da logística como a operação fala; tipo novo aparece cru, nunca some. */
 export function rotuloDaLogistica(logistica: string): string {
-  return LOGISTICA[logistica] ?? logistica;
+  return Object.hasOwn(LOGISTICA, logistica) ? (LOGISTICA[logistica] ?? logistica) : logistica;
 }
 
 /** Parte de um todo, para LER; `null` sem o todo -- nunca 0% fingido. */
 function fracao(parte: number | null, todo: number | null): number | null {
-  if (parte === null || todo === null || todo <= 0) return null;
+  if (parte === null || todo === null || !Number.isFinite(parte) || !Number.isFinite(todo) || todo <= 0) return null;
 
-  return parte / todo;
+  const resultado = parte / todo;
+
+  return Number.isFinite(resultado) ? resultado : null;
 }
 
 /** Quanto do frete que cabia ao vendedor o Mercado Livre bancou. */
@@ -164,18 +166,26 @@ export function frasesDoQuemPaga(q: QuemPagaFrete): string[] {
   const frases: string[] = [];
   const ml = mlNoFreteDoVendedor(q);
 
-  if (ml !== null) {
+  if (ml !== null && q.vendedor_pagou !== null && Number.isFinite(q.vendedor_pagou)) {
     frases.push(
       `Do frete que cabia ao vendedor (${formatCurrency(q.frete_do_vendedor)}), o Mercado Livre bancou ${formatPercent(ml)} ` +
         `(${formatCurrency(q.ml_bancou_vendedor)}) e o vendedor pagou ${formatCurrency(q.vendedor_pagou)}.`,
     );
   }
 
-  if (q.comprador_pagou !== null && q.ml_bancou_comprador !== null && q.envios_com_detalhe > 0) {
+  const gratis = fracao(q.frete_gratis_comprador, q.envios_com_detalhe);
+
+  if (
+    q.comprador_pagou !== null &&
+    Number.isFinite(q.comprador_pagou) &&
+    q.ml_bancou_comprador !== null &&
+    Number.isFinite(q.ml_bancou_comprador) &&
+    gratis !== null
+  ) {
     frases.push(
       `Os compradores pagaram ${formatCurrency(q.comprador_pagou)}, e o Mercado Livre bancou ` +
         `${formatCurrency(q.ml_bancou_comprador)} do frete deles: ${formatCount(q.frete_gratis_comprador)} dos ` +
-        `${formatCount(q.envios_com_detalhe)} envios (${formatPercent(fracao(q.frete_gratis_comprador, q.envios_com_detalhe))}) ` +
+        `${formatCount(q.envios_com_detalhe)} envios (${formatPercent(gratis)}) ` +
         "saíram com frete grátis para o comprador.",
     );
   }

@@ -27,7 +27,7 @@
 |---|---|---|---|
 | **local** | Supabase CLI em Docker | apps locais, Mercado Livre em fixture | `next dev` |
 | **development** | Supabase `speedbikers-gestao-v3-dev` (`nmgccyqquwxecqffsidr`, `sa-east-1`) | Cloud Run em `speedbikers-gestao-v3` (pausado desde 2026-09-14, D-350) | `next dev` local — o projeto Vercel do Dev (`speedbikers-gestao-v2-m71j`) foi excluído em 2026-09-23; `DEV_WEB_ORIGIN` passou a `http://localhost:3000` |
-| **production** | Supabase `speedbikers-prod` (`imvjfgnaprqsfjlnsyev`, `sa-east-1`), criado em 2026-09-14 | Cloud Run em `speedbikers-prod` | Vercel `speedbikers-prod` |
+| **production** | Supabase autogerenciado na VM `sb-db` em `speedbikers-prod` | Cloud Run em `speedbikers-prod` | Vercel `speedbikers-prod` |
 
 **Três ambientes, não quatro.** Staging separado só se justifica quando houver produção com usuário real dependendo de estabilidade.
 
@@ -64,6 +64,12 @@ Essa janela causou um incidente real em 2026-08-20: quatro tasks `erp.import.par
 usa a identidade padrão do projeto. As contas de execução da API e do worker são
 configuradas em separado.
 
+`CLOUD_BUILD_REGION` define a região do build sem alterar a região de execução
+da API ou do worker. Sem a variável, vale a configuração do `gcloud`.
+Para comparar o ensaio da identidade dedicada com os builds regulares de
+produção, use `southamerica-east1` em ambos e confira a presença do log
+detalhado pelo ID do build.
+
 Para migrar, prepare uma conta dedicada com leitura do bucket de origem, escrita
 no repositório de imagens e escrita no Cloud Logging, que já é o destino dos logs
 em `infra/cloudbuild.yaml`. O operador precisa poder usar a conta com `actAs`.
@@ -72,6 +78,19 @@ imagem publicada no registro. A remoção de `roles/editor` da conta padrão dep
 de verificar os outros consumidores e simular o impacto da mudança. Consulte o
 [guia de contas dedicadas do Cloud Build](https://docs.cloud.google.com/build/docs/securing-builds/configure-user-specified-service-accounts)
 e a [orientação do Compute Engine](https://docs.cloud.google.com/compute/docs/access/service-accounts).
+
+Em 24/11, a conta `v3-builder` compilou o worker em `fb8b8ffe` e enviou
+o pacote isolado `worker-sentinel-iam` ao Artifact Registry. O digest
+confirmado foi `sha256:081d6ae6b1f12f20a3a604785f9dbf640e3a78a2c5f063dfcda8910a2eb5b69f`.
+Os vínculos temporários do ensaio foram removidos. Os metadados e a trilha de
+auditoria estavam disponíveis, e a consulta aos logs detalhados não retornou
+saída. [Execução](https://console.cloud.google.com/cloud-build/builds/6e12a79b-114a-4807-bcda-227969f31d3a?project=speedbikers-prod).
+
+Em um teste regional com a mesma conta e sem código-fonte, a etapa
+começou seis segundos após a concessão de IAM e só apareceu na auditoria.
+A repetição começou 139 segundos após a concessão e registrou o marcador no
+Cloud Logging. Antes de adotar a conta, aguarde a propagação e confira a
+saída do build completo na mesma região. [Teste regional](https://console.cloud.google.com/cloud-build/builds;region=southamerica-east1/bff60fa4-319e-4265-82d4-fafd172de213?project=speedbikers-prod).
 
 ---
 
@@ -115,6 +134,9 @@ Como toda task usa `v3-tasks-invoker` no token OIDC, os dois produtores (`v3-api
 | `MERCADO_LIVRE_CLIENT_SECRET` | Secret Manager | `api` (troca o `code`), `worker` (renova por `refresh_token`) |
 | `ML_TOKEN_ENCRYPTION_KEY` (AES-256, D-046) | Secret Manager | `api`, `worker` |
 | `ANTHROPIC_API_KEY` (Claude Haiku 4.5, D-082) | Secret Manager | `api` (Copiloto — o `worker` nunca chama a Anthropic) |
+| `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_PORT`, `ALERT_EMAIL_FROM` (D-858) | Secret Manager | Somente o `worker`. Porta e remetente são opcionais e usam 465 e o usuário SMTP como padrões. |
+
+No deploy do worker, `MARGIN_ALERT_EMAIL_ENABLED=sim` vincula as versões numéricas mais recentes dos segredos SMTP e usa a primeira origem de `WEB_ORIGINS` para o link do e-mail. As versões precisam estar habilitadas e a identidade do worker precisa de `roles/secretmanager.secretAccessor` nos segredos vinculados. A conta que executa o script consulta somente os metadados. Se o worker já tiver variáveis SMTP, o script exige `sim` para manter o envio ou `nao` para voltar ao alerta no sino. Em um worker sem SMTP, o alerta no sino é o padrão.
 | `NEXT_PUBLIC_SUPABASE_URL` e chave publicável | Vercel env | `web` |
 
 Regras:
@@ -212,6 +234,8 @@ No Console da Shopee (`open.shopee.com` → Console → **Push Mechanism** → o
 | Pushes | `order_status_push` (3) e `return_updates_push` (29) | Os dois com ação; os outros só iriam para o log |
 | Chave do push | O campo **Test Push Partner Key** da mesma tela (no Go Live, a de produção) → segredo `SHOPEE_TEST_PUSH_PARTNER_KEY` no Secret Manager de `speedbikers-prod`, criado pelo dono (a chave nunca passa pelo chat); a conta `v3-api-runtime` recebe `secretAccessor` e o deploy da api o monta como `SHOPEE_PUSH_PARTNER_KEY` só se ele existir | A Shopee assina o push com ESTA chave, não com a Partner Key: 18 combinações com a Partner Key não conferiram com as amostras de 15/10 (D-453) |
 
+Antes do build da API com a Shopee habilitada, o provisionador confirma o nome completo da chave de push em uma listagem do Secret Manager. Um erro na listagem interrompe o build. Se o nome estiver ausente em uma listagem bem-sucedida, a chave dedicada fica fora da revisão. O worker isolado dispensa essa consulta.
+
 **Como verificar:** a verificação do endereço passa no Console; no log da api, `shopee_push_enqueued` depois de um pedido do sandbox mudar; `shopee_push_signature_rejected` repetido quer dizer endereço diferente do cadastrado. O push é só aviso: sem ele, o gatilho de hora em hora segue lendo.
 
 ## 6.3 IP fixo de saída — Cloud NAT (D-457)
@@ -230,7 +254,8 @@ Em produção, api e worker saem pela rede `v3-vpc` (sub-rede `v3-run-egress`, `
 typecheck -> lint -> testes unitários -> testes de integração -> build -> aplicar migrations no Dev
 ```
 
-- Migrations aplicadas **por CI** (`supabase db push`, job `migrations`), nunca à mão, nunca pelo dashboard — só em push na `main`, depois de `check`/`scripts`/`integration` verdes. **Em produção**, só por `.github/workflows/migrations-producao.yml`, disparado à mão na `main`, com duas aprovações no ambiente `producao` (D-334; primeira execução em 2026-09-14).
+- **Dev** usa `supabase db push` no job `migrations` da `main` após `check`, `scripts`, `integration` e `e2e`. O registro das novas versões está pausado enquanto o Dev estiver inativo.
+- **Produção** segue o [procedimento da VM](../infra/vm/README.md#publicação-do-candidato-378-e-aceite). O workflow manual `migrations-producao.yml` recebe o catálogo de versões e gera o plano de leitura para o commit selecionado.
 - Deploy do `web` pela integração nativa da Vercel com a branch — esse sim é automático.
 - **Deploy de `api` e `worker` é MANUAL** — `bash infra/deploy-cloud-run.sh` (worker primeiro, depois api — secao 3). Não existe workflow do GitHub Actions que publique no Cloud Run. Quem roda o deploy é responsável por conferir CI verde antes ("nenhum deploy sem CI verde" é regra de operador, não trava automática).
 
@@ -243,7 +268,7 @@ Antes de declarar qualquer mudança operacional como implantada, verificar contr
 - `gcloud run services describe api/worker --project <projeto> --region southamerica-east1 --format='value(status.latestReadyRevisionName)'` — **sempre com `--project`**, porque o padrão do `gcloud` na máquina do dono é produção (D-350) — e comparar a tag da imagem (`git rev-parse --short HEAD` no momento do deploy) contra o commit atual;
 - **a revisão nova servindo o tráfego** — desde D-341 o `deploy-cloud-run.sh` falha se ela não serve 100%. Com o tráfego fixo numa revisão (depois de um `update-traffic --to-revisions`, como a volta de D-340), a revisão publicada nasce com 0% e o deploy sairia verde com o commit antigo no ar. **E nunca `--to-latest` com o tráfego fixo** (D-342): nesse estado `latestReadyRevisionName` não anda para a revisão nova — o próprio `gcloud run deploy` imprime o nome errado —, e "latest" seria a revisão anterior. Publique por nome (`--to-revisions <revisão>=100`, conferindo `APP_COMMIT` em `gcloud run revisions list`), confira `/health`, e só desfixe com `--to-latest` quando `latestReadyRevisionName` já for a revisão servindo;
 - `gcloud scheduler jobs list --project <projeto> --location southamerica-east1` contra os jobs esperados (`infra/cloud-scheduler.sh` é a lista canônica);
-- `pnpm exec supabase migration list --linked` (local == remoto, sem drift);
+- catálogo aplicado na VM, comparado com o commit por `check-migration-catalog.mjs`;
 - CI do commit exato verde (`gh run list`/`gh run view`), não presumido;
 - logs de boot sem `ERROR` (`gcloud logging read ... severity>=ERROR`) depois de um deploy novo;
 - para um job que nunca rodou de verdade em produção, disparar manualmente uma vez (`gcloud scheduler jobs run <nome> --project <projeto> --location southamerica-east1`) e conferir **o que ele fez** antes de confiar na cadência automática. **O 200 do agendador e o `done` do job não provam trabalho** (D-350): o handler pode responder 200 falhando por dentro (`accounts_not_listed`), e o Full saiu `done` com 0 processados porque rodou antes dos vínculos. Confira `processed` em `job_runs` e a tabela que o job alimenta; respeite a dependência (anúncios e vínculos antes do Full); e lembre que a chave de vários jobs é por hora — redisparo na mesma hora é descartado.
@@ -439,6 +464,8 @@ unset SD SR
 
 ### 8.2 Criar o ambiente de produção (D-333)
 
+Registro histórico da criação do Supabase hospedado. O banco atual segue o [procedimento da VM](../infra/vm/README.md).
+
 Todo passo abaixo é **ato humano** — criar projeto, gerar chave e colar segredo não são coisas que um agente faz. O que o repositório garante é que os scripts **recusam misturar** produção com o Dev (`infra/README.md`, seção Ambientes).
 
 **O buraco da Vercel está fechado (2026-09-14, D-350):** produção tem projeto próprio, `speedbikers-prod`, com as `NEXT_PUBLIC_*` de produção (conferido na CSP de `/login`), e o `speedbikers-gestao-v2-m71j` segue sendo o Dev. Antes, o único projeto servia o `web` com as variáveis do Dev — inclusive no alvo *production* da `v3`. (O outro buraco de D-333, migrations de produção sem caminho, fechou em D-334 — é o passo 2.)
@@ -463,7 +490,7 @@ export AMBIENTE=prod PROJECT_ID=<projeto-gcp-prod> \
    - **Conferir**: `supabase migration list --linked` sem drift — o próprio `aplicar` deixa essa listagem no log.
 3. **Base do GCP**, na ordem: `bash infra/setup-dev.sh`, `bash infra/cloud-tasks-queues.sh`, `bash infra/storage-buckets.sh`. O nome `setup-dev.sh` é histórico; ele serve a qualquer `AMBIENTE`. Ele liga as APIs, **cria o repositório `speedbikers-v3` no Artifact Registry** (D-349 — até ali nada o criava, e a falta só aparecia no push, depois do build inteiro), cria as quatro service accounts e concede `secretAccessor` dos **quatro** segredos — os mesmos que `deploy-cloud-run.sh` monta em `--set-secrets` (D-348). **Na primeira passada os segredos ainda não existem**, e em `AMBIENTE=prod` o script PARA listando o que falta: crie-os (item 4) e rode de novo, que ele é idempotente. Essa parada existe porque a montagem do segredo acontece na partida do container, não no deploy — sem ela o deploy do item 5 sai verde e a revisão nova nunca parte.
 4. **Segredos no Secret Manager DO PROJETO DE PRODUÇÃO** (seção 5): `SUPABASE_SERVICE_ROLE_KEY` do Supabase de produção; `MERCADO_LIVRE_CLIENT_SECRET`; `ANTHROPIC_API_KEY`; e **`ML_TOKEN_ENCRYPTION_KEY` NOVA** — nunca a do Dev: é ela que cifra os tokens das contas, e compartilhar a chave entre ambientes compartilha a capacidade de ler os tokens um do outro. O formato é exato: **base64 que decodifica para 32 bytes** (AES-256). Gere com `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"` ou, se preferir o openssl, com `openssl rand -base64 32`. **Nunca `openssl rand -hex 32`**: hex dá 64 caracteres, que lidos como base64 viram ~48 bytes, e a `api` e o `worker` recusam no boot com "precisa decodificar em base64 para 32 bytes (AES-256)" (`loadEncryptionKey`, `packages/mercado-livre/src/token-cipher.ts`). Prefira criar pelo **console** do Secret Manager, colando o valor no formulário: assim o segredo não passa pelo histórico do shell.
-5. **Deploy**: `bash infra/deploy-cloud-run.sh`, que publica o `worker` antes da `api` (D-088). No primeiro deploy a `api` ainda não conhece a própria URL — o script avisa, e o segundo deploy a injeta.
+5. **Deploy**: `bash infra/deploy-cloud-run.sh`, que publica o `worker` antes da `api` (D-088). Passe somente `api` ou `worker` para publicar um serviço específico. Argumentos inválidos são recusados antes de qualquer consulta ao Google Cloud. O script valida o inventário regional do Cloud Run antes do build e consulta novamente após criar o worker. O primeiro deploy de um serviço só usa a URL provisória se a listagem confirmar sua ausência. Erro de leitura, serviço existente sem URL HTTPS ou worker ausente para a API bloqueiam o build. Cada execução da API usa um YAML temporário exclusivo, ignorado pelo Git e pelo envio de fontes do Cloud Build, e remove esse arquivo ao terminar. O script confirma o binding de invocação do Cloud Tasks no worker antes do build da API. No deploy combinado, essa etapa vem entre a publicação do worker e a da API. Cada deploy reserva um nome de revisão próprio e verifica se ela recebe 100% do tráfego.
 
    **A `api` fica com DUAS URLs** (D-349). O Cloud Run devolve a nova (`api-<número-do-projeto>.<região>.run.app`, a que o console mostra no cabeçalho) e a legada (`api-<hash>-<rg>.a.run.app`, que `status.url` devolve). O script lê `status.url`, então é a **legada** que vira `API_URL` — audience do OIDC — e o padrão de `MERCADO_LIVRE_REDIRECT_URI`. Use essa mesma em `NEXT_PUBLIC_API_URL` e no cadastro do Mercado Livre: as duas respondem, mas copiar a do console dá dois nomes para a mesma `api`.
 

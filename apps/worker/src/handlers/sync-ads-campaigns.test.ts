@@ -249,4 +249,21 @@ describe("sync.ads.campaigns", () => {
       handler(fakeDb().db, client)(ENVELOPE, { ...contexto(), payload: {} }),
     ).resolves.toMatchObject({ status: "failed", retryable: false });
   });
+
+  it("D-795: resposta fora do contrato em anunciante/campanhas falha como not_retryable", async () => {
+    const { db, gravacoes } = fakeDb();
+    const { client } = fakeMl((o) => {
+      if (o.path === "/advertising/advertisers") return { advertisers: [{ advertiser_id: "invalido" }] };
+
+      return {};
+    });
+
+    await expect(handler(db, client)(ENVELOPE, contexto())).resolves.toMatchObject({
+      status: "failed",
+      retryable: false,
+    });
+    expect(gravacoes.find((g) => g.tabela === "sync_errors")?.valores).toMatchObject({
+      error_class: "not_retryable",
+    });
+  });
 });

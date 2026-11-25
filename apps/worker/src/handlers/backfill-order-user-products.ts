@@ -63,9 +63,6 @@ const PEDACO_MS = 24 * 3_600_000;
 /** `order_items` é consultada pelos ids do pedaço em lotes: a URL do PostgREST tem teto. */
 const LOTE_DE_IDS = 200;
 
-/** Teto do PostgREST (D-131): a leitura em lote que chega nele pode ter sido cortada. */
-const TETO_POSTGREST = 1000;
-
 /** A mesma pausa entre pedidos da varredura de frete. */
 const PAUSA_ENTRE_PEDIDOS_MS = 150;
 
@@ -148,6 +145,10 @@ export function createBackfillOrderUserProductsHandler(deps: BackfillOrderUserPr
       return { status: "done", processed: 0 };
     }
 
+    if (account.data.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "conta do Mercado Livre pertence a outra organização" };
+    }
+
     const { organization_id: organizationId, slug } = account.data;
     const desde = new Date(Math.max(ate.getTime() - PEDACO_MS, limite.getTime()));
     const started = now;
@@ -205,21 +206,19 @@ export function createBackfillOrderUserProductsHandler(deps: BackfillOrderUserPr
 
       for (let i = 0; i < orders.length; i += LOTE_DE_IDS) {
         const ids = orders.slice(i, i + LOTE_DE_IDS).map((order) => order.id);
-        const lidos = await deps.db
-          .from("order_items")
-          .select("id, order_id, position, item_id, variation_id, user_product_id")
-          .in("order_id", ids)
-          .is("sku_id", null);
+        const lidos = await readAllPages<ItemSemSku>(
+          (from, to) =>
+            deps.db
+              .from("order_items")
+              .select("id, order_id, position, item_id, variation_id, user_product_id")
+              .in("order_id", ids)
+              .is("sku_id", null)
+              .order("id")
+              .range(from, to),
+          { label: "falha ao ler os itens sem SKU" },
+        );
 
-        if (lidos.error !== null) {
-          throw new Error(`falha ao ler os itens sem SKU: ${lidos.error.message}`);
-        }
-
-        if (lidos.data.length >= TETO_POSTGREST) {
-          throw new Error(`a leitura dos itens sem SKU chegou ao teto do PostgREST (D-131): reduza o lote`);
-        }
-
-        for (const item of lidos.data) {
+        for (const item of lidos) {
           const doPedido = itensPorPedido.get(item.order_id) ?? [];
           doPedido.push(item);
           itensPorPedido.set(item.order_id, doPedido);
@@ -273,14 +272,22 @@ export function createBackfillOrderUserProductsHandler(deps: BackfillOrderUserPr
     const janela = `${(deps.now?.() ?? new Date()).toISOString().slice(0, 16)}Z`;
 
     for (const metricDate of [...diasTocados].sort()) {
-      await deps.enqueuer.enqueue({
-        jobType: "analytics.recompute",
-        organizationId,
-        dedupeKey: `recompute:${mlAccountId}:${metricDate}:${janela}`,
-        queue: "analytics-recompute",
-        payload: { mode: "incremental", mlAccountId, metricDate },
-        delaySeconds: 60,
-      });
+      try {
+        await deps.enqueuer.enqueue({
+          jobType: "analytics.recompute",
+          organizationId,
+          dedupeKey: `recompute:${mlAccountId}:${metricDate}:${janela}`,
+          queue: "analytics-recompute",
+          payload: { mode: "incremental", mlAccountId, metricDate },
+          delaySeconds: 60,
+        });
+      } catch (error) {
+        context.logger.warn("backfill_order_user_products_recompute_enqueue_failed", {
+          ml_account_id: mlAccountId,
+          metric_date: metricDate,
+          reason: error instanceof Error ? error.message : "erro desconhecido",
+        });
+      }
     }
 
     const finishedAt = deps.now?.() ?? new Date();
@@ -310,13 +317,25 @@ export function createBackfillOrderUserProductsHandler(deps: BackfillOrderUserPr
     const temMais = desde.getTime() > limite.getTime();
 
     if (temMais) {
-      await deps.enqueuer.enqueue({
-        jobType: "backfill.order-user-products",
-        organizationId,
-        dedupeKey: `backfill-order-user-products:${slug}:${desde.toISOString()}`,
-        queue: "backfill",
-        payload: { mlAccountId, ate: desde.toISOString(), limite: limite.toISOString() },
-      });
+      try {
+        await deps.enqueuer.enqueue({
+          jobType: "backfill.order-user-products",
+          organizationId,
+          dedupeKey: `backfill-order-user-products:${slug}:${desde.toISOString()}`,
+          queue: "backfill",
+          payload: { mlAccountId, ate: desde.toISOString(), limite: limite.toISOString() },
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "erro desconhecido ao enfileirar próximo pedaço";
+
+        context.logger.error("backfill_order_user_products_enqueue_failed", {
+          ml_account_id: mlAccountId,
+          desde: desde.toISOString(),
+          reason,
+        });
+
+        return { status: "failed", retryable: true, reason: `falha ao enfileirar próximo pedaço: ${reason}` };
+      }
     }
 
     context.logger.info("backfill_order_user_products_chunk_done", {

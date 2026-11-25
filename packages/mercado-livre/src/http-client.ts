@@ -149,7 +149,33 @@ export function createMercadoLivreClient(
       });
 
       if (response.ok) {
-        const json: unknown = response.status === 204 ? undefined : await response.json();
+        let json: unknown;
+
+        if (response.status === 204) {
+          json = undefined;
+        } else {
+          try {
+            json = await response.json();
+          } catch {
+            try {
+              config.onFailure?.({
+                status: response.status,
+                method: options.method,
+                path: options.path,
+                errorClass: "retryable",
+                body: undefined,
+              });
+            } catch {
+              // Observabilidade não derruba a operação.
+            }
+
+            throw new MercadoLivreApiError(
+              `Mercado Livre respondeu ${String(response.status)} com corpo não-JSON para ${options.method} ${options.path}.`,
+              { status: response.status, errorClass: "retryable", url },
+            );
+          }
+        }
+
         return options.schema.parse(json);
       }
 

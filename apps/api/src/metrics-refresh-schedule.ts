@@ -90,21 +90,32 @@ export async function triggerMetricsRefresh(
 
   let enqueued = 0;
   let deduplicated = 0;
+  let enqueueFailed = false;
 
   for (const account of accounts.data) {
     for (const metricDate of dates) {
-      const result = await deps.enqueuer.enqueue({
-        jobType: "analytics.recompute",
-        organizationId: account.organization_id,
-        dedupeKey: `refresh:${account.slug}:${metricDate}:${hourBucket}`,
-        queue: "analytics-recompute",
-        payload: { mode: "incremental", mlAccountId: account.id, metricDate },
-      });
+      try {
+        const result = await deps.enqueuer.enqueue({
+          jobType: "analytics.recompute",
+          organizationId: account.organization_id,
+          dedupeKey: `refresh:${account.slug}:${metricDate}:${hourBucket}`,
+          queue: "analytics-recompute",
+          payload: { mode: "incremental", mlAccountId: account.id, metricDate },
+        });
 
-      if (result.deduplicated) {
-        deduplicated += 1;
-      } else {
-        enqueued += 1;
+        if (result.deduplicated) {
+          deduplicated += 1;
+        } else {
+          enqueued += 1;
+        }
+      } catch (error) {
+        enqueueFailed = true;
+        deps.logger.error("metrics_refresh_enqueue_failed", {
+          ml_account_id: account.id,
+          slug: account.slug,
+          metric_date: metricDate,
+          reason: error instanceof Error ? error.message : "falha ao enfileirar recálculo de métricas",
+        });
       }
     }
   }
@@ -114,7 +125,14 @@ export async function triggerMetricsRefresh(
     enqueued,
     deduplicated,
     dates,
+    ...(enqueueFailed ? { failed: true } : {}),
   });
 
-  return { accountsScanned: accounts.data.length, enqueued, deduplicated, dates };
+  return {
+    accountsScanned: accounts.data.length,
+    enqueued,
+    deduplicated,
+    dates,
+    ...(enqueueFailed ? { failed: true as const } : {}),
+  };
 }

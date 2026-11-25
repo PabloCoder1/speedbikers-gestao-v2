@@ -1,6 +1,11 @@
 import { actionKindLabel } from "@sb/domain";
 
 import { formatCurrency } from "./format";
+
+/** Fração em porcentagem pt-BR: 0,224 → "22,4%". */
+function formatPercent(fracao: number, casas = 1): string {
+  return `${(fracao * 100).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas })}%`;
+}
 import { listingStatusLabel } from "./labels";
 
 /**
@@ -58,6 +63,20 @@ export function formatEventDiff(
       return impacto === null || impacto <= 0
         ? actionKindLabel(kind)
         : `${actionKindLabel(kind)} · ${formatCurrency(impacto)} de impacto estimado`;
+    }
+    // D-858: a margem da venda contra a meta, o canal e o pedido -- a forma
+    // gravada por `detectar_vendas_abaixo_da_margem`.
+    case "sale.margin.below": {
+      const margem = typeof a.margem === "number" ? a.margem : null;
+      const meta = typeof a.meta === "number" ? a.meta : null;
+
+      if (margem === null || meta === null) return null;
+
+      const canal = a.marketplace === "SHOPEE" ? "Shopee" : "Mercado Livre";
+      const pedido = typeof a.pedido === "string" ? ` · pedido ${a.pedido}` : "";
+      const valor = typeof a.valor_venda === "number" ? ` · venda de ${formatCurrency(a.valor_venda)}` : "";
+
+      return `Margem ${formatPercent(margem)} (meta ${formatPercent(meta, 0)}) · ${canal}${pedido}${valor}`;
     }
     // D-417: a conta que parou de sincronizar -- a forma gravada pelos gatilhos
     // de `ml_accounts` (entrou em ERROR) e de `sync_runs` (reconciliação falhando).
@@ -201,6 +220,13 @@ export function entityText(entityType: string, entityId: string, after: Record<s
     const mlb = typeof after.mlb_id === "string" && MLB.test(after.mlb_id) ? ` · ${after.mlb_id}` : "";
 
     return `${actionKindLabel(after.kind)}${mlb}`;
+  }
+
+  // D-858: a venda abaixo da margem aponta o produto pelo código e título.
+  if (entityType === "sku" && after !== null && typeof after.sku === "string") {
+    const titulo = textoDoAfter(after, "titulo");
+
+    return titulo === null ? `Produto ${after.sku}` : `Produto ${after.sku} · ${titulo}`;
   }
 
   // D-417: a conta pelo nome, não pelo uuid.

@@ -26,6 +26,17 @@ function clienteCom(corpo: unknown) {
 }
 
 describe("get_item_list (D-428)", () => {
+  it.each([undefined, null, 100, 50])("rejeita continuação com offset inválido %s", async (nextOffset) => {
+    const { client, urls } = clienteCom({
+      error: "",
+      response: { has_next_page: true, next_offset: nextOffset },
+    });
+
+    await expect(getItemListPage(client, SHOP, { offset: 100, statuses: ["NORMAL"] }))
+      .rejects.toThrow(/offset de continuação inválido/);
+    expect(urls).toHaveLength(1);
+  });
+
   it("status como parâmetro REPETIDO, 100 por página, janela opcional, e o próximo offset só quando há mais", async () => {
     const { client, urls } = clienteCom({
       error: "",

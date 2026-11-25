@@ -27,11 +27,15 @@ export async function recordJobRun(
   client: AdminClient,
   run: JobRunInsert,
 ): Promise<RecordResult> {
-  const { error } = await client.from("job_runs").insert(run);
+  try {
+    const { error } = await client.from("job_runs").insert(run);
 
-  if (error !== null) {
-    return { ok: false, reason: error.message };
+    if (error !== null) {
+      return { ok: false, reason: error.message };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "erro de transporte ao gravar job_runs" };
   }
-
-  return { ok: true };
 }

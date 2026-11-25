@@ -5,12 +5,15 @@ import { Icone } from "../../../components/icons";
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { PageTitle } from "../../../components/page-title";
 import { Panel } from "../../../components/panel";
+import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { StatePill, type PillTone } from "../../../components/state-pill";
 import { tomDeStatus } from "../../../components/tone";
+import { isTikTokSchemaMissing, rotuloTipoVendedorTikTok } from "../../../lib/contas-e-lojas";
 import { formatCount, formatDateTime, formatDay } from "../../../lib/format";
 import { mlAccountStatusLabel, statusTone, runStatusLabel } from "../../../lib/labels";
 import { sanitizeErrorText } from "../../../lib/sanitize";
 import { avisoDaAutorizacao, lojaDeTeste, vereditoDaLoja } from "../../../lib/saude-loja-shopee";
+import { avisoDaAutorizacaoTikTok, vereditoDaLojaTikTok } from "../../../lib/saude-loja-tiktok";
 import { isShopeeSchemaMissing } from "../../../lib/shopee-listings";
 import { createClient } from "../../../lib/supabase/server";
 import {
@@ -134,6 +137,21 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
   const membership = await currentMembership();
   const organizationId = membership.organizationId;
 
+  if (membership.error !== null) {
+    return (
+      <>
+        <PageTitle eyebrow="OPERAÇÃO / INTEGRAÇÕES" title="Sincronização" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membership.error.message}
+          acao={{ href: "/sincronizacao", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
+
   if (organizationId === null) {
     return (
       <>
@@ -143,8 +161,16 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
     );
   }
 
-  const [accountsResult, healthResult, processingResult, eventsResult, failuresResult, lojasResult, leiturasResult] =
-    await Promise.all([
+  const [
+    accountsResult,
+    healthResult,
+    processingResult,
+    eventsResult,
+    failuresResult,
+    lojasResult,
+    leiturasResult,
+    lojasTikTokResult,
+  ] = await Promise.all([
     supabase
       .from("ml_accounts")
       .select("id, label, slug, status, last_error, connected_at, backfill_covered_until")
@@ -179,6 +205,11 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
     supabase
       .from("shopee_shops")
       .select("id, items_synced_until, returns_synced_until, escrow_releases_synced_until, ads_synced_at, ads_read_until"),
+    // D-824 (M04): lojas TikTok Shop da organização.
+    supabase
+      .from("tiktok_shops")
+      .select("id, shop_id, shop_name, region, seller_type, status, last_error, connected_at, auth_expires_at")
+      .order("connected_at", { ascending: true }),
   ]);
 
   const accounts = accountsResult.data ?? [];
@@ -189,6 +220,8 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
   // Banco anterior à D-435 (sem a view): a seção das lojas não existe, e isso não é erro.
   const lojasAusentes = isShopeeSchemaMissing(lojasResult.error);
   const lojas = lojasAusentes ? [] : (lojasResult.data ?? []);
+  const lojasTikTokAusentes = isTikTokSchemaMissing(lojasTikTokResult.error);
+  const lojasTikTok = lojasTikTokAusentes ? [] : (lojasTikTokResult.data ?? []);
   const nomeDaLoja = new Map(lojas.map((loja) => [loja.account_id, loja.name]));
   // Falha desta leitura não derruba a tela: cada fato diz "não foi possível ler", nunca "nunca lido" (D-067).
   const leituraDaLoja = new Map((leiturasResult.data ?? []).map((leitura) => [leitura.id, leitura]));
@@ -381,6 +414,9 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
             <a href="#contas"><Icone nome="loja" tamanho={14} /> Contas</a>
             {lojas.length > 0 && (
               <a href="#lojas"><Icone nome="loja" tamanho={14} /> Lojas Shopee</a>
+            )}
+            {lojasTikTok.length > 0 && (
+              <a href="#tiktok"><Icone nome="loja" tamanho={14} /> Lojas TikTok Shop</a>
             )}
             <a href="#recursos"><Icone nome="sincronizar" tamanho={14} /> Recursos</a>
             <a href="#historico"><Icone nome="barras" tamanho={14} /> Histórico</a>
@@ -622,6 +658,85 @@ export default async function SincronizacaoPage(): Promise<ReactNode> {
                       )}
 
                       {loja.connection_status !== "CONNECTED" && loja.last_error !== null && (
+                        <p className="sb-sync-account-error">{sanitizeErrorText(loja.last_error)}</p>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {lojasTikTok.length > 0 && (
+            <section id="tiktok" className="sb-sync-overview" aria-labelledby="sync-tiktok-title">
+              <div className="sb-sync-section-head">
+                <div>
+                  <span className="sb-eyebrow">TIKTOK SHOP</span>
+                  <h2 id="sync-tiktok-title">Lojas TikTok Shop</h2>
+                  <p>
+                    Conexão OAuth e validade da autorização no Partner Center. A sincronização transacional aparece
+                    aqui assim que os handlers do worker forem ativados.
+                  </p>
+                </div>
+              </div>
+
+              <div className="sb-sync-account-grid">
+                {lojasTikTok.map((loja) => {
+                  const nome = loja.shop_name ?? loja.shop_id;
+                  const veredito = vereditoDaLojaTikTok(loja, now);
+                  const autorizacao = avisoDaAutorizacaoTikTok(loja, now);
+                  const conexao: PillTone =
+                    loja.status === "CONNECTED"
+                      ? { tom: "ok", label: "Conectada" }
+                      : { tom: "perigo", label: "Com erro" };
+
+                  return (
+                    <article
+                      className="sb-sync-account"
+                      key={loja.id}
+                      data-tone={veredito.tom}
+                      aria-label={`Loja TikTok Shop ${nome}`}
+                    >
+                      <header className="sb-sync-account-head">
+                        <div className="sb-sync-account-name">
+                          <span className="sb-sync-account-icon"><Icone nome="loja" tamanho={17} /></span>
+                          <div>
+                            <h3>{nome}</h3>
+                            <span>TikTok Shop · {rotuloTipoVendedorTikTok(loja.seller_type)}</span>
+                          </div>
+                        </div>
+                        <div className="sb-sync-account-pills">
+                          <StatePill tone={conexao} />
+                          <StatePill tone={{ tom: veredito.tom, label: veredito.rotulo }} />
+                        </div>
+                      </header>
+
+                      <p className="sb-sync-guidance">{veredito.orientacao}</p>
+
+                      <dl className="sb-sync-account-facts">
+                        <div>
+                          <dt>Identificador</dt>
+                          <dd>{loja.shop_id}{loja.region === null ? "" : ` · ${loja.region}`}</dd>
+                        </div>
+                        <div>
+                          <dt>Conectada em</dt>
+                          <dd>{formatDateTime(loja.connected_at)}</dd>
+                        </div>
+                        <div>
+                          <dt>Autorização vence em</dt>
+                          <dd className={autorizacao?.tom === "perigo" ? "sb-sync-danger" : undefined}>
+                            {loja.auth_expires_at === null ? "—" : formatDay(loja.auth_expires_at)}
+                          </dd>
+                        </div>
+                      </dl>
+
+                      {autorizacao !== null && (
+                        <p className="sb-sync-guidance">
+                          <StatePill tone={{ tom: autorizacao.tom, label: autorizacao.rotulo }} /> {autorizacao.orientacao}
+                        </p>
+                      )}
+
+                      {loja.status !== "CONNECTED" && loja.last_error !== null && (
                         <p className="sb-sync-account-error">{sanitizeErrorText(loja.last_error)}</p>
                       )}
                     </article>
