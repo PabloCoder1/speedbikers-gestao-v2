@@ -21446,3 +21446,12 @@ A migration `20261125160000` guarda vínculos já lidos em `notification_archive
 O PostgreSQL pode escolher um plano genérico que lê todo o histórico antes de montar a primeira página. A RPC planeja a consulta com os valores vinculados de cada chamada. No ensaio de 54 mil vínculos, com arquivo vazio, a primeira versão da view levou entre 486 e 536 ms. A versão paginada levou entre 2,2 e 3,7 ms. A contagem total exata ficou entre 215 e 306 ms, frente a 184–195 ms na comparação com a consulta ativa.
 
 A publicação da web depende da migration. O arquivo pode começar vazio. A política de retenção e o processo de transferência de registros ficam a cargo da próxima decisão de D04.
+
+
+## D-836 - GCP `I06`/`S05`/`L04`: política de retenção de artefatos e auditoria real de nuvem
+
+Auditamos os recursos ativos do projeto `speedbikers-prod` em `25/11/2026` e entregamos os artefatos versionados de retenção e limpeza, aplicados em produção mediante autorização expressa do dono (`docs/agent-audit/CLOUD_COST_AND_CLEANUP_2026-11-25.md`):
+
+1. **Retenção de artefatos (`I06`):** `infra/artifact-retention-policy.json` (`keepCount: 10` versões mais recentes + `DELETE` > 30 dias) e `infra/artifact-retention.sh` (idempotente, com `--dry-run` e `--cloudbuild-lifecycle` de 30 dias em `gs://speedbikers-prod_cloudbuild` sem tocar nos buckets de negócio). Aplicado e verificado em `speedbikers-v3` e `gs://speedbikers-prod_cloudbuild`.
+2. **Revisão IAM `roles/editor` (`S05`):** comprovado que `sb-db`, `api` e `worker` usam SAs dedicadas (`sb-db-vm`, `v3-api-runtime`, `v3-worker-runtime`); removido `roles/editor` de `246130997439-compute@developer.gserviceaccount.com` (0 bindings restantes em `roles/editor`, com rollback em 1 comando documentado).
+3. **Limpeza de tags obsoletas (`L04`):** removidas as 3 tags `worker-m05-*` (`--clear-tags --to-latest`), preservando `100% LATEST (worker-00065-ccn)`.
