@@ -1008,3 +1008,96 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - O planejador local em `cd22fa0c` conferiu o catálogo contra os commits e seus objetos Git. Os dez testes do planejador e do preflight passaram. Check 37/37, build 10/10 e docs:check.
 - A consulta à VM em transação somente leitura encontrou as mesmas 334 versões do candidato, nas versões originais. As quatro adições já estavam no catálogo da VM. Nove comparações de definições e permissões passaram. O agendamento de expurgo está desativado. A consulta verifica o estado instalado, sem inferir autoria nem canal de aplicação.
 - Fechamento 168/226 (74,34%), 31/43. Após a retomada do Dev, conferir seu catálogo antes de decidir qualquer registro. Preservar a identidade das versões já registradas na VM. O ensaio usou dados sintéticos. A etapa com cópia de backup e o aceite da publicação do SHA completo continuam no plano.
+
+### 25/11/2026 · Claude Sentinel: Full desconhecido na faixa de /estoque (D-870)
+
+- **Contexto.** O Supabase hospedado só volta em 01/12, e isso bloqueia o Dev e a ordenação oficial das migrations. A produção roda na VM `sb-db`. Enquanto isso, a rodada segue nas frentes que não dependem dele.
+- **Entrega.** O #400, branch `claude/estoque-full-ausente`, tem a migration `20261125120000_full_ausente_no_resumo_do_estoque.sql` e a tela de `/estoque`.
+  - Sem captura do Full em 3 dias, a faixa mostra "—" com a ressalva em vez de "Full 0".
+  - Assinatura e retorno são os mesmos, e a ordem entre migration e web não importa.
+- **Testes.**
+  - `estoque-resumo.integration.test.ts`: falha na função antiga e passa na nova.
+  - Suíte de integração do `@sb/db`: as mesmas 10 falhas de OAuth e estorno com e sem a migration (baseline medido).
+  - Passaram `check`, as 7 guardas da web, `build` e `docs:check`. A tela não foi aberta no navegador.
+- **Varredura do mesmo padrão.** Das funções que leem `fulfillment_stock_snapshots`, só `get_sku_dashboard` ainda soma o Full com `coalesce(..., 0)`.
+  - Ela atende o detalhe do SKU e a inspeção de `/produtos`.
+  - `get_purchase_analysis` já devolve nulo sem saldo nem captura.
+- **Próxima etapa.**
+  1. A mesma correção em `get_sku_dashboard` e nas duas telas, como fatia própria.
+  2. Publicar a migration da D-870 em produção pela VM, com autorização do dono, depois do merge.
+  3. Em 26/11, conferir os 25 negativos do UpSeller e um dia inteiro de `sync.listing.item`.
+
+### 25/11/2026 · Claude Sentinel: D-870 em produção
+
+- **Publicação.** Com autorização do dono, o #400 entrou na `main` em `bf6e420e`. Os 4 jobs obrigatórios passaram; o do Dev falhou com "project is paused", como esperado. A migration `20261125120000` foi aplicada pela VM com `psql -1` e registrada no histórico, e a Vercel concluiu a web.
+- **Conferência.** Corpo novo e grants certos. O Full continua conhecido para a organização, que tem captura de hoje. O `exists` novo custa 0,2 ms.
+- **Achado para performance.** `get_stock_summary` como membro autenticado: 52 mil páginas e 1,9 s, custo anterior à D-870.
+- **Próxima etapa.**
+  1. A mesma correção em `get_sku_dashboard`.
+  2. Medir e reduzir o custo de `get_stock_summary`.
+  3. Em 26/11, conferir os negativos do UpSeller e um dia inteiro de `sync.listing.item`.
+
+### 25/11/2026 · Claude Sentinel: Full desconhecido no dashboard do SKU (D-871)
+
+- **Base.** `main` em `3ee30291`. Branch `claude/sku-full-ausente`.
+- **Entrega.** A migration `20261125130000_full_ausente_no_dashboard_do_sku.sql` aplica a regra da D-870 em `get_sku_dashboard`.
+  - O detalhe do SKU e a inspeção de `/produtos` mostram "—" no Full sem captura em 3 dias.
+  - A cobertura e o diagnóstico continuam com o Full ausente como 0, a mesma conta de `/reposicao` (D-314).
+  - `inspecao-rapida.tsx` ficou intocada, porque o candidato #378 mexe nela.
+- **Testes.**
+  - Integration estendido: falha na função antiga e passa na nova.
+  - Suíte do `@sb/db`: as mesmas 10 falhas de baseline, e a guarda da D-204 passou.
+  - Passaram `check`, as 7 guardas, `build` e `docs:check`. As telas não foram abertas no navegador.
+- **Pendente do dono.** Decidir se a cobertura deve ficar desconhecida quando o Full é desconhecido, nas duas telas juntas (SKU e `/reposicao`).
+- **Próxima etapa.**
+  1. Publicar a D-871 (merge e migration pela VM), com autorização.
+  2. Medir e reduzir o custo de `get_stock_summary`: 1,9 s como membro.
+  3. Em 26/11, conferir os negativos do UpSeller e um dia inteiro de `sync.listing.item`.
+
+### 25/11/2026 · Claude Sentinel: faixa de /estoque no plano genérico (D-872)
+
+- **Branch.** `claude/resumo-estoque-plano-generico`, empilhada sobre `claude/sku-full-ausente`. O #404 tem base no #403.
+  - A CI só roda em PR contra a `main`: depois do merge do #403, trocar a base do #404 para `main` e esperar a CI.
+- **Entrega.** A migration `20261125140000_resumo_do_estoque_sem_laco_generico.sql` reescreve `get_stock_summary` sem mudar assinatura nem regra.
+  - Em produção, só leitura: 1,7 a 2,1 s por chamada como membro. No plano genérico forçado, o corpo novo leva 296 ms contra 3,2 s do antigo.
+  - Os dois corpos devolveram a mesma linha nos 7 recortes. Os números estão em `PERFORMANCE.md`.
+- **Testes.** Suíte do `@sb/db` com as mesmas 10 falhas de baseline. D-249, D-870 e a guarda da D-204 passaram.
+- **Fila de publicação, toda dependendo de autorização do dono.**
+  1. #403 (D-871): merge e migration `20261125130000` pela VM.
+  2. #404 (D-872): troca de base, CI, merge e migration `20261125140000` pela VM.
+- **Próxima etapa.** Em 26/11, conferir os negativos do UpSeller e um dia inteiro de `sync.listing.item`. Depois, medir as outras funções `language sql` com `search_path` fixo e filtros opcionais, que podem cair no mesmo plano genérico.
+
+### 25/11/2026 · Claude Sentinel: D-871 e D-872 em produção
+
+- **Publicação.** Com autorização do dono:
+  - #403 na `main` em `a8a0d7cf`, com a migration `20261125130000` pela VM;
+  - #404 retargetado para `main`, com um commit vazio para disparar a CI, e na `main` em `d3f90239`, com a migration `20261125140000` pela VM.
+  - Em cada merge, os 4 jobs obrigatórios passaram e o do Dev falhou com "project is paused". Produção tem 337 migrations. A Vercel publicou as duas webs.
+- **Conferência.**
+  - D-871: corpo novo, grants iguais, Full positivo num SKU com captura, como membro.
+  - D-872: 180 a 197 ms por chamada como membro, contra 1,7 a 2,1 s antes.
+- **Próxima etapa.**
+  1. Em 26/11, conferir os 25 negativos do UpSeller depois da reconciliação das 09:00 UTC e um dia inteiro de `sync.listing.item`.
+  2. Procurar o mesmo plano genérico em outras funções `language sql` com `search_path` fixo e filtros opcionais, comparando função e SQL por extenso.
+
+### 25/11/2026 · Claude Sentinel: varredura do plano genérico e curva ABC (D-873)
+
+- **Base.** `main` em `873548ce`. Branch `claude/curva-abc-plano-generico`.
+- **Varredura.** Sete funções `language sql` com filtros opcionais foram medidas em produção, com os números em `PERFORMANCE.md`. Duas passam de 1 s:
+  - `get_sku_abc_curve` sofre de plano genérico e foi corrigida aqui;
+  - `get_fulfillment_overview` é cara mesmo por extenso e fica para investigar.
+- **Entrega.** A migration `20261125150000_curva_abc_full_materializado.sql` usa `full_by_sku as materialized`.
+  - Plano genérico forçado: 3,1 s para 483 ms.
+  - As duas versões deram as mesmas linhas em 10 recortes.
+- **Testes.** Suíte do `@sb/db` com as mesmas 10 falhas de baseline, e os testes da curva ABC passaram. `docs:check` ok.
+- **Pendências.**
+  - Decisão do dono: "sem Full" na curva ABC quando não há captura nenhuma (padrão da D-870).
+  - Investigar `get_fulfillment_overview`.
+  - Em 26/11, conferir UpSeller e `sync.listing.item`.
+
+### 25/11/2026 · Conciliação da main #406 e aceite de L04
+
+- Candidato #364 em `32bfc540` passou nos quatro jobs do run `45612527995`. A main avançou até `628ff887` com D-870 a D-873. As sobreposições do merge eram documentais. A comparação completa do catálogo encontrou 337 versões na VM e 338 no candidato. Só a migration da D-873 aparece exclusivamente no candidato.
+- Gemini publicou D-832 a D-837 em `2550a9bc`. O #401 reúne worker, TikTok, Auth e infraestrutura. Solicitei a CI do candidato, a separação de retenção e o teste de concorrência OAuth em M04. [Revisão](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/401#issuecomment-7167748577)
+- A leitura do Google Cloud confirmou retenção no Artifact Registry e no bucket temporário de builds, remoção do papel Editor da conta padrão e retirada das tags temporárias do worker. L04 ganha 2 pontos. I06 aguarda custo real. S05 aguarda adoção da identidade dedicada nos builds regulares; os seis builds regionais recentes não a usaram.
+- D04 tem leitura do arquivo na Central, commit `b1542fe7` no #407, com integração local 1.243/1.243 e Chromium 8/8. A política de retenção e `sync_runs` continuam abertos. O Dev alojado permanece pendente até a retomada combinada.

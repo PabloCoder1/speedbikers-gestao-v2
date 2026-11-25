@@ -15,9 +15,9 @@ Há 124 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou mediçõe
 
 ## Prioridades em 25/11
 
-1. Conferir a CI do #364 com D-884. Quando o Dev voltar, ler seu catálogo e comparar as quatro versões com as já presentes na VM. Gemini conserva D-832 e a próxima fatia transacional de M04.
+1. Conferir a CI do #364 após D-870 a D-873. Na retomada do Dev, reconciliar o catálogo. Gemini conserva M04 e o #401, com CI e separação da retenção solicitadas.
 2. M05 validado em produção com o worker do #377, reconciliação e recuperação do recorte identificável. Acompanhar a revisão nas rodadas regulares.
-3. Revisar o aumento de volume de `sync_runs` e a leitura do arquivo na Central em ambiente isolado (D04). Manter a política efetiva e as passagens operacionais de Auth/estoque sujeitas à decisão do responsável.
+3. Concluir a revisão da leitura local do arquivo na Central (D04). Para `sync_runs`, medir uma estratégia que preserve a FK. A janela de retenção depende do responsável.
 
 ## Frentes de execução
 

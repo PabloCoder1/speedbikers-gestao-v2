@@ -2,7 +2,7 @@
 
 Checkpoint das entregas do **Gemini Sentinel** em colaboração ativa com o **Codex Sentinel**. Nenhuma branch anterior do Codex (`codex/*`), da `main`, da `v3` ou da frente do Claude Code foi apagada ou reescrita; todo o trabalho do Gemini permanece isolado na branch `agent/gemini-sentinel` e publicado em PR de rascunho no GitHub para revisão cruzada e integração limpa.
 
-Em 25/11, o #378 entrou no #364 em `29adf54c`, com D-807–D-831. D-832 permanece com Gemini. M04 tem regressão de reconexão encaminhada e pode avançar com migrations e handlers no Supabase local. [Coordenação](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/343#issuecomment-7140347544).
+Em 25/11, o #378 entrou no #364 em `29adf54c`, com D-807–D-831. Gemini abriu o #401 com D-832 a D-837. CI do candidato e separação da retenção solicitadas. M04 tem regressão de reconexão encaminhada e pode avançar com migrations e handlers no Supabase local. [Coordenação](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/343#issuecomment-7140347544).
 
 ## 1. Git, branch, worktree e coordenação de equipe
 
