@@ -703,7 +703,10 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **D-873.** Merge do #406 autorizado pelo dono. A `main` está em `628ff887`.
   - O GitHub teve incidente nesse horário, perdeu o evento do push e o PR segue aberto.
   - A CI foi disparada à mão (`workflow_dispatch`, run 45662352513).
-  - A migration `20261125150000` vai para a VM depois da CI verde.
+  - Os quatro jobs obrigatórios passaram. O job do Dev falhou com "project is paused", como esperado.
+  - A migration `20261125150000` foi aplicada na VM e registrada no histórico.
+  - Como membro, a curva de 30 dias levou de 346 a 440 ms, contra 1,3 a 1,6 s antes.
+  - O #406 foi fechado à mão com comentário. Não houve deploy da Vercel para `628ff887`, que não muda a web.
 - **I06.** Detalhes em `docs/agent-audit/CLOUD_COST_AND_RETENTION.md`, só com leituras, e complementa o #408 do Gemini (D-836).
   - VM e Cloud Run adequados, com as medições no documento.
   - O Postgres está com parâmetros de fábrica (`shared_buffers` e `effective_cache_size` de 128 MB).
@@ -715,4 +718,7 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
   - 15 PRs do Codex já estão contidos no #378.
   - 13 PRs de telas de setembro e outubro esperam decisão do dono.
 - **Testes.** Só `pnpm docs:check`; não houve mudança de código.
-- **Próxima etapa.** Aplicar e conferir a D-873 na VM. Em 26/11, conferir UpSeller e `sync.listing.item`.
+- **Próxima etapa.**
+  - Em 26/11, conferir UpSeller e `sync.listing.item`.
+  - Quando o dono conceder os papéis ao `v3-builder`, fazer o deploy seguinte com `--service-account`.
+  - Investigar `get_fulfillment_overview`.
