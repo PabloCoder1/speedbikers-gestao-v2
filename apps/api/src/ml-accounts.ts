@@ -170,7 +170,13 @@ export async function completeConnect(
     .select("organization_id, ml_account_id, code_verifier_ciphertext")
     .maybeSingle();
 
-  if (claimed.error !== null || claimed.data === null) {
+  if (claimed.error !== null) {
+    deps.logger.error("ml_oauth_state_claim_failed", { reason: claimed.error.message });
+
+    return { status: "rejected", reason: "não foi possível validar a autorização no momento" };
+  }
+
+  if (claimed.data === null) {
     return { status: "invalid_state" };
   }
 

@@ -106,7 +106,13 @@ export async function completeTikTokConnect(
     .select("organization_id, created_by")
     .maybeSingle();
 
-  if (claimed.error !== null || claimed.data === null) {
+  if (claimed.error !== null) {
+    deps.logger.error("tiktok_oauth_state_claim_failed", { reason: claimed.error.message });
+
+    return { status: "rejected", reason: "não foi possível validar a autorização no momento" };
+  }
+
+  if (claimed.data === null) {
     return { status: "invalid_state" };
   }
 
@@ -163,6 +169,18 @@ export async function completeTikTokConnect(
     shop_code: shop.code ?? null,
     shop_cipher: shop.cipher,
   }));
+  let accessTokenExpiresAt: string;
+  let refreshTokenExpiresAt: string;
+
+  try {
+    accessTokenExpiresAt = tiktokEpochToIso(token.access_token_expire_in);
+    refreshTokenExpiresAt = tiktokEpochToIso(token.refresh_token_expire_in);
+  } catch {
+    deps.logger.error("tiktok_oauth_invalid_token_expiry", {});
+
+    return { status: "rejected", reason: "o TikTok Shop devolveu uma validade de credencial inválida" };
+  }
+
   const { error } = await deps.db.rpc("tiktok_connect_shops", {
     p_organization_id: organizationId,
     p_created_by: createdBy,
@@ -173,8 +191,8 @@ export async function completeTikTokConnect(
     p_granted_scopes: token.granted_scopes ?? null,
     p_access_token_ciphertext: encryptToken(token.access_token, deps.encryptionKey),
     p_refresh_token_ciphertext: encryptToken(token.refresh_token, deps.encryptionKey),
-    p_access_token_expires_at: tiktokEpochToIso(token.access_token_expire_in),
-    p_refresh_token_expires_at: tiktokEpochToIso(token.refresh_token_expire_in),
+    p_access_token_expires_at: accessTokenExpiresAt,
+    p_refresh_token_expires_at: refreshTokenExpiresAt,
   });
 
   if (error?.code === "PT409") {
