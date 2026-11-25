@@ -21348,3 +21348,25 @@ Fechamos os 4 últimos handlers do worker sob `service_role` que ainda não conf
 4. `apps/worker/src/handlers/sync-listings-snapshot.ts`: valida `account.organization_id !== envelope.organizationId` após `resolveMlAccountRead` (`retryable: false`), antes de ler tokens ou acionar o Mercado Livre.
 
 TDD RED (`5 failed (5)`) -> GREEN (`67/67` nos 5 arquivos focados em `@sb/worker`, incluindo o novo `apps/worker/src/handlers/worker-final-four-org.test.ts`).
+
+
+## D-833 - Worker TikTok Shop: base comum multi-tenant e renovação de token CAS (`M04`)
+
+Adicionamos `@sb/tiktok-shop` como dependência de `@sb/worker` e implementamos a infraestrutura compartilhada dos jobs do TikTok Shop (`2981f5a6`, branch `agent/gemini-sentinel-fechamento` sobre `#364`):
+
+1. `apps/worker/src/handlers/tiktok-comum.ts`: `lerLojaTikTokConectada` valida `tiktokShopId`, lê `tiktok_shops`, separa erro transitório de banco (`retryable: true`) de loja ausente/desconectada (`done`, `processed: 0`) e impõe guarda multi-tenant estrita (`loja.organization_id !== expectedOrganizationId` -> `failed`, `retryable: false`); `falhaDoTikTok` classifica `ZodError`/`RangeError`/`TikTokShopApiError` consistentemente.
+2. `apps/worker/src/handlers/tiktok-token.ts`: `ensureTikTokAccessToken` reutiliza `refreshTikTokTokenWithLock` de `@sb/tiktok-shop` com CAS otimista em `(refresh_locked_until, refresh_token_ciphertext)` sobre `tiktok_credentials` e `tiktok_shops` (schema já versionado em `20261022170000_lojas_tiktok_shop.sql`, sem migrations novas), `decryptToken` fail-closed (`retryable: false`, solta a trava em `try/catch` sem vazar detalhes criptográficos) e marcação `status = 'ERROR'` somente em recusa definitiva de OAuth.
+
+Verificação: `tiktok-comum.test.ts` (7/7) e `tiktok-token.test.ts` (4/4), `@sb/worker typecheck` e `lint` verdes.
+
+## D-834 - Worker TikTok Shop: 5 handlers transacionais prontos para persistência (`M04`)
+
+Implementamos os 5 handlers do worker alinhados aos contratos de `@sb/contracts/tiktok-jobs.ts` (`D-812`) e às projeções puras sem PII de `@sb/domain/tiktok-shop` (`D-813`), desacoplados por uma interface tipada de persistência idempotente (`TikTokSyncRepository`) para permitir plugar o adaptador Supabase assim que as tabelas transacionais forem aplicadas após o retorno do Supabase Dev em 01/12/2026 (`3e64a8a7`):
+
+1. `apps/worker/src/handlers/tiktok-repository.ts`: contrato `TikTokSyncRepository` (locks, cursor, `upsertOrders`, `upsertCatalogUnits`, `upsertReturns`, `upsertOrderFinancials`, `upsertStatements`) com retorno fail-closed `{ error: string | null }`.
+2. `apps/worker/src/handlers/tiktok-orders-sync.ts`: `createTikTokOrdersSyncHandler` (`tiktok.orders.sync`, janela com sobreposição de 10 min, fatias de até 15 dias, teto de 100 páginas, detalhe em lotes de 50, `finally` unlock em `try/catch`, avanço de cursor apenas pós-gravação e enfileiramento pós-unlock protegido em `try/catch`) e `createTikTokOrderFetchHandler` (`tiktok.order.fetch`).
+3. `apps/worker/src/handlers/tiktok-items-sync.ts`: `createTikTokItemsSyncHandler` (`tiktok.items.sync`, catálogo paginado até 200 páginas + `searchInventory` em lotes de 100 produtos + `projectTikTokProductCatalog`).
+4. `apps/worker/src/handlers/tiktok-returns-sync.ts`: `createTikTokReturnsSyncHandler` (`tiktok.returns.sync`, janela de 30 dias + `projectTikTokReturn`).
+5. `apps/worker/src/handlers/tiktok-financials-sync.ts`: `createTikTokFinancialsSyncHandler` (`tiktok.financials.sync`, transação pontual por `orderId` ou extratos paginados de 30 dias).
+
+Verificação: `tiktok-handlers.test.ts` (7/7 cobrindo sucesso, isolamento cross-org nos 5 handlers, preservação de cursor em falha de escrita, proteção de unlock/enqueue e erros 403/429), somando 18/18 testes TikTok no worker.

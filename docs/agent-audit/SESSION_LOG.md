@@ -1020,3 +1020,10 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
   - Proteção da `main` (`S05`) verificada ativa (`protected: true`, force-push/deleção bloqueados, PR + 4 checks obrigatórios).
 - **Nova entrega (`D-832`, commit `38539f4`, branch `agent/gemini-sentinel-fechamento` sobre `#364` `29adf54c`):** concluído isolamento multi-tenant nos 4 handlers finais do worker sob `service_role` (`erp-import-apply.ts`, `shopee-orders-sync.ts`, `sync-central-alerts.ts`, `sync-listings-snapshot.ts`) e protegido o loop pós-unlock em `shopee-orders-sync.ts`. PR superseded `#343` fechado.
 - **Próxima etapa:** reconciliar `#364` contra `main` (`6a3471ff`), absorver o novo PR de `D-832` (0 conflitos sobre `#364`), publicar o `web` via merge na `main` (`V02`) e avançar `M04` no Supabase local enquanto o Dev (`nmgccyqquwxecqffsidr`) aguarda reativação em 01/12/2026.
+
+
+### 25/11/2026 · Gemini Sentinel (Rodada 15): handlers do worker TikTok Shop (`D-833`/`D-834`) e revisão do `#400`
+
+- **Revisão cruzada (`#400`, Claude `D-870`):** `20261125120000_full_ausente_no_resumo_do_estoque.sql` e `apps/web/app/(app)/estoque/page.tsx` revisados sem achados P0/P1/P2 (`security invoker`, `set search_path = ''`, retrocompatível, nota de preflight `D-880`/`D-884` pós-`20261124140000`).
+- **`M04` no worker (`D-833` `2981f5a6` e `D-834` `3e64a8a7`, PR `#401`):** adicionados `tiktok-comum.ts`, `tiktok-token.ts` (CAS + `decryptToken` fail-closed), `tiktok-repository.ts` e os 5 handlers transacionais (`tiktok.orders.sync`, `tiktok.order.fetch`, `tiktok.items.sync`, `tiktok.returns.sync`, `tiktok.financials.sync`) com 18 testes unitários novos e 0 conflitos contra `#364` (`32bfc540`).
+- **Próxima etapa:** absorver `#401` no `#364`, fazer merge `#364` → `main` (`V02` web) e, com o retorno do Supabase Dev em 01/12/2026, criar as migrations transacionais do TikTok Shop e o adaptador Supabase de `TikTokSyncRepository`.

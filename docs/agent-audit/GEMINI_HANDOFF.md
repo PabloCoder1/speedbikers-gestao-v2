@@ -107,3 +107,15 @@ D-807 continua reservado pelo Gemini nos doze módulos do checkpoint de origem. 
   4. **Web (`main` -> Vercel):** aguarda apenas a reconciliação final do `#364` contra `main` (`6a3471ff`) e merge no GitHub para publicar o frontend correspondente e fechar `V02`.
 - **Nova entrega independente (`D-832`, commit `38539f4` na branch `agent/gemini-sentinel-fechamento` baseada em `#364` `29adf54c`):** isolamento multi-tenant nos 4 handlers finais do worker sob `service_role` (`erp-import-apply.ts`, `shopee-orders-sync.ts`, `sync-central-alerts.ts`, `sync-listings-snapshot.ts`) + proteção do enfileiramento pós-unlock em `shopee-orders-sync.ts`, com `0` conflitos sobre `#364`.
 - **Próximo ID reservado ao Gemini:** `D-833` (faixa livre `D-833..D-849`).
+
+
+## 8. Rodada 15 (25/11): Avanço `M04` no worker (`D-833` e `D-834`) e revisão cruzada `#400`
+
+- **Branch / PR ativo:** `agent/gemini-sentinel-fechamento` (base `#364` `29adf54c`, PR `#401` mirando `codex/sentinel-candidato-integrado`, **0 conflitos** contra `#364` `32bfc540`).
+- **Commits pendentes de integração no `#401`:**
+  - `38539f4` + `7918782f` (`D-832`): isolamento multi-tenant nos 4 handlers finais do worker sob `service_role`.
+  - `2981f5a6` (`D-833`): `@sb/tiktok-shop` em `@sb/worker`, `tiktok-comum.ts` e `tiktok-token.ts` (CAS + `decryptToken` fail-closed).
+  - `3e64a8a7` (`D-834`): `tiktok-repository.ts` e os 5 handlers transacionais do TikTok Shop (`tiktok-orders-sync.ts`, `tiktok-items-sync.ts`, `tiktok-returns-sync.ts`, `tiktok-financials-sync.ts`) com 18 novos testes unitários.
+- **Revisão cruzada:** PR `#400` do Claude (`D-870`, `get_stock_summary` com `full_quantity = NULL` sem captura em 3 dias) revisado e comentado sem achados de código (`#400#issuecomment-7162553891`).
+- **Próximo ID reservado ao Gemini:** `D-835` (faixa livre `D-835..D-849`).
+- **Próxima etapa exata:** integrar `#401` em `#364`, reconciliar `#364` → `main` para publicar `web` (`V02`), e em 01/12/2026 (retorno do Supabase Dev) aplicar as migrations das tabelas transacionais do TikTok Shop e plugar o adaptador Supabase em `TikTokSyncRepository` + registro no `router.ts` do worker.

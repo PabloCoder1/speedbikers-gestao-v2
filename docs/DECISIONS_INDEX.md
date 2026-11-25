@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **759** (D-001 a D-884).
+Decisões registradas: **761** (D-001 a D-884).
 
 ## Por domínio
 
@@ -669,7 +669,7 @@ Decisões registradas: **759** (D-001 a D-884).
 - **D-867** — A importação de pedidos anteriores sobrevive à Server Action que não responde
 - **D-882** — Agendamento de margem percorre todas as organizações com alerta ativo
 
-### worker/infra (130)
+### worker/infra (132)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -798,6 +798,8 @@ Decisões registradas: **759** (D-001 a D-884).
 - **D-818** — Worker `service_role`: `expectedOrganizationId` centralizado em `lerLojaConectada` e proteção de `enqueue()` em 5 handlers Shopee
 - **D-828** — Worker `page-writes.ts`: fatiamento em lotes de 100 na exclusão da cauda de `order_items`
 - **D-832** — Worker: isolamento multi-tenant nos 4 handlers finais sob service_role
+- **D-833** — Worker TikTok Shop: base comum multi-tenant e renovação de token CAS (`M04`)
+- **D-834** — Worker TikTok Shop: 5 handlers transacionais prontos para persistência (`M04`)
 - **D-857** — Avisos em tempo real respeitam o ciclo da sessão
 - **D-863** — "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
 - **D-883** — Preservar os traces das falhas Playwright na CI
