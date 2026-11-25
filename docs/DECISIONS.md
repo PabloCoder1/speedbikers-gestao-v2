@@ -21192,6 +21192,11 @@ TDD RED (`3/3` arquivos / `4 failed`) -> GREEN (`10/10` worker + `10/10` API). V
 - A série de disco da instância tem pontos atuais para os dois dispositivos.
 - Os alertas não foram forçados a disparar. O primeiro e-mail real só chega quando houver um incidente.
 
+**Ensaio (25/11):** com autorização do dono, uma política temporária com a mesma métrica de disco, mas limite de 20% por 1 minuto, foi criada às 11:45:57 UTC. O disco estava em ~30%.
+- O incidente abriu às 11:49:01 UTC, cerca de 3 minutos depois. Esse é o tempo de avaliação de uma condição nova somado à janela.
+- A política temporária foi apagada às 11:50 UTC. Ficaram só as três políticas permanentes: disco, disponibilidade e backup.
+- A abertura do incidente prova o caminho da métrica até o alerta. A chegada do e-mail no canal é conferida pelo dono na caixa de entrada.
+
 ## D-869 - Lançar custo no pedido de compra é idempotente pela requisição
 
 **Contexto:** `upsert_purchase_order_cost` com `p_id` nulo sempre inseria. Se a resposta da Server Action se perdia depois de o banco gravar, repetir lançava o mesmo custo duas vezes, e o custo de chegada e a margem subiam. A D-865 só avisava ("confira a lista antes de lançar de novo"), e o #395 fez o aviso sobreviver à releitura. O dono aprovou a correção no banco em 24/11.
@@ -21325,3 +21330,9 @@ Fechamos os últimos 6 pontos sem `try/catch` em torno de `decryptToken` no repo
 2. Quando a trava de refresh já foi adquirida, o handler solta a trava (`await release()` / `await soltar()`) e devolve `{ ok: false, retryable: false, reason }` sem vazar detalhes criptográficos e sem chamar OAuth externo.
 
 TDD RED (`2 failed | 25 passed (27)`) -> GREEN (`27/27`). Verificação completa pós-`0599064d`: `pnpm run check` (`37/37`, `366` arquivos / `4.639` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` sequencial provando `13/13` commits pendentes (`D-820..D-831`, após integração de `D-815..D-819` em `034dfe01`) com `0` conflitos sobre `#378` (`034dfe01`).
+
+## D-884 - Conferir a base aplicada antes do ensaio local de upgrade
+
+O planejador exige que o catálogo da stack descartável coincida com a base Git. O candidato preserva os nomes e blobs dos SQLs aplicados. As adições são identificadas com o objeto Git e a posição em relação à última versão. As versões temporárias do laboratório ficam fora dos manifestos de publicação.
+
+Em 25/11, a base local de `6a3471ff` tinha 330 versões. As quatro adições de `29adf54c` passaram no upgrade incremental e em 1.254 testes de integração. A consulta em leitura encontrou na VM as 334 versões originais do candidato e nove verificações de objetos e permissões coincidentes. Ao retomar o Dev, ler seu catálogo antes de qualquer decisão de registro.

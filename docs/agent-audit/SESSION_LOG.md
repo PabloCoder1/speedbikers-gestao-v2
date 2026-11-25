@@ -971,3 +971,40 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - #377 `cf6dae2d`: sonda real explicou a ausência do envelope sob projeção. Um anúncio foi processado na revisão isolada. O candidato incorpora a correção sem as etapas experimentais intermediárias.
 - M05 validado em produção com o código do #377 em `cf6dae2d`. O bulk completo foi conferido, a reconciliação encerrou nas contas agendadas e as exceções recuperadas pelo job regular. A consulta cruzou as falhas anteriores com as listagens atualizadas. O #377 foi reconciliado com a main em `dfbce8f3`, com os arquivos do worker e cliente idênticos ao corte publicado.
 - A CI do código composto é 45606453406 para `c5882974`. O checkpoint de aceite altera somente documentação. Fechamento técnico recalculado em 168/226 (74,34%), 31/43.
+
+### 25/11/2026 · Claude Sentinel: verificação de produção depois da troca do banco para a VM
+
+- **Base.** `main` em `8f39cddc`. Tudo foi lido sem alterar nada: Cloud Scheduler e Cloud Run pela API REST, Cloud Logging, e `job_runs`, `inventory_balances`, `erp_stock_snapshots` e `listings` pela VM `sb-db` com `default_transaction_read_only`.
+- **Agendamentos.** Os 20 jobs do Scheduler de produção estão `ENABLED`, e todos tiveram sucesso na última chamada. O item P0 do plano ("próxima execução dos oito agendamentos com último erro") deixa de ter pendência no Scheduler.
+- **Jobs no banco, 24 h.** Fecharam sem falha final: pedidos, logística, financeiro, Full, SAC, Shopee, ledger, reconciliação, margem e ping. Exceções:
+  - `sync.listing.item` e `sync.listings.snapshot` (ver abaixo);
+  - 404 e 429 isolados em devoluções do ML no `sync.webhook.received`;
+  - uma `diagnostics.detect-support-patterns` com `fetch failed`.
+- **Incidente: anúncios do ML.** O Mercado Livre passou a recusar o `GET /items` antigo com 403 `ResourceDeprecated` desde 24/11 05:40 UTC.
+  - De 24/11 18:16 a 25/11 ~11:05 UTC, a revisão `worker-m05-0f7a98de` (o `/items/bulk` do #377) esteve com o tráfego e reprovou o envelope real no zod: `[0].id` e `[0].status_code` ausentes. A falha de `sync.listing.item` passou de cerca de 5% ao dia para mais de 99%.
+  - Às 11:05 UTC o tráfego voltou para `worker-00061-gwr`, que ainda recebe o 403 no `GET /items`.
+  - O Codex publicou a correção `d0c2790f` na branch do #377, ainda não implantada. A revisão cruzada, com um ponto sobre a resposta 404 sem `id` num pedido de um ID só, está no #377.
+- **Estoque contra o ERP.** A reconciliação diária comparou 3.151 SKUs de 22/11 a 25/11, sem nenhum ajuste.
+  - A última captura do UpSeller é de 19/11.
+  - Os 25 saldos LOCAL negativos são iguais ao alvo do ERP: são vendas depois da captura acima do saldo da planilha, e não um defeito do ledger. Somem com uma planilha nova do UpSeller.
+- **Para o inventário.**
+  - S04: SMTP, recuperação e troca de senha validados pelo dono em 24/11 (D-863).
+  - I04: alerta de disco e três verificações de disponibilidade ativos desde 24/11 (D-868). Falta forçar um disparo de ensaio.
+  - M05 continua aberto.
+- **Próxima etapa.** Publicar o worker com `d0c2790f`, ou o sucessor, com autorização do dono, e medir de novo `sync.listing.item`. Planilha nova do UpSeller.
+
+### 25/11/2026 · Claude Sentinel: correção dos anúncios do ML no ar e ensaio do I04
+
+- **Anúncios do ML.** O Codex pôs `worker-m05-cf6dae2d` com 100% do tráfego às 11:39 UTC. Essa revisão tira a projeção `attributes=` do `/items/bulk`, e o envelope volta a trazer `id`, `status_code` e `body`. O dono tinha autorizado a publicação, e ela já estava feita, então não houve implantação nova.
+  - Primeiros minutos, lidos pela VM em modo só leitura: `sync.listing.item`, `sync.listings.snapshot` e `sync.webhook.received` fecharam sem nenhuma falha. A tabela `listings` voltou a receber atualizações.
+- **UpSeller.** Captura nova aplicada em 25/11 11:32 UTC. Os 25 saldos LOCAL negativos devem sumir na próxima reconciliação diária; isso se confere amanhã.
+- **I04.** Ensaio feito com uma política temporária (disco acima de 20%). O incidente abriu em cerca de 3 minutos, e a política foi apagada logo depois (D-868). Falta o dono confirmar que o e-mail chegou.
+- **Próxima etapa.** Medir `sync.listing.item` num dia inteiro com a `cf6dae2d`. Conferir os negativos depois da reconciliação de 26/11.
+
+### 25/11/2026 · D-884, upgrade local e conferência do catálogo
+
+- O #378 foi integrado ao #364 em `29adf54c`. Usei a main `6a3471ff` (#399) como base do laboratório e mantive a responsabilidade de M04/D-832 com Gemini (checkpoint `8b70857d` no #343). A regressão de reconexão foi encaminhada com execução em PostgreSQL local.
+- A stack descartável iniciou com 330 migrations até `20261124140000`. O preflight encontrou exatamente quatro adições anteriores à última versão. Apliquei cópias byte a byte no laboratório, na ordem NF-e, ERP, índice de Full e retenção, com versões temporárias `20990101000001` a `20990101000004`. O catálogo terminou com 334 versões e sem lacunas. Passaram 1.254 testes em 19 arquivos. A stack foi encerrada.
+- O planejador local em `cd22fa0c` conferiu o catálogo contra os commits e seus objetos Git. Os dez testes do planejador e do preflight passaram. Check 37/37, build 10/10 e docs:check.
+- A consulta à VM em transação somente leitura encontrou as mesmas 334 versões do candidato, nas versões originais. As quatro adições já estavam no catálogo da VM. Nove comparações de definições e permissões passaram. O agendamento de expurgo está desativado. A consulta verifica o estado instalado, sem inferir autoria nem canal de aplicação.
+- Fechamento 168/226 (74,34%), 31/43. Após a retomada do Dev, conferir seu catálogo antes de decidir qualquer registro. Preservar a identidade das versões já registradas na VM. O ensaio usou dados sintéticos. A etapa com cópia de backup e o aceite da publicação do SHA completo continuam no plano.

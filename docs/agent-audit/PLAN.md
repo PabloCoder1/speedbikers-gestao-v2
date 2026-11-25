@@ -4,7 +4,7 @@
 
 Há 124 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou medições externas (A01, A02, A07, A08, A10 e A11). A08 segue como hipótese de limpeza. API, worker e integrações concentram as falhas de consistência. Banco e desempenho exigem observação real. A varredura de antecipação de queries de 13/11 não encontrou outra oportunidade nas rotas de alto tráfego fora de D-670–D-684. O [checkpoint](SESSION_LOG.md) reúne as correções, as auditorias de dependências e o estado da publicação.
 
-**Frente atual em 19/11.** D-769 confirmou em banco isolado que a ordem atual do #331 é recusada pelo dry-run. As quatro migrations passaram no upgrade incremental com numeração temporária crescente. A VM tem as 322 versões da base e os grants diretos de mutação que D-768 remove. O próximo passo é registrar as versões definitivas em Dev e executar a CI do candidato quando o projeto estiver ativo. A definição do caminho oficial para a VM permanece na fila. [Fechamento](STATE_AND_COMPLETION_2026-11-18.md).
+**Frente atual em 25/11.** D-884 confirma que o catálogo da VM coincide com o candidato. O upgrade das quatro pendências da base Git passou em uma stack local. O Dev pausado continua para a retomada combinada.
 
 | Prioridade | Critério aplicado |
 | --- | --- |
@@ -13,9 +13,9 @@ Há 124 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou mediçõe
 | P2 | Desempenho, manutenção e limpeza. Remover apenas com dependências conferidas e exigir medição de ganho quando a mudança é motivada por custo ou latência. |
 | P3 | Tipos e ajustes pontuais com baixo impacto operacional. Aproveitar cobertura existente para evitar trabalho duplicado. |
 
-## Prioridades em 24/11
+## Prioridades em 25/11
 
-1. Validar a CI do SHA atualizado do #378 com Claude até D-869 e Gemini até D-831. O Gemini conserva D-832. M04 aguarda persistência, handlers e jornadas da loja. Manter V01 aberto até registrar as quatro versões definitivas em Dev e validar o upgrade em cópia da VM.
+1. Conferir a CI do #364 com D-884. Quando o Dev voltar, ler seu catálogo e comparar as quatro versões com as já presentes na VM. Gemini conserva D-832 e a próxima fatia transacional de M04.
 2. M05 validado em produção com o worker do #377, reconciliação e recuperação do recorte identificável. Acompanhar a revisão nas rodadas regulares.
 3. Revisar o aumento de volume de `sync_runs` e a leitura do arquivo na Central em ambiente isolado (D04). Manter a política efetiva e as passagens operacionais de Auth/estoque sujeitas à decisão do responsável.
 

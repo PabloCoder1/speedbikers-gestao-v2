@@ -222,17 +222,15 @@ posteriores à última aplicada somente na stack descartável. Confira o
 catálogo pós-upgrade e rode a suíte de integração contra essa stack.
 A numeração temporária vale apenas para o laboratório.
 
-### Publicação do candidato #378 e aceite
+### Publicação do candidato #364 e aceite
 
-O plano de publicação na VM foi aprovado em 23/11. A consulta em
-leitura de 24/11 encontrou 325 versões até `20261123180000`. O SQL do
-#384 foi incorporado ao candidato. As quatro versões temporárias
-são anteriores à última aplicada. O candidato inclui o workflow de preflight
-para a VM.
+Em 25/11, a leitura da VM encontrou as 334 versões originais do candidato,
+incluindo os quatro SQLs ensaiados no laboratório. Nove comparações de
+definições e permissões coincidiram. O agendamento de retenção estava desativado.
 
-1. Registrar no Dev as versões definitivas dos quatro SQLs, regenerar os
-   tipos e repetir a CI no SHA candidato. Conferir o destino da esteira
-   e testar o upgrade de um backup recente da VM em cópia descartável.
+1. Quando o Dev ficar saudável, conferir seu catálogo, comparar as versões
+   com as da VM e testar o upgrade de um backup recente em cópia descartável.
+   Preservar a identidade das migrações já registradas.
 2. Gerar e registrar um novo plano da VM com catálogo, SHA e ID. Antes
    de qualquer escrita, conferir novamente os três, o backup
    recuperável e a revisão anterior de cada serviço.
