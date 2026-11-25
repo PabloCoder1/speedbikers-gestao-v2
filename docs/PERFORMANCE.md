@@ -2283,3 +2283,4 @@ Medido em produção, como membro autenticado, com `prepare` das três versões 
 
 - **Causa:** o `left join` com a agregação de todo o saldo local virava laço aninhado, reagregando o saldo a cada linha da lista.
 - **Equivalência:** 12 recortes com as mesmas linhas e a mesma ordem nas três versões.
+- **Em produção (25/11):** a chamada real, como membro, levou 282 ms (antes, 1,49 a 1,54 s) e a ordem "local" 258 ms (antes, 1,61 s). A chamada inclui as facetas, por isso fica acima dos ~160 ms do `prepare`.

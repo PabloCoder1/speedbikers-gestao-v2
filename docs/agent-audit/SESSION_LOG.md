@@ -739,3 +739,15 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Próxima etapa.**
   - Autorização do dono para o merge e a migration da D-874 na VM.
   - Em 26/11, conferir UpSeller e `sync.listing.item`.
+
+### 25/11/2026 · Claude Sentinel: D-874 em produção
+
+- **Merge:** o #411 foi mergeado com autorização do dono, e a `main` está em `57eb7961`.
+  - Os quatro jobs obrigatórios passaram no run 45676090002.
+  - Na primeira tentativa, o e2e falhou porque o runner estava com a porta 60022 ocupada. Nenhum teste rodou, e o job passou na segunda tentativa.
+  - O job do Dev falhou com "project is paused", como esperado.
+- **Migration:** `20261125183000` foi aplicada na VM com `psql -1`, e o hash do arquivo bateu com o da `main`.
+- **Conferido depois:** o corpo novo, o comentário, os grants e o registro no histórico.
+- **Tempo, como membro:** a Central Full de 30 dias levou 282 ms, contra 1,49 a 1,54 s antes.
+- **Vercel:** publicou o `57eb7961`. A web não muda.
+- **Próxima etapa:** em 26/11, conferir UpSeller e `sync.listing.item`.
