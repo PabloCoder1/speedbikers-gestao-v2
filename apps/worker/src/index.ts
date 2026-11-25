@@ -26,6 +26,8 @@ import { createShopeeOrdersSyncHandler } from "./handlers/shopee-orders-sync.js"
 import { createShopeeAdsSyncHandler } from "./handlers/shopee-ads-sync.js";
 import { createShopeeEscrowReleasesSyncHandler } from "./handlers/shopee-escrow-releases-sync.js";
 import { createShopeeReturnsSyncHandler } from "./handlers/shopee-returns-sync.js";
+import { createTikTokWorkerHandlers } from "./handlers/tiktok-bootstrap.js";
+import { createSupabaseTikTokSyncRepository } from "./handlers/tiktok-supabase-repository.js";
 import { createReconcileBalancesHandler } from "./handlers/reconcile-balances.js";
 import { createSyncAdsCampaignsHandler } from "./handlers/sync-ads-campaigns.js";
 import { createSyncCentralAlertsHandler } from "./handlers/sync-central-alerts.js";
@@ -118,6 +120,14 @@ const shopeeHandlers =
         "shopee.escrow-releases.sync": createShopeeEscrowReleasesSyncHandler({ db, encryptionKey, enqueuer, client: shopeeClient }),
       }
     : {};
+
+const tiktokHandlers = createTikTokWorkerHandlers({
+  env,
+  db,
+  enqueuer,
+  encryptionKey,
+  repository: createSupabaseTikTokSyncRepository(db),
+});
 
 const nfeHandlers =
   env.DOCUMENTS_BUCKET !== undefined
@@ -268,6 +278,7 @@ const app = createWorkerApp({
     }),
     ...nfeHandlers,
     ...shopeeHandlers,
+    ...tiktokHandlers,
   }),
 });
 

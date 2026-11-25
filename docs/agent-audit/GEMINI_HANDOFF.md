@@ -141,3 +141,14 @@ D-807 continua reservado pelo Gemini nos doze módulos do checkpoint de origem. 
 - **Próxima etapa exata:** integrar `#401` (`D-832..D-837`) em `#364`, reconciliar `#364` → `main` (`V02` web), executar `./infra/artifact-retention.sh --project speedbikers-prod --cloudbuild-lifecycle` com autorização do dono (`I06`/`L04`) e, em 01/12/2026 (retorno do Supabase Dev), aplicar migrations transacionais de `M04` + adaptador Supabase de `TikTokSyncRepository`.
 
 - **Execução GCP autorizada pelo dono (25/11 13:23 UTC):** aplicadas e verificadas em `speedbikers-prod` a política de retenção de `speedbikers-v3` (`keepCount: 10`, delete > 30d) + lifecycle de 30d em `gs://speedbikers-prod_cloudbuild` (`I06`), a remoção de `roles/editor` de `246130997439-compute@...` (`0` bindings em `roles/editor`, `S05`), e a limpeza das tags obsoletas `worker-m05-*` no Cloud Run (`100%` em `worker-00065-ccn`, `L04`).
+
+
+## 11. Rodada 19 (25/11): Camada transacional `M04` em PostgreSQL real (`D-838`)
+
+- **Branch / PR dedicado:** `agent/gemini-m04-tiktok-persistencia` (empilhada sobre `#401` `3e983e7c`, com `0` dependência de Supabase Dev Pro):
+  - `supabase/migrations/20261125170000_tiktok_shop_transacional.sql` (aplicada em stack Supabase local isolada com 340 migrations).
+  - `packages/db/src/types.ts` (adição cirúrgica das 6 tabelas `tiktok_*`, 2 colunas de `tiktok_shops` e RPC `tiktok_orders_sync_lock`).
+  - `apps/worker/src/handlers/tiktok-supabase-repository.ts` + wiring em `apps/worker/src/index.ts` (interruptor desligado sem `TIKTOK_SHOP_APP_KEY`/`SECRET`).
+  - `packages/db/src/tiktok-transacional.integration.test.ts` (2/2 contra Postgres real: lock atômico, RLS negativo cross-org e bloqueio de escrita nas 6 tabelas, upsert idempotente).
+- **Próximo ID reservado ao Gemini:** `D-839` (faixa livre `D-839..D-849`).
+- **Pendências exclusivas de 01/12/2026 (retorno do Supabase Dev Pro):** aplicar/registrar `20261125170000_tiktok_shop_transacional.sql` no Dev (`nmgccyqquwxecqffsidr`), fechar `I05` e validar `M04` com uma loja real do TikTok Shop.

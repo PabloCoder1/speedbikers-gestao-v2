@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **768** (D-001 a D-885).
+Decisões registradas: **769** (D-001 a D-885).
 
 ## Por domínio
 
@@ -91,7 +91,7 @@ Decisões registradas: **768** (D-001 a D-885).
 - **D-805** — Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
 - **D-808** — API: receptor autenticado `POST /push/tiktok-shop` (`M04`, fatia 3)
 
-### banco/rls (54)
+### banco/rls (55)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -146,6 +146,7 @@ Decisões registradas: **768** (D-001 a D-885).
 - **D-820** — Web Server Actions: `auth.getUser()` fail-closed nas 5 telas restantes e saneamento de erro SQL na triagem
 - **D-826** — Web exportações CSV/XLSX: eliminação de vazamento de `error.message` bruto do Postgres no HTTP 502
 - **D-830** — Web faturamento/vendas: eliminação de `error.message` bruto do Postgres no DOM
+- **D-838** — M04 (TikTok Shop): migration transacional, adaptador Supabase do worker e testes em Postgres real
 - **D-881** — Workflow de migrations de produção gera o plano da VM
 
 ### estoque (69)
