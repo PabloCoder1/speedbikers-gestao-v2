@@ -715,3 +715,8 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - Base `99a8d64c` no #407, candidato `55a4b14a` no #364 e main `628ff887`. Acrescentei um teste de integração com lote lido, corte sintético e restauração. O ensaio mantém os registros de notificação e evento necessários à restauração.
 - A colisão abortou a tentativa e preservou o vínculo original. As duas operações puderam ser repetidas com zero novas mudanças. Estados de leitura e datas bateram, e a notificação continuou invisível a outra organização. Em duas sessões, a segunda pulou a linha bloqueada e viu uma única ocorrência antes e depois do commit.
 - Check 37/37, build 10/10 e integração serial 1.244/1.244. A CI de `99a8d64c` (#407) terminou verde. A implantação da rotina efetiva depende da política de retenção. M04 continua com Gemini (#401) e S05 aguarda autorização para IAM.
+
+### 25/11/2026 · D04, ensaio repetível de permissões e checkpoints de sync_runs
+
+- Acrescentei `packages/db/scripts/rehearse-sync-run-archive.mjs`. O ensaio local separa o papel da movimentação do papel da recuperação, delimita a conta permitida e reverte todas as alterações ao terminar. A recuperação de erro tardio preservou a referência e suprimiu o alerta histórico. Falha operacional comum ainda gerou alerta.
+- O corte recusou os checkpoints. Saúde, cartões de conta, checkpoints de pedidos e claims e o resultado do vigia corresponderam antes do corte, depois dele e após a recuperação. O ensaio recusou o acesso fora do escopo, a escrita direta pelo operador e o host externo.
