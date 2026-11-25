@@ -57,6 +57,11 @@ Preço de tabela do catálogo do Google em reais, para 730 horas por mês. **É 
 
 **Diferença em relação ao #408:** ele estima o Cloud Run em US$ 3 a 10 por mês, partindo de "escala a zero". Com o mínimo de 1 na `api` e a média medida no `worker`, só os dois serviços ficam perto de R$ 160 por mês.
 
+**Custo efetivo (25/11):** o dono conferiu no console o custo dos últimos 30 dias, e ele ficou bem abaixo da estimativa.
+- A janela inclui só ~7 dias da VM, que roda desde 18/11.
+- A estimativa mensal só fica validada no primeiro mês cheio com a VM (dezembro).
+- O valor exato fica fora do repositório.
+
 **Orçamentos da conta de faturamento:**
 - **Produção:** um orçamento restrito ao projeto, com alertas de 25 % a 100 %. A estimativa fica perto do limite dele.
 - **"Speed Bikers V3 Dev Budget":** não tem filtro de projeto, então cobre a conta inteira, com um valor bem abaixo da estimativa. Os alertas dele devem disparar todo mês e perdem o sentido. **Ação do dono:** restringir esse orçamento ao projeto Dev.
@@ -67,7 +72,7 @@ Preço de tabela do catálogo do Google em reais, para 730 horas por mês. **É 
 |---|---|---|---|
 | Snapshots automáticos do disco | Diário às 07:00 UTC, guardados por 7 dias | 7 automáticos, como previsto | Manter |
 | Snapshots manuais | Sem expiração | `sb-db-antes-migrations-nov-20261118` (6,7 GB) e `sb-db-antes-d858-20261123` (0,4 GB) | Decidir depois do "check final" de 01/12 (L04) |
-| Bucket `speedbikers-prod-db-backups` | Apaga `diario/` aos 35 dias. **Versionamento ligado.** Exclusão reversível por 7 dias | Com versionamento e sem regra para versões antigas, cada backup que a regra apagar vira versão guardada para sempre. Nenhum backup chegou a 35 dias ainda; o primeiro é de 18/11 | Acrescentar regra que apaga versões antigas depois de N dias, antes de 23/12 |
+| Bucket `speedbikers-prod-db-backups` | Apaga `diario/` aos 35 dias. **Versionamento ligado.** Exclusão reversível por 7 dias | Com versionamento e sem regra para versões antigas, cada backup que a regra apagar vira versão guardada para sempre. Nenhum backup chegou a 35 dias ainda; o primeiro é de 18/11 | **Aplicada em 25/11 às 18:02 UTC, com autorização do dono:** as versões antigas de `diario/` são apagadas 30 dias depois de deixarem de ser a atual. A regra de 35 dias continua. `manual/` e `import/` ficam de fora, para decisão própria |
 | `manual/` e `import/` no mesmo bucket | Sem regra | 7 objetos atuais (1,1 GB) e 3 versões antigas (0,4 GB) | Decidir com o dono o que é cópia histórica |
 | Artifact Registry `speedbikers-v3` | Política do #408, ativa desde 25/11 14:31 UTC | 1,67 GB. Hoje são 10 imagens de `api` e 10 de `worker` | Manter |
 | Bucket do Cloud Build | Apaga aos 30 dias (aplicado em 25/11) | 0,24 GB | Manter |
@@ -114,8 +119,15 @@ O build passa a levar `--service-account=projects/speedbikers-prod/serviceAccoun
 
 Espere cerca de 2 minutos antes do primeiro build: o ensaio regional de 24/11 só gravou log 139 s depois da concessão.
 
+**Fechado em 25/11:**
+- O dono concedeu os três papéis.
+- Conferi os vínculos no repositório, no bucket e no projeto.
+- Um build de teste como `v3-builder` (`cdb5c897`) terminou em SUCCESS às 18:05 UTC, com a imagem `worker-sentinel-iam:*`. Ela não está em uso e entra na lista do L04.
+- O próximo deploy de `api` ou `worker` usa o `--service-account` acima.
+
 ## O que fecha o I06
 
-- **Custo efetivo:** o dono lê o custo de novembro no console, ou autoriza a exportação de faturamento para o BigQuery.
+- **Custo efetivo:** lido pelo dono em 25/11 (últimos 30 dias). Falta comparar o primeiro mês cheio com a VM, em dezembro.
+- **Orçamento "Dev":** ainda cobre a conta inteira. O dono restringe ao projeto Dev.
 - **Dimensionamento:** validado nesta leitura. A mudança dos parâmetros do Postgres é opcional e depende de ensaio.
-- **Retenção:** falta a regra de versões antigas do bucket de backups. É configuração persistente, então precisa de autorização.
+- **Retenção:** a regra de versões antigas de `diario/` foi aplicada em 25/11.
