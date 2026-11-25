@@ -1115,3 +1115,11 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - I06 aceito. O dono forneceu o custo efetivo de outubro de 2026 do projeto a partir de consulta ao Google Cloud Billing em 25/11. A retenção e o dimensionamento já tinham evidência. Inventário em 173/226 pontos e 33/43 entregas.
 - O #401 fica com Gemini. A revisão de D-832 apontou que a falha de publicação da próxima janela Shopee pode ser seguida de retorno `done`. Pedi teste de falha de fila após o marco. M04 segue com o teste de concorrência OAuth. [Revisão](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/401#issuecomment-7168241930)
 - Próximo passo: conferir a CI do novo HEAD do #364, validar o catálogo oficial do Dev na retomada e sequenciar as migrations antes da web. A política de retenção de D04, S05 e a aplicação em produção permanecem abertas.
+
+### 25/11/2026 · D-886, índice temporal no histórico da Central
+
+- Base `b1542fe7`, PR #407, candidato `237d287d` e main `628ff887`. A migration aditiva `20261125170000` usa o índice temporal na leitura sem filtros até o deslocamento 1.000. A visão de contagens de D-885 continua na consulta existente.
+- Check 37/37, build 10/10 e integração serial 1.243/1.243. A execução paralela registrou um deadlock no teste de cancelamento de compras. O benchmark preservou os resultados em dez recortes. A comparação incluiu cópias duplicadas, filtros seletivos, limite entre os planos e página vazia. [Medição](../PERFORMANCE.md#índice-temporal-para-as-primeiras-páginas-do-histórico-d-886-25112026)
+- S05: a conta dedicada existe. A leitura das políticas do projeto, repositório de imagens, bucket de origem e conta de serviço não encontrou as concessões do ensaio anterior. A adoção aguarda autorização para conceder os acessos mínimos e confirmar o primeiro build pela rotina regular. #401 permanece com Gemini e #406 com Claude.
+- A CI `45656368865` do candidato `237d287d` terminou com os quatro jobs verdes e 414 cenários de Playwright. A fatia seguinte de D-886 é `99a8d64c` no #407. Os pontos aceitos permanecem em 173/226.
+- Com D-886 no candidato, a suíte serial passou 1.259/1.259 em 20 arquivos, o preflight passou 10/10 e `check` passou 37/37. A Data API local confirmou retorno idêntico da página indexada e filtrada, exclusão nas não lidas e recusa de acesso anônimo à view.

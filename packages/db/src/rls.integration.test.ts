@@ -16342,7 +16342,7 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
   describe("histórico ativo e arquivado da Central", () => {
     it("preserva paginação, filtros e leitura por destinatário durante a sobreposição", async () => {
       const archivedId = randomUUID();
-      const timestamp = "2026-08-24T12:00:00.000Z";
+      const timestamp = "2090-08-24T12:00:00.000Z";
       const { rows: [active] } = await client.query<{ id: string }>(
         `select id from public.notifications where domain_event_id = $1`,
         [contaAEventId],
@@ -16367,6 +16367,12 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
           and event_type like 'listing.%' and notification_id in ('${active.id}', '${archivedId}')`;
       const sorted = [active.id, archivedId].sort().reverse();
       try {
+        const firstPage = await asUser<{ notification_id: string; archived: boolean }>(
+          ANALISTA_SB,
+          "select notification_id, archived from public.list_notification_history(0, 2, false)",
+        );
+        expect(firstPage).toEqual(sorted.map((id) => ({ notification_id: id, archived: id === archivedId })));
+
         for (const [offset, id] of sorted.entries()) {
           const rows = await asUser(ANALISTA_SB, `select notification_id, read_at is null as unread, account_label
             from public.list_notification_history(${String(offset)}, 1, false, 'informativo', 'listing.%', '${CONTA_A}')
@@ -16377,12 +16383,17 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
         expect(await asUser(ANALISTA_SB, select)).toHaveLength(2);
         expect(await asUser(ADMIN_SB, `${select} and notification_id = '${archivedId}'`)).toEqual([]);
         expect(await asUser(DE_OUTRA_ORG, select)).toEqual([]);
+        const archive = `select notification_id from public.notification_archive_visible
+          where notification_id in ('${active.id}', '${archivedId}')`;
+        expect(await asUser(ANALISTA_SB, archive)).toEqual([{ notification_id: archivedId }]);
+        expect(await asUser(ADMIN_SB, archive)).toEqual([]);
 
         await client.query(
           "delete from public.user_account_permissions where user_id = $1 and ml_account_id = $2",
           [ANALISTA_SB, CONTA_A],
         );
         expect(await asUser(ANALISTA_SB, select)).toEqual([]);
+        expect(await asUser(ANALISTA_SB, archive)).toEqual([]);
       } finally {
         await client.query("delete from notification_archive.recipients where user_id = $1 and notification_id in ($2, $3)", [ANALISTA_SB, active.id, archivedId]);
         await client.query("insert into public.user_account_permissions (user_id, ml_account_id) values ($1, $2) on conflict do nothing", [ANALISTA_SB, CONTA_A]);
@@ -16391,6 +16402,7 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
 
     it("reserva a view aos autenticados e mantém o arquivo fora do acesso direto", async () => {
       await expect(asAnon("select * from public.notification_history")).rejects.toThrow(/permission denied/i);
+      await expect(asAnon("select * from public.notification_archive_visible")).rejects.toThrow(/permission denied/i);
       await expect(asAnon("select * from public.list_notification_history(0, 1, false)")).rejects.toThrow(/permission denied/i);
       await expect(asUser(ANALISTA_SB, "select * from notification_archive.recipients")).rejects.toThrow(/permission denied/i);
       await expect(asUser(ANALISTA_SB, "update public.notification_history set read_at = now()")).rejects.toThrow(/cannot update view/i);

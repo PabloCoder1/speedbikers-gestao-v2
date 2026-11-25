@@ -21446,3 +21446,11 @@ A migration `20261125160000` guarda vínculos já lidos em `notification_archive
 O PostgreSQL pode escolher um plano genérico que lê todo o histórico antes de montar a primeira página. A RPC planeja a consulta com os valores vinculados de cada chamada. No ensaio de 54 mil vínculos, com arquivo vazio, a primeira versão da view levou entre 486 e 536 ms. A versão paginada levou entre 2,2 e 3,7 ms. A contagem total exata ficou entre 215 e 306 ms, frente a 184–195 ms na comparação com a consulta ativa.
 
 A publicação da web depende da migration. O arquivo pode começar vazio. A política de retenção e o processo de transferência de registros ficam a cargo da próxima decisão de D04.
+
+## D-886 - O histórico arquivado usa a ordem do índice nas primeiras páginas
+
+**Data:** 2026-11-25. **Origem:** D04, leitura da Central com arquivo preenchido.
+
+A migration `20261125170000` acrescenta uma view `security_invoker` para o ramo arquivado. As consultas laterais usam vínculos únicos e preservam a ordem do índice temporal. A RPC usa esse caminho nas páginas sem filtros com deslocamento até 1.000. Os recortes por evento e as páginas mais profundas continuam usando o plano de D-885. Lista, contagens, ordenação e permissões mantêm o contrato existente.
+
+O ensaio com 54 mil vínculos sintéticos verificou dez recortes, incluindo vínculos duplicados em cópia, deslocamentos de 1.000 e 1.001, filtros combinados e lista vazia. A publicação também depende da migration de D-885.

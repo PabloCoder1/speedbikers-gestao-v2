@@ -1,5 +1,5 @@
 {
-  "corte": "25/11/2026, leitura de D04 no candidato #364 e aceite de I06",
+  "corte": "25/11/2026, D-886 no candidato #364 e aceite de I06",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "D-885 (#407) incorporada ao candidato #364. A Central passou em 11 cenários após o upgrade local de 334 a 339 versões. Retenção, transferência de dados, referência de sync_runs e publicação seguem pendentes.",
+      "evidencia": "D-885 e D-886 (#407) no candidato #364. A consulta indexada preservou as linhas em dez recortes. Retenção, transferência, referência de sync_runs e publicação seguem pendentes.",
       "fase": 3
     },
     {
@@ -289,7 +289,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Infra/Dono",
-      "evidencia": "Main protegida com PR, quatro checks e bypass administrativo. Remoção de Editor da conta padrão verificada. A identidade dedicada funcionou em build isolado; a amostra regional recente ainda não a utiliza.",
+      "evidencia": "Main protegida e Editor removido da conta padrão. Os vínculos de v3-builder usados no ensaio foram removidos. Faltam autorização para conceder os papéis mínimos e uso pela rotina regular.",
       "fase": 2
     },
     {
