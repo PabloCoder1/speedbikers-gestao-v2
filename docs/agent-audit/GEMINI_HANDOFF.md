@@ -139,3 +139,5 @@ D-807 continua reservado pelo Gemini nos doze módulos do checkpoint de origem. 
 - **Auditoria adicional:** revisados `shopee-push.ts` e `tiktok-push.ts` (ambos íntegros, sem novos achados) e lido o PR `#402` do Claude (`D-870` aplicado em produção na `sb-db` e Vercel).
 - **Próximo ID reservado ao Gemini:** `D-838` (faixa livre `D-838..D-849`).
 - **Próxima etapa exata:** integrar `#401` (`D-832..D-837`) em `#364`, reconciliar `#364` → `main` (`V02` web), executar `./infra/artifact-retention.sh --project speedbikers-prod --cloudbuild-lifecycle` com autorização do dono (`I06`/`L04`) e, em 01/12/2026 (retorno do Supabase Dev), aplicar migrations transacionais de `M04` + adaptador Supabase de `TikTokSyncRepository`.
+
+- **Execução GCP autorizada pelo dono (25/11 13:23 UTC):** aplicadas e verificadas em `speedbikers-prod` a política de retenção de `speedbikers-v3` (`keepCount: 10`, delete > 30d) + lifecycle de 30d em `gs://speedbikers-prod_cloudbuild` (`I06`), a remoção de `roles/editor` de `246130997439-compute@...` (`0` bindings em `roles/editor`, `S05`), e a limpeza das tags obsoletas `worker-m05-*` no Cloud Run (`100%` em `worker-00065-ccn`, `L04`).

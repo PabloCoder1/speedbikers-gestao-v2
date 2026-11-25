@@ -66,3 +66,19 @@ Consulta `gcloud projects get-iam-policy speedbikers-prod` em `25/11/2026`:
 | Imagens antigas em `speedbikers-v3` (`1.669,34 MB`) | Sem `cleanupPolicies` | Apenas imagens em uso pelas revisões ativas (cobertas por `keepCount: 10`) | `./infra/artifact-retention.sh --project speedbikers-prod --dry-run` seguido de execução sem `--dry-run` | Rebuild determinístico a partir do commit Git via `infra/cloudbuild.yaml` |
 | Tarballs antigos em `gs://speedbikers-prod_cloudbuild` | Sem lifecycle | Nenhuma após conclusão do build | `./infra/artifact-retention.sh --project speedbikers-prod --cloudbuild-lifecycle` | `gcloud builds submit` gera novo tarball automaticamente |
 | Projeto Supabase hosted legado `imvjfgnaprqsfjlnsyev` | `INACTIVE` desde o cutover para `sb-db` | Nenhuma (produção usa `34-39-221-164.sslip.io`) | Manter inativo até validação pós-01/12; excluir somente mediante decisão explícita do dono | Backup completo em `gs://speedbikers-prod-db-backups/diario/` (35 dias) |
+
+
+---
+
+## 4. Execução autorizada pelo dono e verificação pós-aplicação (`2026-11-25 13:23 UTC`)
+
+1. **`I06` — Retenção de artefatos aplicada e verificada:**
+   - `./infra/artifact-retention.sh --project speedbikers-prod --cloudbuild-lifecycle` executado com sucesso.
+   - `speedbikers-v3`: `cleanupPolicies` ativo (`keep-minimum-versions` = `10` versões mais recentes + `delete-old-versions` > `2592000s`, `dry-run` desativado).
+   - `gs://speedbikers-prod_cloudbuild`: `lifecycle_config` ativo (`Delete` após `30` dias).
+2. **`S05` — Remoção de `roles/editor` aplicada e verificada:**
+   - Removido `roles/editor` de `serviceAccount:246130997439-compute@developer.gserviceaccount.com`.
+   - `gcloud projects get-iam-policy speedbikers-prod --filter="bindings.role:roles/editor"` retornou **0 bindings** (somente SAs de menor privilégio + `roles/owner` do dono).
+3. **`L04` — Limpeza de tags obsoletas no Cloud Run aplicada e verificada:**
+   - `gcloud run services update-traffic worker --clear-tags --to-latest` removeu as 3 tags `worker-m05-*` antigas.
+   - Tráfego verificado: `100% LATEST (worker-00065-ccn)`. Saúde da API verificada: `GET /health` -> `{"status":"ok","service":"api","commit":"c5882974"}`.
