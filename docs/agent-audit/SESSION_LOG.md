@@ -722,3 +722,20 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
   - Em 26/11, conferir UpSeller e `sync.listing.item`.
   - Quando o dono conceder os papéis ao `v3-builder`, fazer o deploy seguinte com `--service-account`.
   - Investigar `get_fulfillment_overview`.
+
+### 25/11/2026 · Claude Sentinel: Central Full (D-874) e fechamento do S05
+
+- **Respostas do dono.**
+  - Concedeu os três papéis ao `v3-builder`.
+  - Leu o custo dos últimos 30 dias, bem abaixo da estimativa. O valor fica fora do repositório.
+  - Autorizou a regra de versões antigas no bucket de backups, aplicada às 18:02 UTC só em `diario/`.
+  - O orçamento "Dev" segue sem filtro de projeto.
+- **S05 fechado.** Conferi os três vínculos e rodei um build de teste como `v3-builder` (`cdb5c897`, SUCCESS, imagem `worker-sentinel-iam:*`). O deploy seguinte usa `--service-account`. A imagem de teste entra na lista do L04.
+- **D-874.** `get_fulfillment_overview` agora soma o saldo local só do SKU de cada linha.
+  - Em produção, só leitura: de 1,5 a 2,0 s para 155 a 164 ms, também no plano genérico.
+  - 12 recortes iguais em linhas e ordem.
+  - A migration é `20261125183000`.
+- **Testes.** Suíte de integração do `@sb/db` com a migration: as mesmas 10 falhas de baseline. Mais `pnpm docs:check`.
+- **Próxima etapa.**
+  - Autorização do dono para o merge e a migration da D-874 na VM.
+  - Em 26/11, conferir UpSeller e `sync.listing.item`.

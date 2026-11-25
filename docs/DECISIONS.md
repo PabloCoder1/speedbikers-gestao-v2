@@ -20320,3 +20320,25 @@ No plano genérico da curva, a CTE `full_by_sku`, usada uma vez, é incorporada 
 - Localmente, a suíte do `@sb/db` teve as mesmas 10 falhas de baseline.
 
 **Em produção (25/11):** depois da CI verde da `main` em `628ff887` (run 45662352513, disparado à mão porque o GitHub perdeu o evento do push), a migration `20261125150000` foi aplicada na VM com `psql -1` e registrada no histórico. O corpo tem o `as materialized`, e os grants seguem `authenticated`, `postgres` e `service_role`. Como membro, a curva de 30 dias levou 346 e 440 ms, contra 1,3 a 1,6 s antes. O filtro "sem Full" de 90 dias levou 393 ms.
+
+## D-874 - A Central Full lê o saldo local por SKU, e não reagrega todos a cada linha
+
+**Contexto:** a varredura da D-873 deixou `get_fulfillment_overview` (`/full`) em aberto: ~1,5 s como membro, e o mesmo tempo com o SQL escrito por extenso. Então não é o plano genérico. O plano real mostrou:
+- a CTE `saldo_local`, que agrega `inventory_balances` local de todos os SKUs, é incorporada à consulta;
+- o `left join` com ela vira um laço aninhado que reagrega o saldo de todos os SKUs a cada linha da lista, descartando milhões de linhas no filtro do join.
+
+**Decisão:**
+- **Saldo local por SKU, numa subconsulta escalar.** `classificado` lê `sum(quantity)` de `inventory_balances` com `location_kind = 'LOCAL'` só para o SKU da linha. A chave única `(sku_id, location_kind)` da tabela faz disso uma leitura por índice.
+- A CTE `saldo_local` e o `left join` saem. Mais nada muda: assinatura, retorno, filtros, ordenações, a definição do Full (D-173) e a guarda da D-204 (`inventory_id` e captura de 3 dias). `create or replace` preserva comentário e grants.
+- **Descartada:** `saldo_local as materialized`. Ficou em ~0,8 s, contra ~0,16 s da subconsulta.
+
+**Verificação:**
+- Em produção, só leitura, como membro: o corpo atual levou 1,5 a 2,0 s, o materializado 0,75 a 0,9 s, e o novo 155 a 164 ms, tanto no plano normal quanto no genérico forçado.
+- As três versões devolveram as mesmas linhas, na mesma ordem, por hash, em 12 recortes:
+  - ordenações prioridade, padrão, cobertura (página 2), local, SKU (lista inteira) e vendas com ruptura;
+  - focos "enviável" e "acabando" em 30 dias;
+  - uma conta em 90 dias, uma busca, um SKU e uma busca sem resultado.
+- As tabelas temporárias da comparação existiram só dentro de uma transação encerrada com `rollback`.
+- Localmente, a suíte do `@sb/db` teve as mesmas 10 falhas de baseline.
+
+**Publicação:** pede merge e a migration `20261125183000` na VM, com autorização do dono.

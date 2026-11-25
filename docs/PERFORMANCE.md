@@ -2270,3 +2270,16 @@ Medido em produção, como membro autenticado, com o cache quente (duas chamadas
 - **Curva ABC:** é o plano genérico. No plano genérico forçado, o corpo antigo levou 3,1 s e o da D-873 483 ms.
 - **`/full`:** a consulta é cara mesmo escrita por extenso. Precisa de outra investigação.
 - **Em produção (25/11):** a curva ABC de 30 dias, como membro, levou 346 e 440 ms depois da D-873, contra 1,3 a 1,6 s antes.
+
+### Central Full: saldo local por SKU (Claude Sentinel, D-874, 25/11/2026)
+
+Medido em produção, como membro autenticado, com `prepare` das três versões dentro de uma transação desfeita (30 dias, ordem prioridade, 50 linhas):
+
+| Versão | Plano normal | Plano genérico forçado |
+|---|---|---|
+| Atual (`saldo_local` incorporada) | 1,5 a 2,0 s | 2,0 s |
+| `saldo_local as materialized` | 0,75 a 0,87 s | 0,91 s |
+| Subconsulta escalar por SKU (D-874) | 155 a 159 ms | 164 ms |
+
+- **Causa:** o `left join` com a agregação de todo o saldo local virava laço aninhado, reagregando o saldo a cada linha da lista.
+- **Equivalência:** 12 recortes com as mesmas linhas e a mesma ordem nas três versões.
