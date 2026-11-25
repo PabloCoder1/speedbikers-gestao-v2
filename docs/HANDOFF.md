@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-11-25 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | `origin/main` em `f4c0be64` (#396). O #378 está empilhado no #364. [Checkpoint](agent-audit/SESSION_LOG.md). |
+| **HEAD conhecido** | `origin/main` em `8f39cddc` (#397). O #378 está empilhado no #364. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Fechamento da V3** | 163/226 pontos (72,12%), 30/43 entregas. [Inventário Sentinel](agent-audit/CLOSURE_INVENTORY.json). [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7107161168). |
 | **Sentinel: próximo passo** | O #378 incorpora D-807–D-830 e Claude até D-869. Validar a CI do último SHA. O Dev inativo bloqueia quatro versões definitivas. D04 tem restore e ensaios SQL/PostgREST. Falta leitura do arquivo na Central. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo, com 2,0 GB acima do limite gratuito. Google Cloud segue como ambiente atual. Retomada do Supabase Pro prevista pelo dono para 01/12/2026. Confirmar Dev ativo antes da esteira. Rotinas Dev pausadas (D-350). |
@@ -196,7 +196,7 @@ Nada disto pode ser feito por um agente.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
 13. **Alerta de margem (D-858, D-859):** agendamento e e-mails em produção. D-882 pagina e isola falhas de fila no candidato.
 14. **D-863 e D-868:** recuperação por SMTP e monitoramento em produção.
-15. **D-869:** migration `20261124140000` registrada na VM. Coordenar a tela dependente com Claude.
+15. **D-869:** migration `20261124140000` confirmada na VM e tela integrada no #397.
 
 ---
 

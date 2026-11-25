@@ -21220,6 +21220,13 @@ TDD RED (`3/3` arquivos / `4 failed`) -> GREEN (`10/10` worker + `10/10` API). V
 - a mesma requisição em outro pedido é outra inclusão;
 - o analista não lança.
 
+**Em produção (24/11):** a migration foi aplicada pela VM `sb-db` numa transação só (`psql -1`), com o registro em `schema_migrations`, depois dos 4 jobs obrigatórios verdes na `main` (`f4c0be64`). Na conferência:
+- a função tem os 9 argumentos;
+- `authenticated` executa e `anon` não;
+- a coluna `request_id` existe.
+
+A tela que manda a requisição é o #397.
+
 ## D-820 - Web Server Actions: `auth.getUser()` fail-closed nas 5 telas restantes e saneamento de erro SQL na triagem
 
 Fechamos o tratamento de erro de sessão em todas as Server Actions restantes fora da frente de compras/reposição (commit `d3045b86`):
