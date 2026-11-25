@@ -64,6 +64,13 @@ function makeDb(initial: FakeCredentialRow | null, options: { lockBusy?: boolean
               return Promise.resolve({ data: null, error: null });
             }
 
+            if (
+              filters.refresh_token_ciphertext !== undefined &&
+              row.refresh_token_ciphertext !== filters.refresh_token_ciphertext
+            ) {
+              return Promise.resolve({ data: null, error: null });
+            }
+
             row = { ...row, ...(values as Partial<FakeCredentialRow>) };
 
             return Promise.resolve({ data: { ...row, tiktok_shop_id: SHOP_UUID }, error: null });
@@ -232,5 +239,37 @@ describe("ensureTikTokShopAccessToken — adaptador Supabase (D-810)", () => {
     });
 
     expect(resOcupada).toMatchObject({ ok: false, retryable: true });
+  });
+
+  it("não marca loja como ERROR se reconexão OAuth trocou refresh_token_ciphertext durante recusa do refresh", async () => {
+    const { db, shopUpdates } = makeDb({
+      shop_cipher: "ROW_cipher_1",
+      access_token_ciphertext: encryptToken("tok-velho", KEY),
+      refresh_token_ciphertext: encryptToken("ref-velho", KEY),
+      access_token_expires_at: new Date(NOW.getTime() + 60_000).toISOString(),
+      refresh_token_expires_at: new Date(NOW.getTime() + 86_400_000).toISOString(),
+      refresh_locked_until: null,
+    });
+
+    const store = (await import("./tiktok-token-store.js")).createSupabaseTikTokTokenStore({
+      db,
+      encryptionKey: KEY,
+      tiktokShopId: SHOP_UUID,
+    });
+
+    const lock = await store.acquireLock(new Date(NOW.getTime() + 60_000), NOW);
+
+    expect(lock.ok && lock.acquired).toBe(true);
+    if (!lock.ok || !lock.acquired) return;
+
+    // Simula reconexão OAuth concorrente gravando novo refresh_token_ciphertext
+    // (preservando a janela de tempo sem alterar o handle antigo).
+    const rejected = await store.markRejected(
+      { ...lock.handle, previousRefreshCiphertext: encryptToken("ref-outro", KEY) },
+      "refresh_token expirado",
+    );
+
+    expect(rejected).toEqual({ ok: true, applied: false });
+    expect(shopUpdates).toHaveLength(0);
   });
 });

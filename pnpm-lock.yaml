@@ -186,6 +186,9 @@ importers:
       '@sb/shopee':
         specifier: workspace:*
         version: link:../../packages/shopee
+      '@sb/tiktok-shop':
+        specifier: workspace:*
+        version: link:../../packages/tiktok-shop
       fast-xml-parser:
         specifier: 5.12.0
         version: 5.12.0

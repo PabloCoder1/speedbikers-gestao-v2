@@ -114,7 +114,13 @@ export async function completeShopeeConnect(
     .select("organization_id, environment, created_by")
     .maybeSingle();
 
-  if (claimed.error !== null || claimed.data === null) {
+  if (claimed.error !== null) {
+    deps.logger.error("shopee_oauth_state_claim_failed", { reason: claimed.error.message });
+
+    return { status: "rejected", reason: "não foi possível validar a autorização no momento" };
+  }
+
+  if (claimed.data === null) {
     return { status: "invalid_state" };
   }
 
@@ -192,6 +198,27 @@ export async function completeShopeeConnect(
     });
   }
 
+  const accessExpiresMs = now.getTime() + token.expire_in * 1000;
+  const refreshExpiresMs = now.getTime() + REFRESH_TOKEN_TTL_MS;
+
+  if (!Number.isFinite(accessExpiresMs) || !Number.isFinite(refreshExpiresMs)) {
+    deps.logger.error("shopee_oauth_invalid_token_expiry", { expire_in: token.expire_in });
+
+    return { status: "rejected", reason: "a Shopee devolveu uma validade de credencial inválida" };
+  }
+
+  let accessExpiresIso: string;
+  let refreshExpiresIso: string;
+
+  try {
+    accessExpiresIso = new Date(accessExpiresMs).toISOString();
+    refreshExpiresIso = new Date(refreshExpiresMs).toISOString();
+  } catch {
+    deps.logger.error("shopee_oauth_invalid_token_expiry", { expire_in: token.expire_in });
+
+    return { status: "rejected", reason: "a Shopee devolveu uma validade de credencial inválida" };
+  }
+
   // O par inicial é compartilhado pelas lojas de uma conta principal.
   // A RPC verifica o dono na gravação e confirma o lote inteiro numa transação.
   const { error } = await deps.db.rpc("shopee_connect_shops", {
@@ -202,8 +229,8 @@ export async function completeShopeeConnect(
     p_shops: lojas,
     p_access_token_ciphertext: encryptToken(token.access_token, deps.encryptionKey),
     p_refresh_token_ciphertext: encryptToken(token.refresh_token, deps.encryptionKey),
-    p_access_token_expires_at: new Date(now.getTime() + token.expire_in * 1000).toISOString(),
-    p_refresh_token_expires_at: new Date(now.getTime() + REFRESH_TOKEN_TTL_MS).toISOString(),
+    p_access_token_expires_at: accessExpiresIso,
+    p_refresh_token_expires_at: refreshExpiresIso,
   });
 
   if (error?.code === "PT409") {

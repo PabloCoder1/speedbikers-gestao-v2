@@ -62,7 +62,7 @@ export type ShopeeOrdersSyncDeps = ShopeeJobDeps;
 
 export function createShopeeOrdersSyncHandler(deps: ShopeeOrdersSyncDeps): JobHandler {
   return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
-    const aberta = await lerLojaConectada(deps, context, "shopee_orders_sync_skipped");
+    const aberta = await lerLojaConectada(deps, context, "shopee_orders_sync_skipped", envelope.organizationId);
 
     if ("outcome" in aberta) return aberta.outcome;
 
@@ -100,8 +100,25 @@ export function createShopeeOrdersSyncHandler(deps: ShopeeOrdersSyncDeps): JobHa
       }
     }
 
+    let enqueueFailureReason: string | null = null;
+
     for (const pedido of seguintes) {
-      await deps.enqueuer.enqueue(pedido);
+      try {
+        await deps.enqueuer.enqueue(pedido);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "erro desconhecido";
+
+        enqueueFailureReason ??= `falha ao enfileirar continuação (${pedido.jobType}): ${reason}`;
+        context.logger.warn("shopee_orders_sync_enqueue_failed", {
+          shopee_shop_id: loja.id,
+          job_type: pedido.jobType,
+          reason,
+        });
+      }
+    }
+
+    if (enqueueFailureReason !== null && outcome.status === "done") {
+      return { status: "failed", retryable: true, reason: enqueueFailureReason };
     }
 
     return outcome;

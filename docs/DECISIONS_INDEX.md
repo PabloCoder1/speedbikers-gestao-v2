@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **763** (D-001 a D-885).
+Decisões registradas: **768** (D-001 a D-885).
 
 ## Por domínio
 
@@ -303,7 +303,7 @@ Decisões registradas: **763** (D-001 a D-885).
 - **D-869** — Lançar custo no pedido de compra é idempotente pela requisição
 - **D-885** — A Central pagina o histórico ativo e arquivado
 
-### mercado-livre (151)
+### mercado-livre (152)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -455,6 +455,7 @@ Decisões registradas: **763** (D-001 a D-885).
 - **D-822** — Web `/contas`: painel Lojas TikTok Shop e conector OAuth (`M04`)
 - **D-825** — Worker `relist-prepare` e `relist-measurement`: isolamento multi-tenant e proteção de eventos de republicação
 - **D-831** — Worker `ml-token.ts` e `shopee-token.ts`: `decryptToken` fail-closed (`retryable: false`) e liberação da trava
+- **D-837** — API: separação de erro de banco no claim de `state` e proteção de expiração nos 3 callbacks OAuth
 - **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
 ### outros (130)
@@ -674,7 +675,7 @@ Decisões registradas: **763** (D-001 a D-885).
 - **D-867** — A importação de pedidos anteriores sobrevive à Server Action que não responde
 - **D-882** — Agendamento de margem percorre todas as organizações com alerta ativo
 
-### worker/infra (129)
+### worker/infra (133)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -802,6 +803,10 @@ Decisões registradas: **763** (D-001 a D-885).
 - **D-814** — Worker `service_role`: isolamento multi-tenant `envelope.organizationId`, escopo explícito de consultas, lotes de upsert e enqueue protegido em 7 handlers
 - **D-818** — Worker `service_role`: `expectedOrganizationId` centralizado em `lerLojaConectada` e proteção de `enqueue()` em 5 handlers Shopee
 - **D-828** — Worker `page-writes.ts`: fatiamento em lotes de 100 na exclusão da cauda de `order_items`
+- **D-832** — Worker: isolamento multi-tenant nos 4 handlers finais sob service_role
+- **D-833** — Worker TikTok Shop: base comum multi-tenant e renovação de token CAS (`M04`)
+- **D-834** — Worker TikTok Shop: 5 handlers transacionais prontos para persistência (`M04`)
+- **D-835** — Worker TikTok Shop: env fail-closed e bootstrap dos 5 handlers (`M04`)
 - **D-857** — Avisos em tempo real respeitam o ciclo da sessão
 - **D-863** — "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
 - **D-883** — Preservar os traces das falhas Playwright na CI

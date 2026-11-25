@@ -57,6 +57,10 @@ export function createSyncListingsSnapshotHandler(deps: SyncListingsSnapshotDeps
 
     const account = resolvedAccount.account;
 
+    if (account.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "conta do Mercado Livre pertence a outra organização" };
+    }
+
     if (account.status !== "CONNECTED") {
       context.logger.info("sync_listings_snapshot_account_not_connected", { ml_account_id: mlAccountId });
 

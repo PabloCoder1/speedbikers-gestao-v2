@@ -1115,3 +1115,36 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - I06 aceito. O dono forneceu o custo efetivo de outubro de 2026 do projeto a partir de consulta ao Google Cloud Billing em 25/11. A retenção e o dimensionamento já tinham evidência. Inventário em 173/226 pontos e 33/43 entregas.
 - O #401 fica com Gemini. A revisão de D-832 apontou que a falha de publicação da próxima janela Shopee pode ser seguida de retorno `done`. Pedi teste de falha de fila após o marco. M04 segue com o teste de concorrência OAuth. [Revisão](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/401#issuecomment-7168241930)
 - Próximo passo: conferir a CI do novo HEAD do #364, validar o catálogo oficial do Dev na retomada e sequenciar as migrations antes da web. A política de retenção de D04, S05 e a aplicação em produção permanecem abertas.
+
+### 25/11/2026 · Gemini Sentinel: publicação coordenada (`c5882974`) e fechamento multi-tenant do worker (`D-832`)
+
+- **Publicação coordenada em produção (com autorização expressa do dono):**
+  - Backup diário prévio conferido (`gs://speedbikers-prod-db-backups/diario/2026-11-25.dump`, 201.187.832 bytes).
+  - 4 migrations aplicadas na `sb-db` (`20261117182500`, `20261117182600` `D04`, `20261119094000`, `20261119101000`; `0` índices inválidos).
+  - Cloud Run `worker` publicado em `worker-00065-ccn` (100% tráfego, `APP_COMMIT=c5882974`) e `api` em `api-00044-zzf` (100% tráfego, `GET /health` -> `commit: "c5882974"`).
+  - `job_runs` pós-deploy verificado na `sb-db` com `sync.listing.item`, `sync.listings.snapshot`, `erp.import.parse`, `erp.import.apply`, `shopee.*` e `sync.orders.window` em `done`.
+  - Proteção da `main` (`S05`) verificada ativa (`protected: true`, force-push/deleção bloqueados, PR + 4 checks obrigatórios).
+- **Nova entrega (`D-832`, commit `38539f4`, branch `agent/gemini-sentinel-fechamento` sobre `#364` `29adf54c`):** concluído isolamento multi-tenant nos 4 handlers finais do worker sob `service_role` (`erp-import-apply.ts`, `shopee-orders-sync.ts`, `sync-central-alerts.ts`, `sync-listings-snapshot.ts`) e protegido o loop pós-unlock em `shopee-orders-sync.ts`. PR superseded `#343` fechado.
+- **Próxima etapa:** reconciliar `#364` contra `main` (`6a3471ff`), absorver o novo PR de `D-832` (0 conflitos sobre `#364`), publicar o `web` via merge na `main` (`V02`) e avançar `M04` no Supabase local enquanto o Dev (`nmgccyqquwxecqffsidr`) aguarda reativação em 01/12/2026.
+
+
+### 25/11/2026 · Gemini Sentinel (Rodada 15): handlers do worker TikTok Shop (`D-833`/`D-834`) e revisão do `#400`
+
+- **Revisão cruzada (`#400`, Claude `D-870`):** `20261125120000_full_ausente_no_resumo_do_estoque.sql` e `apps/web/app/(app)/estoque/page.tsx` revisados sem achados P0/P1/P2 (`security invoker`, `set search_path = ''`, retrocompatível, nota de preflight `D-880`/`D-884` pós-`20261124140000`).
+- **`M04` no worker (`D-833` `2981f5a6` e `D-834` `3e64a8a7`, PR `#401`):** adicionados `tiktok-comum.ts`, `tiktok-token.ts` (CAS + `decryptToken` fail-closed), `tiktok-repository.ts` e os 5 handlers transacionais (`tiktok.orders.sync`, `tiktok.order.fetch`, `tiktok.items.sync`, `tiktok.returns.sync`, `tiktok.financials.sync`) com 18 testes unitários novos e 0 conflitos contra `#364` (`32bfc540`).
+- **Próxima etapa:** absorver `#401` no `#364`, fazer merge `#364` → `main` (`V02` web) e, com o retorno do Supabase Dev em 01/12/2026, criar as migrations transacionais do TikTok Shop e o adaptador Supabase de `TikTokSyncRepository`.
+
+
+### 25/11/2026 · Gemini Sentinel (Rodada 16): retenção de artefatos GCP (`D-836`) e bootstrap TikTok no worker (`D-835`)
+
+- **`I06`/`S05`/`L04` (`D-836`, `8c14670a`):** auditoria somente leitura em `speedbikers-prod` confirmou `speedbikers-v3` com `1.669,34 MB` sem `cleanupPolicies`, `speedbikers-prod_cloudbuild` sem lifecycle, SAs dedicadas em `sb-db`/`api`/`worker` (comprovando que `246130997439-compute@...` com `roles/editor` só é fallback de build sem `v3-builder`), e 3 revisões tagged `worker-m05-*` candidatas à limpeza. Entregues `infra/artifact-retention-policy.json`, `infra/artifact-retention.sh` e `docs/agent-audit/CLOUD_COST_AND_CLEANUP_2026-11-25.md`.
+- **`M04` (`D-835`, `71a7e54d`):** `apps/worker/src/env.ts` com validação fail-closed do par `TIKTOK_SHOP_APP_KEY`/`TIKTOK_SHOP_APP_SECRET` e `apps/worker/src/handlers/tiktok-bootstrap.ts` (`createTikTokWorkerHandlers` para os 5 `TIKTOK_JOB_TYPES`), empilhados no PR `#401` com 0 conflitos contra `#364` (`32bfc540`).
+- **Próxima etapa:** integrar `#401` em `#364`, fazer merge `#364` → `main` (`V02` web), aplicar retenção de artefatos com OK do dono (`I06`/`L04`) e concluir migrations + adaptador Supabase de `M04` no retorno do Dev em 01/12/2026.
+
+
+### 25/11/2026 · Gemini Sentinel (Rodada 17): endurecimento dos 3 callbacks OAuth (`D-837`)
+
+- **API OAuth (`D-837`, `08b2253c`):** corrigido mascaramento de erro transitório de banco (`claimed.error !== null` -> `invalid_state` sem log) em `ml-accounts.ts`, `shopee-shops.ts` e `tiktok-shops.ts`, e protegidas conversões de validade de tokens contra `RangeError` em `shopee-shops.ts` e `tiktok-shops.ts` (`49/49` testes em `@sb/api`).
+- **Auditoria complementar:** conferidos `shopee-push.ts`, `tiktok-push.ts` (íntegros) e PR `#402` do Claude (`D-870` em produção).
+- **Próxima etapa:** integrar PR `#401` (`D-832..D-837`, 0 conflitos contra `#364` `32bfc540`), reconciliar `#364` → `main` (`V02` web) e aguardar autorização para `infra/artifact-retention.sh` (`I06`/`L04`) / remoção de `roles/editor` (`S05`) + retorno do Dev em 01/12/2026 (`M04`/`I05`).
+- **Execução GCP autorizada pelo dono (25/11 13:23 UTC):** `infra/artifact-retention.sh --project speedbikers-prod --cloudbuild-lifecycle` aplicado e verificado (`I06`), `roles/editor` removido da default compute SA (`0` bindings, `S05`), e tags `worker-m05-*` limpas no Cloud Run (`100%` em `worker-00065-ccn`, `L04`); `GET /health` da API confirmado `ok` (`c5882974`).

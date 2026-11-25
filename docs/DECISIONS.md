@@ -21446,3 +21446,55 @@ A migration `20261125160000` guarda vínculos já lidos em `notification_archive
 O PostgreSQL pode escolher um plano genérico que lê todo o histórico antes de montar a primeira página. A RPC planeja a consulta com os valores vinculados de cada chamada. No ensaio de 54 mil vínculos, com arquivo vazio, a primeira versão da view levou entre 486 e 536 ms. A versão paginada levou entre 2,2 e 3,7 ms. A contagem total exata ficou entre 215 e 306 ms, frente a 184–195 ms na comparação com a consulta ativa.
 
 A publicação da web depende da migration. O arquivo pode começar vazio. A política de retenção e o processo de transferência de registros ficam a cargo da próxima decisão de D04.
+
+## D-832 - Worker: isolamento multi-tenant nos 4 handlers finais sob service_role
+
+Fechamos os 4 últimos handlers do worker sob `service_role` que ainda não conferiam a organização da entidade/payload contra `envelope.organizationId` (`38539f4`, branch `agent/gemini-sentinel-fechamento` sobre `#364` `29adf54c`), concluindo 100% da cobertura multi-tenant dos handlers do worker:
+
+1. `apps/worker/src/handlers/erp-import-apply.ts`: valida `batch.data.organization_id !== envelope.organizationId` antes de gravar `APPLYING` ou aplicar linhas, devolvendo `{ status: "failed", retryable: false }`.
+2. `apps/worker/src/handlers/shopee-orders-sync.ts`: propaga `envelope.organizationId` para `lerLojaConectada` (ativando a guarda adicionada em `shopee-comum.ts`) e protege o loop pós-unlock `for (const pedido of seguintes)` com `try/catch` + `shopee_orders_sync_enqueue_failed`, evitando que uma falha de enfileiramento derrube uma janela já concluída.
+3. `apps/worker/src/handlers/sync-central-alerts.ts`: valida `organizationId !== envelope.organizationId` antes de acionar `sincronizar_alertas_central` (`retryable: false`).
+4. `apps/worker/src/handlers/sync-listings-snapshot.ts`: valida `account.organization_id !== envelope.organizationId` após `resolveMlAccountRead` (`retryable: false`), antes de ler tokens ou acionar o Mercado Livre.
+
+TDD RED (`5 failed (5)`) -> GREEN (`67/67` nos 5 arquivos focados em `@sb/worker`, incluindo o novo `apps/worker/src/handlers/worker-final-four-org.test.ts`).
+
+
+## D-833 - Worker TikTok Shop: base comum multi-tenant e renovação de token CAS (`M04`)
+
+Adicionamos `@sb/tiktok-shop` como dependência de `@sb/worker` e implementamos a infraestrutura compartilhada dos jobs do TikTok Shop (`2981f5a6`, branch `agent/gemini-sentinel-fechamento` sobre `#364`):
+
+1. `apps/worker/src/handlers/tiktok-comum.ts`: `lerLojaTikTokConectada` valida `tiktokShopId`, lê `tiktok_shops`, separa erro transitório de banco (`retryable: true`) de loja ausente/desconectada (`done`, `processed: 0`) e impõe guarda multi-tenant estrita (`loja.organization_id !== expectedOrganizationId` -> `failed`, `retryable: false`); `falhaDoTikTok` classifica `ZodError`/`RangeError`/`TikTokShopApiError` consistentemente.
+2. `apps/worker/src/handlers/tiktok-token.ts`: `ensureTikTokAccessToken` reutiliza `refreshTikTokTokenWithLock` de `@sb/tiktok-shop` com CAS otimista em `(refresh_locked_until, refresh_token_ciphertext)` sobre `tiktok_credentials` e `tiktok_shops` (schema já versionado em `20261022170000_lojas_tiktok_shop.sql`, sem migrations novas), `decryptToken` fail-closed (`retryable: false`, solta a trava em `try/catch` sem vazar detalhes criptográficos) e marcação `status = 'ERROR'` somente em recusa definitiva de OAuth.
+
+Verificação: `tiktok-comum.test.ts` (7/7) e `tiktok-token.test.ts` (4/4), `@sb/worker typecheck` e `lint` verdes.
+
+## D-834 - Worker TikTok Shop: 5 handlers transacionais prontos para persistência (`M04`)
+
+Implementamos os 5 handlers do worker alinhados aos contratos de `@sb/contracts/tiktok-jobs.ts` (`D-812`) e às projeções puras sem PII de `@sb/domain/tiktok-shop` (`D-813`), desacoplados por uma interface tipada de persistência idempotente (`TikTokSyncRepository`) para permitir plugar o adaptador Supabase assim que as tabelas transacionais forem aplicadas após o retorno do Supabase Dev em 01/12/2026 (`3e64a8a7`):
+
+1. `apps/worker/src/handlers/tiktok-repository.ts`: contrato `TikTokSyncRepository` (locks, cursor, `upsertOrders`, `upsertCatalogUnits`, `upsertReturns`, `upsertOrderFinancials`, `upsertStatements`) com retorno fail-closed `{ error: string | null }`.
+2. `apps/worker/src/handlers/tiktok-orders-sync.ts`: `createTikTokOrdersSyncHandler` (`tiktok.orders.sync`, janela com sobreposição de 10 min, fatias de até 15 dias, teto de 100 páginas, detalhe em lotes de 50, `finally` unlock em `try/catch`, avanço de cursor apenas pós-gravação e enfileiramento pós-unlock protegido em `try/catch`) e `createTikTokOrderFetchHandler` (`tiktok.order.fetch`).
+3. `apps/worker/src/handlers/tiktok-items-sync.ts`: `createTikTokItemsSyncHandler` (`tiktok.items.sync`, catálogo paginado até 200 páginas + `searchInventory` em lotes de 100 produtos + `projectTikTokProductCatalog`).
+4. `apps/worker/src/handlers/tiktok-returns-sync.ts`: `createTikTokReturnsSyncHandler` (`tiktok.returns.sync`, janela de 30 dias + `projectTikTokReturn`).
+5. `apps/worker/src/handlers/tiktok-financials-sync.ts`: `createTikTokFinancialsSyncHandler` (`tiktok.financials.sync`, transação pontual por `orderId` ou extratos paginados de 30 dias).
+
+Verificação: `tiktok-handlers.test.ts` (7/7 cobrindo sucesso, isolamento cross-org nos 5 handlers, preservação de cursor em falha de escrita, proteção de unlock/enqueue e erros 403/429), somando 18/18 testes TikTok no worker.
+
+
+## D-835 - Worker TikTok Shop: env fail-closed e bootstrap dos 5 handlers (`M04`)
+
+Adicionamos a configuração de boot e o agregador de handlers do TikTok Shop no worker (`71a7e54d`, branch `agent/gemini-sentinel-fechamento` sobre `#364`):
+
+1. `apps/worker/src/env.ts`: declara `TIKTOK_SHOP_APP_KEY` e `TIKTOK_SHOP_APP_SECRET` opcionais (mesmo interruptor da Shopee em `D-426`), com `superRefine` fail-closed no boot quando apenas uma das duas variáveis é informada.
+2. `apps/worker/src/handlers/tiktok-bootstrap.ts`: `createTikTokWorkerHandlers` instancia `createTikTokShopClient` e registra exatamente os 5 job types de `TIKTOK_JOB_TYPES` (`tiktok.orders.sync`, `tiktok.order.fetch`, `tiktok.items.sync`, `tiktok.returns.sync`, `tiktok.financials.sync`) quando credenciais e `TikTokSyncRepository` estão presentes, devolvendo `{}` caso contrário.
+
+Verificação: `apps/worker/src/env.test.ts` (16/16) e `apps/worker/src/handlers/tiktok-bootstrap.test.ts` (2/2), `@sb/worker typecheck` e `lint` verdes.
+
+## D-837 - API: separação de erro de banco no claim de `state` e proteção de expiração nos 3 callbacks OAuth
+
+Nos 3 callbacks OAuth da API (`apps/api/src/ml-accounts.ts`, `apps/api/src/shopee-shops.ts` e `apps/api/src/tiktok-shops.ts`, commit `08b2253c`):
+
+1. **Separação de falha transitória de banco no consumo de `state`:** antes, `claimed.error !== null || claimed.data === null` retornava `{ status: "invalid_state" }` silenciosamente (mascarando indisponibilidade de banco como CSRF/expiração sem emitir log). Agora `claimed.error !== null` registra `ml_oauth_state_claim_failed` / `shopee_oauth_state_claim_failed` / `tiktok_oauth_state_claim_failed` e devolve `{ status: "rejected", reason: "não foi possível validar a autorização no momento" }` sem vazar `claimed.error.message`.
+2. **Proteção de expiração de token (`RangeError`):** em `shopee-shops.ts` (`new Date(now.getTime() + token.expire_in * 1000).toISOString()`) e `tiktok-shops.ts` (`tiktokEpochToIso(...)`), valores fora de faixa são capturados devolvendo `{ status: "rejected" }` com log dedicado em vez de derrubar o callback com HTTP 500 não tratado.
+
+TDD RED (`4 failed (4)`) -> GREEN (`49/49` em `oauth-callbacks-hardening.test.ts`, `ml-accounts.test.ts`, `shopee-shops.test.ts` e `tiktok-shops.test.ts`). Auditoria paralela de `shopee-push.ts` e `tiktok-push.ts` confirmou ambos íntegros sem achados novos.
