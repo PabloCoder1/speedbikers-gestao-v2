@@ -202,6 +202,26 @@ workflow usa o catálogo informado. A extração novamente da VM e a conferênci
 do ID continuam obrigatórias antes da aplicação aprovada.
 
 
+### Ensaio de upgrade sem Supabase hospedado
+
+Inicie uma stack Supabase descartável com os SQLs do commit-base e
+extraia o catálogo de versões desse PostgreSQL. Compare a base e o
+candidato com o planejador local.
+
+```bash
+node infra/vm/plan-local-upgrade.mjs <commit-base> <commit-candidato> < catalogo-local.txt
+```
+
+O comando lê o Git e o catálogo informado. Ele exige igualdade entre o
+catálogo aplicado e a base e recusa remoção, renomeação ou alteração
+de um SQL da base. O relatório identifica as adições, seus objetos Git
+e as versões anteriores à última aplicada.
+
+Para ensaiar as pendências antigas, copie os SQLs com versões temporárias
+posteriores à última aplicada somente na stack descartável. Confira o
+catálogo pós-upgrade e rode a suíte de integração contra essa stack.
+A numeração temporária vale apenas para o laboratório.
+
 ### Publicação do candidato #378 e aceite
 
 O plano de publicação na VM foi aprovado em 23/11. A consulta em

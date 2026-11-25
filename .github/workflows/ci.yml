@@ -135,7 +135,7 @@ jobs:
         run: pnpm run docs:check
 
       - name: Guarda do histórico de migrations
-        run: node --test infra/vm/check-migration-catalog.test.mjs
+        run: node --test infra/vm/check-migration-catalog.test.mjs infra/vm/plan-local-upgrade.test.mjs
 
       - name: Build
         run: pnpm run build
