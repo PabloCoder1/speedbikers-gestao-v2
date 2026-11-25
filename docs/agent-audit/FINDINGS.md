@@ -199,3 +199,5 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 - **M04 · D-812 e D-813.** #378 integra contratos compartilhados dos jobs e projeções de catálogo, estoque e devoluções. Persistência, handlers e primeira validação com loja continuam em aberto.
 - **P1 · D-814.** #378 inclui as guardas de organização e a retomada de falha transitória na fila dos handlers revisados no #343.
+
+- **P1 · D-832.** Fechados os 4 últimos handlers do worker sob `service_role` (`erp-import-apply.ts`, `shopee-orders-sync.ts`, `sync-central-alerts.ts` e `sync-listings-snapshot.ts`) com guarda estrita contra `envelope.organizationId` + `try/catch` no loop de enfileiramento pós-unlock de `shopee-orders-sync.ts` (`38539f4`, suite `worker-final-four-org.test.ts`), atingindo 100% de cobertura multi-tenant no worker.

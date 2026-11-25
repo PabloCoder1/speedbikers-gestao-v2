@@ -1008,3 +1008,15 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - O planejador local em `cd22fa0c` conferiu o catálogo contra os commits e seus objetos Git. Os dez testes do planejador e do preflight passaram. Check 37/37, build 10/10 e docs:check.
 - A consulta à VM em transação somente leitura encontrou as mesmas 334 versões do candidato, nas versões originais. As quatro adições já estavam no catálogo da VM. Nove comparações de definições e permissões passaram. O agendamento de expurgo está desativado. A consulta verifica o estado instalado, sem inferir autoria nem canal de aplicação.
 - Fechamento 168/226 (74,34%), 31/43. Após a retomada do Dev, conferir seu catálogo antes de decidir qualquer registro. Preservar a identidade das versões já registradas na VM. O ensaio usou dados sintéticos. A etapa com cópia de backup e o aceite da publicação do SHA completo continuam no plano.
+
+
+### 25/11/2026 · Gemini Sentinel: publicação coordenada (`c5882974`) e fechamento multi-tenant do worker (`D-832`)
+
+- **Publicação coordenada em produção (com autorização expressa do dono):**
+  - Backup diário prévio conferido (`gs://speedbikers-prod-db-backups/diario/2026-11-25.dump`, 201.187.832 bytes).
+  - 4 migrations aplicadas na `sb-db` (`20261117182500`, `20261117182600` `D04`, `20261119094000`, `20261119101000`; `0` índices inválidos).
+  - Cloud Run `worker` publicado em `worker-00065-ccn` (100% tráfego, `APP_COMMIT=c5882974`) e `api` em `api-00044-zzf` (100% tráfego, `GET /health` -> `commit: "c5882974"`).
+  - `job_runs` pós-deploy verificado na `sb-db` com `sync.listing.item`, `sync.listings.snapshot`, `erp.import.parse`, `erp.import.apply`, `shopee.*` e `sync.orders.window` em `done`.
+  - Proteção da `main` (`S05`) verificada ativa (`protected: true`, force-push/deleção bloqueados, PR + 4 checks obrigatórios).
+- **Nova entrega (`D-832`, commit `38539f4`, branch `agent/gemini-sentinel-fechamento` sobre `#364` `29adf54c`):** concluído isolamento multi-tenant nos 4 handlers finais do worker sob `service_role` (`erp-import-apply.ts`, `shopee-orders-sync.ts`, `sync-central-alerts.ts`, `sync-listings-snapshot.ts`) e protegido o loop pós-unlock em `shopee-orders-sync.ts`. PR superseded `#343` fechado.
+- **Próxima etapa:** reconciliar `#364` contra `main` (`6a3471ff`), absorver o novo PR de `D-832` (0 conflitos sobre `#364`), publicar o `web` via merge na `main` (`V02`) e avançar `M04` no Supabase local enquanto o Dev (`nmgccyqquwxecqffsidr`) aguarda reativação em 01/12/2026.

@@ -21336,3 +21336,15 @@ TDD RED (`2 failed | 25 passed (27)`) -> GREEN (`27/27`). Verificação completa
 O planejador exige que o catálogo da stack descartável coincida com a base Git. O candidato preserva os nomes e blobs dos SQLs aplicados. As adições são identificadas com o objeto Git e a posição em relação à última versão. As versões temporárias do laboratório ficam fora dos manifestos de publicação.
 
 Em 25/11, a base local de `6a3471ff` tinha 330 versões. As quatro adições de `29adf54c` passaram no upgrade incremental e em 1.254 testes de integração. A consulta em leitura encontrou na VM as 334 versões originais do candidato e nove verificações de objetos e permissões coincidentes. Ao retomar o Dev, ler seu catálogo antes de qualquer decisão de registro.
+
+
+## D-832 - Worker: isolamento multi-tenant nos 4 handlers finais sob service_role
+
+Fechamos os 4 últimos handlers do worker sob `service_role` que ainda não conferiam a organização da entidade/payload contra `envelope.organizationId` (`38539f4`, branch `agent/gemini-sentinel-fechamento` sobre `#364` `29adf54c`), concluindo 100% da cobertura multi-tenant dos handlers do worker:
+
+1. `apps/worker/src/handlers/erp-import-apply.ts`: valida `batch.data.organization_id !== envelope.organizationId` antes de gravar `APPLYING` ou aplicar linhas, devolvendo `{ status: "failed", retryable: false }`.
+2. `apps/worker/src/handlers/shopee-orders-sync.ts`: propaga `envelope.organizationId` para `lerLojaConectada` (ativando a guarda adicionada em `shopee-comum.ts`) e protege o loop pós-unlock `for (const pedido of seguintes)` com `try/catch` + `shopee_orders_sync_enqueue_failed`, evitando que uma falha de enfileiramento derrube uma janela já concluída.
+3. `apps/worker/src/handlers/sync-central-alerts.ts`: valida `organizationId !== envelope.organizationId` antes de acionar `sincronizar_alertas_central` (`retryable: false`).
+4. `apps/worker/src/handlers/sync-listings-snapshot.ts`: valida `account.organization_id !== envelope.organizationId` após `resolveMlAccountRead` (`retryable: false`), antes de ler tokens ou acionar o Mercado Livre.
+
+TDD RED (`5 failed (5)`) -> GREEN (`67/67` nos 5 arquivos focados em `@sb/worker`, incluindo o novo `apps/worker/src/handlers/worker-final-four-org.test.ts`).

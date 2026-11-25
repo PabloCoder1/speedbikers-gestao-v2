@@ -95,3 +95,15 @@ Sobre `2ae7a4b4`, o candidato recebeu 19 commits de código até `b04bdcea` (D-7
 D-807 continua reservado pelo Gemini nos doze módulos do checkpoint de origem. D-795 é a decisão do Gemini no candidato. O #383 entrou na main com o ID D-860. A decisão D-795 do Gemini permanece no candidato. D-858 de margem fica com o ID publicado na main. O preflight da VM permanece em D-880/D-881.
 
 **Revisão de integração de D-803.** O leitor `lerPaginasDaRpc` aceita `Infinity` para buscar todos os anúncios de um SKU, em páginas de até 1.000 linhas. A regressão foi reproduzida no Playwright e em teste focado no candidato. A correção está no #378. O Gemini pode incorporar esse ajuste em sua branch sem alterar os tetos finitos de exportação.
+
+
+## 7. Rodada 14 (25/11): `D-832` e publicação coordenada em produção
+
+- **Integração anterior encerrada:** 100% das entregas `D-770..D-831` do Gemini foram incorporadas no `#378` (`c5882974`, CI `45606453406` 4/4 verde) e integradas ao `#364` (`29adf54c`). O PR superseded `#343` foi fechado preservando a branch `agent/gemini-sentinel`.
+- **Publicação coordenada executada em 25/11 (autorização expressa do dono):**
+  1. **Banco (`sb-db`, backup prévio `gs://speedbikers-prod-db-backups/diario/2026-11-25.dump` 201 MB):** as 4 migrations pendentes (`20261117182500`, `20261117182600` `D04`, `20261119094000`, `20261119101000`) aplicadas e registradas em `supabase_migrations.schema_migrations` (`334` versões, `0` índices inválidos).
+  2. **Worker (`speedbikers-prod`, Cloud Run `southamerica-east1`):** revisão `worker-00065-ccn` (`APP_COMMIT=c5882974`) com 100% do tráfego, preservando `SUPABASE_URL=https://34-39-221-164.sslip.io` e secrets `SMTP_*`.
+  3. **API (`speedbikers-prod`, Cloud Run `southamerica-east1`):** revisão `api-00044-zzf` (`APP_COMMIT=c5882974`) com 100% do tráfego; `GET /health` confirmou `{"status":"ok","service":"api","commit":"c5882974"}`.
+  4. **Web (`main` -> Vercel):** aguarda apenas a reconciliação final do `#364` contra `main` (`6a3471ff`) e merge no GitHub para publicar o frontend correspondente e fechar `V02`.
+- **Nova entrega independente (`D-832`, commit `38539f4` na branch `agent/gemini-sentinel-fechamento` baseada em `#364` `29adf54c`):** isolamento multi-tenant nos 4 handlers finais do worker sob `service_role` (`erp-import-apply.ts`, `shopee-orders-sync.ts`, `sync-central-alerts.ts`, `sync-listings-snapshot.ts`) + proteção do enfileiramento pós-unlock em `shopee-orders-sync.ts`, com `0` conflitos sobre `#364`.
+- **Próximo ID reservado ao Gemini:** `D-833` (faixa livre `D-833..D-849`).
