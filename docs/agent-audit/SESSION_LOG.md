@@ -656,3 +656,16 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
   1. Publicar a D-871 (merge e migration pela VM), com autorização.
   2. Medir e reduzir o custo de `get_stock_summary`: 1,9 s como membro.
   3. Em 26/11, conferir os negativos do UpSeller e um dia inteiro de `sync.listing.item`.
+
+### 25/11/2026 · Claude Sentinel: faixa de /estoque no plano genérico (D-872)
+
+- **Branch.** `claude/resumo-estoque-plano-generico`, empilhada sobre `claude/sku-full-ausente`. O #404 tem base no #403.
+  - A CI só roda em PR contra a `main`: depois do merge do #403, trocar a base do #404 para `main` e esperar a CI.
+- **Entrega.** A migration `20261125140000_resumo_do_estoque_sem_laco_generico.sql` reescreve `get_stock_summary` sem mudar assinatura nem regra.
+  - Em produção, só leitura: 1,7 a 2,1 s por chamada como membro. No plano genérico forçado, o corpo novo leva 296 ms contra 3,2 s do antigo.
+  - Os dois corpos devolveram a mesma linha nos 7 recortes. Os números estão em `PERFORMANCE.md`.
+- **Testes.** Suíte do `@sb/db` com as mesmas 10 falhas de baseline. D-249, D-870 e a guarda da D-204 passaram.
+- **Fila de publicação, toda dependendo de autorização do dono.**
+  1. #403 (D-871): merge e migration `20261125130000` pela VM.
+  2. #404 (D-872): troca de base, CI, merge e migration `20261125140000` pela VM.
+- **Próxima etapa.** Em 26/11, conferir os negativos do UpSeller e um dia inteiro de `sync.listing.item`. Depois, medir as outras funções `language sql` com `search_path` fixo e filtros opcionais, que podem cair no mesmo plano genérico.
