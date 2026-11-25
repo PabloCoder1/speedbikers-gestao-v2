@@ -17,7 +17,21 @@ import {
  * atualizar a etapa logística e lançar os custos de importação. Cada ação vai
  * por uma RPC que refaz a autorização e a regra de estado no banco; aqui só se
  * coleta a intenção e se mostra o erro em português.
+ *
+ * FALHA DE TRANSPORTE (D-865): a Server Action pode não responder. Sem o
+ * `try`, o botão ficava em "Registrando…"/"Salvando…" para sempre. Agora a
+ * tela avisa, libera o botão, mantém o que foi digitado e relê o pedido, para a
+ * pessoa ver se a primeira tentativa chegou antes de repetir.
  */
+
+/** Relê o pedido depois de uma falha de transporte, sem deixar a rejeição escapar. */
+function reler(router: ReturnType<typeof useRouter>): void {
+  try {
+    router.refresh();
+  } catch {
+    // Sem rede, a releitura também falha; o aviso já está na tela.
+  }
+}
 
 export interface ItemPendente {
   readonly id: string;
@@ -56,7 +70,21 @@ export function RecebimentoParcial({ purchaseOrderId, itens }: { purchaseOrderId
     setErro(null);
     requestId.current ??= crypto.randomUUID();
 
-    const r = await receivePurchaseOrderItems(purchaseOrderId, itensEnvio, requestId.current);
+    let r: Awaited<ReturnType<typeof receivePurchaseOrderItems>>;
+
+    try {
+      r = await receivePurchaseOrderItems(purchaseOrderId, itensEnvio, requestId.current);
+    } catch {
+      // O `requestId` fica o mesmo: se o recebimento chegou ao banco, a nova
+      // tentativa é reconhecida e não dá entrada duas vezes (D-724).
+      setErro(
+        "Não foi possível confirmar o recebimento. Confira as quantidades já recebidas e tente de novo: o mesmo envio não é registrado duas vezes.",
+      );
+      setBusy(false);
+      reler(router);
+
+      return;
+    }
 
     setBusy(false);
 
@@ -93,8 +121,8 @@ export function RecebimentoParcial({ purchaseOrderId, itens }: { purchaseOrderId
           }}
         >
           <p className="sb-pod-receber-ajuda">
-            Informe o que chegou de cada item. O trânsito baixa só essa quantidade; o pedido fica em aberto até chegar
-            tudo. O saldo do depósito continua vindo do UpSeller — receber aqui não soma estoque local.
+            Informe o que chegou de cada item. Essa quantidade sai do trânsito e entra no estoque local; o pedido fica
+            em aberto até chegar tudo. A conciliação com o UpSeller continua acertando o saldo pelo ERP.
           </p>
           <table className="sb-table">
             <thead>
@@ -187,12 +215,20 @@ export function EtapaLogistica({
         e.preventDefault();
         setBusy(true);
         setErro(null);
-        void setPurchaseOrderStage(purchaseOrderId, valor === "" ? null : valor, null).then((r) => {
-          setBusy(false);
+        void setPurchaseOrderStage(purchaseOrderId, valor === "" ? null : valor, null).then(
+          (r) => {
+            setBusy(false);
 
-          if (!r.ok) setErro(r.message);
-          else router.refresh();
-        });
+            if (!r.ok) setErro(r.message);
+            else router.refresh();
+          },
+          () => {
+            // Repetir a mesma etapa é inofensivo: a nova tentativa só grava de novo o mesmo valor.
+            setBusy(false);
+            setErro("Não foi possível confirmar a etapa. Tente de novo.");
+            reler(router);
+          },
+        );
       }}
     >
       <label className="sb-form-campo">
@@ -234,6 +270,31 @@ export interface CustoLinha {
   readonly status: string;
 }
 
+/*
+  O aviso de falha de transporte dos custos precisa sobreviver à releitura que
+  ele mesmo pede. Sem nenhum custo, a página mostra a seção num `<details>`;
+  quando a primeira inclusão grava (ou a exclusão do último custo apaga), a
+  releitura troca de ramo e monta OUTRO `CustosDoPedido`, e o estado local se
+  perde com o aviso. Por isso o aviso fica guardado por pedido, só enquanto é
+  recente, e o componente novo começa com ele.
+*/
+const AVISO_DE_CUSTO_VALIDO_MS = 60_000;
+const avisosDeCusto = new Map<string, { texto: string; em: number }>();
+
+function avisoDeCustoRecente(purchaseOrderId: string): string | null {
+  const aviso = avisosDeCusto.get(purchaseOrderId);
+
+  if (aviso === undefined) return null;
+
+  if (Date.now() - aviso.em > AVISO_DE_CUSTO_VALIDO_MS) {
+    avisosDeCusto.delete(purchaseOrderId);
+
+    return null;
+  }
+
+  return aviso.texto;
+}
+
 /** Os custos adicionais do pedido: listar, incluir e excluir. */
 export function CustosDoPedido({
   purchaseOrderId,
@@ -252,7 +313,18 @@ export function CustosDoPedido({
   const [status, setStatus] = useState<"ESTIMADO" | "REALIZADO">("ESTIMADO");
   const [descricao, setDescricao] = useState("");
   const [busy, setBusy] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
+  const [erro, setErroLocal] = useState<string | null>(() => avisoDeCustoRecente(purchaseOrderId));
+
+  function setErro(texto: string | null): void {
+    avisosDeCusto.delete(purchaseOrderId);
+    setErroLocal(texto);
+  }
+
+  /** Falha de transporte: o aviso segue para o componente que a releitura montar. */
+  function avisarFalhaDeTransporte(texto: string): void {
+    avisosDeCusto.set(purchaseOrderId, { texto, em: Date.now() });
+    setErroLocal(texto);
+  }
 
   async function incluir(): Promise<void> {
     const amount = Number(valor.replace(",", "."));
@@ -267,15 +339,30 @@ export function CustosDoPedido({
     setBusy(true);
     setErro(null);
 
-    const r = await upsertPurchaseOrderCost(purchaseOrderId, {
-      id: null,
-      kind,
-      description: descricao.trim() === "" ? null : descricao.trim(),
-      amount,
-      currency: moeda.trim().toUpperCase() || "BRL",
-      exchangeRate: moeda.trim().toUpperCase() === "BRL" ? null : rate,
-      status,
-    });
+    let r: Awaited<ReturnType<typeof upsertPurchaseOrderCost>>;
+
+    try {
+      r = await upsertPurchaseOrderCost(purchaseOrderId, {
+        id: null,
+        kind,
+        description: descricao.trim() === "" ? null : descricao.trim(),
+        amount,
+        currency: moeda.trim().toUpperCase() || "BRL",
+        exchangeRate: moeda.trim().toUpperCase() === "BRL" ? null : rate,
+        status,
+      });
+    } catch {
+      // Lançar custo NÃO é idempotente (`id: null` cria uma linha nova): se a
+      // primeira tentativa gravou, repetir lança o custo duas vezes e infla o
+      // custo de importação. Por isso a tela relê a lista e manda conferir.
+      avisarFalhaDeTransporte(
+        "Não foi possível confirmar o lançamento do custo. Confira a lista antes de lançar de novo: repetir pode lançar o mesmo custo duas vezes.",
+      );
+      setBusy(false);
+      reler(router);
+
+      return;
+    }
 
     setBusy(false);
 
@@ -325,10 +412,16 @@ export function CustosDoPedido({
                       type="button"
                       className="sb-button"
                       onClick={() => {
-                        void deletePurchaseOrderCost(purchaseOrderId, c.id).then((r) => {
-                          if (!r.ok) setErro(r.message);
-                          else router.refresh();
-                        });
+                        void deletePurchaseOrderCost(purchaseOrderId, c.id).then(
+                          (r) => {
+                            if (!r.ok) setErro(r.message);
+                            else router.refresh();
+                          },
+                          () => {
+                            avisarFalhaDeTransporte("Não foi possível confirmar a exclusão do custo. Confira a lista antes de excluir de novo.");
+                            reler(router);
+                          },
+                        );
                       }}
                     >
                       Excluir

@@ -1,5 +1,5 @@
 {
-  "corte": "2026-11-24, candidato #378 com D-863 e D-807 a D-814, catálogo #377 reconciliado",
+  "corte": "25/11/2026, Auth e monitoramento confirmados, M05 em correção, candidato com base #396",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -129,7 +129,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Backend",
-      "evidencia": "#377 em 0f7a98de, sobre d21fb902. O diff do worker, cliente e migrations desde 2d9a06d2 é vazio. Faltam publicação isolada, verificação em produção e recuperação do atraso.",
+      "evidencia": "#377. A primeira publicação foi revertida após falhas de formato no bulk. A validação do parser e a recuperação do atraso continuam pendentes.",
       "fase": 1
     },
     {
@@ -217,9 +217,9 @@
       "area": "Google Cloud e infraestrutura",
       "entrega": "Monitoramento externo, disco e falha de backup",
       "peso": 3,
-      "status": "Em andamento",
+      "status": "Publicado",
       "responsavel": "Infra/Dono",
-      "evidencia": "Em 24/11 o Cloud Monitoring lista uma política habilitada para falha do backup diário e zero uptime checks. Incidente e e-mail foram confirmados no ensaio #372. Política de disco preparada em #370/#374. Faltam ativação e ensaio de disco e de indisponibilidade.",
+      "evidencia": "#394/D-868. Checagem de 25/11 confirmou três políticas habilitadas (backup, disco e indisponibilidade) e três uptime checks. Incidente e e-mail de backup foram confirmados no ensaio #372.",
       "fase": 2
     },
     {
@@ -277,9 +277,9 @@
       "area": "Segurança e autenticação",
       "entrega": "Auth VM real: login, convites, recuperação, SMTP e política",
       "peso": 5,
-      "status": "Bloqueado",
+      "status": "Validado em produção",
       "responsavel": "Dono/Database",
-      "evidencia": "#333 registra navegação autenticada após o corte. Convite, SMTP, recuperação de senha e política Auth seguem sem validação",
+      "evidencia": "#394 relata login/convite e recuperação recebida e concluída pelo dono. /login retornou HTTP 200 e exibiu Esqueci a senha na checagem de 25/11.",
       "fase": 1
     },
     {

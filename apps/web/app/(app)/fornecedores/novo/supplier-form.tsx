@@ -263,7 +263,26 @@ export function SupplierForm({
     setMensagem(null);
 
     startTransition(async () => {
-      const resultado = await salvarFornecedor(id, formData);
+      /*
+        FALHA DE TRANSPORTE (D-866). Dentro da transição, a rejeição sem `try`
+        ia para a fronteira de erro e trocava o formulário pela tela de erro,
+        com tudo o que foi digitado. O cadastro novo tem nome único por empresa
+        (`suppliers_org_name_unique`): se a primeira tentativa gravou, repetir é
+        recusado como nome repetido, por isso o texto manda conferir a lista.
+      */
+      let resultado: Awaited<ReturnType<typeof salvarFornecedor>>;
+
+      try {
+        resultado = await salvarFornecedor(id, formData);
+      } catch {
+        setMensagem(
+          id === null
+            ? "Não foi possível confirmar se o fornecedor foi cadastrado. Confira a lista de fornecedores antes de salvar de novo."
+            : "Não foi possível confirmar se as alterações foram salvas. Tente de novo.",
+        );
+
+        return;
+      }
 
       if (!resultado.ok) {
         setErros(resultado.erros);

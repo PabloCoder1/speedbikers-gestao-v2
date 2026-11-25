@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **740** (D-001 a D-883).
+Decisões registradas: **745** (D-001 a D-883).
 
 ## Por domínio
 
@@ -213,7 +213,7 @@ Decisões registradas: **740** (D-001 a D-883).
 - **D-850** — Full mantém 30 dias de capturas brutas online e permite recuperar o arquivo
 - **D-862** — O kit que leva um componente fora do catálogo conta no aviso da Central
 
-### interface (78)
+### interface (79)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -293,6 +293,7 @@ Decisões registradas: **740** (D-001 a D-883).
 - **D-739** — /diagnostico pagina RPCs e fatiamento `.in` de SAC além de 1.000 linhas
 - **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
 - **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
+- **D-869** — Lançar custo no pedido de compra é idempotente pela requisição
 
 ### mercado-livre (147)
 
@@ -444,7 +445,7 @@ Decisões registradas: **740** (D-001 a D-883).
 - **D-819** — Núcleo worker e OAuth TikTok: `readAllPages` contra laço infinito em `NaN`, `delaySeconds` no `enqueue` e validação de `state`/`code`
 - **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
-### outros (123)
+### outros (126)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -568,13 +569,16 @@ Decisões registradas: **740** (D-001 a D-883).
 - **D-856** — Atividade recente da Home limita a lista aos eventos visíveis
 - **D-860** — O produto que sai da planilha de produtos do UpSeller fica fora do catálogo, nunca apagado
 - **D-864** — O formulário de pedido de compra sobrevive à Server Action que não responde
+- **D-865** — O detalhe do pedido de compra sobrevive à Server Action que não responde
+- **D-866** — "Já fiz o pedido" e o cadastro de fornecedor sobrevivem à Server Action que não responde
+- **D-868** — Produção avisa por e-mail quando o disco da VM enche ou quando api, web ou auth saem do ar
 - **D-880** — Preflight da VM vincula o plano ao commit do candidato
 
 ### processo/docs (1)
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (75)
+### vendas/métricas (76)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -650,6 +654,7 @@ Decisões registradas: **740** (D-001 a D-883).
 - **D-810** — API TikTok Shop: agendador paginado de pedidos e adaptador Supabase de refresh de token (`M04`)
 - **D-858** — Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
 - **D-859** — O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
+- **D-867** — A importação de pedidos anteriores sobrevive à Server Action que não responde
 - **D-882** — Agendamento de margem percorre todas as organizações com alerta ativo
 
 ### worker/infra (128)

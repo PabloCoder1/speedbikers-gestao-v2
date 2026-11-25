@@ -30,10 +30,24 @@ export function PrevisaoEReferencia({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
 
+  /*
+    FALHA DE TRANSPORTE (D-865): sem o `try`, os dois botões ficavam
+    desligados para sempre. Os campos ficam como estavam.
+  */
   async function salvarPrevisao(): Promise<void> {
     setBusy(true);
     setMsg(null);
-    const r = await atualizarPrevisao(purchaseOrderId, previsao === "" ? null : previsao, nota === "" ? null : nota);
+    let r: Awaited<ReturnType<typeof atualizarPrevisao>>;
+
+    try {
+      r = await atualizarPrevisao(purchaseOrderId, previsao === "" ? null : previsao, nota === "" ? null : nota);
+    } catch {
+      setBusy(false);
+      setMsg({ ok: false, texto: "Não foi possível confirmar se a previsão foi salva. Tente de novo." });
+
+      return;
+    }
+
     setBusy(false);
     setMsg(r.ok ? { ok: true, texto: "Previsão atualizada." } : { ok: false, texto: r.message ?? "Não foi possível salvar." });
     if (r.ok) router.refresh();
@@ -42,7 +56,28 @@ export function PrevisaoEReferencia({
   async function salvarReferencia(): Promise<void> {
     setBusy(true);
     setMsg(null);
-    const r = await vincularReferenciaExterna(purchaseOrderId, referencia, null);
+    let r: Awaited<ReturnType<typeof vincularReferenciaExterna>>;
+
+    try {
+      r = await vincularReferenciaExterna(purchaseOrderId, referencia, null);
+    } catch {
+      // A referência só é gravada se o pedido ainda não tiver uma: se a primeira
+      // tentativa gravou, a repetição é recusada. A tela relê o pedido.
+      setBusy(false);
+      setMsg({
+        ok: false,
+        texto: "Não foi possível confirmar se a referência foi vinculada. Confira o pedido antes de vincular de novo.",
+      });
+
+      try {
+        router.refresh();
+      } catch {
+        // Sem rede, a releitura também falha; o aviso já está na tela.
+      }
+
+      return;
+    }
+
     setBusy(false);
     setMsg(r.ok ? { ok: true, texto: "Referência vinculada." } : { ok: false, texto: r.message ?? "Não foi possível salvar." });
     if (r.ok) router.refresh();

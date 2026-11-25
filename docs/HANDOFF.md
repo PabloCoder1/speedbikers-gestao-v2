@@ -12,14 +12,14 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-11-24 |
+| **Atualizado em** | 2026-11-25 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | `origin/main` em `ff0de2c9` (#390). O #378 está empilhado no #364. [Checkpoint](agent-audit/SESSION_LOG.md). |
+| **HEAD conhecido** | `origin/main` em `f4c0be64` (#396). O #378 está empilhado no #364. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Fechamento da V3** | 155/226 pontos (68,58%), 28/43 entregas. [Inventário Sentinel](agent-audit/CLOSURE_INVENTORY.json). [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7107161168). |
 | **Sentinel: próximo passo** | O #378 incorpora D-807–D-819 e D-864. Validar a CI do último SHA. O Dev inativo bloqueia quatro versões definitivas. D04 tem restore e ensaios SQL/PostgREST. Falta leitura do arquivo na Central. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo, com 2,0 GB acima do limite gratuito. Google Cloud segue como ambiente atual. Retomada do Supabase Pro prevista pelo dono para 01/12/2026. Confirmar Dev ativo antes da esteira. Rotinas Dev pausadas (D-350). |
-| **Supabase** | Produção usa a VM `sb-db`. O antigo hosted `imvjfgnaprqsfjlnsyev` segue inativo em 24/11. SMTP real do Auth pendente. [VM](../infra/vm/README.md). |
-| **Produção** | D-859 a D-862 no [#388](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/388). Vercel READY em `ff0de2c9`. Ativação de D-863 depende de SMTP. Multiget no #377. |
+| **Supabase** | Produção usa a VM `sb-db`. O antigo hosted `imvjfgnaprqsfjlnsyev` segue inativo em 24/11. SMTP real do Auth ativo. [VM](../infra/vm/README.md). |
+| **Produção** | D-859 a D-862 no [#388](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/388). Recuperação de senha e monitoramento no [#394](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/394). Multiget no #377. |
 | **Migrations** | Última versão registrada na VM `20261124130000` (D-862). Quatro migrations provisórias do candidato exigem registro definitivo. [VM](../infra/vm/README.md). |
 | **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | Compras inteligentes, importação anterior e invoice/proforma entregues. #347 integrado para ler a moeda da invoice. D-792 acrescenta entrada no LOCAL e criação do SKU na conferência. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
 | **Notas (D-765, D-766)** | #334 registrou saída para Full. #335 incorporou Saída Manual e edição de itens. O aceite operacional de ponta a ponta segue no fechamento. |
@@ -194,8 +194,9 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
-13. **Alerta de margem (D-858, D-859):** Scheduler e e-mails cadastrados em produção. D-882 pagina e isola falhas de fila no candidato.
-14. **Esqueci a senha (D-863):** configurar SMTP real no Auth da VM e ativar `RECUPERACAO_SENHA_POR_EMAIL=1` na Vercel.
+13. **Alerta de margem (D-858, D-859):** agendamento e e-mails em produção. D-882 pagina e isola falhas de fila no candidato.
+14. **D-863 e D-868:** recuperação por SMTP e monitoramento em produção.
+15. **D-869:** confirmar a migration `20261124140000` na VM antes da tela que depende dela.
 
 ---
 
