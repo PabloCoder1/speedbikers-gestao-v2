@@ -20008,6 +20008,16 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 - A ordem da lista é determinística, primeiro os do próprio SKU e depois os de kit. A primeira versão ordenava pelo UUID do kit e variava entre rodadas.
 - `@sb/db test:integration`: 1.237 testes, duas rodadas com `db reset`.
 
+## D-791 - O cliente usa o endpoint bulk de anúncios do Mercado Livre
+
+**Evidência em 19/11.** A amostra de três horas do worker encontrou 31 respostas finais HTTP 403 com `ResourceDeprecated` na rota de multiget anterior. Em outra janela recente, três pares de conta e anúncio tiveram processamento posterior a uma falha. Esses sucessos não garantem acesso à rota antiga. O novo contrato especifica `/items/bulk`, `status_code`, ID no envelope e projeções `body.`. [Guia de migração do Mercado Livre](https://developers.mercadolivre.com.br/pt_br/convivencia-me1-me2/itens-e-buscas)
+
+**Correção.** O cliente usa o endpoint novo e normaliza o código por entrada. Preserva o limite de 20 e a lógica de releitura e de exclusão do worker. A busca do vendedor e as consultas singulares continuam em seus endpoints. O repositório usa `/users/me` para a leitura da conta.
+
+**Validação.** O teste local com envelope novo falhava no parser antigo. O corte passa os testes do cliente e do worker. Falta confirmar as leituras em produção após publicação autorizada.
+
+**Sonda de produção (25/11).** No mesmo anúncio, dois GETs de `/items/bulk` responderam 200. Com `attributes=body.…`, o envelope tinha apenas `body`. Sem projeção, tinha `id`, `status_code` e `body`. O cliente de catálogo pede a resposta completa e mantém o status e o ID obrigatórios. A regressão verifica a ausência do parâmetro e a rejeição de um envelope sem esses campos.
+
 ## D-863 - "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
 
 **Contexto:** no ensaio de 24/11 do S04, o dono entrou e aceitou convite, mas não achou o "Esqueci a senha". A tela nunca o teve. D-296 e D-302 decidiram que o acesso volta pelo link gerado em `/usuarios`, porque o Auth não tinha SMTP. A leitura do Auth da VM de produção, em 24/11, mostra que isso continua verdade: `GOTRUE_SMTP_HOST=supabase-mail`, o capturador de testes do Compose, com remetente `admin@example.com`. Um botão ligado hoje responderia "pedido recebido" e o e-mail não chegaria a ninguém.

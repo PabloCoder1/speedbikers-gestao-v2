@@ -84,13 +84,20 @@ export function createRelistPrepareHandler(deps: RelistPrepareDeps): JobHandler 
 
     const entry = entries[0];
 
-    if (entry?.code !== 200) {
-      // Item que o ML não devolve (removido, banido) não vira operação: não
-      // há snapshot para auditar nem pai para fechar. Retry não muda isso.
+    if (entry === undefined || entry.code === 429 || entry.code >= 500) {
+      return {
+        status: "failed",
+        retryable: true,
+        reason: `falha transitória ao ler o anúncio no Mercado Livre (código ${String(entry?.code ?? "ausente")})`,
+      };
+    }
+
+    if (entry.code !== 200) {
+      // Item que o ML recusa definitivamente não vira operação sem snapshot.
       context.logger.warn("relist_prepare_item_unavailable", {
         ml_account_id: mlAccountId,
         item_id: itemId,
-        code: entry?.code ?? null,
+        code: entry.code,
       });
 
       return { status: "done", processed: 0 };

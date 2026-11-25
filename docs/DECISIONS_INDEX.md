@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **648** (D-001 a D-869).
+Decisões registradas: **649** (D-001 a D-869).
 
 ## Por domínio
 
@@ -268,7 +268,7 @@ Decisões registradas: **648** (D-001 a D-869).
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-869** — Lançar custo no pedido de compra é idempotente pela requisição
 
-### mercado-livre (128)
+### mercado-livre (129)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -397,6 +397,7 @@ Decisões registradas: **648** (D-001 a D-869).
 - **D-714** — A leitura dos anúncios ML do SKU é completa e conserva a conta do vínculo sem leitura
 - **D-715** — O painel Shopee do SKU lê todos os anúncios em páginas
 - **D-719** — O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
+- **D-791** — O cliente usa o endpoint bulk de anúncios do Mercado Livre
 - **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
 ### outros (100)

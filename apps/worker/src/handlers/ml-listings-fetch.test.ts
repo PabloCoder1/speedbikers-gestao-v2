@@ -211,6 +211,7 @@ function fakeClient(options: {
   scanPages: { results: string[]; scroll_id?: string | null }[];
   bodies?: Record<string, Record<string, unknown>>;
   codes?: Record<string, number>;
+  envelopeIds?: Record<string, string>;
   /** Promoções por item_id (D-389) — item ausente do mapa devolve `[]` (sem promoção), como o Mercado Livre faz para item fora de campanha. */
   promotions?: Record<string, unknown[]>;
   /** item_id -> erro a lançar na chamada de promoção, para testar que a falha não derruba o item. */
@@ -234,10 +235,11 @@ function fakeClient(options: {
         return Promise.resolve(request.schema.parse(page));
       }
 
-      if (request.path === "/items") {
+      if (request.path === "/items/bulk") {
         const ids = String(request.searchParams?.ids ?? "").split(",").filter(Boolean);
         const entries = ids.map((id) => ({
-          code: options.codes?.[id] ?? 200,
+          id: options.envelopeIds?.[id] ?? id,
+          status_code: options.codes?.[id] ?? 200,
           body: options.bodies?.[id] ?? item(id),
         }));
 
@@ -367,7 +369,7 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
     const paths = requests.map((request) => request.path);
     const ultimaBusca = paths.lastIndexOf(`/users/${String(SELLER_ID)}/items/search`);
-    const primeiroMultiget = paths.indexOf("/items");
+    const primeiroMultiget = paths.indexOf("/items/bulk");
 
     expect(primeiroMultiget).toBeGreaterThan(ultimaBusca);
   });
@@ -379,11 +381,29 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
     const result = await fetchListings(params(fake.db, client));
 
-    const multigets = requests.filter((request) => request.path === "/items");
+    const multigets = requests.filter((request) => request.path === "/items/bulk");
 
     expect(multigets).toHaveLength(3);
     expect(String(multigets[0]?.searchParams?.ids).split(",")).toHaveLength(20);
     expect(result.itemsProcessed).toBe(45);
+  });
+
+  it("hidrata e enriquece cada ID uma única vez quando páginas se sobrepõem", async () => {
+    const ids = Array.from({ length: 20 }, (_, index) => `MLB${String(index)}`);
+    const fake = fakeDb({});
+    const { client, requests } = fakeClient({
+      scanPages: [{ results: ids, scroll_id: "s1" }, { results: [...ids].reverse(), scroll_id: null }],
+    });
+
+    const result = await fetchListings(params(fake.db, client));
+
+    expect({
+      bulk: requests.filter((request) => request.searchParams?.ids !== undefined).length,
+      promotions: requests.filter((request) => request.path.startsWith("/seller-promotions/items/")).length,
+      descriptions: requests.filter((request) => request.path.endsWith("/description")).length,
+    }).toEqual({ bulk: 1, promotions: 20, descriptions: 20 });
+    expect(result).toMatchObject({ itemsDiscovered: 20, itemsProcessed: 20 });
+    expect(fake.upserted.map((row) => row.item_id)).toEqual(ids);
   });
 
   it("code != 200 é falha POR ITEM: o lote continua, o resto entra", async () => {
@@ -480,19 +500,15 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
     await expect(fetchListings(params(fake.db, client))).rejects.toThrow(/listings anteriores/);
   });
 
-  it("projeta só os campos que `listings` usa", async () => {
+  it("preserva o envelope do bulk pedindo o item completo, sem attributes", async () => {
     const fake = fakeDb({});
     const { client, requests } = fakeClient({ scanPages: [{ results: ["MLB1"], scroll_id: null }] });
 
     await fetchListings(params(fake.db, client));
 
-    const multiget = requests.find((request) => request.path === "/items");
+    const multiget = requests.find((request) => request.path === "/items/bulk");
 
-    expect(String(multiget?.searchParams?.attributes)).toContain("available_quantity");
-    // D-631: o subestado (a exclusão) e o dono do item.
-    expect(String(multiget?.searchParams?.attributes)).toContain("sub_status");
-    expect(String(multiget?.searchParams?.attributes)).toContain("seller_id");
-    expect(String(multiget?.searchParams?.attributes)).not.toContain("descriptions");
+    expect(multiget?.searchParams).toEqual({ ids: "MLB1" });
   });
 
   /*
@@ -759,7 +775,7 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 */
 describe("fetchListings — o anúncio excluído e a leitura por notificação (D-631)", () => {
   const multigets = (requests: RequestOptions<unknown>[]) =>
-    requests.filter((r) => r.path === "/items").map((r) => String(r.searchParams?.ids));
+    requests.filter((r) => r.path === "/items/bulk").map((r) => String(r.searchParams?.ids));
 
   it("o anúncio vivo que a varredura não listou é relido; excluído no ML, ganha deleted_at", async () => {
     const fake = fakeDb({
@@ -803,6 +819,33 @@ describe("fetchListings — o anúncio excluído e a leitura por notificação (
     expect(multigets(requests)).toEqual(["MLB1"]);
     expect(result.itemsOutsideScan).toBe(0);
     expect(fake.upserted[0]).toMatchObject({ item_id: "MLB1", deleted_at: "2026-08-01T00:00:00.000Z" });
+  });
+
+  it("não marca como excluído quando o 404 da leitura isolada pertence a outro anúncio", async () => {
+    const fake = fakeDb({ previous: [{
+      item_id: "MLB1",
+      title: "Anúncio existente",
+      status: "active",
+      price: 100,
+      available_quantity: 1,
+    }] });
+    const { client } = fakeClient({ scanPages: [], codes: { MLB1: 404 }, envelopeIds: { MLB1: "MLB2" } });
+
+    const result = await fetchListings({ ...params(fake.db, client), itemIds: ["MLB1"] });
+
+    expect(fake.marcados).toEqual([]);
+    expect(result.itemsFailed).toBe(1);
+  });
+
+  it("não grava um corpo cujo ID diverge do envelope do bulk", async () => {
+    const fake = fakeDb({});
+    const { client, requests } = fakeClient({ scanPages: [], bodies: { MLB1: item("MLB2") } });
+
+    const result = await fetchListings({ ...params(fake.db, client), itemIds: ["MLB1"] });
+
+    expect(fake.upserted).toEqual([]);
+    expect(result.itemsFailed).toBe(1);
+    expect(requests.map((request) => request.path)).toEqual(["/items/bulk"]);
   });
 
   it("o item que não volta no lote é relido sozinho; o 404 sozinho é o anúncio que não existe mais", async () => {
