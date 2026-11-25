@@ -966,3 +966,5 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - Claude até D-869 sobre `f4c0be64`. O #394 documenta o aceite do dono para recuperação de senha. Em leitura, conferidos HTTP 200 com “Esqueci a senha”, três políticas ativas e três uptime checks. O catálogo da VM confirmou `20261124140000`.
 - Gemini `ad78823a`, decisões D-820 a D-830 integradas no #378 com doze patches após D-819. D-831 segue sob Gemini. A regressão de reconexão de M04 foi encaminhada no #343.
 - Inventário em 163/226 (72,12%), 30/43. S04 e I04 contabilizam oito pontos. M05 continua em validação no #377.
+- O #397 foi composto em `2b893b9f` com check 37/37, build 10/10 e docs:check. Vercel READY em `8f39cddc`.
+- D-831, commit Gemini `0599064d`. D-832 permanece reservado. O teste de reconexão OAuth de M04 segue no #343.
