@@ -14,7 +14,7 @@ test("uma porta ocupada faz escolher outro bloco sem tocar no serviço existente
   try {
     await new Promise((ok, fail) => {
       server.once("error", fail);
-      server.listen(60022, "0.0.0.0", ok);
+      server.listen(61022, "0.0.0.0", ok);
     });
     owned = true;
   } catch (error) {
@@ -29,7 +29,9 @@ test("uma porta ocupada faz escolher outro bloco sem tocar no serviço existente
     assert.equal(run.status, 0, run.stderr);
     const config = await readFile(path, "utf8");
     assert.match(config, /project_id = "sb-test-isolation"/u);
-    assert.doesNotMatch(config, /port = (?:54322|60022)\b/u);
+    assert.doesNotMatch(config, /port = (?:54322|61022)\b/u);
+    // Nenhuma porta do bloco escolhido cai na faixa temporária do Linux.
+    for (const [, port] of config.matchAll(/port = (\d+)/gu)) assert.ok(Number(port) > 60999, port);
     if (owned) assert.equal(server.listening, true);
     const repeat = spawnSync(process.execPath, ["scripts/isolate-supabase.mjs", path], {
       env: { ...process.env, SUPABASE_TEST_ID: "sb-test-isolation" }, encoding: "utf8",

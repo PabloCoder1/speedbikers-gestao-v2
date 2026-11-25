@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **653** (D-001 a D-874).
+Decisões registradas: **654** (D-001 a D-875).
 
 ## Por domínio
 
@@ -587,7 +587,7 @@ Decisões registradas: **653** (D-001 a D-874).
 - **D-859** — O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
 - **D-867** — A importação de pedidos anteriores sobrevive à Server Action que não responde
 
-### worker/infra (106)
+### worker/infra (107)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -695,4 +695,5 @@ Decisões registradas: **653** (D-001 a D-874).
 - **D-760** — O pedido feito fora do sistema é um pedido de compra comum, com origem e referência externa
 - **D-761** — "Já fiz o pedido" passa pelo caminho canônico e devolve os candidatos a duplicidade em vez de criar
 - **D-863** — "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
+- **D-875** — A stack de testes da CI usa portas acima da faixa temporária do Linux
 

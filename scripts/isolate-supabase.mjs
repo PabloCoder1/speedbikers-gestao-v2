@@ -17,8 +17,13 @@ if (!ports.includes(54321) || !ports.includes(54322)) {
 
 // Mantém o bloco reservado até testar todas as portas. A stack sobe logo após
 // a liberação; uma disputa posterior continua falhando alto no Docker.
+// O bloco começa acima da faixa de portas temporárias do Linux (32768-60999):
+// dentro dela, uma conexão de saída do próprio runner (o download de imagens,
+// por exemplo) pode tomar a porta entre este teste e o docker run. Foi o que
+// derrubou o e2e com a 60022 ocupada (D-875).
+const PRIMEIRO_BLOCO = 61000;
 let selected;
-for (let base = 60000; base < 65000; base += 100) {
+for (let base = PRIMEIRO_BLOCO; base < 65000; base += 100) {
   const servers = [];
   try {
     for (const port of ports) {
