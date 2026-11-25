@@ -16340,6 +16340,100 @@ describe("notificações (fan-out de domain_events, D-073)", () => {
   });
 
   describe("histórico ativo e arquivado da Central", () => {
+    it("transfere e restaura um lote lido sem perder destinatários, mesmo depois de uma colisão", async () => {
+      await client.query("begin");
+
+      try {
+        const { rows: [notification] } = await client.query<{ id: string }>(
+          "select id from public.notifications where domain_event_id = $1",
+          [contaAEventId],
+        );
+        if (notification === undefined) throw new Error("notificação de ensaio ausente");
+        const notificationId = notification.id;
+        await client.query(`update public.notification_recipients
+          set created_at = '2026-08-24T12:00:00Z',
+              read_at = case when user_id = $2 then '2026-08-24T13:00:00Z'::timestamptz end
+          where notification_id = $1 and user_id in ($2, $3)`, [notificationId, ANALISTA_SB, ADMIN_SB]);
+
+        const archive = () => client.query(`with batch as materialized (
+          select r.notification_id, r.user_id, n.domain_event_id, r.read_at, r.created_at
+          from public.notification_recipients r
+          join public.notifications n on n.id = r.notification_id
+          where n.organization_id = $1 and n.id = $2
+            and r.read_at < $3 and r.created_at < $3
+          order by r.created_at, r.notification_id, r.user_id
+          limit 1 for update of r skip locked
+        ), copied as (
+          insert into notification_archive.recipients
+            (notification_id, user_id, domain_event_id, read_at, created_at)
+          select notification_id, user_id, domain_event_id, read_at, created_at from batch
+          returning notification_id, user_id
+        )
+        delete from public.notification_recipients r using copied c
+        where (r.notification_id, r.user_id) = (c.notification_id, c.user_id)`, [
+          ORG_SB, notificationId, "2026-08-25T00:00:00Z",
+        ]);
+
+        const restore = () => client.query(`with batch as materialized (
+          select a.notification_id, a.user_id, a.read_at, a.created_at
+          from notification_archive.recipients a
+          join public.notifications n on n.id = a.notification_id and n.domain_event_id = a.domain_event_id
+          where n.organization_id = $1 and a.notification_id = $2 and a.user_id = $3
+          for update of a skip locked
+        ), restored as (
+          insert into public.notification_recipients (notification_id, user_id, read_at, created_at)
+          select notification_id, user_id, read_at, created_at from batch
+          returning notification_id, user_id
+        )
+        delete from notification_archive.recipients a using restored r
+        where (a.notification_id, a.user_id) = (r.notification_id, r.user_id)`, [ORG_SB, notificationId, ANALISTA_SB]);
+
+        async function history(userId: string) {
+          await client.query("set local role authenticated");
+          try {
+            await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: userId })]);
+            const { rows } = await client.query<{
+              notification_id: string;
+              created_at: string;
+              read_at: string | null;
+              archived: boolean;
+            }>(`select notification_id, created_at::text, read_at::text, archived
+                from public.notification_history where notification_id = $1`, [notificationId]);
+            return rows;
+          } finally {
+            await client.query("reset role");
+          }
+        }
+
+        const baseline = await history(ANALISTA_SB);
+        const unread = await history(ADMIN_SB);
+        expect(baseline).toEqual([expect.objectContaining({ notification_id: notificationId, archived: false })]);
+        expect(baseline[0]?.read_at).not.toBeNull();
+        expect(unread).toEqual([expect.objectContaining({ read_at: null, archived: false })]);
+
+        await client.query("savepoint archive_collision");
+        await client.query(`insert into notification_archive.recipients
+          (notification_id, user_id, domain_event_id, read_at, created_at)
+          values ($1, $2, $3, now(), now())`, [notificationId, ANALISTA_SB, contaAEventId]);
+        await expect(archive()).rejects.toMatchObject({ code: "23505" });
+        await client.query("rollback to savepoint archive_collision");
+        expect(await history(ANALISTA_SB)).toEqual(baseline);
+
+        expect((await archive()).rowCount).toBe(1);
+        expect((await archive()).rowCount).toBe(0);
+        expect(await history(ANALISTA_SB)).toEqual(baseline.map((row) => ({ ...row, archived: true })));
+        expect(await history(ADMIN_SB)).toEqual(unread);
+        expect(await history(DE_OUTRA_ORG)).toEqual([]);
+
+        expect((await restore()).rowCount).toBe(1);
+        expect((await restore()).rowCount).toBe(0);
+        expect(await history(ANALISTA_SB)).toEqual(baseline);
+        expect(await history(ADMIN_SB)).toEqual(unread);
+      } finally {
+        await client.query("rollback");
+      }
+    });
+
     it("preserva paginação, filtros e leitura por destinatário durante a sobreposição", async () => {
       const archivedId = randomUUID();
       const timestamp = "2090-08-24T12:00:00.000Z";

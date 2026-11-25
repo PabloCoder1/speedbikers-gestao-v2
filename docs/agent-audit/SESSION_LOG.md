@@ -709,3 +709,9 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - Base `b1542fe7`, PR #407, candidato `237d287d` e main `628ff887`. A migration aditiva `20261125170000` usa o índice temporal na leitura sem filtros até o deslocamento 1.000. A visão de contagens de D-885 continua na consulta existente.
 - Check 37/37, build 10/10 e integração serial 1.243/1.243. A execução paralela registrou um deadlock no teste de cancelamento de compras. O benchmark preservou os resultados em dez recortes. A comparação incluiu cópias duplicadas, filtros seletivos, limite entre os planos e página vazia. [Medição](../PERFORMANCE.md#índice-temporal-para-as-primeiras-páginas-do-histórico-d-886-25112026)
 - S05: a conta dedicada existe. A leitura das políticas do projeto, repositório de imagens, bucket de origem e conta de serviço não encontrou as concessões do ensaio anterior. A adoção aguarda autorização para conceder os acessos mínimos e confirmar o primeiro build pela rotina regular. #401 permanece com Gemini e #406 com Claude.
+
+### 25/11/2026 · D04, ensaio repetível de transferência e restauração
+
+- Base `99a8d64c` no #407, candidato `55a4b14a` no #364 e main `628ff887`. Acrescentei um teste de integração com lote lido, corte sintético e restauração. O ensaio mantém os registros de notificação e evento necessários à restauração.
+- A colisão abortou a tentativa e preservou o vínculo original. As duas operações puderam ser repetidas com zero novas mudanças. Estados de leitura e datas bateram, e a notificação continuou invisível a outra organização. Em duas sessões, a segunda pulou a linha bloqueada e viu uma única ocorrência antes e depois do commit.
+- Check 37/37, build 10/10 e integração serial 1.244/1.244. A CI de `99a8d64c` (#407) terminou verde. A implantação da rotina efetiva depende da política de retenção. M04 continua com Gemini (#401) e S05 aguarda autorização para IAM.
