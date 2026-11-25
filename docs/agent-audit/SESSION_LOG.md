@@ -1123,3 +1123,11 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - S05: a conta dedicada existe. A leitura das políticas do projeto, repositório de imagens, bucket de origem e conta de serviço não encontrou as concessões do ensaio anterior. A adoção aguarda autorização para conceder os acessos mínimos e confirmar o primeiro build pela rotina regular. #401 permanece com Gemini e #406 com Claude.
 - A CI `45656368865` do candidato `237d287d` terminou com os quatro jobs verdes e 414 cenários de Playwright. A fatia seguinte de D-886 é `99a8d64c` no #407. Os pontos aceitos permanecem em 173/226.
 - Com D-886 no candidato, a suíte serial passou 1.259/1.259 em 20 arquivos, o preflight passou 10/10 e `check` passou 37/37. A Data API local confirmou retorno idêntico da página indexada e filtrada, exclusão nas não lidas e recusa de acesso anônimo à view.
+
+### 25/11/2026 · D04, ensaio repetível de transferência e restauração
+
+- Base `99a8d64c` no #407, candidato `55a4b14a` no #364 e main `628ff887`. Acrescentei um teste de integração com lote lido, corte sintético e restauração. O ensaio mantém os registros de notificação e evento necessários à restauração.
+- A colisão abortou a tentativa e preservou o vínculo original. As duas operações puderam ser repetidas com zero novas mudanças. Estados de leitura e datas bateram, e a notificação continuou invisível a outra organização. Em duas sessões, a segunda pulou a linha bloqueada e viu uma única ocorrência antes e depois do commit.
+- Check 37/37, build 10/10 e integração serial 1.244/1.244. A CI de `99a8d64c` (#407) terminou verde. A implantação da rotina efetiva depende da política de retenção. M04 continua com Gemini (#401) e S05 aguarda autorização para IAM.
+- O #408 aguarda correção do modo de prévia, que atualmente atualiza a configuração de simulação do Artifact Registry, e proteção contra substituição das regras já existentes no bucket. [Revisão](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/408#issuecomment-7169230719)
+- No candidato, a conciliação dos documentos e do teste passou em `check` 37/37, `build` 10/10, `docs:check` e integração serial 1.260/1.260 em 20 arquivos. O inventário continua em 173/226.

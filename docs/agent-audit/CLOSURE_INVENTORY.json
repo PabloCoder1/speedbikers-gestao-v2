@@ -1,5 +1,5 @@
 {
-  "corte": "25/11/2026, D-886 no candidato #364 e aceite de I06",
+  "corte": "25/11/2026, ensaio de transferência e restauração no candidato #364",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "D-885 e D-886 (#407) no candidato #364. A consulta indexada preservou as linhas em dez recortes. Retenção, transferência, referência de sync_runs e publicação seguem pendentes.",
+      "evidencia": "D-885, D-886 e ensaio de transferência e restauração (#407) no candidato. A transação preservou o histórico e o estado de leitura em colisão e em duas sessões. Política, operação, sync_runs e publicação seguem abertas.",
       "fase": 3
     },
     {
