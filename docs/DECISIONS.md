@@ -20318,3 +20318,13 @@ No plano genérico da curva, a CTE `full_by_sku`, usada uma vez, é incorporada 
   - 365 dias.
 - As tabelas temporárias da comparação existiram só dentro de uma transação encerrada com `rollback`.
 - Localmente, a suíte do `@sb/db` teve as mesmas 10 falhas de baseline.
+
+## D-885 - A Central pagina o histórico ativo e arquivado
+
+**Data:** 2026-11-25. **Origem:** D04, leitura do histórico da Central.
+
+A migration `20261125160000` guarda vínculos já lidos em `notification_archive`. O arquivo referencia o evento original. A leitura usa a RLS de destinatário e a permissão vigente de `domain_events`. Durante uma cópia, o vínculo ativo tem precedência. A view mantém os filtros e as contagens no PostgreSQL, e a RPC une lotes paginados dos dois ramos com desempate pelo identificador. As ações de leitura escrevem nos destinatários ativos.
+
+O PostgreSQL pode escolher um plano genérico que lê todo o histórico antes de montar a primeira página. A RPC planeja a consulta com os valores vinculados de cada chamada. No ensaio de 54 mil vínculos, com arquivo vazio, a primeira versão da view levou entre 486 e 536 ms. A versão paginada levou entre 2,2 e 3,7 ms. A contagem total exata ficou entre 215 e 306 ms, frente a 184–195 ms na comparação com a consulta ativa.
+
+A publicação da web depende da migration. O arquivo pode começar vazio. A política de retenção e o processo de transferência de registros ficam a cargo da próxima decisão de D04.

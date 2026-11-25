@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **652** (D-001 a D-873).
+Decisões registradas: **653** (D-001 a D-885).
 
 ## Por domínio
 
@@ -193,7 +193,7 @@ Decisões registradas: **652** (D-001 a D-873).
 - **D-872** — A faixa de /estoque não junta os saldos ao escopo de novo no plano genérico
 - **D-873** — A curva ABC calcula o Full por SKU uma vez, e não a cada linha
 
-### interface (76)
+### interface (77)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -271,6 +271,7 @@ Decisões registradas: **652** (D-001 a D-873).
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
 - **D-869** — Lançar custo no pedido de compra é idempotente pela requisição
+- **D-885** — A Central pagina o histórico ativo e arquivado
 
 ### mercado-livre (128)
 

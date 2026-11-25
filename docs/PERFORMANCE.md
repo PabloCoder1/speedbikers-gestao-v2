@@ -2269,3 +2269,15 @@ Medido em produção, como membro autenticado, com o cache quente (duas chamadas
 
 - **Curva ABC:** é o plano genérico. No plano genérico forçado, o corpo antigo levou 3,1 s e o da D-873 483 ms.
 - **`/full`:** a consulta é cara mesmo escrita por extenso. Precisa de outra investigação.
+
+### Histórico da Central com arquivo (Sentinel D04, 25/11/2026)
+
+PostgreSQL local com RLS, 54 mil vínculos sintéticos, três execuções por consulta. A primeira página usa 100 linhas e desempata pela ID da notificação.
+
+| Consulta | Ativa de referência | Com histórico |
+|---|---:|---:|
+| Primeira página, arquivo vazio | 0,7–1,6 ms | 2,2–3,7 ms |
+| Contagem exata, arquivo vazio | 184–195 ms | 215–306 ms |
+| Primeira página, cerca de 27 mil registros recentes no arquivo | 1,5–1,8 ms para o ramo ativo | 72–118 ms para os dois ramos |
+
+A primeira versão, com ordenação sobre a view unificada, levou 486–536 ms na primeira página com arquivo vazio. A RPC de D-885 limita cada ramo antes da união e planeja com os filtros da chamada. O ensaio com arquivo preenchido moveu vínculos sintéticos dentro de uma transação revertida. A distribuição real deverá ser medida antes de mover dados operacionais.

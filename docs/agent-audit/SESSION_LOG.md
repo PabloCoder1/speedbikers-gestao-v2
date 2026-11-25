@@ -697,3 +697,9 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
   - Decisão do dono: "sem Full" na curva ABC quando não há captura nenhuma (padrão da D-870).
   - Investigar `get_fulfillment_overview`.
   - Em 26/11, conferir UpSeller e `sync.listing.item`.
+
+### 25/11/2026 · D-885, leitura do histórico da Central
+
+- Branch `codex/sentinel-d04-historico`, a partir da main `628ff887` (#406). Migration `20261125160000` e cliente em `/notificacoes`. A migration precede a publicação web.
+- Validação local: `check` 37/37, `build` 10/10, integração SQL 1.243/1.243 e Chromium 8/8. A Data API autenticada manteve a notificação sintética após movê-la para o arquivo, contou uma ocorrência e a excluiu de não lidas. A RPC anônima foi recusada. [Medição](../PERFORMANCE.md#histórico-da-central-com-arquivo-sentinel-d04-25112026)
+- D04 continua em andamento. A rotina de transferência, a janela de retenção e a referência de `sync_runs` precisam de decisões próprias. O #401 fica com Gemini. Claude mantém as frentes da avaliação do Full e de `get_fulfillment_overview`.
