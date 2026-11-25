@@ -20178,6 +20178,11 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 - A série de disco da instância tem pontos atuais para os dois dispositivos.
 - Os alertas não foram forçados a disparar. O primeiro e-mail real só chega quando houver um incidente.
 
+**Ensaio (25/11):** com autorização do dono, uma política temporária com a mesma métrica de disco, mas limite de 20% por 1 minuto, foi criada às 11:45:57 UTC. O disco estava em ~30%.
+- O incidente abriu às 11:49:01 UTC, cerca de 3 minutos depois. Esse é o tempo de avaliação de uma condição nova somado à janela.
+- A política temporária foi apagada às 11:50 UTC. Ficaram só as três políticas permanentes: disco, disponibilidade e backup.
+- A abertura do incidente prova o caminho da métrica até o alerta. A chegada do e-mail no canal é conferida pelo dono na caixa de entrada.
+
 ## D-869 - Lançar custo no pedido de compra é idempotente pela requisição
 
 **Contexto:** `upsert_purchase_order_cost` com `p_id` nulo sempre inseria. Se a resposta da Server Action se perdia depois de o banco gravar, repetir lançava o mesmo custo duas vezes, e o custo de chegada e a margem subiam. A D-865 só avisava ("confira a lista antes de lançar de novo"), e o #395 fez o aviso sobreviver à releitura. O dono aprovou a correção no banco em 24/11.
