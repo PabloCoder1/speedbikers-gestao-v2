@@ -2252,3 +2252,20 @@ Medido em produção, na VM `sb-db`, em transação só leitura e como membro au
 - **Equivalência.** Antigo e novo devolveram a mesma linha nos 7 recortes: sem filtro, negativos, marca, categoria, busca, busca vazia e marca com negativos.
 
 **Depois da publicação (25/11, 14:2x UTC):** com a função da D-872 em produção, a chamada como membro autenticado levou 197, 184 e 181 ms, a última com `p_only_negative`. Antes eram 1,7 a 2,1 s.
+
+### Varredura do plano genérico em funções `language sql` (Claude Sentinel, D-873, 25/11/2026)
+
+Medido em produção, como membro autenticado, com o cache quente (duas chamadas cada):
+
+| Função | Tela | Função | SQL por extenso |
+|---|---|---|---|
+| `get_stock_balances` | `/estoque` | 24 a 28 ms | — |
+| `get_stock_movements` | `/estoque/movimentacoes` | 130 a 343 ms | — |
+| `get_stock_movements_summary` | `/estoque/movimentacoes` | 238 a 242 ms | — |
+| `get_purchase_orders_overview` | `/compras` | 11 a 16 ms | — |
+| `get_documents_overview` | `/importacoes` | 4 a 10 ms | — |
+| `get_fulfillment_overview` | `/full` | 1,4 a 1,6 s | 1,7 a 1,9 s |
+| `get_sku_abc_curve` | `/curva-abc` | 1,3 a 1,6 s | 380 a 570 ms |
+
+- **Curva ABC:** é o plano genérico. No plano genérico forçado, o corpo antigo levou 3,1 s e o da D-873 483 ms.
+- **`/full`:** a consulta é cara mesmo escrita por extenso. Precisa de outra investigação.

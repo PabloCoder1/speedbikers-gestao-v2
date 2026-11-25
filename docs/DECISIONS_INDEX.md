@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **651** (D-001 a D-872).
+Decisões registradas: **652** (D-001 a D-873).
 
 ## Por domínio
 
@@ -131,7 +131,7 @@ Decisões registradas: **651** (D-001 a D-872).
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 - **D-766** — Saída Manual e itens editáveis na conferência, sem migration
 
-### estoque (58)
+### estoque (59)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -191,6 +191,7 @@ Decisões registradas: **651** (D-001 a D-872).
 - **D-870** — O Full da faixa de /estoque é desconhecido, e não zero, sem captura recente
 - **D-871** — O Full do dashboard do SKU é desconhecido, e não zero, sem captura recente
 - **D-872** — A faixa de /estoque não junta os saldos ao escopo de novo no plano genérico
+- **D-873** — A curva ABC calcula o Full por SKU uma vez, e não a cada linha
 
 ### interface (76)
 

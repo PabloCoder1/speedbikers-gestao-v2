@@ -20292,3 +20292,29 @@ Os casos de ausência falham com a função antiga (`expected '0' to be null`). 
 - Localmente, a suíte de integração do `@sb/db` teve as mesmas 10 falhas de baseline. Os testes da D-249 e da D-870 e a guarda da D-204 passaram.
 
 **Em produção (25/11):** a migration `20261125140000` foi aplicada pela VM com `psql -1` e registrada, depois dos 4 jobs obrigatórios verdes na `main` (`d3f90239`). Como membro autenticado, a chamada passou de 1,7 a 2,1 s para 180 a 197 ms em três chamadas, inclusive com o filtro de negativos. O Full continua conhecido, e os grants ficaram iguais.
+
+## D-873 - A curva ABC calcula o Full por SKU uma vez, e não a cada linha
+
+**Contexto:** a varredura das funções `language sql` com `search_path` fixo e filtros opcionais, depois da D-872, mediu em produção sete funções de telas de estoque, compras, documentos, Full e curva ABC. Como membro autenticado:
+- `get_sku_abc_curve` (`/curva-abc`) levou 1,3 a 1,6 s sem filtro, e o mesmo SQL por extenso 380 a 570 ms;
+- `get_fulfillment_overview` (`/full`) levou ~1,5 s, mas o SQL por extenso também. Ali não é plano genérico; fica para outra fatia;
+- as outras cinco ficaram abaixo de 350 ms.
+
+No plano genérico da curva, a CTE `full_by_sku`, usada uma vez, é incorporada à consulta e recalculada para cada linha da curva, num laço que descartava centenas de milhares de linhas.
+
+**Decisão:**
+- **`full_by_sku as materialized`.** A soma do Full por SKU é feita uma vez.
+- Mais nada muda. A definição do Full (D-173) e a guarda da D-204 continuam como estão. A assinatura e o retorno também, e `create or replace` preserva comentário e grants.
+- **Fica de fora, para decisão própria:** a curva usa `coalesce(full_quantity, 0)`, e o filtro "sem Full" conta como sem Full todo SKU sem captura. Sem nenhuma captura da organização em 3 dias, isso afirma "sem Full" de todos. É o padrão da D-870, mas aqui muda o resultado de um filtro, e não só um número exibido.
+
+**Verificação:**
+- Em produção, só leitura, com plano genérico forçado: 3,1 s caíram para 483 ms.
+- As duas versões devolveram as mesmas linhas, por hash de todas elas, em 10 recortes:
+  - critérios faturamento, unidades e pedidos;
+  - página 2;
+  - "sem Full" em 90 dias;
+  - classes A e C;
+  - uma conta, uma marca e um SKU;
+  - 365 dias.
+- As tabelas temporárias da comparação existiram só dentro de uma transação encerrada com `rollback`.
+- Localmente, a suíte do `@sb/db` teve as mesmas 10 falhas de baseline.

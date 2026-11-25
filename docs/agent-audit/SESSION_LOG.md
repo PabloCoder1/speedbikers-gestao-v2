@@ -682,3 +682,18 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **Próxima etapa.**
   1. Em 26/11, conferir os 25 negativos do UpSeller depois da reconciliação das 09:00 UTC e um dia inteiro de `sync.listing.item`.
   2. Procurar o mesmo plano genérico em outras funções `language sql` com `search_path` fixo e filtros opcionais, comparando função e SQL por extenso.
+
+### 25/11/2026 · Claude Sentinel: varredura do plano genérico e curva ABC (D-873)
+
+- **Base.** `main` em `873548ce`. Branch `claude/curva-abc-plano-generico`.
+- **Varredura.** Sete funções `language sql` com filtros opcionais foram medidas em produção, com os números em `PERFORMANCE.md`. Duas passam de 1 s:
+  - `get_sku_abc_curve` sofre de plano genérico e foi corrigida aqui;
+  - `get_fulfillment_overview` é cara mesmo por extenso e fica para investigar.
+- **Entrega.** A migration `20261125150000_curva_abc_full_materializado.sql` usa `full_by_sku as materialized`.
+  - Plano genérico forçado: 3,1 s para 483 ms.
+  - As duas versões deram as mesmas linhas em 10 recortes.
+- **Testes.** Suíte do `@sb/db` com as mesmas 10 falhas de baseline, e os testes da curva ABC passaram. `docs:check` ok.
+- **Pendências.**
+  - Decisão do dono: "sem Full" na curva ABC quando não há captura nenhuma (padrão da D-870).
+  - Investigar `get_fulfillment_overview`.
+  - Em 26/11, conferir UpSeller e `sync.listing.item`.
