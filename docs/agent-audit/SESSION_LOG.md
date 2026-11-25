@@ -1131,3 +1131,10 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - Check 37/37, build 10/10 e integração serial 1.244/1.244. A CI de `99a8d64c` (#407) terminou verde. A implantação da rotina efetiva depende da política de retenção. M04 continua com Gemini (#401) e S05 aguarda autorização para IAM.
 - O #408 aguarda correção do modo de prévia, que atualmente atualiza a configuração de simulação do Artifact Registry, e proteção contra substituição das regras já existentes no bucket. [Revisão](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/408#issuecomment-7169230719)
 - No candidato, a conciliação dos documentos e do teste passou em `check` 37/37, `build` 10/10, `docs:check` e integração serial 1.260/1.260 em 20 arquivos. O inventário continua em 173/226.
+
+### 25/11/2026 · D04, recuperação sintética da referência de sync_runs
+
+- Main `628ff887`, candidato `998cc5e3` (#364) e #407 em `4bc320f4`. O #407 fechou os quatro jobs no run `45662332196`. A CI `45663343009` do #364 em `998cc5e3` fechou com os quatro jobs verdes, 1.260 testes de integração e 414 E2E. O #401 segue em `3e983e7c` com M04 reservado ao Gemini. O #408 segue em `0067981d`, com revisão de prévia e lifecycle encaminhada.
+- Em PostgreSQL 17.11 descartável, 12.782 de 58.000 execuções foram movidas. O teste recuperou a linha original no erro tardio, preservou a FK nas duas ordens de concorrência e verificou repetição após `40001`. A redução sintética de espaço foi 21,97% no ativo e 6,85% no conjunto antes da recuperação.
+- A conferência dos leitores mostrou risco de perder checkpoints de contas inativas em corte por idade. Com as linhas que sustentam esses checkpoints preservadas, nove resultados sintéticos foram idênticos. Na cópia do catálogo real, confirmei a recusa de DELETE, o sumiço de conta inativa em `get_sync_health` após corte por idade e a emissão de alerta novo ao reinserir falha histórica sem evento prévio. A transação foi revertida.
+- Revisão técnica e observações de armazenamento em `PERFORMANCE.md`. D04 segue em andamento. Inventário em 173/226, com V01/V02 dependentes do Dev alojado e S05 da autorização de IAM.

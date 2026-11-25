@@ -2497,6 +2497,26 @@ pode avançar na leitura do histórico de notificações e manter o
 histórico append-only de sincronização enquanto se mede o benefício
 de um recorte maior.
 
+#### Recuperação de uma execução arquivada para um erro tardio (D04, 25/11/2026)
+
+O ensaio seguinte usou PostgreSQL 17.11 descartável, com 58.000 execuções normalizadas, 12.782 transferidas e uma FK opcional para a tabela ativa com `ON DELETE SET NULL`. O arquivo tinha índice primário. A tabela ativa manteve dois índices de consulta além da chave primária. A medição de `pg_total_relation_size` ocorreu depois de `VACUUM FULL` nas tabelas sintéticas. O total soma a tabela ativa e o arquivo com seus índices. A tabela de filhos e o WAL ficam fora desse total.
+
+| Cenário sintético | Bytes no ativo | Bytes no ativo e arquivo | Variação total |
+| --- | ---: | ---: | ---: |
+| Base integral | 16.629.760 | 16.629.760 | — |
+| Transferência, antes de recuperar | 12.976.128 | 15.491.072 | −6,85% |
+| Cerca de 5% das transferidas recuperadas | 13.156.352 | 15.671.296 | −5,76% |
+| Cerca de 25% recuperadas | 13.885.440 | 16.400.384 | −1,38% |
+| Todas recuperadas | 16.629.760 | 19.144.704 | +15,12% |
+
+O arquivador obteve `FOR UPDATE` na execução e conferiu a ausência de filhos em uma instrução posterior antes de copiar e excluir. O escritor tomou `FOR KEY SHARE`. Se o arquivador confirmou primeiro, o escritor leu a cópia arquivada, recuperou a linha integral na tabela ativa e passou pela FK. Na ordem inversa, o arquivador recebeu `55P03` e, após o commit do escritor, encontrou o filho. Foram aceitas referências nulas e rejeitadas contas divergentes e IDs inexistentes. Em `REPEATABLE READ`, o escritor com snapshot anterior recebeu `40001` e a transação seguinte recuperou o vínculo. A simulação manteve a cópia fria após a recuperação. Em produção, `recordSyncRunFailure` hoje registra falha de inserção do erro em log, então uma adoção precisa tratar a repetição da transação.
+
+Um segundo ensaio, com 14 execuções sintéticas e nove observações, mostrou que cortar só por idade muda a saúde e os checkpoints de contas inativas. Ao manter a última execução, o último sucesso e a maior data recebida por conta, recurso e canal, mais o checkpoint de claims e a última conclusão da conta, cinco linhas ficaram elegíveis e `EXCEPT ALL` nos dois sentidos retornou zero diferenças. O recorte incluiu empate na última execução e marca de dados em uma execução anterior ao último sucesso.
+
+Na cópia local do catálogo atual, a guarda de `sync_runs` recusou `DELETE` com `P0001`. Remover, em ensaio revertido, a única execução de uma conta inativa ocultou a conta de `get_sync_health` para um administrador. Restaurar a linha recuperou o resultado anterior. Reinserir uma falha antiga sem alerta prévio fez a trigger real gerar um alerta novo na data da reinserção. Quando o alerta original existia, a mesma chave de deduplicação impediu duplicata.
+
+A adoção exige um caminho autorizado e restrito para movimentar linhas e recuperar o pai sem disparar avisos históricos. Antes de implementar o corte, verificar a equivalência de `resolveWindowFrom`, claims, cartões de conta e vigias nas tabelas do laboratório.
+
 ### Custo da ordenação da Central de Notificações (D-851)
 
 Ensaio em PostgreSQL 17 descartável com 141.500 vínculos sintéticos
