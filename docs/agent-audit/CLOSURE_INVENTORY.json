@@ -1,5 +1,5 @@
 {
-  "corte": "25/11/2026, Auth e monitoramento confirmados, M05 em correção, candidato com base #396",
+  "corte": "25/11/2026, S04, I04 e M05 aceitos, candidato #378 com Claude #397 e Gemini D-831",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -127,9 +127,9 @@
       "area": "Integrações dos marketplaces",
       "entrega": "Recuperação do atraso e diagnóstico ML 403",
       "peso": 5,
-      "status": "Em andamento",
+      "status": "Validado em produção",
       "responsavel": "Backend",
-      "evidencia": "#377 cf6dae2d usa bulk sem projeção. Sonda confirmou o envelope e um anúncio em produção passou na revisão a 0%. Faltam observação e reconciliação após promoção.",
+      "evidencia": "#377 cf6dae2d. CI aprovada e rollout do worker verificado. Reconciliação concluída nas lojas e exceções reprocessadas no fluxo normal. Listagens afetadas identificáveis conferidas em job_runs e listings.",
       "fase": 1
     },
     {

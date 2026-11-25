@@ -969,3 +969,5 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - O #397 foi composto em `2b893b9f` com check 37/37, build 10/10 e docs:check. Vercel READY em `8f39cddc`.
 - D-831, commit Gemini `0599064d`. D-832 permanece reservado. O teste de reconexão OAuth de M04 segue no #343.
 - #377 `cf6dae2d`: sonda real explicou a ausência do envelope sob projeção. Um anúncio foi processado na revisão isolada. O candidato incorpora a correção sem as etapas experimentais intermediárias.
+- M05 validado em produção com o código do #377 em `cf6dae2d`. O bulk completo foi conferido, a reconciliação encerrou nas contas agendadas e as exceções recuperadas pelo job regular. A consulta cruzou as falhas anteriores com as listagens atualizadas. O #377 foi reconciliado com a main em `dfbce8f3`, com os arquivos do worker e cliente idênticos ao corte publicado.
+- A CI do código composto é 45606453406 para `c5882974`. O checkpoint de aceite altera somente documentação. Fechamento técnico recalculado em 168/226 (74,34%), 31/43.
