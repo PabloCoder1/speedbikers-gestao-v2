@@ -330,4 +330,13 @@ describe("completeShopeeConnect (D-425)", () => {
       expect(caso.gravado.rpc).toEqual([]);
     }
   });
+
+  it("D-821: state em branco devolve invalid_state sem consultar o banco", async () => {
+    const caso = montar();
+    const res = await completeShopeeConnect(caso.deps, { state: "   ", code: "abc", shopId: 54804 });
+
+    expect(res).toEqual({ status: "invalid_state" });
+    expect(caso.gravado.update).toEqual([]);
+    expect(caso.chamadas).toEqual([]);
+  });
 });

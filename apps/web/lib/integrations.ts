@@ -1,4 +1,5 @@
 import type { Tom } from "../components/tone";
+import { autorizacaoTikTokVencendo } from "./contas-e-lojas";
 import { batchStatusLabel, mlAccountStatusLabel, statusTone } from "./labels";
 import { sanitizeErrorText } from "./sanitize";
 import { avisoDaAutorizacao, lojaDeTeste, vereditoDaLoja } from "./saude-loja-shopee";
@@ -58,7 +59,15 @@ export interface Dimension {
   observedAt: string | null;
 }
 
-export type IntegrationId = "mercado_livre" | "webhook" | "shopee" | "upseller" | "ia" | "supabase" | "google_cloud";
+export type IntegrationId =
+  | "mercado_livre"
+  | "webhook"
+  | "shopee"
+  | "tiktok_shop"
+  | "upseller"
+  | "ia"
+  | "supabase"
+  | "google_cloud";
 
 export interface IntegrationLink {
   label: string;
@@ -110,6 +119,16 @@ export interface ShopeeShopInput {
   /** A última leitura de pedidos que TERMINOU (`orders_last_success_at`). */
   orders_synced_at: string | null;
   authorization_expires_at: string | null;
+}
+
+/** Uma loja TikTok Shop como `tiktok_shops` (D-645 / D-822) a devolve. */
+export interface TikTokShopInput {
+  shop_id: string;
+  shop_name: string | null;
+  status: string;
+  last_error: string | null;
+  connected_at: string;
+  auth_expires_at: string | null;
 }
 
 export interface SyncHealthInput {
@@ -169,6 +188,8 @@ export interface IntegrationsInput {
   mlAccounts: MlAccountInput[] | null;
   /** As lojas Shopee que a pessoa alcança (D-433); `null` = a leitura falhou. */
   shopeeShops: ShopeeShopInput[] | null;
+  /** As lojas TikTok Shop da organização (D-645); `null` = a leitura falhou. */
+  tiktokShops?: readonly TikTokShopInput[] | null;
   syncHealth: SyncHealthInput[] | null;
   /** `null` = `get_system_health` não devolveu linha (não é ADMIN) ou falhou. */
   jobs: JobInput[] | null;
@@ -791,6 +812,100 @@ function googleCloud(input: IntegrationsInput): IntegrationCard {
   };
 }
 
+const TIKTOK_JOBS: readonly { jobType: string; label: string }[] = [
+  { jobType: "tiktok.orders.sync", label: "pedidos" },
+  { jobType: "tiktok.items.sync", label: "catálogo" },
+  { jobType: "tiktok.returns.sync", label: "devoluções" },
+  { jobType: "tiktok.financials.sync", label: "financeiro" },
+];
+
+function tiktokShopConnection(input: IntegrationsInput): Dimension {
+  if (input.tiktokShops === null) {
+    return NAO_VERIFICAVEL("não foi possível ler as lojas TikTok Shop");
+  }
+
+  if (input.tiktokShops === undefined || input.tiktokShops.length === 0) {
+    return input.viewerIsAdmin
+      ? { state: "nao_configurado", detail: "nenhuma loja TikTok Shop conectada ainda", observedAt: null }
+      : NAO_VERIFICAVEL("lojas visíveis apenas para quem tem acesso");
+  }
+
+  const lojas = input.tiktokShops.map((loja): { state: IntegrationState; texto: string } => {
+    const nome = loja.shop_name ?? loja.shop_id;
+    const motivo = loja.status === "CONNECTED" ? null : sanitizeErrorText(loja.last_error, 100);
+    const vencendo = autorizacaoTikTokVencendo(loja, input.now);
+
+    if (loja.status !== "CONNECTED") {
+      return {
+        state: "erro",
+        texto: `${nome}: conexão em erro${motivo === null ? "" : ` (${motivo})`}`,
+      };
+    }
+
+    if (vencendo) {
+      return {
+        state: "atencao",
+        texto: `${nome}: autorização vence em até 30 dias`,
+      };
+    }
+
+    // Regra D-232 #1: flag CONNECTED sem sincronização observada é `observado`, nunca `ok`.
+    return {
+      state: "observado",
+      texto: `${nome}: OAuth conectado`,
+    };
+  });
+
+  return {
+    state: worst(lojas.map((loja) => loja.state)),
+    detail: `${String(lojas.length)} loja(s) — ${lojas.map((loja) => loja.texto).join(" · ")}`,
+    observedAt: maxIso(input.tiktokShops.map((loja) => loja.connected_at)),
+  };
+}
+
+function tiktokShop(input: IntegrationsInput): IntegrationCard {
+  let sync: Dimension;
+
+  if (input.jobs === null) {
+    sync = NAO_VERIFICAVEL("execuções restritas a ADMIN (get_system_health não devolveu linhas)");
+  } else {
+    const fluxos = TIKTOK_JOBS.map((fluxo) => {
+      const job = findJob(input.jobs, fluxo.jobType);
+
+      return { ...fluxo, job, ...jobState(job, fluxo.jobType, input.now) };
+    });
+
+    sync = fluxos.some((f) => f.job !== null && f.job.job_last_run_at !== null)
+      ? {
+          state: worst(fluxos.map((f) => f.state)),
+          detail: fluxos.map((f) => `${f.label}: ${f.detail}`).join("; "),
+          observedAt: maxIso(fluxos.map((f) => f.job?.job_last_run_at ?? null)),
+        }
+      : { state: "sem_atividade", detail: "nenhuma leitura do TikTok Shop registrada", observedAt: null };
+  }
+
+  return {
+    id: "tiktok_shop",
+    label: "TikTok Shop",
+    scope: "Conexão OAuth da loja, webhooks e integração transacional (pedidos, catálogo, devoluções e financeiro).",
+    links: [{ label: "Contas e lojas", href: "/contas" }],
+    connection: tiktokShopConnection(input),
+    sync,
+    configuration: NAO_VERIFICAVEL(
+      "App Key e App Secret vivem no Secret Manager e o app no Partner Center do TikTok Shop — sem coletor autenticado daqui",
+    ),
+  };
+}
+
 export function describeIntegrations(input: IntegrationsInput): IntegrationCard[] {
-  return [mercadoLivre(input), webhook(input), shopee(input), upseller(input), ia(input), supabase(input), googleCloud(input)];
+  return [
+    mercadoLivre(input),
+    webhook(input),
+    shopee(input),
+    tiktokShop(input),
+    upseller(input),
+    ia(input),
+    supabase(input),
+    googleCloud(input),
+  ];
 }

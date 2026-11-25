@@ -160,4 +160,43 @@ describe("ensureRelistMeasurement (D-164)", () => {
     expect(result.ok).toBe(false);
     expect(result.message).toContain("corrida");
   });
+
+  it("restringe leituras service_role de sku_listing_links e action_decisions à organization_id da operação (D-825)", async () => {
+    const filtersByTable = new Map<string, [string, unknown][]>();
+
+    const db = {
+      from: (table: string) => ({
+        select: () => {
+          const filters: [string, unknown][] = [];
+          filtersByTable.set(table, filters);
+          const self = {
+            eq: (col: string, val: unknown) => {
+              filters.push([col, val]);
+
+              return self;
+            },
+            is: () => self,
+            maybeSingle: () =>
+              Promise.resolve({
+                data:
+                  table === "sku_listing_links"
+                    ? { sku_id: SKU_ID }
+                    : table === "actions"
+                      ? { id: "action-1" }
+                      : { id: "dec-1" },
+                error: null,
+              }),
+          };
+
+          return self;
+        },
+      }),
+    } as unknown as RelistMeasurementDeps["db"];
+
+    const result = await run(db);
+
+    expect(result).toEqual({ ok: true });
+    expect(filtersByTable.get("sku_listing_links")).toContainEqual(["organization_id", OPERATION.organization_id]);
+    expect(filtersByTable.get("action_decisions")).toContainEqual(["organization_id", OPERATION.organization_id]);
+  });
 });

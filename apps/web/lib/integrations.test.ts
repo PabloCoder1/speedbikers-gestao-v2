@@ -584,3 +584,82 @@ describe("o pior estado manda no agregado", () => {
     expect(card(a, "google_cloud").connection?.state).toBe("nao_verificavel");
   });
 });
+
+describe("TikTok Shop (D-823, M04) — respeita todas as invariantes de D-232", () => {
+  it("sem loja conectada: ADMIN vê nao_configurado, não-ADMIN vê nao_verificavel; configuração nunca é ok", () => {
+    const admin = card({ ...base(), tiktokShops: [] }, "tiktok_shop");
+    expect(admin.connection?.state).toBe("nao_configurado");
+    expect(admin.sync?.state).toBe("sem_atividade");
+    expect(admin.configuration.state).toBe("nao_verificavel");
+    expect(admin.links).toEqual([{ label: "Contas e lojas", href: "/contas" }]);
+
+    const operador = card({ ...base(), viewerIsAdmin: false, tiktokShops: [], jobs: null }, "tiktok_shop");
+    expect(operador.connection?.state).toBe("nao_verificavel");
+    expect(operador.sync?.state).toBe("nao_verificavel");
+  });
+
+  it("loja conectada sem sync nunca vira verde (observado); vencendo em <= 30 dias vira atencao; erro sanitiza last_error", () => {
+    const conectada = card(
+      {
+        ...base(),
+        tiktokShops: [
+          {
+            shop_id: "7000714532876273420",
+            shop_name: "Speed Bikers TikTok",
+            status: "CONNECTED",
+            last_error: null,
+            connected_at: horasAtras(2),
+            auth_expires_at: diasAFrente(90),
+          },
+        ],
+      },
+      "tiktok_shop",
+    );
+    expect(conectada.connection?.state).toBe("observado");
+    expect(conectada.connection?.detail).toContain("Speed Bikers TikTok");
+
+    const vencendo = card(
+      {
+        ...base(),
+        tiktokShops: [
+          {
+            shop_id: "7000714532876273420",
+            shop_name: "Speed Bikers TikTok",
+            status: "CONNECTED",
+            last_error: null,
+            connected_at: horasAtras(2),
+            auth_expires_at: diasAFrente(12),
+          },
+        ],
+      },
+      "tiktok_shop",
+    );
+    expect(vencendo.connection?.state).toBe("atencao");
+    expect(vencendo.connection?.detail).toMatch(/vence/i);
+
+    const erro = card(
+      {
+        ...base(),
+        tiktokShops: [
+          {
+            shop_id: "7000714532876273420",
+            shop_name: null,
+            status: "ERROR",
+            last_error: "refresh_refused\nstack trace",
+            connected_at: horasAtras(2),
+            auth_expires_at: null,
+          },
+        ],
+      },
+      "tiktok_shop",
+    );
+    expect(erro.connection?.state).toBe("erro");
+    expect(erro.connection?.detail).not.toContain("\n");
+  });
+
+  it("falha ao ler tiktok_shops (null) devolve nao_verificavel sem fingir zero", () => {
+    const falha = card({ ...base(), tiktokShops: null }, "tiktok_shop");
+    expect(falha.connection?.state).toBe("nao_verificavel");
+    expect(falha.connection?.detail).toContain("não foi possível ler");
+  });
+});

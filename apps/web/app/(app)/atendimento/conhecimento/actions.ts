@@ -53,14 +53,26 @@ export async function createKnowledgeEntry(input: {
     currentMembership(supabase),
   ]);
 
+  if (authResult.error !== null) {
+    return {
+      ok: false,
+      message:
+        authResult.error.status === 401 ||
+        authResult.error.status === 403 ||
+        authResult.error.name === "AuthSessionMissingError"
+          ? "Sessão expirada — atualize a página."
+          : "Não foi possível confirmar sua sessão — tente de novo.",
+    };
+  }
+
   if (membershipResult.error !== null) {
     return { ok: false, message: "Não foi possível confirmar sua organização — tente de novo." };
   }
 
-  const userId = authResult.data.user?.id;
+  const userId = authResult.data.user.id;
   const organizationId = membershipResult.organizationId;
 
-  if (userId === undefined || organizationId === null) {
+  if (organizationId === null) {
     return { ok: false, message: "Sessão expirada — atualize a página." };
   }
 
@@ -114,12 +126,19 @@ export async function setKnowledgeStatus(
 ): Promise<KnowledgeActionResult> {
   const supabase = await createClient();
 
-  const { data: auth } = await supabase.auth.getUser();
-  const userId = auth.user?.id;
+  const { data: auth, error: authError } = await supabase.auth.getUser();
 
-  if (userId === undefined) {
-    return { ok: false, message: "Sessão expirada — atualize a página." };
+  if (authError !== null) {
+    return {
+      ok: false,
+      message:
+        authError.status === 401 || authError.status === 403 || authError.name === "AuthSessionMissingError"
+          ? "Sessão expirada — atualize a página."
+          : "Não foi possível confirmar sua sessão — tente de novo.",
+    };
   }
+
+  const userId = auth.user.id;
 
   const patch =
     status === "VALIDADO"

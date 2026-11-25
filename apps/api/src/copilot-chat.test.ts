@@ -409,4 +409,50 @@ describe("contexto de tela (D-293)", () => {
     const resultado = JSON.stringify(segunda[segunda.length - 1]);
     expect(resultado).toContain("ferramenta desconhecida");
   });
+
+  it("não vaza mensagem de erro interno (não-CopilotToolError) ao modelo no tool_result (D-829)", async () => {
+    const segredo = "relation public.secret_internal_table violates RLS policy";
+    const { copilot, plan } = deps([
+      {
+        blocks: [
+          {
+            type: "tool_use",
+            id: "tu-err",
+            name: "marketplace_sales_summary",
+            input: { dateFrom: "2026-08-21", dateTo: "2026-08-28" },
+          },
+        ],
+        stopReason: "tool_use",
+        costUsd: 0.001,
+      },
+      finalText("Não consegui consultar as vendas agora."),
+    ]);
+
+    copilot.createUserClient = () =>
+      ({
+        from: () => {
+          const chain = {
+            select: () => chain,
+            order: () => Promise.resolve({ data: ACCOUNTS, error: null }),
+          };
+
+          return chain;
+        },
+        rpc: () => Promise.reject(new Error(segredo)),
+      }) as unknown as UserClient;
+
+    const events: CopilotChatEvent[] = [];
+    await runCopilotChat(copilot, CALLER, "token", { message: "vendas?" }, (event) => {
+      events.push(event);
+
+      return Promise.resolve();
+    });
+
+    const segunda = plan.mock.calls[1]?.[0]?.messages ?? [];
+    const resultado = JSON.stringify(segunda[segunda.length - 1]);
+
+    expect(resultado).toContain("falha ao executar a ferramenta");
+    expect(resultado).not.toContain(segredo);
+    expect(resultado).not.toContain("RLS");
+  });
 });

@@ -8,7 +8,13 @@ import { Icone } from "../../../components/icons";
 import { KpiStrip } from "../../../components/kpi-strip";
 import { TOM, tomDeStatus } from "../../../components/tone";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
-import { autorizacaoVencendo, celulasDeContasELojas } from "../../../lib/contas-e-lojas";
+import {
+  autorizacaoTikTokVencendo,
+  autorizacaoVencendo,
+  celulasDeContasELojas,
+  isTikTokSchemaMissing,
+  rotuloTipoVendedorTikTok,
+} from "../../../lib/contas-e-lojas";
 import { formatCount, formatDateTime } from "../../../lib/format";
 import { mlAccountStatusLabel, statusTone } from "../../../lib/labels";
 import { currentMembership } from "../../../lib/request-membership";
@@ -19,6 +25,7 @@ import { createClient } from "../../../lib/supabase/server";
 import { ConnectButton } from "./connect-button";
 import { NewAccountForm } from "./new-account-form";
 import { ShopeeConnectButton } from "./shopee-connect-button";
+import { TikTokConnectButton } from "./tiktok-connect-button";
 
 export const metadata = { title: "Contas e lojas — Speed Bikers Gestão" };
 
@@ -96,16 +103,18 @@ export default async function ContasPage(): Promise<ReactNode> {
     );
   }
 
-  // D-425: as lojas Shopee saem na mesma ida das contas do Mercado Livre.
-  // D-429: e o tamanho do catálogo de cada loja também — contado no SQL
-  // (`get_shopee_shop_catalog_counts`), nulo quando o catálogo nunca foi lido.
-  const [{ data, error }, lojasShopee, catalogoShopee] = await Promise.all([
+  // D-425/D-429/D-822: contas ML, lojas Shopee, catálogo Shopee e lojas TikTok Shop saem em paralelo.
+  const [{ data, error }, lojasShopee, catalogoShopee, lojasTikTok] = await Promise.all([
     supabase.rpc("get_ml_account_cards", { p_organization_id: organizationId }),
     supabase
       .from("shopee_shops")
       .select("id, shop_id, shop_name, region, environment, status, shop_status, auth_expires_at, connected_at, last_error")
       .order("connected_at", { ascending: true }),
     supabase.rpc("get_shopee_shop_catalog_counts", { p_organization_id: organizationId }),
+    supabase
+      .from("tiktok_shops")
+      .select("id, shop_id, shop_name, region, seller_type, shop_code, status, auth_expires_at, connected_at, last_error")
+      .order("connected_at", { ascending: true }),
   ]);
 
   const accounts = data ?? [];
@@ -114,9 +123,14 @@ export default async function ContasPage(): Promise<ReactNode> {
   const catalogoAusente = isShopeeSchemaMissing(catalogoShopee.error);
 
   const agora = new Date();
-  // D-600: a faixa conta as contas do ML E as lojas Shopee, com a divisão ao lado do
-  // número; as lojas que não carregaram não viram zero.
-  const faixa = celulasDeContasELojas(accounts, lojasShopee.error === null ? lojasShopee.data : null, agora);
+  // D-600/D-822: a faixa conta contas ML, lojas Shopee e lojas TikTok Shop;
+  // canal que não carregou não vira zero.
+  const faixa = celulasDeContasELojas(
+    accounts,
+    lojasShopee.error === null ? lojasShopee.data : null,
+    agora,
+    lojasTikTok.error === null ? lojasTikTok.data : isTikTokSchemaMissing(lojasTikTok.error) ? [] : null,
+  );
 
   return (
     <>
@@ -407,6 +421,73 @@ export default async function ContasPage(): Promise<ReactNode> {
             )}
 
             {ehAdmin && <ShopeeConnectButton />}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="sb-account-create">
+        <Panel
+          title="Lojas TikTok Shop"
+          subtitle="Conecte a loja no Partner Center com a conta titular (owner) do TikTok Shop. A reautorização usa o mesmo botão quando o prazo escolhido estiver vencendo."
+        >
+          <div className="sb-panel-body">
+            {lojasTikTok.error !== null ? (
+              <p className="sb-empty">
+                {isTikTokSchemaMissing(lojasTikTok.error)
+                  ? "As lojas TikTok Shop chegam com a próxima atualização do banco."
+                  : "Não foi possível ler as lojas TikTok Shop agora. Tente novamente em instantes."}
+              </p>
+            ) : lojasTikTok.data.length === 0 ? (
+              <p className="sb-empty">Nenhuma loja TikTok Shop conectada ainda.</p>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="sb-table" aria-label="Lojas TikTok Shop">
+                  <thead>
+                    <tr>
+                      <th>Loja</th>
+                      <th>Tipo</th>
+                      <th>Conexão</th>
+                      <th>Autorização vence</th>
+                      <th>Conectada em</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lojasTikTok.data.map((loja) => (
+                      <tr key={loja.id}>
+                        <td>
+                          {loja.shop_name ?? "Loja sem nome lido"}
+                          <span className="sb-mono" style={{ display: "block", color: "var(--sb-text-soft)" }}>
+                            {loja.shop_id}
+                            {loja.region === null ? "" : ` · ${loja.region}`}
+                            {loja.shop_code === null ? "" : ` · ${loja.shop_code}`}
+                          </span>
+                        </td>
+                        <td>{rotuloTipoVendedorTikTok(loja.seller_type)}</td>
+                        <td>
+                          {loja.status === "CONNECTED" ? "Conectada" : "Com erro"}
+                          {loja.last_error === null ? null : (
+                            <span style={{ display: "block", color: "var(--sb-text-soft)" }}>
+                              {sanitizeErrorText(loja.last_error)}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {loja.auth_expires_at === null ? "—" : formatDateTime(loja.auth_expires_at)}
+                          {autorizacaoTikTokVencendo(loja, agora) && (
+                            <span style={{ display: "block", color: "var(--sb-accent-ink)" }}>
+                              reautorize no TikTok Shop: vence em até 30 dias
+                            </span>
+                          )}
+                        </td>
+                        <td>{formatDateTime(loja.connected_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {ehAdmin && <TikTokConnectButton />}
           </div>
         </Panel>
       </div>

@@ -229,4 +229,23 @@ describe("escritas em lote por página (D-190)", () => {
 
     expect(chamadas).toEqual([]);
   });
+
+  it("fatia order_items.delete().in('order_id', ...) em lotes de até 100 pedidos para evitar HTTP 414 (D-828)", async () => {
+    const writes = novaPagina(ORG);
+
+    for (let id = 1; id <= 250; id += 1) {
+      writes.tails.push({ orderId: id, fromPosition: 1 });
+    }
+
+    const { db, chamadas } = dbFalso();
+
+    await flushPageWrites(db, writes);
+
+    const exclusoes = chamadas.filter((c) => c.verbo === "delete");
+
+    expect(exclusoes).toHaveLength(3);
+    expect((exclusoes[0]?.filtros.order_id as number[]).length).toBe(100);
+    expect((exclusoes[1]?.filtros.order_id as number[]).length).toBe(100);
+    expect((exclusoes[2]?.filtros.order_id as number[]).length).toBe(50);
+  });
 });

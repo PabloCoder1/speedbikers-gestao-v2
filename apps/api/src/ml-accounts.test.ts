@@ -537,4 +537,28 @@ describe("completeConnect", () => {
     expect(recusado.status).toBe("rejected");
     expect(falhaMark.lines.join("\n")).toContain("ml_account_mark_error_failed");
   });
+
+  it("D-821: state em branco devolve invalid_state sem consultar banco e code em branco recusa sem chamar o Mercado Livre", async () => {
+    const semState = deps();
+    const resState = await completeConnect(semState.deps, { state: "   ", code: "c" });
+
+    expect(resState).toEqual({ status: "invalid_state" });
+    expect(semState.db.connections).toEqual([]);
+
+    let fetchChamado = false;
+    const semCode = deps({
+      requestOptions: {
+        fetchImpl: () => {
+          fetchChamado = true;
+
+          return Promise.resolve(jsonResponse(200, TOKEN_RESPONSE_BODY));
+        },
+        sleep: () => Promise.resolve(),
+      },
+    });
+    const resCode = await completeConnect(semCode.deps, { state: "s", code: "   " });
+
+    expect(resCode).toMatchObject({ status: "rejected" });
+    expect(fetchChamado).toBe(false);
+  });
 });

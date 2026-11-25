@@ -21219,3 +21219,91 @@ TDD RED (`3/3` arquivos / `4 failed`) -> GREEN (`10/10` worker + `10/10` API). V
 - a requisição na edição é recusada;
 - a mesma requisição em outro pedido é outra inclusão;
 - o analista não lança.
+
+## D-820 - Web Server Actions: `auth.getUser()` fail-closed nas 5 telas restantes e saneamento de erro SQL na triagem
+
+Fechamos o tratamento de erro de sessão em todas as Server Actions restantes fora da frente de compras/reposição (commit `d3045b86`):
+
+1. **Separação de falha transitória de Auth vs sessão expirada (`atendimento/actions.ts`, `atendimento/conhecimento/actions.ts`, `atendimento/templates/actions.ts`, `notificacoes/preferencias/actions.ts`, `sugestoes/actions.ts`):** seguem o padrão de `acoes/actions.ts` (`D-778`), distinguindo `401`/`403`/`AuthSessionMissingError` ("Sessão expirada") de erro transitório 5xx/rede ("Não foi possível confirmar sua sessão — tente de novo") em 6 Server Actions (`assignToMe`, `createKnowledgeEntry`, `setKnowledgeStatus`, `createTemplate`, `createPreference`, `createSuggestion`).
+2. **Anti-vazamento em `atendimento/actions.ts` (`describeError`):** substitui `return error.message` por mensagens fixas em português, evitando expor UUIDs ou nomes internos de tabela vindos de exceções do Postgres.
+
+TDD RED (`2 failed` em novo `apps/web/lib/server-actions-auth.test.ts`) -> GREEN (`2/2`), com `@sb/web` `tsc` e `eslint` aprovados.
+
+## D-821 - API OAuth callbacks: padronização de `state`/`code` em branco no Mercado Livre e Shopee
+
+Alinhamos os callbacks OAuth de Mercado Livre (`apps/api/src/ml-accounts.ts`) e Shopee (`apps/api/src/shopee-shops.ts`) ao hardening aplicado no TikTok Shop (`D-819`, commit `26fb2bf7`):
+
+1. **`state` em branco (`trim() === ""`):** devolve `{ status: "invalid_state" }` imediatamente sem consultar `ml_oauth_states` ou `shopee_oauth_states`.
+2. **`code` em branco (`trim() === ""`) e normalização:** `completeConnect` (`ml-accounts.ts`) recusa `code` só com espaços antes de chamar `exchangeCodeForToken`, e ambos os callbacks enviam `code.trim()`.
+
+TDD RED (`2 failed | 33 passed (35)`) -> GREEN (`35/35`). Verificação completa do monorepo pós-`26fb2bf7`: `pnpm run check` (`37/37`, `362` arquivos / `4.618` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `7/7` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-822 - Web `/contas`: painel Lojas TikTok Shop e conector OAuth (`M04`)
+
+Fechamos a lacuna de interface da fatia 1 do TikTok Shop (`D-645`), expondo na tela `/contas` (`Contas e lojas`) a visualização e o conector OAuth sobre `tiktok_shops` e `POST /v1/tiktok-shop/connect` (commit `dec79edd`):
+
+1. **Conector OAuth (`apps/web/app/(app)/contas/tiktok-connect-button.tsx`):** espelha `ShopeeConnectButton` reutilizando `iniciarConexaoOAuth({ caminho: "/v1/tiktok-shop/connect" })`, visível apenas para `ADMIN`, sem expor App Key/App Secret no navegador e com proteção contra `503`, JSON inválido em `200 OK` e falha de rede.
+2. **Faixa e helpers (`apps/web/lib/contas-e-lojas.{ts,test.ts}`):** adiciona `autorizacaoTikTokVencendo` (aviso oficial de 30 dias de `docs/TIKTOK_SHOP.md` §4), `lojaTikTokRequerAtencao`, `isTikTokSchemaMissing`, `rotuloTipoVendedorTikTok` (`LOCAL`/`CROSS_BORDER`) e estende `celulasDeContasELojas` com 4º argumento opcional `lojasTikTok` — preservando 100% da compatibilidade com a suíte E2E existente quando a lista está vazia e exibindo `· N do TikTok Shop` (ou aviso de falha sem fingir zero) quando há lojas conectadas.
+3. **Leitura paralela e painel em `/contas` (`apps/web/app/(app)/contas/page.tsx`):** consulta `tiktok_shops` no mesmo `Promise.all` (zero waterfall, aprovado em `check:waterfalls`) e renderiza o painel `Lojas TikTok Shop` com tabela `.sb-table` e `TikTokConnectButton`.
+
+TDD RED (`2 failed | 5 passed (7)`) -> GREEN (`7/7`). Verificação completa pós-`dec79edd`: `pnpm run check` (`37/37`, `362` arquivos / `4.620` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web` (`check:waterfalls` 115, `check:control-styles` 543, `check:navegacao-suave` 207), `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `8/8` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-823 - Web `/integracoes`: cartão TikTok Shop na Central de Integrações (`M04`)
+
+Adicionamos o terceiro canal (`tiktok_shop`) à Central de Integrações (`/integracoes`, commit `8e439358`), respeitando todas as invariantes de `D-232`:
+
+1. **Adaptador puro (`apps/web/lib/integrations.{ts,test.ts}`):** adiciona `TikTokShopInput` e o cartão `tiktok_shop` (8ª região): `connection` nunca fica `ok` apenas pela flag `CONNECTED` (fica `observado` sem sincronização, `atencao` quando `auth_expires_at` vence em até 30 dias, `erro` com `last_error` sanitizado, `nao_configurado` para `ADMIN` sem lojas e `nao_verificavel` em erro de leitura ou não-`ADMIN`); `sync` acompanha os 4 jobs canônicos (`tiktok.{orders,items,returns,financials}.sync`, ficando `sem_atividade` até rodarem); `configuration` é sempre `nao_verificavel` (Secret Manager / Partner Center); aponta para `/contas`.
+2. **Leitura paralela e E2E (`apps/web/app/(app)/integracoes/page.tsx`, `apps/web/e2e/integracoes.spec.ts`):** lê `tiktok_shops` no mesmo `Promise.all` (zero waterfall, aprovado em `check:waterfalls`) e atualiza `integracoes.spec.ts` para `toHaveCount(8)` com asserções explícitas no cartão `TikTok Shop`.
+
+TDD RED (`3 failed | 36 passed (39)`) -> GREEN (`39/39`, incluindo todas as invariantes adversas de D-232). Verificação completa pós-`8e439358`: `pnpm run check` (`37/37`, `362` arquivos / `4.623` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `9/9` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-824 - Web `/sincronizacao`: seção `Lojas TikTok Shop` e saúde da autorização (`M04`)
+
+Fechamos a visibilidade operacional do terceiro canal também em `/sincronizacao` (commit `789aa4cb`):
+
+1. **Helper puro (`apps/web/lib/saude-loja-tiktok.{ts,test.ts}`):** espelha `saude-loja-shopee.ts` com `avisoDaAutorizacaoTikTok` (aviso oficial de 30 dias `UPCOMING_AUTHORIZATION_EXPIRATION` em `atencao` e `Autorização vencida` em `perigo`, tolerante a datas inválidas) e `vereditoDaLojaTikTok` (nunca declara verde sem sincronização transacional observada — usa `neutro` `"Conectada (aguardando sync)"`, `atencao` se vencendo, `perigo` em erro ou vencida).
+2. **Leitura paralela e seção condicional (`apps/web/app/(app)/sincronizacao/page.tsx`):** lê `tiktok_shops` no mesmo `Promise.all` (zero waterfall, aprovado em `check:waterfalls`), adiciona o atalho `#tiktok` na navegação interna e renderiza a seção `Lojas TikTok Shop` apenas quando `lojasTikTok.length > 0` (100% retrocompatível com `e2e/sincronizacao.spec.ts`).
+
+TDD RED (`saude-loja-tiktok.test.ts` fail) -> GREEN (`3/3`). Verificação completa pós-`789aa4cb`: `pnpm run check` (`37/37`, `363` arquivos / `4.626` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` provando `10/10` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-825 - Worker `relist-prepare` e `relist-measurement`: isolamento multi-tenant e proteção de eventos de republicação
+
+Fechamos duas brechas de segurança/resiliência no fluxo de republicação sob `service_role` (commit `77cc4969`):
+
+1. **`apps/worker/src/handlers/relist-prepare.ts`:** valida `account.data.organization_id !== envelope.organizationId` (`status: "failed", retryable: false`) antes de consultar `listing_relists` ou chamar o Mercado Livre, e envolve ambos os `listing_relist_events.insert` (`REQUESTED` e `PREFLIGHT_FAILED`) em `try/catch` para que falha de transporte pós-insert de `listing_relists` registre `relist_event_not_recorded` sem derrubar o job para retry com `23505`.
+2. **`apps/worker/src/handlers/relist-measurement.ts`:** restringe explicitamente as leituras `service_role` de `sku_listing_links` e `action_decisions` por `.eq("organization_id", operation.organization_id)`.
+
+TDD RED (`3 failed | 4 passed (7)`) -> GREEN (`29/29` incluindo novo `relist-prepare-hardening.test.ts` compatível com `/items` e `/items/bulk` do `#378`).
+
+## D-826 - Web exportações CSV/XLSX: eliminação de vazamento de `error.message` bruto do Postgres no HTTP 502
+
+Removemos o vazamento direto de mensagens internas do Postgres/PostgREST (`error.message`) em todos os 17 caminhos de erro HTTP `502` das 7 rotas de exportação (`anuncios/exportar`, `anuncios/shopee/exportar`, `curva-abc/export/xlsx`, `full/exportar`, `precos/export/xlsx`, `vendas/exportar`, `vendas/shopee/exportar` — commit `9db9a602`), substituindo por mensagens fixas em português nas rotas CSV e códigos estruturados sem detalhe interno nas rotas JSON XLSX.
+
+TDD RED (`1 failed | 4 passed (5)` em `apps/web/lib/export-routes.test.ts`) -> GREEN (`5/5`, cobrindo todos os 17 ramos de falha).
+
+## D-827 - Worker `persist-order`: fatiamento de `orders.in()` e escopo `organization_id` no caminho quente de pedidos
+
+Fechamos a última consulta `.in("id", orderIds)` sem lote em `apps/worker/src/handlers/persist-order.ts` (`prefetchOrders`, commit `f46c8ec1`):
+
+1. **`prefetchOrders`:** fatia `.from("orders").in("id", lote)` em lotes paralelos de `PEDIDOS_POR_CONSULTA` (`25`, mesmo padrão de `order_items`/`stock_movements`/`domain_events`) e adiciona `.eq("organization_id", context.organizationId)` em `orders` e nas duas consultas de `sku_listing_links` (`ITEM` e `USER_PRODUCT`).
+2. **`persistOrder` (sem prefetch):** adiciona `.eq("organization_id", context.organizationId)` na leitura pontual de `orders`.
+
+TDD RED (`2 failed` em novo `persist-order-hardening.test.ts`) -> GREEN (`158/158` somando `persist-order.test.ts`). Verificação completa pós-`f46c8ec1`: `pnpm run check` (`37/37`, `365` arquivos / `4.632` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` sequencial provando `13/13` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-828 - Worker `page-writes.ts`: fatiamento em lotes de 100 na exclusão da cauda de `order_items`
+
+Fatiado `db.from("order_items").delete().in("order_id", lote).gte("position", fromPosition)` em lotes de `100` pedidos (`TAIL_DELETE_BATCH_SIZE = 100`, commits `4b2e1de7` + `78e9f323`), prevenindo estouro de URI do PostgREST (HTTP 414) em páginas grandes.
+
+TDD RED (`1 failed | 9 passed (10)`) -> GREEN (`10/10` em `apps/worker/src/handlers/page-writes.test.ts`).
+
+## D-829 - API `copilot-chat.ts`: sanitização de erros internos de ferramentas no `tool_result`
+
+Alinhamos `apps/api/src/copilot-chat.ts` ao padrão de `apps/api/src/copilot.ts` (commit `e49ddbb1`): apenas `CopilotToolError` expõe sua mensagem no `tool_result` enviado ao modelo; exceções inesperadas (Postgres/PostgREST/rede) são registradas em `deps.logger.error("copilot_chat_tool_failed", ...)` e devolvem a mensagem fixa `"falha ao executar a ferramenta"`, eliminando vazamento `CWE-209`.
+
+TDD RED (`1 failed | 23 passed (24)`) -> GREEN (`24/24` em `apps/api/src/copilot-chat.test.ts`).
+
+## D-830 - Web faturamento/vendas: eliminação de `error.message` bruto do Postgres no DOM
+
+Removidos todos os 13 pontos em que `error.message` bruto do Postgres/PostgREST era renderizado diretamente em `<EstadoDaTela detalhe={...} />` ou `detalhe:` em `apps/web/app/(app)/faturamento/multicanal.tsx` (9), `apps/web/app/(app)/faturamento/repasse-shopee.tsx` (2) e `apps/web/app/(app)/vendas/shopee/devolucoes.tsx` (2), protegidos por guarda estática em `apps/web/lib/ui-anti-leak.test.ts` (commit `2cd22da7`).
+
+TDD RED (`3 failed (3)`) -> GREEN (`3/3`). Verificação completa pós-`78e9f323`: `pnpm run check` (`37/37`, `366` arquivos / `4.637` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` sequencial provando `17/17` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).

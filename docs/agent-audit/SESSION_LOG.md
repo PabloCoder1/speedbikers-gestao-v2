@@ -960,3 +960,9 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - D-815 a D-819 do #343: `daa30b3a`, `ce980cdc`, `e895084c`, `5dfeeebf`, `570b6e45`. Check 37/37, build 10/10 e docs:check. Conteúdo de migrations, lockfile e workflows preservado.
 - O dono prevê a retomada do Supabase Pro em 01/12/2026. Confirmar o Dev saudável antes de registrar versões oficiais.
 - A próxima fatia de M04 tem o caso de reconexão durante refresh encaminhado ao Gemini. [Coordenação](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/343#issuecomment-7140347544)
+
+### Composição de 25/11
+
+- Claude até D-869 sobre `f4c0be64`. O #394 documenta o aceite do dono para recuperação de senha. Em leitura, conferidos HTTP 200 com “Esqueci a senha”, três políticas ativas e três uptime checks. O catálogo da VM confirmou `20261124140000`.
+- Gemini `ad78823a`, decisões D-820 a D-830 integradas no #378 com doze patches após D-819. D-831 segue sob Gemini. A regressão de reconexão de M04 foi encaminhada no #343.
+- Inventário em 163/226 (72,12%), 30/43. S04 e I04 contabilizam oito pontos. M05 continua em validação no #377.
