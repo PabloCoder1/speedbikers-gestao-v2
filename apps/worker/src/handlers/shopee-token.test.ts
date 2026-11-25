@@ -270,4 +270,52 @@ describe("ensureShopeeAccessToken (D-426)", () => {
       retryable: true,
     });
   });
+
+  it("D-831: ciphertext corrompido ou chave incompatível falha fechado (retryable=false) e solta a trava", async () => {
+    const { client, chamadas } = clienteShopee(RENOVADO);
+
+    // Caminho 1: access_token válido mas corrompido na leitura inicial
+    const { db: db1 } = fakeDb({
+      lida: {
+        access_token_ciphertext: "ciphertext-corrompido",
+        refresh_token_ciphertext: "ciphertext-corrompido",
+        access_token_expires_at: new Date(NOW.getTime() + 2 * 3600_000).toISOString(),
+      },
+    });
+    await expect(ensureShopeeAccessToken({ db: db1, client, encryptionKey: KEY }, LOJA, NOW)).resolves.toMatchObject({
+      ok: false,
+      retryable: false,
+    });
+
+    // Caminho 2: access_token renovado por outra execução mas corrompido na trava
+    const { db: db2, updates: updates2 } = fakeDb({
+      lida: credencial("a", "r", 5),
+      travada: {
+        access_token_ciphertext: "ciphertext-corrompido",
+        refresh_token_ciphertext: "ciphertext-corrompido",
+        access_token_expires_at: new Date(NOW.getTime() + 2 * 3600_000).toISOString(),
+      },
+    });
+    await expect(ensureShopeeAccessToken({ db: db2, client, encryptionKey: KEY }, LOJA, NOW)).resolves.toMatchObject({
+      ok: false,
+      retryable: false,
+    });
+    expect(updates2.at(-1)?.row).toEqual({ refresh_locked_until: null, refresh_lock_id: null });
+
+    // Caminho 3: refresh_token corrompido na trava — solta trava e não chama Shopee
+    const { db: db3, updates: updates3 } = fakeDb({
+      lida: credencial("a", "r", 5),
+      travada: {
+        access_token_ciphertext: "ciphertext-corrompido",
+        refresh_token_ciphertext: "ciphertext-corrompido",
+        access_token_expires_at: new Date(NOW.getTime() + 60_000).toISOString(),
+      },
+    });
+    await expect(ensureShopeeAccessToken({ db: db3, client, encryptionKey: KEY }, LOJA, NOW)).resolves.toMatchObject({
+      ok: false,
+      retryable: false,
+    });
+    expect(chamadas).toHaveLength(0);
+    expect(updates3.at(-1)?.row).toEqual({ refresh_locked_until: null, refresh_lock_id: null });
+  });
 });
