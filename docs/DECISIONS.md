@@ -20341,4 +20341,8 @@ No plano genérico da curva, a CTE `full_by_sku`, usada uma vez, é incorporada 
 - As tabelas temporárias da comparação existiram só dentro de uma transação encerrada com `rollback`.
 - Localmente, a suíte do `@sb/db` teve as mesmas 10 falhas de baseline.
 
-**Publicação:** pede merge e a migration `20261125183000` na VM, com autorização do dono.
+**Em produção (25/11):** com autorização do dono, o #411 entrou na `main` em `57eb7961`.
+- **CI:** os quatro jobs obrigatórios passaram (run 45676090002). Na primeira tentativa, o e2e não subiu o Supabase porque a porta 60022 do runner estava ocupada; passou na segunda. O job do Dev falhou com "project is paused", como esperado.
+- **Migration:** `20261125183000` foi aplicada na VM com `psql -1` e registrada no histórico.
+- **Conferido depois:** o corpo novo, o comentário e os grants (`authenticated`, `postgres` e `service_role`).
+- **Tempo:** como membro, a chamada de 30 dias levou 282 ms, contra 1,49 a 1,54 s antes; a ordem "local" levou 258 ms, contra 1,61 s.
