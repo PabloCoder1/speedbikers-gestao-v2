@@ -75,6 +75,13 @@ export const envSchema = z.object({
   SHOPEE_ENVIRONMENT: z.enum(["sandbox", "live"]).default("sandbox"),
 
   /**
+   * TikTok Shop (D-835, `M04`): opcionais (mesmo interruptor da Shopee).
+   * Se apenas uma das duas credenciais for informada, falha fechado no boot.
+   */
+  TIKTOK_SHOP_APP_KEY: z.string().min(1).optional(),
+  TIKTOK_SHOP_APP_SECRET: z.string().min(16).optional(),
+
+  /**
    * Cloud Tasks — o worker se REENFILEIRA para si mesmo (`backfill.orders`
    * avançando pedaço a pedaço, `docs/HANDOFF.md`). `WORKER_URL` é a própria
    * URL deste serviço: alvo e audience OIDC do próximo pedaço.
@@ -111,6 +118,17 @@ export const envSchema = z.object({
   SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(465),
   ALERT_EMAIL_FROM: z.string().min(3).optional(),
   WEB_APP_URL: z.url().optional(),
+}).superRefine((data, ctx) => {
+  const hasTikTokKey = data.TIKTOK_SHOP_APP_KEY !== undefined;
+  const hasTikTokSecret = data.TIKTOK_SHOP_APP_SECRET !== undefined;
+
+  if (hasTikTokKey !== hasTikTokSecret) {
+    ctx.addIssue({
+      code: "custom",
+      path: [hasTikTokKey ? "TIKTOK_SHOP_APP_SECRET" : "TIKTOK_SHOP_APP_KEY"],
+      message: "TIKTOK_SHOP_APP_KEY e TIKTOK_SHOP_APP_SECRET devem ser informadas juntas",
+    });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;

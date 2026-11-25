@@ -99,4 +99,24 @@ describe("parseEnv", () => {
     expect(parseEnv({ ...OBRIGATORIAS, AI_MONTHLY_BUDGET_USD: "0" }).ok).toBe(false);
     expect(parseEnv({ ...OBRIGATORIAS, AI_MONTHLY_BUDGET_USD: "-5" }).ok).toBe(false);
   });
+
+  it("D-835: recusa TikTok Shop configurado pela metade e aceita o par completo", () => {
+    const semSecret = parseEnv({ ...OBRIGATORIAS, TIKTOK_SHOP_APP_KEY: "app_key_123" });
+
+    expect(semSecret.ok).toBe(false);
+    expect(!semSecret.ok && semSecret.issues.join()).toContain("TIKTOK_SHOP_APP_SECRET");
+
+    const semKey = parseEnv({ ...OBRIGATORIAS, TIKTOK_SHOP_APP_SECRET: "secret_1234567890abcdef" });
+
+    expect(semKey.ok).toBe(false);
+    expect(!semKey.ok && semKey.issues.join()).toContain("TIKTOK_SHOP_APP_KEY");
+
+    const completo = parseEnv({
+      ...OBRIGATORIAS,
+      TIKTOK_SHOP_APP_KEY: "app_key_123",
+      TIKTOK_SHOP_APP_SECRET: "secret_1234567890abcdef",
+    });
+
+    expect(completo.ok).toBe(true);
+  });
 });
