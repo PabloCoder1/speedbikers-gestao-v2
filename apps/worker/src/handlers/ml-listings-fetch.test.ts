@@ -500,7 +500,7 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
     await expect(fetchListings(params(fake.db, client))).rejects.toThrow(/listings anteriores/);
   });
 
-  it("projeta só os campos que `listings` usa", async () => {
+  it("preserva o envelope do bulk pedindo o item completo, sem attributes", async () => {
     const fake = fakeDb({});
     const { client, requests } = fakeClient({ scanPages: [{ results: ["MLB1"], scroll_id: null }] });
 
@@ -508,11 +508,7 @@ describe("fetchListings — enumeração pelo catálogo real (Fase 4B)", () => {
 
     const multiget = requests.find((request) => request.path === "/items/bulk");
 
-    expect(String(multiget?.searchParams?.attributes)).toContain("available_quantity");
-    // D-631: o subestado (a exclusão) e o dono do item.
-    expect(String(multiget?.searchParams?.attributes)).toContain("sub_status");
-    expect(String(multiget?.searchParams?.attributes)).toContain("seller_id");
-    expect(String(multiget?.searchParams?.attributes)).not.toContain("descriptions");
+    expect(multiget?.searchParams).toEqual({ ids: "MLB1" });
   });
 
   /*

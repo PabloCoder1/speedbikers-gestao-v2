@@ -123,43 +123,22 @@ export async function* scanSellerItems(
   }
 }
 
-const itemBodyIdentitySchema = z.object({ id: itemIdSchema });
-const itemStatusSchema = z.number().int().min(100).max(599);
-
 /**
- * Normaliza os envelopes de multiget sem inferir identidade pela posição.
- * Um sucesso pode identificar o item pelo corpo. Uma falha sem ID explícito
- * fica sem correspondência e pode ser relida pelo chamador.
+ * O bulk retorna o ID e o status de cada entrada no envelope. Mapeamos
+ * `status_code` para o código que os consumidores usam. Cada consumidor
+ * valida o corpo segundo o próprio caso de uso.
  */
 export const itemsMultigetEntrySchema = z
   .object({
-    id: itemIdSchema.optional(),
-    status_code: itemStatusSchema.optional(),
-    code: itemStatusSchema.optional(),
+    id: itemIdSchema,
+    status_code: z.number().int(),
     body: z.unknown(),
   })
-  .transform(({ id, status_code, code, body }, context) => {
-    const status = status_code ?? code;
+  .transform(({ id, status_code, body }) => ({ id, code: status_code, body }));
 
-    if (status === undefined || (status_code !== undefined && code !== undefined && status_code !== code)) {
-      context.addIssue({ code: "custom", message: "status do item ausente ou conflitante no multiget" });
+export const itemsMultigetSchema = z.array(itemsMultigetEntrySchema);
 
-      return z.NEVER;
-    }
-
-    if (id !== undefined) {
-      return { id, code: status, body };
-    }
-
-    const identity = itemBodyIdentitySchema.safeParse(body);
-
-    return status === 200 && identity.success ? { id: identity.data.id, code: status, body } : null;
-  });
-
-export const itemsMultigetSchema = z.array(itemsMultigetEntrySchema)
-  .transform((entries) => entries.filter((entry) => entry !== null));
-
-export type ItemsMultigetEntry = z.infer<typeof itemsMultigetSchema>[number];
+export type ItemsMultigetEntry = z.infer<typeof itemsMultigetEntrySchema>;
 
 export function chunkItemIds(ids: readonly string[], size = ITEMS_MULTIGET_MAX_IDS): string[][] {
   if (size < 1) {
@@ -179,8 +158,6 @@ export interface GetItemsBatchOptions {
   client: MercadoLivreClient;
   ids: readonly string[];
   accessToken: string;
-  /** Projeção de campos (`attributes=`). Omitir traz o item inteiro. */
-  attributes?: readonly string[];
 }
 
 /**
@@ -188,6 +165,10 @@ export interface GetItemsBatchOptions {
  * é erro do chamador, e a doc não diz o que a API faz nesse caso (erro 400?
  * truncamento silencioso?). Falhar aqui é melhor que descobrir depois que
  * metade do catálogo sumiu em silêncio — use `chunkItemIds`.
+ *
+ * A resposta com `attributes=body.…` omitiu o ID e o status do envelope na
+ * sondagem real de 25/11. O worker usa esses campos para identificar o
+ * anúncio e distinguir um 404 de uma leitura incompleta.
  */
 export async function getItemsBatch(options: GetItemsBatchOptions): Promise<ItemsMultigetEntry[]> {
   if (options.ids.length === 0) {
@@ -200,17 +181,11 @@ export async function getItemsBatch(options: GetItemsBatchOptions): Promise<Item
     );
   }
 
-  const attributes = options.attributes?.length
-    ? [...new Set(["id", ...options.attributes])].map((attribute) => `body.${attribute}`).join(",")
-    : undefined;
   const entries = await options.client.request({
     method: "GET",
     path: "/items/bulk",
     accessToken: options.accessToken,
-    searchParams: {
-      ids: options.ids.join(","),
-      attributes,
-    },
+    searchParams: { ids: options.ids.join(",") },
     schema: itemsMultigetSchema,
   });
 

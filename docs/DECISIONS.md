@@ -20016,7 +20016,7 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
 
 **Validação.** O teste local com envelope novo falhava no parser antigo. O corte passa os testes do cliente e do worker. Falta confirmar as leituras em produção após publicação autorizada.
 
-**Compatibilidade do envelope (25/11).** O cliente também aceita `code` e usa `body.id` para identificar sucessos sem ID no envelope. Falhas sem ID ficam sem correspondência. Os testes cobrem lotes mistos e duplicatas. A validação em produção exige uma leitura real de catálogo após o staging.
+**Sonda de produção (25/11).** No mesmo anúncio, dois GETs de `/items/bulk` responderam 200. Com `attributes=body.…`, o envelope tinha apenas `body`. Sem projeção, tinha `id`, `status_code` e `body`. O cliente de catálogo pede a resposta completa e mantém o status e o ID obrigatórios. A regressão verifica a ausência do parâmetro e a rejeição de um envelope sem esses campos.
 
 ## D-863 - "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
 

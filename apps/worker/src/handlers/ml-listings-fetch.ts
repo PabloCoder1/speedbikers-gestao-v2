@@ -56,32 +56,6 @@ import { readAllPages } from "../read-all-pages.js";
  * é a lição de D-109, onde a evidência existia e era descartada.
  */
 
-/** Campos que `listings` usa hoje; projeção reduz payload no multiget. */
-const ITEM_ATTRIBUTES = [
-  "id",
-  "title",
-  "status",
-  // D-631: o subestado diz a exclusao (`closed` + `deleted`), e o vendedor
-  // confere o dono do item na leitura por notificacao.
-  "sub_status",
-  "seller_id",
-  "price",
-  "currency_id",
-  "available_quantity",
-  "category_id",
-  // Foto e link da tela `/anuncios` (20260918150000).
-  "secure_thumbnail",
-  "thumbnail",
-  "permalink",
-  // Identificadores estáveis para o diff de foto; não usar thumbnail, que o
-  // Mercado Livre pode regenerar sem alteração editorial.
-  "pictures",
-  // D-405: a sonda das medidas declaradas (`shipping.dimensions`). Os
-  // atributos `SELLER_PACKAGE_*` ficam de fora: `attributes` traz o bloco
-  // inteiro de dezenas de atributos por item, a cada 6 h.
-  "shipping",
-] as const;
-
 /** Linha de `listings` tal como o upsert em lote a envia. */
 interface ListingUpsertRow {
   organization_id: string;
@@ -348,7 +322,6 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       client: params.mercadoLivre,
       ids: chunk,
       accessToken: params.accessToken,
-      attributes: ITEM_ATTRIBUTES,
     });
 
     const itensValidos: ParsedListingItem[] = [];
@@ -427,7 +400,6 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
           client: params.mercadoLivre,
           ids: [id],
           accessToken: params.accessToken,
-          attributes: ITEM_ATTRIBUTES,
         });
 
         if (sozinho === undefined) {
