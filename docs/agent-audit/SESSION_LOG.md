@@ -968,3 +968,4 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - Inventário em 163/226 (72,12%), 30/43. S04 e I04 contabilizam oito pontos. M05 continua em validação no #377.
 - O #397 foi composto em `2b893b9f` com check 37/37, build 10/10 e docs:check. Vercel READY em `8f39cddc`.
 - D-831, commit Gemini `0599064d`. D-832 permanece reservado. O teste de reconexão OAuth de M04 segue no #343.
+- #377 `cf6dae2d`: sonda real explicou a ausência do envelope sob projeção. Um anúncio foi processado na revisão isolada. O candidato incorpora a correção sem as etapas experimentais intermediárias.

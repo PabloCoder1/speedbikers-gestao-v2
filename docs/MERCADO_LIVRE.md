@@ -55,7 +55,7 @@ Confirmado na documentação oficial (`developers.mercadolivre.com.br`, consulta
 | Itens do vendedor (recomendado) | `GET /users/{user_id}/items/search` | `read`, "Publicação e sincronização" | `offset`/`limit` padrão 50; `search_type=scan` + `scroll_id` acima de 1000, até 100/página, scroll expira em 5 min | secao 2.3 | 2026-08-21 |
 | Itens do vendedor (legado) | `GET /sites/{site_id}/search?seller_id=...` | `read` | idem acima | secao 2.3 | 2026-08-21 — documentação indica substituição gradual pelo endpoint acima |
 | Filtro por user product | `GET /users/{seller_id}/items/search?user_product_id=MLBU1,MLBU2` | `read`, privado | — | secao 2.3 | 2026-08-20 |
-| Multiget de itens | `GET /items/bulk?ids=ID1,ID2&attributes=body.id,...` | `read` | até **20 ids** por chamada | seção 2.14 | 2026-11-19 |
+| Multiget de itens | `GET /items/bulk?ids=ID1,ID2` | `read` | até **20 ids** por chamada | seção 2.14 | 2026-11-19 |
 | Item único | `GET /items/{item_id}` | `read` | — | secao 2.3 | 2026-08-20, campos de listing (`title`/`status`/`price`/`available_quantity`/`category_id`) confirmados em 2026-08-23 (D-058) |
 | Variações de um item | `GET /items/{item_id}/variations` | `read` | — | secao 2.3 | 2026-08-21 |
 | Variação específica | `GET /items/{item_id}/variations/{variation_id}` | `read` | — | secao 2.3 | 2026-08-21 |
@@ -628,12 +628,12 @@ Defeito da própria doc: existe uma 11ª entrada de `available_orders` cujo `id`
 ### Multiget — a segunda fase
 
 ```
-GET /items/bulk?ids=A,B,C&attributes=body.id,body.title,body.status,body.price
+GET /items/bulk?ids=A,B,C
 ```
 
 - **Máximo de 20 ids por chamada.**
 - A resposta traz `id`, `status_code` e `body` por entrada. O cliente normaliza `status_code` para `code` antes de devolver ao worker.
-- Cada campo de `attributes` recebe o prefixo `body.`.
+- O cliente omite `attributes`. A sonda de 25/11 encontrou apenas `body` quando pediu `attributes=body.…`, sem a identidade e o status exigidos pelo worker.
 
 ⚠️ **`include_attributes=all` é do item singular, não está documentado no multiget.** E ele é **crítico para vinculação**: *"No caso que deseje consultar o seller custom field deverá enviar o parâmetro `include_attributes=all`"* — ou seja, o `seller_custom_field` (nossa melhor pista de SKU) pode não vir sem ele. Combinar os dois é inferência; medir.
 

@@ -159,18 +159,17 @@ describe("chunkItemIds", () => {
 });
 
 describe("getItemsBatch", () => {
-  it("chama o bulk com campos do body e preserva o código por item", async () => {
+  it("pede o envelope completo e preserva o código por item", async () => {
     const { client, calls } = fakeClient([[{ id: "MLB2", status_code: 404, body: null }, { id: "MLB1", status_code: 200, body: { id: "MLB1" } }]]);
 
     const entries = await getItemsBatch({
       client,
       ids: ["MLB1", "MLB2"],
       accessToken: "t",
-      attributes: ["id", "title"],
     });
 
     expect(calls[0]?.path).toBe("/items/bulk");
-    expect(calls[0]?.searchParams).toEqual({ ids: "MLB1,MLB2", attributes: "body.id,body.title" });
+    expect(calls[0]?.searchParams).toEqual({ ids: "MLB1,MLB2" });
     expect(entries).toEqual([
       { id: "MLB2", code: 404, body: null },
       { id: "MLB1", code: 200, body: { id: "MLB1" } },
@@ -214,5 +213,9 @@ describe("getItemsBatch", () => {
 
     expect(entries.filter((entry) => entry.code === 200)).toHaveLength(1);
     expect(entries[1]?.code).toBe(404);
+  });
+
+  it("rejeita a resposta com apenas body, sem status e identidade do envelope", () => {
+    expect(itemsMultigetSchema.safeParse([{ body: { id: "MLB1" } }]).success).toBe(false);
   });
 });

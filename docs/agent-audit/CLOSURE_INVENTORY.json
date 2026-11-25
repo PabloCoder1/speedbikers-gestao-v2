@@ -119,7 +119,7 @@
       "peso": 8,
       "status": "Em andamento",
       "responsavel": "Multicanal/Dono",
-      "evidencia": "#378 incorpora D-807 a D-810 e D-812/D-813: cliente, API de observação, renovação, contratos de jobs e projeções de pedidos, catálogo, estoque e devoluções. Faltam handlers, tabelas transacionais e validação de uma loja.",
+      "evidencia": "#378 incorpora D-807 a D-814 e telas D-822 a D-824. Faltam persistência, handlers, regressão de reconexão e teste de uma loja.",
       "fase": 3
     },
     {
@@ -129,7 +129,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Backend",
-      "evidencia": "#377. A primeira publicação foi revertida após falhas de formato no bulk. A validação do parser e a recuperação do atraso continuam pendentes.",
+      "evidencia": "#377 cf6dae2d usa bulk sem projeção. Sonda confirmou o envelope e um anúncio em produção passou na revisão a 0%. Faltam observação e reconciliação após promoção.",
       "fase": 1
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "#378 combina main d21fb902 e D-807 a D-814 do #343. A CI 45446906931 tem o primeiro batch em c1ef6afd. Faltam CI do último corte e ordem, registro oficial no Dev e prova de upgrade das quatro migrations definitivas.",
+      "evidencia": "#378 compõe #397 e Gemini até D-831. Quatro migrations do Sentinel aguardam Dev saudável para ordenação oficial e ensaio de upgrade da VM.",
       "fase": 5
     },
     {

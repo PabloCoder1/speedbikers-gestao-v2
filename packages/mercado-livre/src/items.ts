@@ -158,8 +158,6 @@ export interface GetItemsBatchOptions {
   client: MercadoLivreClient;
   ids: readonly string[];
   accessToken: string;
-  /** Projeção de campos (`attributes=`). Omitir traz o item inteiro. */
-  attributes?: readonly string[];
 }
 
 /**
@@ -167,6 +165,10 @@ export interface GetItemsBatchOptions {
  * é erro do chamador, e a doc não diz o que a API faz nesse caso (erro 400?
  * truncamento silencioso?). Falhar aqui é melhor que descobrir depois que
  * metade do catálogo sumiu em silêncio — use `chunkItemIds`.
+ *
+ * A resposta com `attributes=body.…` omitiu o ID e o status do envelope na
+ * sondagem real de 25/11. O worker usa esses campos para identificar o
+ * anúncio e distinguir um 404 de uma leitura incompleta.
  */
 export async function getItemsBatch(options: GetItemsBatchOptions): Promise<ItemsMultigetEntry[]> {
   if (options.ids.length === 0) {
@@ -183,10 +185,7 @@ export async function getItemsBatch(options: GetItemsBatchOptions): Promise<Item
     method: "GET",
     path: "/items/bulk",
     accessToken: options.accessToken,
-    searchParams: {
-      ids: options.ids.join(","),
-      attributes: options.attributes?.map((attribute) => `body.${attribute}`).join(","),
-    },
+    searchParams: { ids: options.ids.join(",") },
     schema: itemsMultigetSchema,
   });
 

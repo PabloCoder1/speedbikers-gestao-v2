@@ -20334,6 +20334,8 @@ Reprodução pré-correção em `apps/web/lib/chamar-api.test.ts` registrou 3 fa
 
 **Validação.** O teste local com envelope novo falhava no parser antigo. O corte passa os testes do cliente e do worker. Falta confirmar as leituras em produção após publicação autorizada.
 
+**Sonda de produção (25/11).** No mesmo anúncio, dois GETs de `/items/bulk` responderam 200. Com `attributes=body.…`, o envelope tinha apenas `body`. Sem projeção, tinha `id`, `status_code` e `body`. O cliente de catálogo pede a resposta completa e mantém o status e o ID obrigatórios. A regressão verifica a ausência do parâmetro e a rejeição de um envelope sem esses campos.
+
 ## D-782 - Endurecimento da API em convites (corrida 23505), webhook ML (`user_id`/`questionId`/enqueue), cotação de frete e resposta do SAC
 
 Quatro falhas confirmadas em módulos críticos de `apps/api/src`:
