@@ -20318,3 +20318,5 @@ No plano genérico da curva, a CTE `full_by_sku`, usada uma vez, é incorporada 
   - 365 dias.
 - As tabelas temporárias da comparação existiram só dentro de uma transação encerrada com `rollback`.
 - Localmente, a suíte do `@sb/db` teve as mesmas 10 falhas de baseline.
+
+**Em produção (25/11):** depois da CI verde da `main` em `628ff887` (run 45662352513, disparado à mão porque o GitHub perdeu o evento do push), a migration `20261125150000` foi aplicada na VM com `psql -1` e registrada no histórico. O corpo tem o `as materialized`, e os grants seguem `authenticated`, `postgres` e `service_role`. Como membro, a curva de 30 dias levou 346 e 440 ms, contra 1,3 a 1,6 s antes. O filtro "sem Full" de 90 dias levou 393 ms.
