@@ -151,9 +151,16 @@ function fakeDb(options: FakeOptions): {
     access_token_expires_at: new Date(NOW.getTime() + 3_600_000).toISOString(),
   };
 
-  /** A leitura do ledger: aplica o `in("movement_type", ...)` como o PostgREST. */
-  function rangeChain(): unknown {
+  /**
+   * A leitura do ledger, pela chave (D-876): aplica o `in("movement_type", ...)`,
+   * o `gt("id", ...)`, a ordem por `id` e o `limit` como o PostgREST. O `id` é a
+   * posição no ledger, com zeros à esquerda para ordenar como texto. Um `range`
+   * lança: a varredura não pode voltar ao OFFSET.
+   */
+  function keysetChain(): unknown {
     let tipos: string[] | null = null;
+    let depois: string | null = null;
+    let ordenadoPorId = false;
     const self = {
       eq: () => self,
       in: (coluna: string, valores: string[]) => {
@@ -161,13 +168,32 @@ function fakeDb(options: FakeOptions): {
 
         return self;
       },
-      order: () => self,
-      range: (from: number, to: number) => {
-        const filtradas = ledger
-          .filter((row) => tipos === null || tipos.includes(row.movement_type))
-          .map((row) => ({ source_type: "ORDER", ...row }));
+      gt: (coluna: string, valor: string) => {
+        if (coluna !== "id") throw new Error(`gt inesperado em stock_movements: ${coluna}`);
 
-        return Promise.resolve({ data: filtradas.slice(from, to + 1), error: null });
+        depois = valor;
+
+        return self;
+      },
+      order: (coluna: string) => {
+        if (coluna !== "id") throw new Error(`ordem inesperada em stock_movements: ${coluna}`);
+
+        ordenadoPorId = true;
+
+        return self;
+      },
+      range: () => {
+        throw new Error("a leitura do ledger é pela chave, não por range");
+      },
+      limit: (limite: number) => {
+        if (!ordenadoPorId) throw new Error("a leitura do ledger precisa ordenar por id");
+
+        const filtradas = ledger
+          .map((row, i) => ({ source_type: "ORDER", ...row, id: `m${String(i).padStart(6, "0")}` }))
+          .filter((row) => tipos === null || tipos.includes(row.movement_type))
+          .filter((row) => depois === null || row.id > depois);
+
+        return Promise.resolve({ data: filtradas.slice(0, limite), error: null });
       },
     };
 
@@ -251,7 +277,7 @@ function fakeDb(options: FakeOptions): {
         }
 
         if (table === "stock_movements") {
-          return rangeChain();
+          return keysetChain();
         }
 
         if (table === "orders") {

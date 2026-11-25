@@ -2284,3 +2284,17 @@ Medido em produção, como membro autenticado, com `prepare` das três versões 
 - **Causa:** o `left join` com a agregação de todo o saldo local virava laço aninhado, reagregando o saldo a cada linha da lista.
 - **Equivalência:** 12 recortes com as mesmas linhas e a mesma ordem nas três versões.
 - **Em produção (25/11):** a chamada real, como membro, levou 282 ms (antes, 1,49 a 1,54 s) e a ordem "local" 258 ms (antes, 1,61 s). A chamada inclui as facetas, por isso fica acima dos ~160 ms do `prepare`.
+
+### Consultas mais caras na VM (Claude Sentinel, D-876, 25/11/2026)
+
+Leitura do `pg_stat_statements`, acumulado desde 18/11, só leitura:
+
+| Consulta | Quem | Média | Leitura |
+|---|---|---|---|
+| `stock_movements` do ledger inteiro, por `OFFSET` | worker, `sync.order-logistics` | 295 ms por página | D-876: pela chave |
+| `fulfillment_stock_snapshots`, todo o histórico por `OFFSET` | worker, `ml-fulfillment-fetch` | 255 ms por página | Próxima fatia: última captura no SQL |
+| `get_meta_do_mes`, `get_purchase_analysis`, `get_detector_frete` | telas | 4 a 5 s | A investigar |
+| `get_faturamento`, `get_shopee_faturamento` | telas | 3 a 3,6 s | A investigar |
+
+- **Ledger por `OFFSET`:** a primeira página custou 9 ms e a última 253 ms (~135 mil buffers). Pela chave, toda página custa o mesmo que a primeira.
+- **Mais de 4 s:** as médias das telas misturam cache frio e quente. Precisam ser medidas como membro antes de qualquer conclusão.

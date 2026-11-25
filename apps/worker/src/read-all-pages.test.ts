@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { POSTGREST_MAX_ROWS, readAllPages } from "./read-all-pages.js";
+import { POSTGREST_MAX_ROWS, readAllPages, readAllPagesByKey } from "./read-all-pages.js";
 
 /**
  * Fonte que se comporta como o PostgREST real: honra `range`, mas NUNCA
@@ -98,5 +98,71 @@ describe("readAllPages", () => {
     const f = fonte(10);
 
     await expect(readAllPages(f.ler, { pageSize: 0 })).rejects.toThrow("pageSize");
+  });
+});
+
+/**
+ * Fonte pela chave: honra `gt` e `limit` como o PostgREST, e também nunca
+ * devolve mais que `max_rows` linhas.
+ */
+function fontePorChave(total: number, maxRows = POSTGREST_MAX_ROWS) {
+  const chamadas: [string | null, number][] = [];
+  const linhas = Array.from({ length: total }, (_, i) => ({ id: `k${String(i).padStart(6, "0")}` }));
+
+  return {
+    chamadas,
+    ler: (depois: string | null, limite: number) => {
+      chamadas.push([depois, limite]);
+
+      const seguintes = linhas.filter((linha) => depois === null || linha.id > depois);
+
+      return Promise.resolve({ data: seguintes.slice(0, Math.min(limite, maxRows)), error: null });
+    },
+  };
+}
+
+describe("readAllPagesByKey", () => {
+  it("traz o conjunto inteiro pedindo cada página depois da última chave", async () => {
+    const f = fontePorChave(2524);
+
+    const linhas = await readAllPagesByKey(f.ler, (linha) => linha.id);
+
+    expect(linhas).toHaveLength(2524);
+    expect(new Set(linhas.map((linha) => linha.id)).size).toBe(2524);
+    expect(f.chamadas).toEqual([
+      [null, 1000],
+      ["k000999", 1000],
+      ["k001999", 1000],
+    ]);
+  });
+
+  it("devolve as mesmas linhas, na mesma ordem, que a leitura por range", async () => {
+    const porChave = await readAllPagesByKey(fontePorChave(2524).ler, (linha) => linha.id);
+    const porRange = await readAllPages(fonte(2524).ler);
+
+    expect(porChave.map((linha) => linha.id)).toEqual(porRange.map((linha) => `k${String(linha.id).padStart(6, "0")}`));
+  });
+
+  it("faz uma requisição a mais quando o total é múltiplo exato da página", async () => {
+    const f = fontePorChave(2000);
+
+    expect(await readAllPagesByKey(f.ler, (linha) => linha.id)).toHaveLength(2000);
+    expect(f.chamadas).toHaveLength(3);
+  });
+
+  it("para alto quando a chave não avança, em vez de repetir a página para sempre", async () => {
+    const pagina = Array.from({ length: 3 }, () => ({ id: "igual" }));
+    const ler = () => Promise.resolve({ data: pagina, error: null });
+
+    await expect(readAllPagesByKey(ler, (linha) => linha.id, { pageSize: 3 })).rejects.toThrow("não avançou");
+  });
+
+  it("leva o rótulo no erro e recusa página menor que 1", async () => {
+    const falha = () => Promise.resolve({ data: null, error: { message: "boom" } });
+
+    await expect(readAllPagesByKey(falha, (linha: { id: string }) => linha.id, { label: "stock_movements" })).rejects.toThrow(
+      "stock_movements: boom",
+    );
+    await expect(readAllPagesByKey(fontePorChave(1).ler, (linha) => linha.id, { pageSize: 0 })).rejects.toThrow("pageSize");
   });
 });
