@@ -670,6 +670,19 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
   2. #404 (D-872): troca de base, CI, merge e migration `20261125140000` pela VM.
 - **Próxima etapa.** Em 26/11, conferir os negativos do UpSeller e um dia inteiro de `sync.listing.item`. Depois, medir as outras funções `language sql` com `search_path` fixo e filtros opcionais, que podem cair no mesmo plano genérico.
 
+### 25/11/2026 · Claude Sentinel: D-871 e D-872 em produção
+
+- **Publicação.** Com autorização do dono:
+  - #403 na `main` em `a8a0d7cf`, com a migration `20261125130000` pela VM;
+  - #404 retargetado para `main`, com um commit vazio para disparar a CI, e na `main` em `d3f90239`, com a migration `20261125140000` pela VM.
+  - Em cada merge, os 4 jobs obrigatórios passaram e o do Dev falhou com "project is paused". Produção tem 337 migrations. A Vercel publicou as duas webs.
+- **Conferência.**
+  - D-871: corpo novo, grants iguais, Full positivo num SKU com captura, como membro.
+  - D-872: 180 a 197 ms por chamada como membro, contra 1,7 a 2,1 s antes.
+- **Próxima etapa.**
+  1. Em 26/11, conferir os 25 negativos do UpSeller depois da reconciliação das 09:00 UTC e um dia inteiro de `sync.listing.item`.
+  2. Procurar o mesmo plano genérico em outras funções `language sql` com `search_path` fixo e filtros opcionais, comparando função e SQL por extenso.
+
 ### 25/11/2026 · Claude Sentinel: varredura do plano genérico e curva ABC (D-873)
 
 - **Base.** `main` em `873548ce`. Branch `claude/curva-abc-plano-generico`.
