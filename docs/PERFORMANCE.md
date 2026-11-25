@@ -2269,3 +2269,4 @@ Medido em produção, como membro autenticado, com o cache quente (duas chamadas
 
 - **Curva ABC:** é o plano genérico. No plano genérico forçado, o corpo antigo levou 3,1 s e o da D-873 483 ms.
 - **`/full`:** a consulta é cara mesmo escrita por extenso. Precisa de outra investigação.
+- **Em produção (25/11):** a curva ABC de 30 dias, como membro, levou 346 e 440 ms depois da D-873, contra 1,3 a 1,6 s antes.
