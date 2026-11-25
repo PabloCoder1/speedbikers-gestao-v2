@@ -20801,3 +20801,12 @@ TDD RED (`1 failed | 23 passed (24)`) -> GREEN (`24/24` em `apps/api/src/copilot
 Removidos todos os 13 pontos em que `error.message` bruto do Postgres/PostgREST era renderizado diretamente em `<EstadoDaTela detalhe={...} />` ou `detalhe:` em `apps/web/app/(app)/faturamento/multicanal.tsx` (9), `apps/web/app/(app)/faturamento/repasse-shopee.tsx` (2) e `apps/web/app/(app)/vendas/shopee/devolucoes.tsx` (2), protegidos por guarda estática em `apps/web/lib/ui-anti-leak.test.ts` (commit `2cd22da7`).
 
 TDD RED (`3 failed (3)`) -> GREEN (`3/3`). Verificação completa pós-`78e9f323`: `pnpm run check` (`37/37`, `366` arquivos / `4.637` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` sequencial provando `17/17` commits pendentes com `0` conflitos sobre `#378` (`b1950d4a`).
+
+## D-831 - Worker `ml-token.ts` e `shopee-token.ts`: `decryptToken` fail-closed (`retryable: false`) e liberação da trava
+
+Fechamos os últimos 6 pontos sem `try/catch` em torno de `decryptToken` no repositório (`apps/worker/src/handlers/ml-token.ts` e `apps/worker/src/handlers/shopee-token.ts`, commit `0599064d`), alinhando-os a `ml-accounts.ts`, `pricing-quote.ts` (`D-782`) e `tiktok-token-store.ts` (`D-810`):
+
+1. Um `access_token_ciphertext` ou `refresh_token_ciphertext` corrompido (ou cifrado com chave rotacionada) não lança mais exceção criptográfica não tratada (HTTP 500 com retentativa infinita no Cloud Tasks) nem cai no ramo `retryable: true` de `refreshAccessToken`.
+2. Quando a trava de refresh já foi adquirida, o handler solta a trava (`await release()` / `await soltar()`) e devolve `{ ok: false, retryable: false, reason }` sem vazar detalhes criptográficos e sem chamar OAuth externo.
+
+TDD RED (`2 failed | 25 passed (27)`) -> GREEN (`27/27`). Verificação completa pós-`0599064d`: `pnpm run check` (`37/37`, `366` arquivos / `4.639` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` sequencial provando `13/13` commits pendentes (`D-820..D-831`, após integração de `D-815..D-819` em `034dfe01`) com `0` conflitos sobre `#378` (`034dfe01`).

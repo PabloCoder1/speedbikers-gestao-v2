@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **729** (D-001 a D-830).
+Decisões registradas: **730** (D-001 a D-831).
 
 ## Por domínio
 
@@ -293,7 +293,7 @@ Decisões registradas: **729** (D-001 a D-830).
 - **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
 - **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
 
-### mercado-livre (148)
+### mercado-livre (149)
 
 - **D-017** — Um fato diário por anúncio + dois rollups derivados
 - **D-018** — Full é espelho do Mercado Livre, não ledger
@@ -443,6 +443,7 @@ Decisões registradas: **729** (D-001 a D-830).
 - **D-821** — API OAuth callbacks: padronização de `state`/`code` em branco no Mercado Livre e Shopee
 - **D-822** — Web `/contas`: painel Lojas TikTok Shop e conector OAuth (`M04`)
 - **D-825** — Worker `relist-prepare` e `relist-measurement`: isolamento multi-tenant e proteção de eventos de republicação
+- **D-831** — Worker `ml-token.ts` e `shopee-token.ts`: `decryptToken` fail-closed (`retryable: false`) e liberação da trava
 
 ### outros (116)
 

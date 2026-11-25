@@ -260,6 +260,8 @@ Base `d6169205` · 11/11/2026. Os IDs desta tabela são referências para retoma
 
 | A165 | P1 · CORRIGIDO localmente (`2cd22da7`, `D-830`) | `faturamento/multicanal.tsx` (9), `faturamento/repasse-shopee.tsx` (2) e `vendas/shopee/devolucoes.tsx` (2) passavam `error.message` bruto do Postgres/PostgREST diretamente para `<EstadoDaTela detalhe={...} />` no DOM (`CWE-209`) | Removidos todos os 13 vazamentos de `error.message` no DOM e adicionada guarda estática em `apps/web/lib/ui-anti-leak.test.ts`. TDD RED (`3 failed`) -> GREEN (`3/3`); check `37/37` (`366` / `4.637`), build `10/10`, 7 guardas web, audit `--prod` (exit `0`) e `git merge-tree` `17/17` limpo sobre `#378` (`b1950d4a`). [Handoff](GEMINI_HANDOFF.md) |
 
+| A166 | P1 · CORRIGIDO localmente (`0599064d`, `D-831`) | Em `apps/worker/src/handlers/ml-token.ts` e `apps/worker/src/handlers/shopee-token.ts`, todas as 6 chamadas a `decryptToken` não tratavam ciphertext corrompido ou chave rotacionada, derrubando o worker com HTTP 500 (ou classificando `refresh_token` corrompido como `retryable: true`) em loop infinito no Cloud Tasks | Adicionado `tryDecryptToken` nos 6 pontos dos dois módulos: solta a trava se adquirida e devolve `{ ok: false, retryable: false, reason }` sem chamar OAuth externo nem vazar detalhe criptográfico. TDD RED (`2 failed | 25 passed (27)`) -> GREEN (`27/27`); check `37/37` (`366` / `4.639`), build `10/10`, 7 guardas web, audit `--prod` (exit `0`) e `git merge-tree` `13/13` limpo sobre `#378` (`034dfe01`). [Handoff](GEMINI_HANDOFF.md) |
+
 ## Referências externas
 
 - A01 · [Restabelecer faturamento em um projeto Google Cloud](https://docs.cloud.google.com/billing/docs/how-to/modify-project#enable-billing).
