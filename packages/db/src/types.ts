@@ -6568,6 +6568,10 @@ export type Database = {
         }
         Relationships: []
       }
+      notification_archive_visible: {
+        Row: Database["public"]["Views"]["notification_history"]["Row"]
+        Relationships: []
+      }
       notification_history: {
         Row: {
           // Os joins internos garantem os campos obrigatórios da entrega e do evento.

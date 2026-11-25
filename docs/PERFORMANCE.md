@@ -2281,3 +2281,9 @@ PostgreSQL local com RLS, 54 mil vínculos sintéticos, três execuções por co
 | Primeira página, cerca de 27 mil registros recentes no arquivo | 1,5–1,8 ms para o ramo ativo | 72–118 ms para os dois ramos |
 
 A primeira versão, com ordenação sobre a view unificada, levou 486–536 ms na primeira página com arquivo vazio. A RPC de D-885 limita cada ramo antes da união e planeja com os filtros da chamada. O ensaio com arquivo preenchido moveu vínculos sintéticos dentro de uma transação revertida. A distribuição real deverá ser medida antes de mover dados operacionais.
+
+### Índice temporal para as primeiras páginas do histórico (D-886, 25/11/2026)
+
+A massa sintética continha 54 mil vínculos e cerca de 27 mil registros arquivados. A primeira prototipagem comparou, na mesma transação, 54–63 ms da consulta de D-885 e 1,8–2,2 ms da consulta indexada na primeira página sem filtros. O índice `notification_archive_recipients_timeline_idx` apareceu no plano. O recorte combinado de família e severidade ficou mais caro no protótipo, então a função final conserva o plano original com filtros e deslocamentos acima de 1.000.
+
+A versão final retornou exatamente as mesmas linhas em dez recortes. Na repetição sob carga simultânea do build, a primeira página sem filtros ficou em 155–185 ms com D-885 e 5–13 ms com D-886. O teste eliminou seus dados sintéticos por rollback.

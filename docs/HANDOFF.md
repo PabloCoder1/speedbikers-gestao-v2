@@ -199,7 +199,7 @@ Nada disto pode ser feito por um agente.
 
 ## Próximos passos
 
-- **D04.** A Central de Notificações tem leitura local do histórico ativo e arquivado (D-885, migration `20261125160000`). A aprovação da política de retenção e a estratégia de `sync_runs` seguem abertas. A migration precisa chegar ao banco antes da publicação da web. [Decisão](DECISIONS.md#d-885---a-central-pagina-o-histórico-ativo-e-arquivado)
+- **D04.** A Central lê o histórico ativo e arquivado (D-885). D-886 mede e ajusta a primeira página no arquivo (migration `20261125170000`). A aprovação da política de retenção e a estratégia de `sync_runs` seguem abertas. A migration precisa chegar ao banco antes da publicação da web. [Decisão](DECISIONS.md#d-885---a-central-pagina-o-histórico-ativo-e-arquivado)
 
 - **Sentinel.** Candidato #364 em `32bfc540`, com quatro jobs de CI verdes. A publicação e o ensaio em Dev seguem pendentes. Gemini conserva M04 e D-832 a D-837 (#401). [Plano](agent-audit/PLAN.md)
 

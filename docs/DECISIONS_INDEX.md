@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **653** (D-001 a D-885).
+Decisões registradas: **654** (D-001 a D-886).
 
 ## Por domínio
 
@@ -81,7 +81,7 @@ Decisões registradas: **653** (D-001 a D-885).
 - **D-663** — Retomada da confirmação do SAC após recarregar
 - **D-664** — Cartão de Perguntas lê a primeira mensagem recebida
 
-### banco/rls (47)
+### banco/rls (48)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -130,6 +130,7 @@ Decisões registradas: **653** (D-001 a D-885).
 - **D-487** — O Ads CPC da loja na margem de contribuicao da Shopee, calculado no SQL
 - **D-625** — A dispersao de preco do mesmo SKU na lista de /anuncios (C-77): a regua do diagnostico do SKU, no SQL
 - **D-766** — Saída Manual e itens editáveis na conferência, sem migration
+- **D-886** — O histórico arquivado usa a ordem do índice nas primeiras páginas
 
 ### estoque (59)
 
