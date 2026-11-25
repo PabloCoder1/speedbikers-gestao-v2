@@ -697,3 +697,22 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
   - Decisão do dono: "sem Full" na curva ABC quando não há captura nenhuma (padrão da D-870).
   - Investigar `get_fulfillment_overview`.
   - Em 26/11, conferir UpSeller e `sync.listing.item`.
+
+### 25/11/2026 · Claude Sentinel: publicação da D-873, I06, L03 e L04
+
+- **D-873.** Merge do #406 autorizado pelo dono. A `main` está em `628ff887`.
+  - O GitHub teve incidente nesse horário, perdeu o evento do push e o PR segue aberto.
+  - A CI foi disparada à mão (`workflow_dispatch`, run 45662352513).
+  - A migration `20261125150000` vai para a VM depois da CI verde.
+- **I06.** Detalhes em `docs/agent-audit/CLOUD_COST_AND_RETENTION.md`, só com leituras, e complementa o #408 do Gemini (D-836).
+  - VM e Cloud Run adequados, com as medições no documento.
+  - O Postgres está com parâmetros de fábrica (`shared_buffers` e `effective_cache_size` de 128 MB).
+  - Custo estimado de tabela: ~R$ 740 por mês na parte fixa.
+  - O bucket de backups tem versionamento sem regra para versões antigas.
+  - O orçamento "Dev" cobre a conta inteira.
+- **S05.** O `editor` saiu da conta padrão às 13:23 UTC, mas nem ela nem o `v3-builder` têm hoje permissão no repositório de imagens. O próximo deploy de `api` ou `worker` deve falhar até o dono conceder os papéis ao `v3-builder`.
+- **L04 e L03.** Novas linhas em `CLEANUP_CANDIDATES.md`.
+  - 15 PRs do Codex já estão contidos no #378.
+  - 13 PRs de telas de setembro e outubro esperam decisão do dono.
+- **Testes.** Só `pnpm docs:check`; não houve mudança de código.
+- **Próxima etapa.** Aplicar e conferir a D-873 na VM. Em 26/11, conferir UpSeller e `sync.listing.item`.
