@@ -2292,9 +2292,22 @@ Leitura do `pg_stat_statements`, acumulado desde 18/11, só leitura:
 | Consulta | Quem | Média | Leitura |
 |---|---|---|---|
 | `stock_movements` do ledger inteiro, por `OFFSET` | worker, `sync.order-logistics` | 295 ms por página | D-876: pela chave |
-| `fulfillment_stock_snapshots`, todo o histórico por `OFFSET` | worker, `ml-fulfillment-fetch` | 255 ms por página | Próxima fatia: última captura no SQL |
-| `get_meta_do_mes`, `get_purchase_analysis`, `get_detector_frete` | telas | 4 a 5 s | A investigar |
-| `get_faturamento`, `get_shopee_faturamento` | telas | 3 a 3,6 s | A investigar |
+| `fulfillment_stock_snapshots`, todo o histórico por `OFFSET` | worker, `ml-fulfillment-fetch` | 255 ms por página | Já resolvido pela D-776 na imagem de produção. As chamadas são de antes do deploy |
+| `get_purchase_analysis` | `/reposicao`, pedido novo | 4,7 s | D-877 |
+| `get_meta_do_mes`, `get_detector_frete`, `get_faturamento` | Central | 3,6 a 4,8 s | Medidas como membro, com cache quente: 0,7 a 0,95 s, 0,9 a 1,1 s e 0,5 a 0,65 s. A média alta vem de cache frio e de chamadas simultâneas |
 
 - **Ledger por `OFFSET`:** a primeira página custou 9 ms e a última 253 ms (~135 mil buffers). Pela chave, toda página custa o mesmo que a primeira.
 - **Mais de 4 s:** as médias das telas misturam cache frio e quente. Precisam ser medidas como membro antes de qualquer conclusão.
+
+### Análise de compra: ruptura por soma acumulada (Claude Sentinel, D-877, 25/11/2026)
+
+Em produção, como membro, com o corpo antigo e o novo lado a lado:
+- 50 SKUs sem sugestão: de 3,16 s para 0,31 s;
+- com sugestão: de 3,81 s para 1,17 s;
+- `p_date_to` há 20 dias: de 7,36 s para 1,59 s;
+- 500 SKUs: de 2,70 s para 0,61 s.
+
+Em seis recortes, o hash do JSON foi igual.
+
+- **Causa:** a subconsulta correlacionada por (SKU, dia) relia os movimentos do SKU 30 vezes.
+- **O que sobra:** ~300 ms, a maior parte na 1ª venda da Shopee.
