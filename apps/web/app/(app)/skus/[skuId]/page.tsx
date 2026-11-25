@@ -162,7 +162,7 @@ function StockBoxes({
     local_quantity: number;
     reservado_quantity: number;
     transito_quantity: number;
-    full_quantity: number;
+    full_quantity: number | null;
   };
 }): ReactNode {
   return (
@@ -658,7 +658,15 @@ export default async function SkuDashboardPage({
     needsSales ? contarLojasShopee(supabase) : Promise.resolve(null),
   ]);
 
-  const dashboard = dashboardResult.data;
+  /*
+    O tipo gerado diz `number`, mas o Full vem nulo quando a organização não
+    tem nenhuma captura do Full nos 3 dias da janela (D-871): "0" afirmaria
+    que não há nada no Full quando o sistema não sabe. As caixas mostram "—".
+  */
+  const dashboard =
+    dashboardResult.data === null
+      ? null
+      : { ...dashboardResult.data, full_quantity: dashboardResult.data.full_quantity as number | null };
   const listings: AnuncioDoSku[] = ((listingsResult.data ?? []) as LinhaDeAnuncio[]).map(lerAnuncio);
   const contasParaVinculo = contasResult.data ?? [];
   // Ausente (banco anterior a D-429) não é erro nem "nenhum": a tela diz que a
@@ -701,7 +709,8 @@ export default async function SkuDashboardPage({
             local: dashboard.local_quantity,
             reservado: dashboard.reservado_quantity,
             transito: dashboard.transito_quantity,
-            full: dashboard.full_quantity,
+            // A mesma conta de /reposicao, que soma o Full ausente como 0 (D-314, D-871).
+            full: dashboard.full_quantity ?? 0,
             virtual: sku.data.stock_is_virtual,
           },
     acoesAbertas: ((acoesAbertasResult.data ?? []) as {
@@ -794,7 +803,8 @@ export default async function SkuDashboardPage({
           ? null
           : {
               local: dashboard.local_quantity,
-              full: dashboard.full_quantity,
+              // A mesma conta de /reposicao, que soma o Full ausente como 0 (D-314, D-871).
+              full: dashboard.full_quantity ?? 0,
               transito: dashboard.transito_quantity,
               reservado: dashboard.reservado_quantity,
               stockIsVirtual: coverage.stock_is_virtual,
