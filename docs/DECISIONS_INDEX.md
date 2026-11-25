@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **643** (D-001 a D-863).
+Decisões registradas: **649** (D-001 a D-869).
 
 ## Por domínio
 
@@ -189,7 +189,7 @@ Decisões registradas: **643** (D-001 a D-863).
 - **D-792** — Receber o pedido de compra dá entrada no estoque, e a conferência da invoice cria o SKU que falta
 - **D-862** — O kit que leva um componente fora do catálogo conta no aviso da Central
 
-### interface (75)
+### interface (76)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -266,6 +266,7 @@ Decisões registradas: **643** (D-001 a D-863).
 - **D-673** — Séries diárias encerram na primeira página quando a contagem confirma o total
 - **D-685** — Perguntas reconhece página fora do recorte e reutiliza a leitura de contas
 - **D-711** — Os atalhos da Visão geral abrem outras abas ao clicar
+- **D-869** — Lançar custo no pedido de compra é idempotente pela requisição
 
 ### mercado-livre (129)
 
@@ -399,7 +400,7 @@ Decisões registradas: **643** (D-001 a D-863).
 - **D-791** — O cliente usa o endpoint bulk de anúncios do Mercado Livre
 - **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
-### outros (96)
+### outros (100)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -497,12 +498,16 @@ Decisões registradas: **643** (D-001 a D-863).
 - **D-762** — A previsão de chegada se edita com histórico
 - **D-767** — A invoice do fornecedor entra pela mesma importação, lida como lista, com preço e documento guardados
 - **D-860** — O produto que sai da planilha de produtos do UpSeller fica fora do catálogo, nunca apagado
+- **D-864** — O formulário de pedido de compra sobrevive à Server Action que não responde
+- **D-865** — O detalhe do pedido de compra sobrevive à Server Action que não responde
+- **D-866** — "Já fiz o pedido" e o cadastro de fornecedor sobrevivem à Server Action que não responde
+- **D-868** — Produção avisa por e-mail quando o disco da VM enche ou quando api, web ou auth saem do ar
 
 ### processo/docs (1)
 
 - **D-214** — O ROADMAP passou do budget porque 62% dele era narrativa de item pronto
 
-### vendas/métricas (72)
+### vendas/métricas (73)
 
 - **D-023** — Catálogo de métricas normativo
 - **D-033** — Tela âncora: Dashboard de vendas Geral e por Conta
@@ -576,6 +581,7 @@ Decisões registradas: **643** (D-001 a D-863).
 - **D-764** — Importar pedidos anteriores de planilha, em etapas, sem vínculo nem situação automáticos
 - **D-858** — Venda abaixo da margem mínima avisa no sino e por e-mail, com meta maior para as marcas importadas
 - **D-859** — O alerta de venda abaixo da margem sai duas vezes por dia, às 8h e às 17h
+- **D-867** — A importação de pedidos anteriores sobrevive à Server Action que não responde
 
 ### worker/infra (106)
 

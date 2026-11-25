@@ -103,6 +103,10 @@ function describeRpcError(error: { message: string } | null): string | null {
     return "Adicione ao menos um item antes de salvar.";
   }
 
+  if (error.message.includes("ja lancou um custo com outros dados")) {
+    return "Este lançamento já foi registrado com outros dados. Confira a lista de custos antes de lançar de novo.";
+  }
+
   if (error.message.includes("alterado por outra pessoa")) {
     return "Outra pessoa salvou este rascunho enquanto você editava. Recarregue para ver a versão atual antes de salvar.";
   }
@@ -353,6 +357,8 @@ export interface PurchaseOrderCostInput {
   currency: string;
   exchangeRate: number | null;
   status: "ESTIMADO" | "REALIZADO";
+  /** Só na inclusão (D-869): a mesma requisição devolve o custo já lançado. */
+  requestId?: string | null;
 }
 
 /** D-725: inclui ou edita um custo adicional do pedido (frete, seguro, tributos...). */
@@ -367,6 +373,7 @@ export async function upsertPurchaseOrderCost(purchaseOrderId: string, input: Pu
     p_status: input.status,
     ...omit("p_id", input.id),
     ...omit("p_description", input.description),
+    ...omit("p_request_id", input.requestId ?? null),
     ...(input.exchangeRate === null ? {} : { p_exchange_rate: input.exchangeRate }),
   });
 

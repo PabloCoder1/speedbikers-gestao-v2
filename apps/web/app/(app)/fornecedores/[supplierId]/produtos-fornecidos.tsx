@@ -114,17 +114,28 @@ export function ProdutosFornecidos({
     setBusy(true);
     setErro(null);
 
-    const r = await salvarProdutoFornecido(supplierId, {
-      skuId: sku.id,
-      supplierCode: codigo.trim() === "" ? null : codigo.trim(),
-      unitCost: valores[0] ?? null,
-      currency: moeda.trim().toUpperCase() || "BRL",
-      minimumOrderQuantity: valores[1] ?? null,
-      packMultiple: valores[2] ?? null,
-      leadTimeDays: valores[3] ?? null,
-      isPreferred: preferido,
-      notes: null,
-    });
+    let r: Awaited<ReturnType<typeof salvarProdutoFornecido>>;
+
+    try {
+      r = await salvarProdutoFornecido(supplierId, {
+        skuId: sku.id,
+        supplierCode: codigo.trim() === "" ? null : codigo.trim(),
+        unitCost: valores[0] ?? null,
+        currency: moeda.trim().toUpperCase() || "BRL",
+        minimumOrderQuantity: valores[1] ?? null,
+        packMultiple: valores[2] ?? null,
+        leadTimeDays: valores[3] ?? null,
+        isPreferred: preferido,
+        notes: null,
+      });
+    } catch {
+      // FALHA DE TRANSPORTE (D-866): `upsert_supplier_sku` grava por fornecedor
+      // e SKU, então repetir só regrava a mesma linha. Os campos ficam.
+      setErro("Não foi possível confirmar se o produto foi salvo. Tente de novo.");
+      setBusy(false);
+
+      return;
+    }
 
     setBusy(false);
 

@@ -3188,6 +3188,7 @@ export type Database = {
           kind: string
           organization_id: string
           purchase_order_id: string
+          request_id: string | null
           status: string
           updated_at: string
         }
@@ -3202,6 +3203,7 @@ export type Database = {
           kind: string
           organization_id: string
           purchase_order_id: string
+          request_id?: string | null
           status?: string
           updated_at?: string
         }
@@ -3216,6 +3218,7 @@ export type Database = {
           kind?: string
           organization_id?: string
           purchase_order_id?: string
+          request_id?: string | null
           status?: string
           updated_at?: string
         }
@@ -10130,6 +10133,7 @@ export type Database = {
           p_id?: string
           p_kind: string
           p_purchase_order_id: string
+          p_request_id?: string
           p_status?: string
         }
         Returns: {
@@ -10143,6 +10147,7 @@ export type Database = {
           kind: string
           organization_id: string
           purchase_order_id: string
+          request_id: string | null
           status: string
           updated_at: string
         }

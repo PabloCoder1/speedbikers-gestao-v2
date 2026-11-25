@@ -14,7 +14,7 @@
 |---|---|
 | **Atualizado em** | 2026-11-24 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | `origin/main` em `d21fb902` (#389). #377 preserva D-859 a D-863 e exige CI da composição. |
+| **HEAD conhecido** | `origin/main` em `2443e5c7` (#398). #377 conserva o worker de catálogo e a base atual. |
 | **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
 | **Deploy Dev** | Supabase Dev inativo. Rotinas pausadas (D-350). |
 | **Supabase** | Hosted Dev `nmgccyqquwxecqffsidr` e antigo prod `imvjfgnaprqsfjlnsyev`: INACTIVE (MCP, 18/11). Produção operacional na VM `sb-db` (`speedbikers-prod`), conferida via IAP/SSH em READ ONLY e web autenticada. [VM](../infra/vm/README.md). |
@@ -37,7 +37,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## P0 ativos
 
-- **Catálogo ML (D-791).** #377 reúne #368 e #376. A primeira publicação foi revertida. A correção do envelope aguarda validar um processamento real antes de nova promoção. [Baseline](PERFORMANCE.md#referência-de-produção-para-m05-24112026).
+- **Catálogo ML (D-791).** #377 reúne #368 e #376. O worker com a resposta completa do bulk está em produção. Acompanhar a reconciliação e os erros do Mercado Livre. [Baseline](PERFORMANCE.md#referência-de-produção-para-m05-24112026).
 - **Workflow de banco.** Dev e antigo hosted estão inativos. O pipeline da VM aguarda reconciliação. [Roteiro](../infra/vm/README.md).
 - **Avisos críticos do Next.js.** A branch local atualiza Next.js e Zod e passa a auditoria no corte alto. A publicação segue o fluxo da `main` e os deploys da API e do worker. [Achados](agent-audit/FINDINGS.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
 
@@ -193,7 +193,8 @@ Nada disto pode ser feito por um agente.
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
 13. **Alerta de margem (D-858, D-859):** no ar desde 24/11, com o Scheduler e os e-mails cadastrados.
-14. **Esqueci a senha (D-863):** SMTP real no Auth da VM (hoje `supabase-mail`, de teste) e `RECUPERACAO_SENHA_POR_EMAIL=1` na Vercel; passos na D-863.
+14. ~~Esqueci a senha (D-863) e monitoramento de produção (D-868)~~: ligados em 24/11.
+15. ~~**D-869:** migration `20261124140000` em produção~~: aplicada em 24/11; falta a tela (#397).
 
 ---
 

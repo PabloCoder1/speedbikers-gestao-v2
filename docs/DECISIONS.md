@@ -20056,3 +20056,171 @@ Gravar é por referência (`commit_purchase_import_group`): exige quantidade con
   - o 429 mostra o limite;
   - o link de recuperação da Admin API leva a "Crie uma nova senha", a senha nova entra e a antiga é recusada.
 - O e-mail de verdade não é testado, porque o Supabase local não tem capturador ligado (`[local_smtp]`). O envio real é o passo 3 do dono.
+
+**Em produção (24/11):** o dono fez os quatro passos. O Auth da VM usa o mesmo Gmail do alerta de margem, pela porta 465 com senha de app. O remetente é a própria conta, porque o Gmail não aceita outro endereço no `From`, e o nome é `Speed Bikers Gestão`. O `.env` anterior ficou guardado na VM como `.env.antes-smtp-20261124`. Na publicação seguinte, o `/login` de produção passou a mostrar "Esqueci a senha". O dono pediu a recuperação, recebeu o e-mail e trocou a senha.
+
+## D-864 - O formulário de pedido de compra sobrevive à Server Action que não responde
+
+**Contexto:** em `/compras/novo` e `/compras/[id]/editar`, o `submit()` chamava `createPurchaseOrder` e `updatePurchaseOrderDraft` sem `try`. Se a Server Action falhava no transporte (rede caída, servidor reiniciando, resposta perdida), a promessa rejeitava, `setBusy(false)` nunca rodava e o botão ficava em "Salvando…" para sempre, sem aviso. A única saída era recarregar a tela, e o rascunho digitado se perdia. Na varredura de falha de transporte do PLAN, este era o arquivo de compras que faltava.
+
+**Decisão:**
+
+- **A falha de transporte libera o formulário, com o que foi digitado.** As duas chamadas ficam num `try`. No `catch` a tela mostra um aviso, devolve o botão e não apaga nada.
+- **Cada ação tem a sua mensagem, porque a nova tentativa se comporta de jeitos diferentes.**
+  - **Criar:** "Não foi possível confirmar a criação do pedido. Tente de novo: se ele já tiver sido criado, o mesmo pedido é aberto, sem duplicar." A criação é idempotente pelo `requestId` (D-722), e o formulário manda o mesmo `requestId` na nova tentativa. Se a primeira chegou ao banco, a repetição abre esse pedido.
+  - **Salvar a edição:** "Não foi possível confirmar se as alterações foram salvas. Abra o pedido para conferir antes de salvar de novo." A edição confere o `updated_at` lido (D-722). Se a primeira tentativa gravou, a repetição é recusada como alteração no meio, então o texto manda conferir antes.
+- **Sem migration e sem mudança de contrato.** As RPCs e as Server Actions ficam como estão.
+
+**Alternativas rejeitadas:**
+- Mensagem genérica única: na edição, ela faria a pessoa repetir e receber a recusa de alteração no meio sem entender por quê.
+- Tentar de novo automaticamente: na edição, a repetição seria recusada se a primeira tivesse gravado, e a tela não tem como saber.
+
+**Verificação (`pedido-compra.spec.ts`, stack local isolada, depois de `db reset` e seed):**
+- Novo pedido: o servidor recebe o POST e a resposta é cortada antes de chegar à tela. O aviso aparece, o botão volta, o código digitado continua, e existe exatamente 1 pedido. A nova tentativa abre esse pedido, e continua existindo só 1.
+- Edição: o POST é bloqueado antes do servidor. O aviso aparece, o botão volta, e a nova tentativa grava a quantidade nova.
+- Vermelho/verde: sem o `try`, os 2 testes falham esperando o aviso. Com o `try`, a spec inteira passa (6 testes).
+- Os itens dos testes novos têm custo: um pedido sem custo entraria na contagem "1 de 1 sem custo" que `compras.spec.ts` afirma. As specs de compras, reposição e fornecedores passam juntas (31 testes).
+
+## D-865 - O detalhe do pedido de compra sobrevive à Server Action que não responde
+
+**Contexto:** a varredura das Server Actions sem `try` nas telas de compras (24/11), feita na `main` e no candidato #378, achou o detalhe `/compras/[id]` inteiro desprotegido. São sete chamadas: as quatro transições do painel (aprovar, marcar como enviado, receber tudo, cancelar), o recebimento parcial, a etapa logística, lançar e excluir custo, previsão e referência. Quando a ação não respondia, o botão ficava em "Registrando…" ou "Salvando…" para sempre. Nas duas chamadas com `.then` sem tratamento de erro (etapa e excluir custo), a rejeição escapava sem aviso nenhum. A saída era recarregar a tela e perder o que tinha sido digitado. Na mesma tela, o texto do recebimento parcial ainda dizia que "receber aqui não soma estoque local", o que deixou de ser verdade com a D-792.
+
+**Decisão:**
+
+- **Toda falha de transporte vira aviso, botão liberado e campos preservados.** Onde a repetição pode não ser inofensiva, a tela também relê o pedido, para a pessoa ver se a primeira tentativa chegou.
+- **O texto de cada aviso segue o que a nova tentativa faz no banco:**
+  - **Transições do painel:** as quatro RPCs conferem o status. Se a primeira gravou, a repetição é recusada ("não está em trânsito"), sem receber nem cancelar duas vezes. O aviso manda conferir a situação do pedido.
+  - **Recebimento parcial:** idempotente pelo `requestId` (D-724), que só muda depois de um sucesso. A repetição é reconhecida e não dá entrada duas vezes no estoque.
+  - **Lançar custo NÃO é idempotente.** `upsert_purchase_order_cost` com `id: null` cria uma linha nova, e repetir depois de uma resposta perdida lança o custo duas vezes, inflando o custo de chegada e a margem. O aviso diz isso, e a releitura mostra o custo já gravado.
+  - **Etapa e previsão:** repetir grava o mesmo valor de novo. A previsão pode ganhar um segundo registro no histórico, sem efeito no número.
+  - **Referência externa:** só grava quando o pedido ainda não tem uma, então a repetição seria recusada. O aviso manda conferir.
+  - **Excluir custo:** o aviso manda conferir a lista antes de excluir de novo.
+- **O recebimento parcial passa a dizer a verdade:** a quantidade sai do trânsito e entra no estoque local, e a conciliação com o UpSeller continua acertando o saldo pelo ERP (D-792, D-029).
+- **Sem migration e sem mudança de contrato.**
+
+**Alternativas rejeitadas:**
+- Tornar o custo idempotente com `requestId` agora: exige migration e mudança da RPC, e a publicação no banco da VM depende do dono. Fica registrado como próximo passo possível. O aviso e a releitura já impedem a duplicação às cegas.
+- Repetir sozinho depois da falha: no custo, duplicaria. Nas transições, a repetição recusada mostraria um erro sem contexto.
+
+**Verificação (`pedido-compra.spec.ts`, stack local isolada, `db reset` e seed):**
+- Quatro testes novos, com itens em texto livre para não mexer no saldo do SKU do seed:
+  - aprovar com o POST bloqueado: aviso, botão liberado, e a nova tentativa aprova;
+  - recebimento parcial com a resposta cortada depois de o servidor gravar: aviso, quantidade preservada, `quantity_received` igual a 2. Na nova tentativa continua 2, com um único evento de recebimento;
+  - custo com a resposta cortada: aviso, botão liberado, um custo só no banco, e a releitura mostra o valor na lista;
+  - previsão com o POST bloqueado: aviso, data preservada, e a nova tentativa salva.
+- Vermelho/verde: com os três componentes da `main`, os 4 testes falham esperando o aviso. Com a correção, as specs de compras, estoque, fornecedores e reposição passam juntas (38 testes).
+
+## D-866 - "Já fiz o pedido" e o cadastro de fornecedor sobrevivem à Server Action que não responde
+
+**Contexto:** a mesma varredura da D-865 achou mais cinco chamadas sem `try` em reposição e fornecedores:
+- **"Já fiz o pedido"** (`ja-fiz-pedido.tsx`): registrar, vincular a referência e acrescentar ao pedido externo. O diálogo não fecha enquanto grava (`useDialogo(..., !gravando)`), e a falha de transporte deixava `gravando` ligado. A tela inteira ficava presa sob o diálogo até recarregar.
+- **Cadastro e edição do fornecedor** (`supplier-form.tsx`): a chamada roda dentro de `startTransition`, e a rejeição ia para a fronteira de erro. O formulário era trocado pela tela de erro, com tudo o que foi digitado.
+- **Produto do fornecedor** (`produtos-fornecidos.tsx`): o botão ficava preso.
+
+**Decisão:**
+
+- **Toda falha de transporte vira aviso, botão liberado e campos preservados**, e o diálogo volta a fechar.
+- **O texto segue o que a repetição faz no banco:**
+  - **Registrar e acrescentar** levam o mesmo `requestId` (D-761): a repetição devolve o mesmo pedido ou o mesmo acréscimo, e o aviso diz que pode tentar de novo.
+  - **Vincular a referência** é recusado se ela já foi gravada. O aviso manda abrir o pedido e conferir.
+  - **Fornecedor novo:** o nome é único por empresa (`suppliers_org_name_unique`). Se a primeira tentativa gravou, repetir é recusado como nome repetido, então o aviso manda conferir a lista. Na edição, `update_supplier` regrava os mesmos valores.
+  - **Produto do fornecedor:** `upsert_supplier_sku` grava por fornecedor e SKU, e repetir regrava a mesma linha.
+- **Sem migration e sem mudança de contrato.**
+
+**Verificação (`reposicao-fornecedor-transporte.spec.ts`, stack local isolada, `db reset` e seed):**
+- "Já fiz o pedido" com o POST bloqueado: aviso, "Registrar pedido" liberado, quantidade preservada, e "Cancelar" fecha o diálogo.
+- Fornecedor novo com o POST bloqueado: aviso, botão liberado, nome preservado e nenhum fornecedor gravado.
+- O POST é bloqueado antes do servidor, então nada é gravado e a sugestão do SKU do seed fica intacta para as outras specs. A repetição segura de registrar já é provada por `pedido-ja-feito.spec.ts`.
+- Vermelho/verde: com os componentes da `main`, os 2 testes falham esperando o aviso.
+- **Não exercitado em e2e:** vincular referência, acrescentar ao pedido externo e o produto do fornecedor. Os três recebem o mesmo `try`, conferido por leitura e pelo typecheck.
+
+## D-867 - A importação de pedidos anteriores sobrevive à Server Action que não responde
+
+**Contexto:** o último ponto da varredura da D-865 nas frentes de compras é a importação de planilha (`/compras/importar`), com seis chamadas sem `try`. São o envio da planilha e, na conferência, corrigir a linha, buscar SKU, criar o SKU da linha, criar os SKUs do lote e registrar a referência. Quando a ação não respondia, o botão ficava em "Enviando…" ou "Criando…" para sempre. No envio, recarregar perdia a planilha já lida no navegador. A busca de SKU deixava a rejeição escapar sem aviso.
+
+**Decisão:**
+
+- **Toda falha de transporte vira aviso, botão liberado e campos preservados.**
+- **As seis ações aceitam a repetição, e o aviso diz isso:**
+  - **Envio:** `create_purchase_import_batch` reconhece o arquivo pelo SHA-256 (com trava por empresa e arquivo). Se a primeira tentativa criou o lote, a repetição abre esse lote ("existente"), sem duplicar as linhas.
+  - **Corrigir linha:** regrava os mesmos campos.
+  - **Criar SKU (da linha ou do lote):** o código que já existe só é vinculado (D-792), então a repetição não cria um segundo SKU.
+  - **Registrar a referência:** `commit_purchase_import_group` usa um `requestId` fixo por lote e referência, e as linhas registradas saem do grupo. A repetição volta "nada novo a registrar", nunca um segundo pedido. A tela também relê o lote.
+  - **Buscar SKU:** é só leitura; o aviso pede para buscar de novo.
+- **Sem migration e sem mudança de contrato.**
+
+**Verificação (`importacao-transporte.spec.ts`, stack local isolada, `db reset` e seed):**
+- A planilha tem só um código novo, fora do catálogo: nenhum pedido é registrado, e o saldo e a sugestão do SKU do seed não mudam.
+- Envio com a resposta cortada depois de o servidor gravar: aviso e botão liberado. A nova tentativa abre o mesmo lote, com `?existente=1` e o aviso "Este arquivo já tinha sido importado". A chave de serviço não lê `purchase_import_rows` (sem GRANT, de propósito), então a prova é a da tela.
+- Criar os SKUs do lote com a resposta cortada: aviso e botão liberado. A nova tentativa só vincula, e existe um SKU só com aquele código.
+- Vermelho/verde: com os componentes da `main`, o teste falha esperando o aviso do envio. Com a correção, as 13 specs de importação, compras, estoque, fornecedores e reposição rodaram juntas: 48 passaram, e este teste falhou só na leitura direta de `purchase_import_rows` (42501), trocada pelo aviso da tela. Ele passou na rodada seguinte, na mesma base.
+- **Não exercitado em e2e:** corrigir linha, buscar SKU, criar o SKU de uma linha e registrar a referência. Recebem o mesmo `try`, conferido por leitura, lint e typecheck. A repetição segura do registro é a do banco, já provada por `importar-pedidos-anteriores.spec.ts` ("não duplicar").
+
+## D-868 - Produção avisa por e-mail quando o disco da VM enche ou quando api, web ou auth saem do ar
+
+**Contexto:** o I04 do fechamento pedia vigilância externa da produção. Até 24/11, o Cloud Monitoring do `speedbikers-prod` tinha só o alerta da sondagem do backup diário (`sb-backup-check`) e nenhuma verificação de disponibilidade. Um disco cheio na VM `sb-db` derruba o Postgres. A api, a web e o Auth podem cair sem que ninguém fique sabendo antes de um usuário reclamar.
+
+**Decisão:** o dono autorizou em 24/11, e os recursos foram criados pela API do Monitoring. Tudo avisa no mesmo canal de e-mail do alerta de backup.
+
+- **Disco da `sb-db`.** A política dispara quando `agent.googleapis.com/disk/percent_used` (`state=used`) do `/dev/sda1` fica acima de 85% por 10 minutos, no máximo por minuto.
+  - O JSON saiu do gerador do Codex (`infra/vm/disk-alert-policy.mjs`, na `codex/sentinel-infra-vm-integrada`), sem nenhuma edição.
+  - `/dev/sda1` é o disco do sistema e dos dados; `/dev/sda15` é a partição de boot. Na criação, o `/dev/sda1` estava em 30%.
+  - Se o agente parar de publicar a métrica, o alerta não dispara (`NO_OP`). Essa falha aparece em outros sinais: a sondagem do backup e a verificação do auth.
+- **Três verificações de disponibilidade**, a cada 5 minutos, com 10 s de limite, por HTTPS com certificado validado:
+
+  | Verificação | Endereço | Resposta saudável |
+  |---|---|---|
+  | api | Cloud Run `api`, `/health` | 200 |
+  | web | `speedbikers-prod.vercel.app/login` | 200 |
+  | auth | Caddy da VM, `/auth/v1/health` | **401** |
+
+  - O auth responde 401 porque o Kong pede a chave. O 401 prova que o Caddy, o Kong e o certificado estão de pé, sem pôr chave nenhuma na verificação.
+  - Um 502 ou a falta de resposta é a falha.
+- **Uma política de alerta para as três**, com uma condição por verificação. Ela dispara quando mais de uma região falha na janela de 20 minutos. Uma região ruim sozinha não acorda ninguém.
+
+**Alternativas rejeitadas:**
+- Verificar o auth com a chave publicável: colocaria uma chave na configuração do Monitoring, sem ganho sobre o 401.
+- Alertar já na primeira região que falha: transforma oscilação de rede em e-mail.
+- Uma política por verificação: são três e-mails iguais para o mesmo canal; a condição no corpo do e-mail já diz qual caiu.
+
+**Verificação:**
+- Nos primeiros minutos, a série `uptime_check/check_passed` registrou 36 aprovações em 36 na api e na web e 35 em 35 no auth, sem nenhuma falha.
+- A série de disco da instância tem pontos atuais para os dois dispositivos.
+- Os alertas não foram forçados a disparar. O primeiro e-mail real só chega quando houver um incidente.
+
+## D-869 - Lançar custo no pedido de compra é idempotente pela requisição
+
+**Contexto:** `upsert_purchase_order_cost` com `p_id` nulo sempre inseria. Se a resposta da Server Action se perdia depois de o banco gravar, repetir lançava o mesmo custo duas vezes, e o custo de chegada e a margem subiam. A D-865 só avisava ("confira a lista antes de lançar de novo"), e o #395 fez o aviso sobreviver à releitura. O dono aprovou a correção no banco em 24/11.
+
+**Decisão:**
+
+- **A inclusão aceita `p_request_id`.** O navegador gera esse identificador por intenção de lançamento, como no pedido (D-722).
+  - A mesma requisição no mesmo pedido devolve o custo já lançado, sem linha nova e sem evento `COSTS_UPDATED` novo.
+  - A coluna `purchase_order_costs.request_id` é única por pedido. Linhas antigas ficam nulas.
+- **A mesma requisição com outros dados é recusada.** A repetição nunca pode esconder um valor diferente do que foi gravado.
+  - A tela gera uma requisição nova quando a pessoa muda qualquer campo.
+- **`p_request_id` é só da inclusão.** Junto com `p_id` (edição), é recusado. Editar já regrava os mesmos campos.
+- **Compatível com a tela anterior.** O parâmetro é opcional, e a chamada sem ele insere como antes. A função de 8 argumentos sai, para o PostgREST não ter duas assinaturas candidatas para a mesma chamada.
+- **Publicação em duas partes**, para a produção nunca ficar quebrada:
+  1. a migration (`20261124140000_custo_do_pedido_idempotente.sql`) entra na `main` e é aplicada em produção;
+  2. só depois a tela passa a mandar o `requestId`. Mandar um parâmetro que a função de produção não tem dá PGRST202 e derruba o lançamento.
+
+**Alternativas rejeitadas:**
+- Deduplicar por conteúdo (mesmo tipo, valor e moeda num intervalo curto): bloquearia dois custos legítimos iguais, como dois fretes de mesmo valor.
+- Devolver o custo já gravado mesmo com dados diferentes: esconderia da pessoa que o valor gravado não é o que ela vê no formulário.
+- Manter as duas assinaturas: a chamada sem `p_request_id` casaria com as duas.
+
+**Verificação:** `compras-inteligentes.integration.test.ts` cobre:
+- a repetição devolve o mesmo custo, com uma linha e um evento;
+- outro valor com a mesma requisição é recusado;
+- sem requisição, cada chamada lança um custo, como antes;
+- a requisição na edição é recusada;
+- a mesma requisição em outro pedido é outra inclusão;
+- o analista não lança.
+
+**Em produção (24/11):** a migration foi aplicada pela VM `sb-db` numa transação só (`psql -1`), com o registro em `schema_migrations`, depois dos 4 jobs obrigatórios verdes na `main` (`f4c0be64`). Na conferência:
+- a função tem os 9 argumentos;
+- `authenticated` executa e `anon` não;
+- a coluna `request_id` existe.
+
+A tela que manda a requisição é o #397.
