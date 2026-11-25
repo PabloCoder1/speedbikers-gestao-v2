@@ -187,6 +187,10 @@ export default async function EstoquePage({
 
     As outras três (Reservado, Full, Em ruptura) têm dado real.
   */
+  // O tipo gerado diz `number`, mas a coluna de `returns table` pode vir nula:
+  // sem captura do Full na janela de 3 dias, o banco não sabe (D-870).
+  const fullQuantity = (total?.full_quantity as number | null | undefined) ?? null;
+  const fullConhecido = fullQuantity !== null;
   const naoClassificados = total?.skus_nao_classificados ?? 0;
   const confirmados = total?.skus_confirmados_fisicos ?? 0;
 
@@ -234,8 +238,13 @@ export default async function EstoquePage({
     {
       label: "Full",
       formula: "Última captura por bucket de variação, janela de 3 dias — a definição canônica de D-173/D-192.",
-      value: formatCount(total?.full_quantity ?? 0),
+      // Sem captura do Full na janela, o banco devolve nulo (D-870): "0"
+      // afirmaria que não há nada no Full quando o sistema não sabe.
+      value: fullQuantity === null ? "—" : formatCount(fullQuantity),
       previous: null,
+      // A leitura que falhou já tem o aviso da tela; a ressalva só vale para
+      // a ausência de captura.
+      ...(fullConhecido || resumoFalhou ? {} : { ressalva: "nenhuma captura do Full nos últimos 3 dias" }),
       href: "/full",
       prefetch: false,
       tom: "ok",

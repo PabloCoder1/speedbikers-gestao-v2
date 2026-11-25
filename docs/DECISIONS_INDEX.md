@@ -12,11 +12,11 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **764** (D-001 a D-884).
+Decisões registradas: **768** (D-001 a D-885).
 
 ## Por domínio
 
-### atendimento (73)
+### atendimento (72)
 
 - **D-005** — Dados antes de IA
 - **D-009** — Copiloto contextual
@@ -90,7 +90,6 @@ Decisões registradas: **764** (D-001 a D-884).
 - **D-788** — Invariantes de tempo e finitude em `@sb/domain` (`remote-transition`, `support-events`, `sales-anomaly`, `calculadora-preco`)
 - **D-805** — Web: blindagem de gráficos XLSX, diagnóstico de SKU, helpers Shopee e parsers puros
 - **D-808** — API: receptor autenticado `POST /push/tiktok-shop` (`M04`, fatia 3)
-- **D-836** — GCP `I06`/`S05`/`L04`: política de retenção de artefatos e auditoria real de nuvem
 
 ### banco/rls (54)
 
@@ -149,7 +148,7 @@ Decisões registradas: **764** (D-001 a D-884).
 - **D-830** — Web faturamento/vendas: eliminação de `error.message` bruto do Postgres no DOM
 - **D-881** — Workflow de migrations de produção gera o plano da VM
 
-### estoque (65)
+### estoque (69)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -216,8 +215,12 @@ Decisões registradas: **764** (D-001 a D-884).
 - **D-813** — Domínio TikTok Shop: projeção de catálogo/estoque e motor idempotente de devoluções (`M04`)
 - **D-850** — Full mantém 30 dias de capturas brutas online e permite recuperar o arquivo
 - **D-862** — O kit que leva um componente fora do catálogo conta no aviso da Central
+- **D-870** — O Full da faixa de /estoque é desconhecido, e não zero, sem captura recente
+- **D-871** — O Full do dashboard do SKU é desconhecido, e não zero, sem captura recente
+- **D-872** — A faixa de /estoque não junta os saldos ao escopo de novo no plano genérico
+- **D-873** — A curva ABC calcula o Full por SKU uma vez, e não a cada linha
 
-### interface (79)
+### interface (80)
 
 - **D-030** — Retenção do payload bruto: 90 dias quente mais arquivamento frio
 - **D-072** — Motor de diff de `listings`: fecha o pré-requisito crítico da Fase 7 (preço, título, status, quantidade disponível)
@@ -298,6 +301,7 @@ Decisões registradas: **764** (D-001 a D-884).
 - **D-804** — Domínio, API e Web: eventos de orçamento/pedido, allowlist de IP, filtros e utilitários web fail-closed
 - **D-806** — Domínio e Web: parsers UpSeller, visões de catálogo/vinculações, etapas, exportações, alinhamento de série e paginação
 - **D-869** — Lançar custo no pedido de compra é idempotente pela requisição
+- **D-885** — A Central pagina o histórico ativo e arquivado
 
 ### mercado-livre (152)
 

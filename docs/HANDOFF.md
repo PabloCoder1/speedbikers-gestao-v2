@@ -14,13 +14,13 @@
 |---|---|
 | **Atualizado em** | 2026-11-25 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | `origin/main` em `6a3471ff` (#399). O #378 entrou no #364 em `29adf54c`. [Checkpoint](agent-audit/SESSION_LOG.md). |
-| **Fechamento da V3** | 168/226 pontos (74,34%), 31/43 entregas. [Inventário Sentinel](agent-audit/CLOSURE_INVENTORY.json). [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7107161168). |
-| **Sentinel: próximo passo** | Upgrade local e catálogo da VM conferidos (D-884). Gemini conserva D-832 e M04. D04 aguarda leitura do arquivo na Central. |
+| **HEAD conhecido** | `origin/main` em `628ff887` (#406). O #364 reúne D-870 a D-873 e D-884. [Checkpoint](agent-audit/SESSION_LOG.md). |
+| **Fechamento da V3** | 173/226 pontos (76,55%), 33/43 entregas. [Inventário Sentinel](agent-audit/CLOSURE_INVENTORY.json). [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7107161168). |
+| **Sentinel: próximo passo** | Upgrade local e catálogo da VM conferidos (D-884). Gemini conserva D-832 a D-837 no #401 e M04. D04 integrada ao candidato (#407). I06 aceito com custo de outubro informado pelo dono. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo, com 2,0 GB acima do limite gratuito. Google Cloud segue como ambiente atual. Retomada do Supabase Pro prevista pelo dono para 01/12/2026. Confirmar Dev ativo antes da esteira. Rotinas Dev pausadas (D-350). |
 | **Supabase** | Produção usa a VM `sb-db`. O antigo hosted `imvjfgnaprqsfjlnsyev` segue inativo em 24/11. SMTP real do Auth ativo. [VM](../infra/vm/README.md). |
 | **Produção** | D-859 a D-862 no [#388](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/388). Recuperação de senha e monitoramento no [#394](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/394). Multiget do #377 em produção, reconciliação completada. |
-| **Migrations** | VM com as 334 versões do candidato, incluindo os quatro SQLs da fatia. Última `20261124140000`. Conferir o catálogo do Dev quando voltar. [VM](../infra/vm/README.md). |
+| **Migrations** | Catálogo: VM 337, candidato 339. D-873 e D-885 precedem o corte da web. Upgrade local 334 → 339 preservou o seed. Conferir Dev na retomada. [VM](../infra/vm/README.md). |
 | **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | Compras inteligentes, importação anterior e invoice/proforma entregues. #347 integrado para ler a moeda da invoice. D-792 acrescenta entrada no LOCAL e criação do SKU na conferência. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
 | **Notas (D-765, D-766)** | #334 registrou saída para Full. #335 incorporou Saída Manual e edição de itens. O aceite operacional de ponta a ponta segue no fechamento. |
 | **UX (Agente 3)** | Central integrada até D-519. [Escopo e evidências](UX_SYSTEM.md). |
@@ -41,7 +41,7 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 - **Recuperação após corte para a VM.** Navegação autenticada registrada pelo #333. Provar convite/reset, atraso de pedidos/financeiro/SAC e saldos contra ERP. Conferir os efeitos dos agendamentos no banco.
 - **Recuperação de desastre e migrations.** #333 registra restore isolado completo e ensaio dos 17 SQLs. Em 19/11 há snapshot automático READY. Prefixo `diario/` vazio na listagem. Faltam confirmar o dump recorrente, alertas e adequação do workflow à VM.
 - **Segurança: patches locais.** Next (`16.4.6`), Zod, ERP/NF-e apply e webhook Shopee corrigidos localmente; falta publicar. `pnpm audit --prod --audit-level high` passa com 1 moderado transitivo (`uuid`). [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md).
-- **Proteção da publicação.** A `main` exige PR e quatro checks e bloqueia force-push e exclusão. A regra permite bypass de administradores. `v3-builder` publicou a imagem isolada e gerou log no teste regional iniciado 139 s após a concessão. Os vínculos de teste foram removidos. O candidato aceita `CLOUD_BUILD_REGION`. Falta adoção nos builds regulares e revisão do `roles/editor`.
+- **Proteção da publicação.** A `main` exige PR e quatro checks e bloqueia force-push e exclusão. A regra permite bypass de administradores. `v3-builder` publicou a imagem isolada e gerou log no teste regional iniciado 139 s após a concessão. Os vínculos de teste foram removidos. O candidato aceita `CLOUD_BUILD_REGION`. A conta padrão perdeu `roles/editor`. Falta adoção da identidade dedicada nos builds regulares.
 
 ---
 

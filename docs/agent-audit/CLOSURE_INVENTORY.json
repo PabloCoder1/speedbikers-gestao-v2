@@ -1,5 +1,5 @@
 {
-  "corte": "25/11/2026, candidato #364 e ensaio D-884 sobre a main #399",
+  "corte": "25/11/2026, leitura de D04 no candidato #364 e aceite de I06",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "Full em P03/D-850. Restore com SHA-256 igual em três tabelas. Ensaios SQL/PostgREST preservaram RLS, página e contagens, inclusive ao mover a notificação e seus destinatários na cópia. O registro de IDs elevou o espaço ativo em 7,78% no mínimo. Falta integração na Central e recorte de sync com ganho.",
+      "evidencia": "D-885 (#407) incorporada ao candidato #364. A Central passou em 11 cenários após o upgrade local de 334 a 339 versões. Retenção, transferência de dados, referência de sync_runs e publicação seguem pendentes.",
       "fase": 3
     },
     {
@@ -229,7 +229,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Infra/Database",
-      "evidencia": "O candidato D-880/D-881 inclui preflight vinculado ao SHA e ao manifesto, com workflow da VM. #375 registra ensaio isolado de rollback. Faltam registro definitivo no Dev e novo upgrade com o catálogo reconciliado da VM.",
+      "evidencia": "O candidato D-880/D-881 inclui preflight vinculado ao SHA e ao manifesto. #375 registra rollback isolado. Novo upgrade sintético de 334 a 339 versões preservou os registros anteriores. Faltam registro no Dev e exercício do fluxo com o catálogo real em ambiente autorizado.",
       "fase": 2
     },
     {
@@ -237,9 +237,9 @@
       "area": "Google Cloud e infraestrutura",
       "entrega": "Custo real, retenção de artefatos e dimensionamento",
       "peso": 3,
-      "status": "Em andamento",
+      "status": "Validado em produção",
       "responsavel": "Infra/Dono",
-      "evidencia": "Em 24/11 o billing do projeto está habilitado. VM sb-db e2-standard-2 em execução e disco pd-balanced de 50 GB associado. Falta atribuir custo efetivo e validar dimensionamento e retenção.",
+      "evidencia": "Custo efetivo de outubro de 2026 para o projeto confirmado pelo dono a partir do Google Cloud Billing, consulta de 25/11/2026. Dimensionamento inventariado; retenção do Artifact Registry e do bucket de builds conferida em leitura.",
       "fase": 2
     },
     {
@@ -289,7 +289,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Infra/Dono",
-      "evidencia": "24/11: main com PR, quatro checks obrigatórios, force-push e exclusão bloqueados, com bypass administrativo. Build isolado 6e12a79b publicou o worker com v3-builder. O teste regional bff60fa4 registrou o marcador 139 s após a concessão de IAM. Não há triggers em global ou southamerica-east1. Falta adoção nos builds regulares e revisão de roles/editor.",
+      "evidencia": "Main protegida com PR, quatro checks e bypass administrativo. Remoção de Editor da conta padrão verificada. A identidade dedicada funcionou em build isolado; a amostra regional recente ainda não a utiliza.",
       "fase": 2
     },
     {
@@ -397,9 +397,9 @@
       "area": "Limpeza técnica",
       "entrega": "Recursos de nuvem candidatos com dependência e rollback",
       "peso": 2,
-      "status": "Em andamento",
+      "status": "Validado em produção",
       "responsavel": "Infra",
-      "evidencia": "Nenhuma exclusão autorizada; revisões não custam runtime sem tráfego/min",
+      "evidencia": "Dependências e rollback inventariados em D-836 (#401). Leitura confirmou tags temporárias removidas, worker com 100% de tráfego em uma revisão e regras ativas restritas a artefatos e ao bucket de builds.",
       "fase": 4
     },
     {

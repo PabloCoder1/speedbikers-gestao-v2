@@ -21331,12 +21331,121 @@ Fechamos os últimos 6 pontos sem `try/catch` em torno de `decryptToken` no repo
 
 TDD RED (`2 failed | 25 passed (27)`) -> GREEN (`27/27`). Verificação completa pós-`0599064d`: `pnpm run check` (`37/37`, `366` arquivos / `4.639` testes unitários), `pnpm run build` (`10/10`), 7 guardas estáticas de `@sb/web`, `pnpm audit --prod --audit-level high` (saída `0`) e `git merge-tree --write-tree` sequencial provando `13/13` commits pendentes (`D-820..D-831`, após integração de `D-815..D-819` em `034dfe01`) com `0` conflitos sobre `#378` (`034dfe01`).
 
+
+## D-870 - O Full da faixa de /estoque é desconhecido, e não zero, sem captura recente
+
+**Contexto:** `get_stock_summary` somava o Full com `coalesce(sum(...), 0)`, na janela canônica de 3 dias (D-173/D-192). Se a captura do Full parasse por mais de 3 dias, a faixa de `/estoque` mostrava "Full 0". Isso afirma que não há nada no Full, quando o sistema não sabe. A tela já tratava a falha da leitura (pente fino de 18/09) e o "Em trânsito" (D-067), mas não esse caso. Ausência de dado não vira zero.
+
+**Decisão:**
+- **`full_quantity` vem nulo quando a organização não tem nenhuma captura na janela.** A célula mostra "—" com a ressalva "nenhuma captura do Full nos últimos 3 dias".
+- **Com captura, a soma vazia de um recorte continua zero.** Um SKU que não aparece na captura está fora do Full, e aí o 0 é medida. Exemplo: a busca por um SKU que só vende do estoque local.
+- **A ressalva não aparece quando a leitura falha.** A tela já avisa a falha, e "sem captura" seria outra causa.
+- **Mesma assinatura e mesmo retorno** (`create or replace`): os grants ficam, e a tela anterior (`?? 0`) continua funcionando. A ordem de publicação entre a migration e a web não importa.
+  - O `exists` da organização usa `fulfillment_stock_snapshots_org_captured_idx` (D-465).
+  - O tipo gerado continua dizendo `number`, porque o gerador não marca coluna de `returns table` como anulável. A tela trata o valor como `number | null`.
+
+**Alternativas rejeitadas:**
+- Nulo sempre que a soma do recorte é vazia: trocaria o 0 real de um recorte sem SKU no Full por "—".
+- Resolver só na tela: com o `coalesce`, a tela recebe 0 e não tem como distinguir.
+
+**Verificação:** `estoque-resumo.integration.test.ts`, com organização própria:
+- sem captura, o Full é nulo;
+- com captura só de 5 dias atrás, continua nulo;
+- com captura de 1 h, soma a última por bucket (7);
+- o recorte sem SKU no Full dá 0.
+
+Os dois primeiros casos falham com a função antiga (`expected '0' to be null`). A suíte de integração do `@sb/db` num banco recriado teve as mesmas 10 falhas de antes, em OAuth e estorno, também sem a migration.
+
+**Em produção (25/11):** a migration foi aplicada pela VM `sb-db` numa transação só (`psql -1`), com o registro em `schema_migrations`. A aplicação veio depois dos 4 jobs obrigatórios verdes na `main` (`bf6e420e`). O job do Dev falhou com "project is paused", como em toda a `main` desde a pausa. A Vercel concluiu a publicação da web às 12:46 UTC.
+- A função tem o corpo novo, e `authenticated` e `service_role` executam.
+- A organização tem captura do Full de hoje: o Full continua conhecido, também chamado como membro autenticado.
+- O `exists` acrescentado custa 0,2 ms e 5 páginas. A chamada inteira, como membro, leu 52 mil páginas em cache e levou 1,9 s. Esse custo é das outras partes da função, que já existiam; medir e reduzir fica para uma fatia de performance.
+
+## D-871 - O Full do dashboard do SKU é desconhecido, e não zero, sem captura recente
+
+**Contexto:** a D-870 corrigiu a faixa de `/estoque`, e a varredura das funções que leem `fulfillment_stock_snapshots` achou o mesmo `coalesce(sum(...), 0)` em `get_sku_dashboard`. Essa função alimenta o detalhe do SKU (as caixas de estoque, "no Full" do cartão Estoque local e do Estoque anunciado) e a gaveta Inspeção Rápida de `/produtos`. Sem captura do Full em 3 dias, as três diziam "0 no Full".
+
+**Decisão:**
+- **A mesma regra da D-870.** `full_quantity` vem nulo quando a organização não tem nenhuma captura do Full na janela canônica. Com captura, o SKU fora dela continua 0.
+- **As telas mostram "—".** `formatCount(null)` já imprime o travessão, e o tipo passa a ser `number | null` onde o dashboard é lido. O gerador ainda diz `number` para coluna de `returns table`.
+- **A cobertura e o diagnóstico continuam contando o Full ausente como 0.** `/reposicao` (`get_purchase_suggestions`) faz assim e expõe o frescor ("Full capturado em —"). A D-314 exige que o cartão Cobertura e `/reposicao` façam a mesma conta. Tornar a cobertura desconhecida sem Full mudaria as duas telas juntas e é decisão do dono, não desta fatia.
+- **Mesma assinatura e mesmo retorno** (`create or replace`). A ordem entre a migration e a web não importa.
+- A guarda da D-204 continua satisfeita: a definição do Full segue com o bucket `inventory_id` e a janela de 3 dias. O `exists` só pergunta se houve captura.
+
+**Alternativas rejeitadas:**
+- Cobertura nula quando o Full é desconhecido: quebraria a igualdade com `/reposicao` (D-314) sem decisão do dono.
+- Editar a gaveta `inspecao-rapida.tsx`: o candidato #378 mexe nesse arquivo. A gaveta já recebe `fullQuantity` como `number | null` e mostra "— un".
+
+**Verificação:** `estoque-resumo.integration.test.ts` passou a cobrir `get_sku_dashboard` nos mesmos cenários:
+- nulo sem captura e com captura só fora da janela;
+- 7 com captura de 1 h;
+- 0 para o SKU fora do Full.
+
+Os casos de ausência falham com a função antiga (`expected '0' to be null`). A suíte do `@sb/db` num banco recriado teve as mesmas 10 falhas de OAuth e estorno da D-870, e a guarda da D-204 passou.
+
+**Em produção (25/11):** a migration `20261125130000` foi aplicada pela VM `sb-db` com `psql -1` e registrada em `schema_migrations`, depois dos 4 jobs obrigatórios verdes na `main` (`a8a0d7cf`). O job do Dev falhou com "project is paused". Conferido: corpo novo, grants iguais, e um SKU com captura de hoje devolve Full positivo como membro autenticado. A Vercel publicou a web às 13:49 UTC.
+
+## D-872 - A faixa de /estoque não junta os saldos ao escopo de novo no plano genérico
+
+**Contexto:** na publicação da D-870, `get_stock_summary` levou 1,9 s como membro autenticado. O mesmo SQL escrito por extenso levou 154 ms. A função é `language sql` com `set search_path = ''`, então o Postgres não a expande na consulta que a chama, e ela roda com o plano genérico dos parâmetros. Os filtros opcionais (`p_x is null or ...`) deixam a estimativa de linhas errada. O plano escolhe um laço aninhado entre `saldos` e `escopo` em `local_confirmado`, que descarta ~9,6 milhões de linhas por chamada.
+
+**Decisão:**
+- **`saldos` leva `purchase_cost`, `stock_is_virtual` e `stock_is_virtual_set_at`**, que já vinham do `join escopo`. `local_confirmado` lê só `saldos`, sem juntar de novo.
+- **O Full se restringe por `sku_id in (select id from escopo)`**, em vez de `join escopo`. É a mesma restrição, escrita como semijunção.
+- **Mesma assinatura, mesmo retorno e a mesma regra do Full desconhecido (D-870).** A guarda da D-204 continua satisfeita.
+- O `set search_path = ''` fica: tirá-lo para permitir a expansão abriria a função à resolução de nomes pelo caminho de quem chama.
+
+**Alternativas rejeitadas:**
+- Reescrever em plpgsql com `return query`: os primeiros planos seriam específicos, mas a troca para o genérico depois de cinco execuções devolveria o problema de forma intermitente.
+- Remover `set search_path`: pelo motivo acima.
+
+**Verificação:**
+- Em produção, só leitura, com plano genérico forçado: o corpo antigo levou 3,2 s e o novo 296 ms. Os dois devolveram a mesma linha nos 7 recortes. Os números estão em `PERFORMANCE.md`.
+- Localmente, a suíte de integração do `@sb/db` teve as mesmas 10 falhas de baseline. Os testes da D-249 e da D-870 e a guarda da D-204 passaram.
+
+**Em produção (25/11):** a migration `20261125140000` foi aplicada pela VM com `psql -1` e registrada, depois dos 4 jobs obrigatórios verdes na `main` (`d3f90239`). Como membro autenticado, a chamada passou de 1,7 a 2,1 s para 180 a 197 ms em três chamadas, inclusive com o filtro de negativos. O Full continua conhecido, e os grants ficaram iguais.
+
+## D-873 - A curva ABC calcula o Full por SKU uma vez, e não a cada linha
+
+**Contexto:** a varredura das funções `language sql` com `search_path` fixo e filtros opcionais, depois da D-872, mediu em produção sete funções de telas de estoque, compras, documentos, Full e curva ABC. Como membro autenticado:
+- `get_sku_abc_curve` (`/curva-abc`) levou 1,3 a 1,6 s sem filtro, e o mesmo SQL por extenso 380 a 570 ms;
+- `get_fulfillment_overview` (`/full`) levou ~1,5 s, mas o SQL por extenso também. Ali não é plano genérico; fica para outra fatia;
+- as outras cinco ficaram abaixo de 350 ms.
+
+No plano genérico da curva, a CTE `full_by_sku`, usada uma vez, é incorporada à consulta e recalculada para cada linha da curva, num laço que descartava centenas de milhares de linhas.
+
+**Decisão:**
+- **`full_by_sku as materialized`.** A soma do Full por SKU é feita uma vez.
+- Mais nada muda. A definição do Full (D-173) e a guarda da D-204 continuam como estão. A assinatura e o retorno também, e `create or replace` preserva comentário e grants.
+- **Fica de fora, para decisão própria:** a curva usa `coalesce(full_quantity, 0)`, e o filtro "sem Full" conta como sem Full todo SKU sem captura. Sem nenhuma captura da organização em 3 dias, isso afirma "sem Full" de todos. É o padrão da D-870, mas aqui muda o resultado de um filtro, e não só um número exibido.
+
+**Verificação:**
+- Em produção, só leitura, com plano genérico forçado: 3,1 s caíram para 483 ms.
+- As duas versões devolveram as mesmas linhas, por hash de todas elas, em 10 recortes:
+  - critérios faturamento, unidades e pedidos;
+  - página 2;
+  - "sem Full" em 90 dias;
+  - classes A e C;
+  - uma conta, uma marca e um SKU;
+  - 365 dias.
+- As tabelas temporárias da comparação existiram só dentro de uma transação encerrada com `rollback`.
+- Localmente, a suíte do `@sb/db` teve as mesmas 10 falhas de baseline.
+
 ## D-884 - Conferir a base aplicada antes do ensaio local de upgrade
 
 O planejador exige que o catálogo da stack descartável coincida com a base Git. O candidato preserva os nomes e blobs dos SQLs aplicados. As adições são identificadas com o objeto Git e a posição em relação à última versão. As versões temporárias do laboratório ficam fora dos manifestos de publicação.
 
 Em 25/11, a base local de `6a3471ff` tinha 330 versões. As quatro adições de `29adf54c` passaram no upgrade incremental e em 1.254 testes de integração. A consulta em leitura encontrou na VM as 334 versões originais do candidato e nove verificações de objetos e permissões coincidentes. Ao retomar o Dev, ler seu catálogo antes de qualquer decisão de registro.
 
+## D-885 - A Central pagina o histórico ativo e arquivado
+
+**Data:** 2026-11-25. **Origem:** D04, leitura do histórico da Central.
+
+A migration `20261125160000` guarda vínculos já lidos em `notification_archive`. O arquivo referencia o evento original. A leitura usa a RLS de destinatário e a permissão vigente de `domain_events`. Durante uma cópia, o vínculo ativo tem precedência. A view mantém os filtros e as contagens no PostgreSQL, e a RPC une lotes paginados dos dois ramos com desempate pelo identificador. As ações de leitura escrevem nos destinatários ativos.
+
+O PostgreSQL pode escolher um plano genérico que lê todo o histórico antes de montar a primeira página. A RPC planeja a consulta com os valores vinculados de cada chamada. No ensaio de 54 mil vínculos, com arquivo vazio, a primeira versão da view levou entre 486 e 536 ms. A versão paginada levou entre 2,2 e 3,7 ms. A contagem total exata ficou entre 215 e 306 ms, frente a 184–195 ms na comparação com a consulta ativa.
+
+A publicação da web depende da migration. O arquivo pode começar vazio. A política de retenção e o processo de transferência de registros ficam a cargo da próxima decisão de D04.
 
 ## D-832 - Worker: isolamento multi-tenant nos 4 handlers finais sob service_role
 
@@ -21380,15 +21489,6 @@ Adicionamos a configuração de boot e o agregador de handlers do TikTok Shop no
 2. `apps/worker/src/handlers/tiktok-bootstrap.ts`: `createTikTokWorkerHandlers` instancia `createTikTokShopClient` e registra exatamente os 5 job types de `TIKTOK_JOB_TYPES` (`tiktok.orders.sync`, `tiktok.order.fetch`, `tiktok.items.sync`, `tiktok.returns.sync`, `tiktok.financials.sync`) quando credenciais e `TikTokSyncRepository` estão presentes, devolvendo `{}` caso contrário.
 
 Verificação: `apps/worker/src/env.test.ts` (16/16) e `apps/worker/src/handlers/tiktok-bootstrap.test.ts` (2/2), `@sb/worker typecheck` e `lint` verdes.
-
-## D-836 - GCP `I06`/`S05`/`L04`: política de retenção de artefatos e auditoria real de nuvem
-
-Auditamos somente leitura os recursos ativos do projeto `speedbikers-prod` em `25/11/2026` e entregamos os artefatos versionados de retenção e limpeza (`8c14670a`):
-
-1. **Retenção de artefatos (`I06`):** o repositório `speedbikers-v3` (Artifact Registry) estava com `1.669,34 MB` acumulados e `cleanupPolicies: null`, e `speedbikers-prod_cloudbuild` sem lifecycle. Criados `infra/artifact-retention-policy.json` (`keepCount: 10` versões mais recentes + delete > 30 dias) e `infra/artifact-retention.sh` (idempotente, com `--dry-run` e `--cloudbuild-lifecycle` de 30 dias sem tocar nos buckets de negócio).
-2. **Revisão IAM `roles/editor` (`S05`):** comprovado que `sb-db`, `api` e `worker` já usam SAs dedicadas (`sb-db-vm`, `v3-api-runtime`, `v3-worker-runtime`); a única conta com `roles/editor` (`246130997439-compute@developer.gserviceaccount.com`) é usada apenas como fallback de builds sem `v3-builder`. Procedimento de remoção e rollback em 1 comando documentados em `docs/agent-audit/CLOUD_COST_AND_CLEANUP_2026-11-25.md`.
-3. **Recursos candidatos (`L04`):** inventariados com dependência e rollback as revisões tagged `worker-m05-*`, imagens antigas em `speedbikers-v3`, tarballs em `speedbikers-prod_cloudbuild` e o projeto legado `imvjfgnaprqsfjlnsyev` (`INACTIVE`).
-
 
 ## D-837 - API: separação de erro de banco no claim de `state` e proteção de expiração nos 3 callbacks OAuth
 

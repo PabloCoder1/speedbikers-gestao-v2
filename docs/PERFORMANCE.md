@@ -2571,3 +2571,50 @@ recuperou os cinco eventos visíveis mais antigos. Desde D-856, a
 contagem e a atividade iniciam em paralelo, e cada uma tem sua
 própria fronteira de espera. O teste de renderização reteve a resposta
 do PostgREST simulado e confirmou a entrega inicial dos indicadores.
+
+### Faixa de `/estoque` no plano genérico (Claude Sentinel, D-872, 25/11/2026)
+
+Medido em produção, na VM `sb-db`, em transação só leitura e como membro autenticado da organização, depois de aquecer o cache:
+
+| Forma | Páginas lidas | Tempo |
+|---|---|---|
+| `get_stock_summary` (função, antes) | ~52 mil | 1,7 a 2,1 s (4 chamadas) |
+| O mesmo SQL escrito por extenso (plano específico) | ~4,4 mil | 154 ms |
+| O corpo antigo com plano genérico forçado | ~52 mil | 3,2 s |
+| O corpo da D-872 com plano genérico forçado | ~52 mil | 296 ms |
+
+- **A causa.** A função é `language sql` com `set search_path = ''`, então não é expandida dentro da consulta e roda com o plano genérico dos parâmetros. Nesse plano, a soma do LOCAL confirmado juntava `saldos` a `escopo` num laço aninhado que descartava ~9,6 milhões de linhas.
+- **A correção.** `saldos` passa a levar as colunas do SKU, e o Full se restringe por `sku_id in (select id from escopo)`.
+- **O que fica.** As páginas lidas continuam ~52 mil porque o Full ainda é buscado SKU a SKU (`fulfillment_stock_snapshots_sku_idx`), mas todas estão em cache. O ganho é de CPU.
+- **Equivalência.** Antigo e novo devolveram a mesma linha nos 7 recortes: sem filtro, negativos, marca, categoria, busca, busca vazia e marca com negativos.
+
+**Depois da publicação (25/11, 14:2x UTC):** com a função da D-872 em produção, a chamada como membro autenticado levou 197, 184 e 181 ms, a última com `p_only_negative`. Antes eram 1,7 a 2,1 s.
+
+### Varredura do plano genérico em funções `language sql` (Claude Sentinel, D-873, 25/11/2026)
+
+Medido em produção, como membro autenticado, com o cache quente (duas chamadas cada):
+
+| Função | Tela | Função | SQL por extenso |
+|---|---|---|---|
+| `get_stock_balances` | `/estoque` | 24 a 28 ms | — |
+| `get_stock_movements` | `/estoque/movimentacoes` | 130 a 343 ms | — |
+| `get_stock_movements_summary` | `/estoque/movimentacoes` | 238 a 242 ms | — |
+| `get_purchase_orders_overview` | `/compras` | 11 a 16 ms | — |
+| `get_documents_overview` | `/importacoes` | 4 a 10 ms | — |
+| `get_fulfillment_overview` | `/full` | 1,4 a 1,6 s | 1,7 a 1,9 s |
+| `get_sku_abc_curve` | `/curva-abc` | 1,3 a 1,6 s | 380 a 570 ms |
+
+- **Curva ABC:** é o plano genérico. No plano genérico forçado, o corpo antigo levou 3,1 s e o da D-873 483 ms.
+- **`/full`:** a consulta é cara mesmo escrita por extenso. Precisa de outra investigação.
+
+### Histórico da Central com arquivo (Sentinel D04, 25/11/2026)
+
+PostgreSQL local com RLS, 54 mil vínculos sintéticos, três execuções por consulta. A primeira página usa 100 linhas e desempata pela ID da notificação.
+
+| Consulta | Ativa de referência | Com histórico |
+|---|---:|---:|
+| Primeira página, arquivo vazio | 0,7–1,6 ms | 2,2–3,7 ms |
+| Contagem exata, arquivo vazio | 184–195 ms | 215–306 ms |
+| Primeira página, cerca de 27 mil registros recentes no arquivo | 1,5–1,8 ms para o ramo ativo | 72–118 ms para os dois ramos |
+
+A primeira versão, com ordenação sobre a view unificada, levou 486–536 ms na primeira página com arquivo vazio. A RPC de D-885 limita cada ramo antes da união e planeja com os filtros da chamada. O ensaio com arquivo preenchido moveu vínculos sintéticos dentro de uma transação revertida. A distribuição real deverá ser medida antes de mover dados operacionais.
