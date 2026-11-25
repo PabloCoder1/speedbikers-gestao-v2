@@ -461,7 +461,7 @@ describe("shopee.orders.sync (D-426)", () => {
       retryable: true,
       reason: "falha ao enfileirar continuação (shopee.orders.sync): Cloud Tasks indisponível",
     });
-    expect(gravado.marco).not.toBeNull();
+    expect(gravado.marcos).toHaveLength(1);
     expect(enfileirados).toHaveLength(1);
     expect(gravado.eventos).toEqual(["trava", "solta", "enfileira"]);
   });
