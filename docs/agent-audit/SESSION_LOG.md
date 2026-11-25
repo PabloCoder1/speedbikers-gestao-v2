@@ -629,3 +629,13 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
   1. A mesma correção em `get_sku_dashboard` e nas duas telas, como fatia própria.
   2. Publicar a migration da D-870 em produção pela VM, com autorização do dono, depois do merge.
   3. Em 26/11, conferir os 25 negativos do UpSeller e um dia inteiro de `sync.listing.item`.
+
+### 25/11/2026 · Claude Sentinel: D-870 em produção
+
+- **Publicação.** Com autorização do dono, o #400 entrou na `main` em `bf6e420e`. Os 4 jobs obrigatórios passaram; o do Dev falhou com "project is paused", como esperado. A migration `20261125120000` foi aplicada pela VM com `psql -1` e registrada no histórico, e a Vercel concluiu a web.
+- **Conferência.** Corpo novo e grants certos. O Full continua conhecido para a organização, que tem captura de hoje. O `exists` novo custa 0,2 ms.
+- **Achado para performance.** `get_stock_summary` como membro autenticado: 52 mil páginas e 1,9 s, custo anterior à D-870.
+- **Próxima etapa.**
+  1. A mesma correção em `get_sku_dashboard`.
+  2. Medir e reduzir o custo de `get_stock_summary`.
+  3. Em 26/11, conferir os negativos do UpSeller e um dia inteiro de `sync.listing.item`.

@@ -20243,3 +20243,8 @@ A tela que manda a requisição é o #397.
 - o recorte sem SKU no Full dá 0.
 
 Os dois primeiros casos falham com a função antiga (`expected '0' to be null`). A suíte de integração do `@sb/db` num banco recriado teve as mesmas 10 falhas de antes, em OAuth e estorno, também sem a migration.
+
+**Em produção (25/11):** a migration foi aplicada pela VM `sb-db` numa transação só (`psql -1`), com o registro em `schema_migrations`. A aplicação veio depois dos 4 jobs obrigatórios verdes na `main` (`bf6e420e`). O job do Dev falhou com "project is paused", como em toda a `main` desde a pausa. A Vercel concluiu a publicação da web às 12:46 UTC.
+- A função tem o corpo novo, e `authenticated` e `service_role` executam.
+- A organização tem captura do Full de hoje: o Full continua conhecido, também chamado como membro autenticado.
+- O `exists` acrescentado custa 0,2 ms e 5 páginas. A chamada inteira, como membro, leu 52 mil páginas em cache e levou 1,9 s. Esse custo é das outras partes da função, que já existiam; medir e reduzir fica para uma fatia de performance.
