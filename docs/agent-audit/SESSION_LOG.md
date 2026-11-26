@@ -859,3 +859,16 @@ Tudo lido pela VM em modo só leitura.
 - **Próxima etapa:**
   - a escolha do dono sobre os SKUs;
   - depois, `get_purchase_order_suggestions` com `p_sku_ids` (hoje filtra por marca sobre o catálogo inteiro). Essa fatia precisa de número de decisão.
+
+### 26/11/2026 · Claude Sentinel: saldo negativo dos SKUs descontinuados zerado
+
+- **Pedido do dono:** excluir os SKUs descontinuados com saldo LOCAL negativo. Ele escolheu zerar por ajuste, em vez de apagar, que quebraria ledger, pedidos e vínculos e contraria a D-860.
+- **Feito em produção pela VM:**
+  - um `create_manual_stock_adjustment` por SKU, como ADMIN da organização, com o modo Balanço e o motivo "SKU descontinuado, fora do catálogo do UpSeller";
+  - o script só pega SKU marcado fora do catálogo, inativo e ainda negativo, então rodar de novo não grava nada;
+  - foi ensaiado antes numa transação desfeita.
+- **Conferido depois:**
+  - seis movimentos `AJUSTE_MANUAL`, com autor;
+  - o saldo LOCAL de cada um é zero e igual à soma do ledger;
+  - nenhum SKU fora do catálogo ficou negativo.
+- **O que não mudou:** os SKUs, o histórico de vendas, os vínculos e a marca de fora do catálogo.
