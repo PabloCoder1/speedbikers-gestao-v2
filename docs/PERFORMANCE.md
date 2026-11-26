@@ -2322,3 +2322,20 @@ O hash do JSON foi igual em oito recortes.
 
 - **Causa:** a 1ª venda da Shopee pela view filtrava a organização do pedido e percorria todos os pedidos válidos, cerca de 100 mil páginas para 50 SKUs. Pelo índice dos itens, são ~2,3 mil.
 - **O que sobra:** com sugestão, o custo maior é `get_purchase_suggestions`. A diferença entre com e sem sugestão é de ~0,8 s, e fica para fatia própria.
+
+### Sugestão de compra: onde está o tempo (Claude Sentinel, 26/11/2026, sem mudança)
+
+Medido em produção, como membro e só leitura, em `get_purchase_suggestions`, a definição de `20261124100000`. O catálogo inteiro sai em 0,75 a 1,0 s, e uma página de 100 linhas custa o mesmo, porque a função calcula tudo antes do `limit`. `get_replenishment_overview` leva ~1,2 s.
+
+| Parte | Tempo |
+|---|---|
+| Curva ABC de 90 dias (`get_sku_abc_curve`, catálogo inteiro) | ~275 ms |
+| Demanda da Shopee em 90 dias, pela view | ~175 a 195 ms |
+| Full atual (D-173), `distinct on` das capturas de 3 dias | ~95 a 105 ms |
+| Tendência do ML em 90 dias | ~55 ms |
+
+- **Testado e não publicado:** duas trocas com resultado igual pelo hash.
+  - A Shopee pelos itens primeiro: ~145 ms.
+  - O `distinct on` do Full com `collate "C"`: ~76 a 84 ms.
+  - Juntas, tiram ~100 ms, cerca de 13 %, numa função usada por `/reposicao`, pelo pedido novo, por `/curva-abc`, pela inspeção de `/produtos` e pelo Copiloto.
+- **Estrutural:** a classe ABC é relativa ao catálogo inteiro, e a sugestão é recalculada a cada chamada. Um ganho grande pede outra forma, que é decisão de produto: sugestões pré-calculadas pelo worker, ou uma variante por SKU para o pedido novo, que só precisa de 50 linhas.
