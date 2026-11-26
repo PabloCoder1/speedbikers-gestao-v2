@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **769** (D-001 a D-886).
+Decisões registradas: **770** (D-001 a D-886).
 
 ## Por domínio
 
@@ -462,7 +462,7 @@ Decisões registradas: **769** (D-001 a D-886).
 - **D-831** — Worker `ml-token.ts` e `shopee-token.ts`: `decryptToken` fail-closed (`retryable: false`) e liberação da trava
 - **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
-### outros (130)
+### outros (131)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -592,6 +592,7 @@ Decisões registradas: **769** (D-001 a D-886).
 - **D-865** — O detalhe do pedido de compra sobrevive à Server Action que não responde
 - **D-866** — "Já fiz o pedido" e o cadastro de fornecedor sobrevivem à Server Action que não responde
 - **D-868** — Produção avisa por e-mail quando o disco da VM enche ou quando api, web ou auth saem do ar
+- **D-879** — A sugestão de compra pode ser calculada só para uma lista de SKUs
 - **D-880** — Preflight da VM vincula o plano ao commit do candidato
 - **D-884** — Conferir a base aplicada antes do ensaio local de upgrade
 

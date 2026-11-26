@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "Candidato #364 conciliado até a main #417. O preflight reconhece as 341 versões da VM e duas pendências posteriores. Faltam a conferência do catálogo do Dev e a homologação do SHA integrado.",
+      "evidencia": "Candidato #364 conciliado até a main #420. O preflight reconhece a primeira versão de D-879 na VM e as pendências posteriores. Faltam a conferência do catálogo do Dev e a homologação do SHA integrado.",
       "fase": 5
     },
     {
@@ -419,7 +419,7 @@
       "peso": 8,
       "status": "Bloqueado",
       "responsavel": "Dono/Infra",
-      "evidencia": "O preflight local passou de bloqueado a pendente após conciliar D04. A VM tem 341 versões, até D-878. O plano registra D-885 e D-886 em versões novas e posteriores; a aplicação coordenada e sua validação seguem pendentes.",
+      "evidencia": "O preflight local passou de bloqueado a pendente após conciliar D04. O catálogo observado tem 342 versões, até a primeira versão de D-879. O plano lista a correção Shopee e as duas versões novas da Central; a aplicação coordenada e sua validação seguem pendentes.",
       "fase": 5
     },
     {

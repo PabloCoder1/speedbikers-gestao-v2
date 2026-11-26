@@ -1261,6 +1261,25 @@ Tudo lido pela VM em modo só leitura.
   - `pnpm run check` e `pnpm docs:check`. O `build` não rodou: a mudança não toca código de app.
 - **Próxima etapa:** publicar a D-878 com autorização do dono. Depois, `get_purchase_suggestions`, que é o que sobra com a sugestão ligada.
 
+### 26/11/2026 · Claude Sentinel: D-878 em produção
+
+- **Publicação.** Com autorização do dono, o #417 entrou na `main` em `f0c35bab`.
+  - Os 4 jobs obrigatórios passaram. O do Dev falhou com "project is paused", como esperado.
+  - A migration `20261126150000` foi aplicada pela VM com `psql -1`, com o mesmo sha256 dos dois lados, e registrada no histórico. A Vercel concluiu a web, que não muda.
+- **Conferência.** Corpo novo, grants, comentário e registro certos. Como membro, com 50 SKUs: 0,25 s sem sugestão e com o cache quente, e 1,19 s com sugestão.
+- **Próxima etapa:** `get_purchase_suggestions`, que é quase todo o tempo com a sugestão ligada. A numeração de decisões depois do D-879 está proposta no #351.
+
+### 26/11/2026 · Claude Sentinel: sugestão de compra por SKU (D-879)
+
+- **Medição:** `get_purchase_suggestions` custa 0,75–1,0 s, com o catálogo inteiro calculado a cada chamada. Duas trocas seguras sem lista tiravam só ~13 %. O dono escolheu a variante por SKU.
+- **Entrega:** a migration `20261126170000`. `p_sku_ids` é opcional em `get_purchase_suggestions`, e `get_purchase_analysis` passa a lista. A curva ABC e o histórico continuam do catálogo inteiro.
+- **Em produção, só leitura:** sem lista, o catálogo saiu IGUAL com a ordem. Com lista, dez recortes saíram IGUAIS. Com 50 SKUs, o tempo foi de 0,69–0,84 s para 0,47–0,51 s.
+- **Testes:**
+  - suíte de integração do `@sb/db`, 17 arquivos, todos passaram;
+  - teste novo com um bucket do Full que trocou de SKU (mutação conferida);
+  - `pnpm run check` e `pnpm docs:check`.
+- **Próxima etapa:** publicar a D-879 com autorização do dono. A faixa de números do Claude acabou: a próxima decisão espera a resposta sobre a faixa nova no #351.
+
 ### 26/11/2026 · Conciliação do ensaio de D04 e da main #414
 
 - O ensaio manual de D04, `a9ef1247` (#407), entrou localmente em `db68fd0d`. Foi repetido com rollback e recusou banco populado, host externo e redirecionamento por parâmetro da URL. As CIs de `32d4ad4b` (#364, run `45667109649`) e `a9ef1247` (#407, run `45669808681`) terminaram verdes.
@@ -1321,3 +1340,10 @@ Tudo lido pela VM em modo só leitura.
 - O laboratório reproduziu exatamente as 341 versões lidas da VM. O upgrade aplicou as duas pendências e chegou a 343 versões, iguais às do checkout. As três regressões do histórico da Central passaram, com os demais casos fora do filtro.
 - D04 usa papéis distintos para arquivar e recuperar, registra login, papel e corte efetivo. O ensaio recusou funções cruzadas e acesso direto, manteve os indicadores e preservou as linhas recuperadas. Duas conexões autenticadas com logins PostgreSQL distintos registraram autores diferentes e recusaram a troca de papel. O ensaio padrão e o benchmark passaram. Mil linhas em 666 ms sem índice e 149 ms com índice, sob dados sintéticos. A criação concorrente fora de transação resultou em índice pronto e válido. A remoção também passou. O fluxo transacional recebeu 25001.
 - O piloto preparado mantém cópia fria e deixa a linha recuperada fora de novos lotes. Próxima etapa: validar identificação individual no ambiente de homologação e preparar a aplicação versionada do índice se o ganho justificar o custo. A produção requer aprovação própria. Dev/V01/V02 e S05/IAM continuam pendentes. Inventário em 173/226.
+
+### 26/11/2026 · D04, conciliação com #419/#420 e reserva final da rodada
+
+- A main avançou para 473370ad (#420). A VM passou a 342 versões com 20261126170000. A revisão 90f12ca0 preservou os blobs de D-885/D-886 e reservou 20261126230000 e 20261126231000, posteriores à correção #420 e à versão reservada de #421. Claude e Gemini receberam as reservas nos PRs #421 e #409.
+- O laboratório reproduziu todas as 342 versões observadas. O upgrade aplicou 20261126190000 e as duas migrations da Central, totalizando 345 versões iguais ao checkout. Ensaio de D04, três casos da Central e 21 de Compras passaram. A CI do candidato anterior 8ca5e19c terminou verde.
+- O piloto usa papéis separados e registra ambos os autores com dois logins PostgreSQL locais autenticados. A conexão compartilhada e a implantação do índice em carga representativa ainda dependem de homologação. Não houve aplicação em produção pelo Sentinel. Na próxima leitura, conferir se #420 ou #421 já foi aplicada, recalcular o plano e preservar a proteção do verificador.
+- Inventário em 173/226. Dev e hosted antigo inativos. S05 depende de autorização. A próxima etapa local é preparar o ensaio representativo do índice para decidir se entra no primeiro piloto e conferir a atribuição de autoria no meio de execução escolhido.

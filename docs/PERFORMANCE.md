@@ -2698,6 +2698,46 @@ O hash do JSON foi igual em oito recortes.
 - **Causa:** a 1ª venda da Shopee pela view filtrava a organização do pedido e percorria todos os pedidos válidos, cerca de 100 mil páginas para 50 SKUs. Pelo índice dos itens, são ~2,3 mil.
 - **O que sobra:** com sugestão, o custo maior é `get_purchase_suggestions`. A diferença entre com e sem sugestão é de ~0,8 s, e fica para fatia própria.
 
+### Sugestão de compra: onde está o tempo (Claude Sentinel, 26/11/2026, sem mudança)
+
+Medido em produção, como membro e só leitura, em `get_purchase_suggestions`, a definição de `20261124100000`. O catálogo inteiro sai em 0,75 a 1,0 s, e uma página de 100 linhas custa o mesmo, porque a função calcula tudo antes do `limit`. `get_replenishment_overview` leva ~1,2 s.
+
+| Parte | Tempo |
+|---|---|
+| Curva ABC de 90 dias (`get_sku_abc_curve`, catálogo inteiro) | ~275 ms |
+| Demanda da Shopee em 90 dias, pela view | ~175 a 195 ms |
+| Full atual (D-173), `distinct on` das capturas de 3 dias | ~95 a 105 ms |
+| Tendência do ML em 90 dias | ~55 ms |
+
+- **Testado e não publicado:** duas trocas com resultado igual pelo hash.
+  - A Shopee pelos itens primeiro: ~145 ms.
+  - O `distinct on` do Full com `collate "C"`: ~76 a 84 ms.
+  - Juntas, tiram ~100 ms, cerca de 13 %, numa função usada por `/reposicao`, pelo pedido novo, por `/curva-abc`, pela inspeção de `/produtos` e pelo Copiloto.
+- **Estrutural:** a classe ABC é relativa ao catálogo inteiro, e a sugestão é recalculada a cada chamada. Um ganho grande pede outra forma, que é decisão de produto: sugestões pré-calculadas pelo worker, ou uma variante por SKU para o pedido novo, que só precisa de 50 linhas.
+
+### Sugestão de compra por SKU (Claude Sentinel, D-879, 26/11/2026)
+
+`get_purchase_suggestions` aceita `p_sku_ids`, e `get_purchase_analysis` passa a lista. Em produção, como membro, com 50 SKUs, a sugestão caiu de 0,69–0,84 s para 0,47–0,51 s. Em dez recortes, o hash foi igual ao do catálogo filtrado.
+
+- **O que sobra:** a curva ABC do catálogo inteiro, ~0,3 s, que a classe relativa exige. Também a demanda da Shopee (~0,1 s, o hash dos pedidos da janela) e o histórico de 90 dias (~30 ms).
+- **Sem lista:** o tempo é o mesmo de antes.
+
+### Sugestão de compra com poucos SKUs (Claude Sentinel, correção da D-879, 26/11/2026)
+
+Medido em produção como membro, depois da D-879. A sugestão com lista ficou lenta só para listas curtas de SKUs muito vendidos.
+
+| Recorte | Publicada (D-879) | Corrigida |
+|---|---|---|
+| Sem lista (Reposição) | 0,72–0,82 s | 0,75–1,10 s (mesmo plano; variação de cache) |
+| 1 SKU | 0,31 s | 0,39–0,41 s |
+| 5 SKUs | 11,2–15,9 s | 0,38–0,46 s |
+| 50 SKUs | 0,50–0,59 s | 0,49–0,88 s |
+| Uma marca inteira | 0,55–0,57 s | 0,54–0,63 s |
+
+- **Causa:** o `EXPLAIN` com 5 SKUs mostrou a demanda da Shopee em ~19,5 s. O laço juntava os pedidos válidos da janela com os itens materializados, sem índice do lado de dentro, e descartou 73 milhões de pares.
+- **Correção:** com a lista, cada item acha o pedido pela chave primária, com `limit 1`, que o planejador não achata.
+- **Fora daqui:** a análise sem sugestão e a primeira venda da D-878 não têm o problema (0,05–0,08 s com 1 a 5 SKUs).
+
 ### Histórico da Central com arquivo (Sentinel D04, 25/11/2026)
 
 PostgreSQL local com RLS, 54 mil vínculos sintéticos, três execuções por consulta. A primeira página usa 100 linhas e desempata pela ID da notificação.

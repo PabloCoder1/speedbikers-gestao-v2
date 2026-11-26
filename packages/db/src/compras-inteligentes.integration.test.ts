@@ -693,4 +693,56 @@ describe("get_purchase_analysis (D-721)", () => {
     // A vende no ML e na Shopee no mesmo 10/08.
     expect(dia(skuA)).toBe("2026-08-10");
   });
+
+  it("sugestão por SKU: com p_sku_ids, as mesmas linhas do catálogo inteiro para aqueles SKUs (D-879)", async () => {
+    // O total_count fica de fora: ele conta o conjunto devolvido, que com a lista é só ela.
+    const colunas = `sku_id, sku, local_quantity, reservado, transito, full_quantity, units_15d, units_30d, units_60d,
+      units_90d, history_days_90, abc_class, coverage_days, state, suggested_quantity, units_30d_shopee, units_90d_shopee`;
+    // Um bucket do Full que trocou de SKU: há 2 dias era B, desde ontem é A. O
+    // Full atual dele é de A; B não pode herdar a captura velha quando só B é pedido.
+    await client.query(
+      `insert into public.fulfillment_stock_snapshots (organization_id, ml_account_id, inventory_id, item_id, sku_id, quantity, captured_at)
+       values ($1, $2, 'INV-D879', 'MLB972879', $3, 7, now() - interval '2 days'),
+              ($1, $2, 'INV-D879', 'MLB972879', $4, 3, now() - interval '1 day')`,
+      [ORG, CONTA_A, skuB, skuA],
+    );
+
+    const listas = [
+      `array['${skuA}'::uuid, '${skuB}'::uuid, '${skuC}'::uuid, '${kit}'::uuid]`,
+      `array['${skuB}'::uuid]`,
+    ];
+
+    for (const ate of ["2026-08-11", "2026-08-31"]) {
+      for (const lista of listas) {
+        const todos = await asUser(
+          ADMIN,
+          `select ${colunas} from public.get_purchase_suggestions('${ORG}', '${ate}', null, null, 1000000, 0, null)
+           where sku_id = any (${lista}) order by sku_id`,
+        );
+        const recorte = await asUser(
+          ADMIN,
+          `select ${colunas} from public.get_purchase_suggestions('${ORG}', '${ate}', null, null, 1000000, 0, null, ${lista})
+           order by sku_id`,
+        );
+
+        expect(recorte).toEqual(todos);
+      }
+    }
+
+    const soB = await asUser<{ full_quantity: string }>(
+      ADMIN,
+      `select full_quantity from public.get_purchase_suggestions('${ORG}', current_date, null, null, 1000000, 0, null, array['${skuB}'::uuid])`,
+    );
+
+    expect(soB.map((l) => Number(l.full_quantity))).not.toContain(7);
+
+    // A análise com a sugestão ligada passa a lista e devolve a sugestão do SKU.
+    const a = await one<{ a: { linhas: { sku_id: string; na_reposicao: boolean | null; units_90d: number | null }[] } }>(
+      ADMIN,
+      `select public.get_purchase_analysis('${ORG}', array['${skuA}'::uuid], '2026-08-31') as a`,
+    );
+
+    expect(a.a.linhas[0]?.na_reposicao).toBe(true);
+    expect(a.a.linhas[0]?.units_90d).toBeGreaterThan(0);
+  });
 });

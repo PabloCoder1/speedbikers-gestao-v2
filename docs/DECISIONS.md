@@ -21554,6 +21554,43 @@ Na `main`, o `ml-fulfillment-fetch` lê todo o histórico de `fulfillment_stock_
 
 **Publicação:** merge e a migration `20261126150000` na VM, com autorização do dono. A web não muda.
 
+## D-879 - A sugestão de compra pode ser calculada só para uma lista de SKUs
+
+**Contexto:** com a sugestão ligada (pedido novo), `get_purchase_analysis` chamava `get_purchase_suggestions` para o catálogo inteiro e ficava com ~50 linhas. Em produção, a sugestão do catálogo custa de 0,75 a 1,0 s, e uma página custa o mesmo, porque tudo é calculado antes do `limit`. A medição está em `docs/PERFORMANCE.md` ("Sugestão de compra: onde está o tempo").
+
+**Decisão:**
+- **`p_sku_ids uuid[] default null`, no fim de `get_purchase_suggestions`.** Nulo, nada muda para as outras chamadas: Reposição, contagem de estados, alcance, sugestão do pedido e Copiloto.
+- **Com a lista**, a conta por SKU fica restrita a ela: saldos, Full, vendas do ML e da Shopee e a linha do SKU. A curva ABC, o histórico de 90 dias e a loja Shopee lida continuam sendo os do catálogo inteiro, porque a classe ABC é relativa ao catálogo. A sugestão de cada SKU é a mesma.
+- **Full com lista:** o `distinct on` só vê os buckets que tiveram algum SKU pedido na janela de 3 dias, e o recorte por SKU vem depois dele. Um bucket que trocou de SKU continua valendo para o SKU da captura mais recente. A definição do D-173 não muda.
+- **Demanda da Shopee:** passa a ler os itens antes do pedido, como na D-878, com o mesmo recorte. Sem a lista, o resultado é igual ao de antes.
+- **`get_purchase_analysis`** passa a lista dos SKUs pedidos.
+- **Assinatura nova:** a função é apagada e recriada, com o comentário e os grants de antes. Em produção, nada depende dela em `pg_depend`. Quem a chama é plpgsql ou SQL não atômico, por posição, com até sete argumentos. Os tipos de `@sb/db` ganham `p_sku_ids?: string[]`.
+
+**Verificação:**
+- **Em produção, só leitura e como membro:** o corpo atual e o novo lado a lado, pelo hash.
+  - Sem lista, o catálogo inteiro, com a ordem, saiu IGUAL hoje e com `p_date_to` há 20 dias.
+  - Com lista, as linhas da lista contra o catálogo filtrado, sem `total_count` (que conta o conjunto devolvido), saíram IGUAIS em oito recortes: 50 mais vendidos, 500 SKUs, 200 com venda na Shopee e 200 com Full, nas duas datas.
+- **Tempos com lista** (a curva ABC, ~0,3 s, fica):
+
+  | Recorte | Catálogo filtrado | Com `p_sku_ids` |
+  |---|---|---|
+  | 50 SKUs | 0,69 a 0,84 s | 0,47 a 0,51 s |
+  | 500 SKUs | 0,76 a 1,02 s | 0,57 a 0,66 s |
+
+  Sem lista, o tempo ficou igual dentro do ruído: 0,71 a 1,04 s contra 0,81 a 0,84 s.
+- **Local:**
+  - a suíte de integração do `@sb/db` passou (17 arquivos);
+  - o teste novo compara a sugestão com e sem a lista e inclui um bucket do Full que trocou de SKU. Ele falha quando o recorte do Full vai para antes do `distinct on` (mutação conferida).
+
+**Publicação:** pede merge e a migration `20261126170000` na VM, com autorização do dono. A web não muda.
+
+**Correção (26/11, depois da publicação):** com uma lista curta de SKUs muito vendidos, a demanda da Shopee ficava lenta. Em produção, com a sugestão ligada, `get_purchase_analysis` levou ~11 s com 5 SKUs e ~9 s com 3. Com 1 e com 20 ou mais, levou menos de 1 s.
+
+- **Causa:** os itens materializados juntavam-se com os pedidos válidos da janela. O planejador estimava poucos itens e escolhia um laço que comparava cada pedido com todos eles (73 milhões de comparações com 5 SKUs).
+- **Correção:** a migration `20261126190000`. Com `p_sku_ids`, cada item acha o seu pedido pela chave primária (`shopee_shop_id`, `order_sn`). O `limit 1` impede que a lateral seja achatada de volta no join, e o pedido é único pela chave. Sem lista, o caminho continua o mesmo.
+- **Verificação:** em produção, só leitura e como membro, o hash do resultado saiu igual ao da função publicada em cinco recortes (sem lista, 1, 5 e 50 SKUs e uma marca). A suíte de integração do `@sb/db` passou. A mutação que tira o filtro de pedido válido só do ramo novo é pega pelo teste da D-879.
+- Sem número novo: é a mesma decisão, com o plano corrigido.
+
 ## D-884 - Conferir a base aplicada antes do ensaio local de upgrade
 
 O planejador exige que o catálogo da stack descartável coincida com a base Git. O candidato preserva os nomes e blobs dos SQLs aplicados. As adições são identificadas com o objeto Git e a posição em relação à última versão. As versões temporárias do laboratório ficam fora dos manifestos de publicação.
