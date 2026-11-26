@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  carregarFaturamentoPorConta,
   agregarDespesasNoPeriodo,
   lerCnpj,
   lerFormularioDespesa,
@@ -187,5 +188,57 @@ describe("lerResumoDespesasRpc", () => {
 
     expect(lerResumoDespesasRpc(null)).toBeNull();
     expect(lerResumoDespesasRpc({ atual: {} })).toBeNull();
+  });
+});
+
+describe("carregarFaturamentoPorConta", () => {
+  interface Resposta {
+    data: readonly Record<string, unknown>[] | null;
+    error: { code?: string } | null;
+  }
+  const cliente = (respostas: Record<string, Resposta>): { rpc: (fn: string) => Promise<Resposta>; chamadas: string[] } => {
+    const chamadas: string[] = [];
+    return {
+      chamadas,
+      rpc: (fn: string) => {
+        chamadas.push(fn);
+        return Promise.resolve(respostas[fn] ?? { data: null, error: { code: "PGRST202" } });
+      },
+    };
+  };
+
+  it("lê ML e Shopee pela função multicanal, com a referência da tela como chave", async () => {
+    const c = cliente({
+      get_faturamento_por_conta_multicanal: {
+        data: [
+          { marketplace: "MERCADO_LIVRE", conta_id: "ml-1", receita_bruta: "1000.00" },
+          { marketplace: "SHOPEE", conta_id: "loja-1", receita_bruta: 400 },
+          { marketplace: "SHOPEE", conta_id: "loja-2", receita_bruta: "0" },
+          { marketplace: "SHOPEE", conta_id: "loja-3", receita_bruta: null },
+          { marketplace: "OUTRO", conta_id: "x", receita_bruta: 10 },
+        ],
+        error: null,
+      },
+    });
+    const mapa = await carregarFaturamentoPorConta(c, "org", "2026-11-01", "2026-11-30");
+    expect([...mapa.entries()]).toEqual([
+      ["MERCADO_LIVRE:ml-1", 1000],
+      ["SHOPEE:loja-1", 400],
+    ]);
+    expect(c.chamadas).toEqual(["get_faturamento_por_conta_multicanal"]);
+  });
+
+  it("sem a função nova no banco, cai na antiga, só do ML", async () => {
+    const c = cliente({
+      get_faturamento_por_conta: { data: [{ ml_account_id: "ml-1", receita_bruta: "250.5" }], error: null },
+    });
+    const mapa = await carregarFaturamentoPorConta(c, "org", "2026-11-01", "2026-11-30");
+    expect([...mapa.entries()]).toEqual([["MERCADO_LIVRE:ml-1", 250.5]]);
+    expect(c.chamadas).toEqual(["get_faturamento_por_conta_multicanal", "get_faturamento_por_conta"]);
+  });
+
+  it("sem organização ou com as duas falhando, devolve o mapa vazio", async () => {
+    expect((await carregarFaturamentoPorConta(cliente({}), null, "2026-11-01", "2026-11-30")).size).toBe(0);
+    expect((await carregarFaturamentoPorConta(cliente({}), "org", "2026-11-01", "2026-11-30")).size).toBe(0);
   });
 });

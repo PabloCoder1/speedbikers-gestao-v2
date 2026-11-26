@@ -24,6 +24,8 @@ const ADMIN_B = "bbbbbbbb-0000-4000-8000-00000000c502";
 const CONTA_A = "cccccccc-0000-4000-8000-00000000c501";
 const CONTA_B = "cccccccc-0000-4000-8000-00000000c502";
 const LOJA_B = "dddddddd-0000-4000-8000-00000000c502";
+const LOJA_A = "dddddddd-0000-4000-8000-00000000c501";
+const LOJA_A_NAO_LIDA = "dddddddd-0000-4000-8000-00000000c503";
 
 let client: Client;
 let entidadeA = "";
@@ -49,7 +51,8 @@ async function limpar(): Promise<void> {
   await client.query("delete from public.operational_expenses where organization_id in ($1, $2)", [ORG_A, ORG_B]);
   await client.query("delete from public.operational_expense_history where organization_id in ($1, $2)", [ORG_A, ORG_B]);
   await client.query("delete from public.fiscal_entities where organization_id in ($1, $2)", [ORG_A, ORG_B]);
-  await client.query("delete from public.shopee_shops where id = $1", [LOJA_B]);
+  await client.query("delete from public.daily_account_metrics where ml_account_id in ($1, $2)", [CONTA_A, CONTA_B]);
+  await client.query("delete from public.shopee_shops where id in ($1, $2, $3)", [LOJA_B, LOJA_A, LOJA_A_NAO_LIDA]);
   await client.query("delete from public.ml_accounts where id in ($1, $2)", [CONTA_A, CONTA_B]);
 }
 
@@ -298,5 +301,78 @@ describe("Central Financeira — integridade (20261126235000)", () => {
       [id],
     );
     expect(editada).toEqual([{ actual_amount: "290.00" }]);
+  });
+});
+
+describe("Central Financeira — rateio por faturamento multicanal (20261126235500)", () => {
+  it("pesa a conta do ML e a loja da Shopee pela receita bruta conhecida, sob a RLS", async () => {
+    await client.query(
+      `insert into public.daily_account_metrics (organization_id, ml_account_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values ($1, $2, '2026-11-10', 3, 700.00, 3, 3), ($1, $2, '2026-11-11', 1, 300.00, 1, 1),
+              ($1, $2, '2026-12-01', 9, 999.00, 9, 9)`,
+      [ORG_A, CONTA_A],
+    );
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at, orders_last_success_at)
+       values ($1, $3, 'live', 985001, 'Loja Integ A', 'CONNECTED', now(), now()),
+              ($2, $3, 'live', 985003, 'Loja Integ A nunca lida', 'CONNECTED', now(), null)`,
+      [LOJA_A, LOJA_A_NAO_LIDA, ORG_A],
+    );
+
+    // Pedidos da loja lida (criados às 12h de São Paulo):
+    //   P1 válido, receita do financeiro (250);
+    //   P2 válido, receita pelos itens (2 × 75 = 150);
+    //   P3 cancelado; P4 sem pagamento; P5 válido de receita desconhecida (item de preço 0);
+    //   P6 válido, mas fora do intervalo. Só P1 e P2 contam: 400.
+    const pedido = async (loja: string, sn: string, status: string, pago: boolean, dia: string, renda: string | null): Promise<void> => {
+      await client.query(
+        `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at, order_income)
+         values ($1, $2, $3, $4, ($5::date + time '12:00') at time zone 'America/Sao_Paulo', now(),
+                 case when $6 then ($5::date + time '12:00') at time zone 'America/Sao_Paulo' end, $7::jsonb)`,
+        [loja, ORG_A, sn, status, dia, pago, renda],
+      );
+    };
+    const item = async (loja: string, sn: string, preco: number, qtd: number): Promise<void> => {
+      await client.query(
+        `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, item_sku, quantity, discounted_price)
+         values ($1, $2, 0, $3, 77, 'SKU-77', $4, $5)`,
+        [loja, sn, ORG_A, qtd, preco],
+      );
+    };
+    await pedido(LOJA_A, "C426P1", "COMPLETED", true, "2026-11-05", '{"order_discounted_price": 250}');
+    await item(LOJA_A, "C426P1", 250, 1);
+    await pedido(LOJA_A, "C426P2", "SHIPPED", true, "2026-11-30", null);
+    await item(LOJA_A, "C426P2", 75, 2);
+    await pedido(LOJA_A, "C426P3", "CANCELLED", true, "2026-11-06", '{"order_discounted_price": 900}');
+    await pedido(LOJA_A, "C426P4", "UNPAID", false, "2026-11-07", '{"order_discounted_price": 900}');
+    await pedido(LOJA_A, "C426P5", "COMPLETED", true, "2026-11-08", null);
+    await item(LOJA_A, "C426P5", 0, 1);
+    await pedido(LOJA_A, "C426P6", "COMPLETED", true, "2026-12-01", '{"order_discounted_price": 900}');
+    // A loja nunca lida não entra, mesmo com pedido válido.
+    await pedido(LOJA_A_NAO_LIDA, "C426N1", "COMPLETED", true, "2026-11-05", '{"order_discounted_price": 500}');
+
+    const sql = `select marketplace, conta_id, receita_bruta
+                 from public.get_faturamento_por_conta_multicanal($1, '2026-11-01', '2026-11-30')
+                 order by marketplace`;
+    const linhasA = await asUser<{ marketplace: string; conta_id: string; receita_bruta: string }>(ADMIN_A, sql, [ORG_A]);
+    expect(linhasA).toEqual([
+      { marketplace: "MERCADO_LIVRE", conta_id: CONTA_A, receita_bruta: "1000.00" },
+      { marketplace: "SHOPEE", conta_id: LOJA_A, receita_bruta: "400.00" },
+    ]);
+
+    // O ADMIN de outra organização lê vazio.
+    expect(await asUser(ADMIN_B, sql, [ORG_A])).toHaveLength(0);
+    // anon não executa.
+    await expect(
+      (async () => {
+        await client.query("begin");
+        try {
+          await client.query("set local role anon");
+          await client.query("select * from public.get_faturamento_por_conta_multicanal($1, '2026-11-01', '2026-11-30')", [ORG_A]);
+        } finally {
+          await client.query("rollback");
+        }
+      })(),
+    ).rejects.toThrow(/permission denied/i);
   });
 });
