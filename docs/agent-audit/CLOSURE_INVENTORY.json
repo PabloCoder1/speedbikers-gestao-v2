@@ -1,5 +1,5 @@
 {
-  "corte": "25/11/2026, ensaio manual de recuperação restrita e conciliação do candidato #364",
+  "corte": "26/11/2026, catálogo de D04 conciliado e candidato #364 com D-877",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "D-885, D-886 e ensaios locais no #407. A recuperação restrita de sync_runs preservou referências, checkpoints e avisos operacionais. Faltam política, teste de lote representativo, execução e publicação.",
+      "evidencia": "Histórico, índice temporal e ensaio de recuperação restrita no candidato. As duas migrations da Central foram renumeradas sem alterações no SQL, com plano compatível com a VM. Faltam política, lote representativo, execução e publicação.",
       "fase": 3
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "O candidato #364 inclui #378. Ensaio D-884 de 330 a 334 versões e 1.254 testes de integração. VM tem as mesmas 334 versões originais. Faltam conferência do catálogo do Dev saudável e homologação do SHA integrado.",
+      "evidencia": "Candidato #364 integrado até a main #415. O preflight reconhece as 339 versões da VM e três pendências posteriores. Faltam a conferência do catálogo do Dev e a homologação do SHA integrado.",
       "fase": 5
     },
     {
@@ -419,7 +419,7 @@
       "peso": 8,
       "status": "Bloqueado",
       "responsavel": "Dono/Infra",
-      "evidencia": "25/11: catálogo de 334 versões da VM coincide com o #364 e nove comparações de objetos e permissões passaram. A publicação coordenada do SHA completo e sua validação seguem pendentes.",
+      "evidencia": "O preflight local passou de bloqueado a pendente após conciliar D04. A VM tem 339 versões. D-877, D-885 e D-886 integram o plano; a aplicação coordenada e sua validação seguem pendentes.",
       "fase": 5
     },
     {

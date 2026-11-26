@@ -21486,7 +21486,9 @@ No plano genérico da curva, a CTE `full_by_sku`, usada uma vez, é incorporada 
 - **`lerLedger`** passa a usá-lo. As linhas e a ordem são as mesmas: o `id` é a PK, e a ordem já era por ela.
 - **Fica de fora:** o ledger inteiro continua indo para a memória do worker. O próprio `read-all-pages.ts` diz que conjunto grande pertence a uma RPC. Essa troca pede migration e deploy juntos e é a fatia seguinte, se a rodada continuar longa.
 
-**Achado para a próxima fatia:** o `ml-fulfillment-fetch` lê todo o histórico de `fulfillment_stock_snapshots` dos inventários da conta para ficar com a captura mais recente de cada um.
+**Achado, já resolvido fora da `main` (correção em 25/11):** a D-776 do Gemini (19/11) já faz isso no candidato, e está na imagem do worker em produção (`c5882974`). A leitura antiga só aparece no `pg_stat_statements` porque o acumulado começa em 18/11, antes daquele deploy. O texto abaixo vale só para a `main`, que ainda não tem a D-776.
+
+Na `main`, o `ml-fulfillment-fetch` lê todo o histórico de `fulfillment_stock_snapshots` dos inventários da conta para ficar com a captura mais recente de cada um.
 - Média de 255 ms por página.
 - A paginação ordena por `captured_at`, que não é único entre inventários, contra a regra da D-131. Na fronteira de uma página, a captura mais recente de um inventário pode ser pulada, e a "anterior" usada na comparação sai mais velha.
 - A correção é uma leitura da última captura por inventário no SQL (`distinct on`, pelo índice `fulfillment_stock_snapshots_timeline_idx`).
@@ -21498,6 +21500,35 @@ No plano genérico da curva, a CTE `full_by_sku`, usada uma vez, é incorporada 
 
 **Publicação:** pede deploy do `worker` em produção, com autorização do dono. Não há migration.
 
+## D-877 - A análise de compra reconstrói o local do fim do dia por soma acumulada
+
+**Contexto:** `get_purchase_analysis` (D-721), usada por `/reposicao` e pelo pedido novo, apareceu no `pg_stat_statements` com média de 4,7 s.
+- Em produção, como membro e com o cache quente, levou de 3,0 a 3,6 s para os 50 SKUs que a reposição pede.
+- O plano mostrou ~2,6 s numa só subconsulta: para cada (SKU, dia) dos últimos 30, a soma dos movimentos LOCAIS posteriores àquele dia. Ela relia e reagrupava os movimentos do SKU a cada vez, em 1.470 laços para 49 SKUs.
+
+**Decisão:**
+- **`local_fim_do_dia`.** Os movimentos por (SKU, dia), já agregados em `movimentos`, entram uma vez. A soma "depois do dia" sai de uma janela acumulada por SKU, do último dia para trás.
+- **`depois_do_fim`.** Os movimentos posteriores ao `p_date_to` também saem do saldo atual, como no filtro antigo `m.dia > d.dia`, que não tinha teto. Sem isso, um `p_date_to` no passado mudaria a ruptura.
+- **Mais nada muda:** a assinatura, o retorno, a sugestão, a 1ª venda, o Full do dia (D-173/D-204, ainda avaliado só quando o local zera), os pedidos sobrepostos, a última compra, as regras do fornecedor e os grants. O comentário é refeito igual.
+- **Fica de fora:** a 1ª venda da Shopee (~200 ms do que sobra), para fatia própria.
+
+**Verificação:**
+- Em produção, só leitura e como membro: o corpo antigo e o novo lado a lado, comparados pelo hash do JSON inteiro, em seis recortes, todos IGUAIS:
+
+  | Recorte | Antes | Depois |
+  |---|---|---|
+  | 50 SKUs, sem sugestão | 3,16 s | 0,31 s |
+  | 50 SKUs, com sugestão | 3,81 s | 1,17 s |
+  | 50 SKUs, `p_date_to` há 20 dias | 7,36 s | 1,59 s |
+  | 500 SKUs | 2,70 s | 0,61 s |
+  | Com fornecedor e pedido excluído | 4,00 s | 1,07 s |
+  | 50 SKUs mais movimentados, há 7 dias | 4,23 s | 0,41 s |
+
+- **Lacuna:** não havia, para o membro, fornecedor com regra nem pedido em rascunho. Esse recorte rodou com os dois filtros nulos. É um trecho que a migration não muda.
+- Localmente, a suíte do `@sb/db` com a migration teve as mesmas 10 falhas de baseline. O `compras-inteligentes`, que cobre `stockout_days_30`, passou.
+
+**Publicação:** pede merge e a migration `20261125200000` na VM, com autorização do dono. A web não muda.
+
 ## D-884 - Conferir a base aplicada antes do ensaio local de upgrade
 
 O planejador exige que o catálogo da stack descartável coincida com a base Git. O candidato preserva os nomes e blobs dos SQLs aplicados. As adições são identificadas com o objeto Git e a posição em relação à última versão. As versões temporárias do laboratório ficam fora dos manifestos de publicação.
@@ -21508,7 +21539,7 @@ Em 25/11, a base local de `6a3471ff` tinha 330 versões. As quatro adições de 
 
 **Data:** 2026-11-25. **Origem:** D04, leitura do histórico da Central.
 
-A migration `20261125160000` guarda vínculos já lidos em `notification_archive`. O arquivo referencia o evento original. A leitura usa a RLS de destinatário e a permissão vigente de `domain_events`. Durante uma cópia, o vínculo ativo tem precedência. A view mantém os filtros e as contagens no PostgreSQL, e a RPC une lotes paginados dos dois ramos com desempate pelo identificador. As ações de leitura escrevem nos destinatários ativos.
+A migration `20261126120000` guarda vínculos já lidos em `notification_archive`. O arquivo referencia o evento original. A leitura usa a RLS de destinatário e a permissão vigente de `domain_events`. Durante uma cópia, o vínculo ativo tem precedência. A view mantém os filtros e as contagens no PostgreSQL, e a RPC une lotes paginados dos dois ramos com desempate pelo identificador. As ações de leitura escrevem nos destinatários ativos.
 
 O PostgreSQL pode escolher um plano genérico que lê todo o histórico antes de montar a primeira página. A RPC planeja a consulta com os valores vinculados de cada chamada. No ensaio de 54 mil vínculos, com arquivo vazio, a primeira versão da view levou entre 486 e 536 ms. A versão paginada levou entre 2,2 e 3,7 ms. A contagem total exata ficou entre 215 e 306 ms, frente a 184–195 ms na comparação com a consulta ativa.
 
@@ -21518,6 +21549,6 @@ A publicação da web depende da migration. O arquivo pode começar vazio. A pol
 
 **Data:** 2026-11-25. **Origem:** D04, leitura da Central com arquivo preenchido.
 
-A migration `20261125170000` acrescenta uma view `security_invoker` para o ramo arquivado. As consultas laterais usam vínculos únicos e preservam a ordem do índice temporal. A RPC usa esse caminho nas páginas sem filtros com deslocamento até 1.000. Os recortes por evento e as páginas mais profundas continuam usando o plano de D-885. Lista, contagens, ordenação e permissões mantêm o contrato existente.
+A migration `20261126121000` acrescenta uma view `security_invoker` para o ramo arquivado. As consultas laterais usam vínculos únicos e preservam a ordem do índice temporal. A RPC usa esse caminho nas páginas sem filtros com deslocamento até 1.000. Os recortes por evento e as páginas mais profundas continuam usando o plano de D-885. Lista, contagens, ordenação e permissões mantêm o contrato existente.
 
 O ensaio com 54 mil vínculos sintéticos verificou dez recortes, incluindo vínculos duplicados em cópia, deslocamentos de 1.000 e 1.001, filtros combinados e lista vazia. A publicação também depende da migration de D-885.

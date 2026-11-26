@@ -1216,6 +1216,31 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
   - a última captura do Full no SQL;
   - medir como membro as RPCs de 4 a 5 s.
 
+### 25/11/2026 · Claude Sentinel: análise de compra (D-877) e merges
+
+- **#413 (D-875) e #414 (D-876):** mergeados com autorização do dono. A `main` está em `32e8372b`.
+- **Deploy do worker não feito:** produção roda a imagem `c5882974`, do candidato do Codex, fora da `main`. Publicar a `main` desfaria ~7 mil linhas do worker, entre elas a D-776 e as correções do M05.
+  - A parte do worker da D-876 entra limpa sobre o `c5882974`.
+  - **Decisão do dono (26/11):** a D-876 chega ao worker de produção pelo candidato do Codex. Não há imagem própria. Pedido feito no #351.
+- **Correção:** o achado do Full na D-876 já estava resolvido pela D-776, na imagem de produção.
+- **Central medida como membro:** meta do mês, detector de frete e faturamento ficam abaixo de 1,1 s com o cache quente.
+- **D-877:** `get_purchase_analysis` caiu de 3,0 a 3,6 s para ~0,3 s (50 SKUs), com seis recortes iguais. A migration é `20261125200000`.
+- **Testes:** suíte de integração do `@sb/db` com a migration, com as 10 falhas de baseline. Mais `pnpm docs:check`.
+- **Próxima etapa:**
+  - publicar a D-877 com autorização;
+  - conferir o `APP_COMMIT` quando o candidato publicar o worker com a D-876;
+  - a 1ª venda da Shopee na análise de compra.
+
+### 26/11/2026 · Claude Sentinel: conferências do dia (UpSeller e M05)
+
+Tudo lido pela VM em modo só leitura.
+- **Anúncios do ML (M05).** Desde que a `worker-m05-cf6dae2d` assumiu o tráfego (25/11 11:39 UTC), `sync.listing.item` teve uma única falha num dia inteiro: menos de 0,1 %. Foi um envelope do multiget com status conflitante. As 17 falhas da hora das 11 UTC de 25/11 são de antes da troca. `sync.listings.snapshot` fechou sem falha. **Para o inventário:** o M05 pode ser aceito.
+- **Saldos LOCAL negativos.** Caíram de 25 para 8 depois da captura de 25/11. A verificação diária do ledger (`maintenance.verify-ledger-integrity`, 09:30 UTC) terminou sem divergência.
+  - **6 dos 8** são SKUs que saíram da planilha do UpSeller. Estão marcados como ausentes desde 24/11, inativos e descontinuados. A última captura deles é de setembro ou outubro, e as vendas posteriores passaram do saldo daquela planilha. Captura nova nenhuma vai corrigi-los, porque eles não estão mais nela. Só um teve saída depois de marcado como ausente, no próprio dia 24/11.
+  - **2 dos 8** estão na planilha nova. São vendas depois da captura acima do saldo dela, e somem com a próxima planilha.
+  - **Ação do dono:** decidir o que fazer com o saldo negativo de SKU descontinuado. As opções são zerar com um ajuste manual ou deixar como está, já que o SKU está inativo.
+- **Próxima etapa:** publicar a D-877 com autorização. Conferir o `APP_COMMIT` quando o candidato publicar o worker com a D-876.
+
 ### 26/11/2026 · Conciliação do ensaio de D04 e da main #414
 
 - O ensaio manual de D04, `a9ef1247` (#407), entrou localmente em `db68fd0d`. Foi repetido com rollback e recusou banco populado, host externo e redirecionamento por parâmetro da URL. As CIs de `32d4ad4b` (#364, run `45667109649`) e `a9ef1247` (#407, run `45669808681`) terminaram verdes.
@@ -1223,3 +1248,10 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - Preflight em leitura: VM com 339 versões, candidato com 341. A VM tem `20261125183000` (D-874); `20261125160000` e `20261125170000` faltam abaixo dela. A guarda bloqueou a aplicação. Próximo passo é ensaiar e revisar a conciliação das duas versões antes de qualquer publicação web.
 - O #409 em `7cd9753b` colide com a versão de D-886. Gemini recebeu o pedido de versão livre e teste do catálogo conjunto. #401 e #408 seguem reservados. S05 aguarda autorização de IAM. Dev e o Supabase hosted antigo seguem inativos. Inventário em 173/226.
 - A instalação limpa do candidato com 341 versões passou no ensaio manual e em 1.260 testes SQL/PostgREST. Check 37/37, build 10/10, docs:check e isolamento/preflight 12/12. Em outro laboratório, duas cópias byte a byte das migrations D04 receberam versões temporárias posteriores a D-874. O upgrade de 339 para 341 passou, e as definições e permissões das duas views, da RPC e da policy corresponderam à instalação limpa. As versões temporárias ficaram no laboratório.
+
+### 26/11/2026 · Numeração da Central conciliada com a VM e a main #415
+
+- Candidato anterior `2ec1a00e` (#364), main `14d8c9bc` (#415). Integrei D-877 de Claude e preservei os checkpoints documentais de ambas as frentes.
+- A VM tinha 339 versões até D-874 e nenhum registro dos números antigos da Central. Renumerei D-885 e D-886 de `20261125160000`/`20261125170000` para `20261126120000`/`20261126121000`. Os blobs SQL são idênticos. O #407 conserva os números originais como histórico da entrega, e o #364 é a referência do plano.
+- Em laboratório com as 339 versões da VM, as três pendências entraram em ordem: D-877, D-885 e D-886. O catálogo final coincidiu com as 342 versões do checkout. Integração 1.260/1.260, ensaio de recuperação de sync_runs, preflight 10/10, check 37/37, build 10/10 e docs:check passaram.
+- Próxima etapa: acompanhar a nova CI, reconferir o catálogo da VM antes da aplicação e conferir o Dev quando voltar. O #409 recebeu as novas reservas de versão. M04 e D-836 seguem com Gemini; S05 aguarda autorização de IAM. Nenhuma migration foi aplicada em produção nesta rodada. Progresso em 173/226.

@@ -4,6 +4,8 @@ Checkpoint das entregas do **Gemini Sentinel** em colaboração ativa com o **Co
 
 Em 25/11, o #378 entrou no #364 em `29adf54c`, com D-807–D-831. Gemini abriu o #401 com D-832 a D-837. CI do candidato, separação da retenção e preservação do retry de Shopee pedidas. [Revisão D-832](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/401#issuecomment-7168241930). No #401, o teste de reconexão após liberar a trava segue com Gemini. D-836 está no #408, com revisão de prévia e preservação das regras do bucket. [Coordenação](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/343#issuecomment-7140347544).
 
+Em 26/11, o #409 em `7cd9753b` ainda propõe uma versão anterior à última da VM. O candidato reserva `20261126120000` e `20261126121000` para a Central. Gemini mantém #401, #408 e #409. [Coordenação do catálogo](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/409#issuecomment-7170105584).
+
 ## 1. Git, branch, worktree e coordenação de equipe
 
 | Item | Estado verificado |
