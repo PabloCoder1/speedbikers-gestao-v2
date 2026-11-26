@@ -814,3 +814,11 @@ Tudo lido pela VM em modo só leitura.
   - teste novo da 1ª venda da Shopee, que pega a falta do filtro `live` (mutação conferida);
   - `pnpm run check` e `pnpm docs:check`. O `build` não rodou: a mudança não toca código de app.
 - **Próxima etapa:** publicar a D-878 com autorização do dono. Depois, `get_purchase_suggestions`, que é o que sobra com a sugestão ligada.
+
+### 26/11/2026 · Claude Sentinel: D-878 em produção
+
+- **Publicação.** Com autorização do dono, o #417 entrou na `main` em `f0c35bab`.
+  - Os 4 jobs obrigatórios passaram. O do Dev falhou com "project is paused", como esperado.
+  - A migration `20261126150000` foi aplicada pela VM com `psql -1`, com o mesmo sha256 dos dois lados, e registrada no histórico. A Vercel concluiu a web, que não muda.
+- **Conferência.** Corpo novo, grants, comentário e registro certos. Como membro, com 50 SKUs: 0,25 s sem sugestão e com o cache quente, e 1,19 s com sugestão.
+- **Próxima etapa:** `get_purchase_suggestions`, que é quase todo o tempo com a sugestão ligada. A numeração de decisões depois do D-879 está proposta no #351.
