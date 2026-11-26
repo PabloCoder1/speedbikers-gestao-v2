@@ -2548,6 +2548,12 @@ A consulta somente leitura registrou 64.147 execuções, 706 erros vinculados e 
 
 Três lotes foram mais rápidos em cada variante. A mediana de WAL subiu 19,8%. O ensaio de lotes de mil continua mostrando benefício sob densidade de erros maior. Para o primeiro piloto de até 100, a proposta é usar os índices atuais e medir latência e espera por trava. Reavaliar antes de aumentar o lote ou se a espera pela FK ultrapassar o orçamento aprovado. O ensaio sequencial mede o trabalho local e não mede commit, réplica nem carga concorrente.
 
+#### Primeiro lote após commit, com duas escritas concorrentes
+
+Um ensaio adicional em laboratório descartável usou 101 execuções elegíveis sintéticas, sem índice novo e com dois logins PostgreSQL autenticados. Um escritor inseriu um erro e manteve a transação aberta. O arquivador pulou esse pai e moveu os outros 100. Um segundo escritor tentou inserir erro em um pai recém-arquivado. O PostgreSQL identificou a sessão do arquivador como bloqueadora. Depois do commit, o erro tardio reidratou esse pai. A recuperação repôs as outras 99 execuções e uma repetição inseriu zero.
+
+As 101 execuções ficaram ativas, as 100 cópias frias corresponderam integralmente ao ativo, e as duas referências de erro foram preservadas. Saúde, cartões, checkpoints e vigia permaneceram iguais e não houve alerta histórico. O lote levou 22 ms, a recomposição 23 ms e a inserção do erro tardio 44 ms no total. A observação foi única, com bloqueio induzido e volume pequeno. Os tempos não medem a duração isolada da trava nem caracterizam a produção.
+
 ### Custo da ordenação da Central de Notificações (D-851)
 
 Ensaio em PostgreSQL 17 descartável com 141.500 vínculos sintéticos

@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "Histórico e ensaio de 60 dias no candidato. Lotes e concorrência passaram. A divergência entre cópia e remoção abortou o lote e a repetição foi validada. Recibo atômico e recuperação concorrente após commit passaram em laboratório. O piloto local separa arquivamento e recuperação, registra o corte efetivo e propõe até 100 por lote sem índice novo pelo ensaio pareado. Faltam homologação, autorização e publicação.",
+      "evidencia": "Histórico e ensaio de 60 dias no candidato. Lotes e concorrência passaram. A divergência entre cópia e remoção abortou o lote e a repetição foi validada. Recibo atômico e recuperação concorrente após commit passaram em laboratório. O piloto local arquivou 100 com escritores concorrentes, restaurou 99 após hidratação tardia e conferiu as referências e os autores. Faltam homologação, autorização e publicação.",
       "fase": 3
     },
     {
@@ -419,7 +419,7 @@
       "peso": 8,
       "status": "Bloqueado",
       "responsavel": "Dono/Infra",
-      "evidencia": "O preflight local passou de bloqueado a pendente após conciliar D04. O catálogo observado tem 342 versões, até a primeira versão de D-879. O plano lista a correção Shopee e as duas versões novas da Central; a aplicação coordenada e sua validação seguem pendentes.",
+      "evidencia": "O preflight local passou de bloqueado a pendente após conciliar D04. O catálogo observado tem 343 versões, até a correção Shopee de D-879. O plano lista as duas versões da Central; a aplicação coordenada e sua validação seguem pendentes.",
       "fase": 5
     },
     {
