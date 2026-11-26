@@ -2517,6 +2517,20 @@ Na cópia local do catálogo atual, a guarda de `sync_runs` recusou `DELETE` com
 
 A adoção exige um caminho autorizado e restrito para movimentar linhas e recuperar o pai sem disparar avisos históricos. Antes de implementar o corte, verificar a equivalência de `resolveWindowFrom`, claims, cartões de conta e vigias nas tabelas do laboratório.
 
+#### Lotes de arquivamento com erros vinculados (D04, 26/11/2026)
+
+O ensaio manual com `--benchmark` usou o catálogo Supabase do candidato, 58 mil execuções adicionais em uma conta e 8.285 erros com referência ao pai. A seleção calculou os checkpoints uma vez por lote, reservou as linhas selecionadas com `FOR UPDATE SKIP LOCKED` e conferiu a ausência de erros novamente antes de mover. O corte da simulação excluiu a janela móvel de 24 horas para preservar os contadores da saúde da sincronização.
+
+| Tamanho | Sem índice na FK dos erros | Com índice parcial em `sync_errors(sync_run_id)` |
+| --- | ---: | ---: |
+| 100 | 190–241 ms | 156–194 ms |
+| 500 | 349–377 ms | 144–158 ms |
+| 1.000 | 582–643 ms | 144–157 ms |
+
+São duas execuções locais, uma medição por combinação em cada rodada, do comando de movimentação até a resposta dentro da transação. Os números excluem commit, replicação e o custo de manutenção do índice em produção. A medição também exclui a leitura posterior de controle. Saúde, cartões, checkpoints de pedidos e claims e vigia mantiveram os resultados. Dois lotes de 100 moveram 200 IDs distintos. O índice e os dados foram revertidos junto com os demais objetos do ensaio.
+
+O próximo passo é medir a duração dos bloqueios sob escritores concorrentes e o custo de adicionar o índice. A política de corte e a aplicação no ambiente operacional continuam pendentes.
+
 ### Custo da ordenação da Central de Notificações (D-851)
 
 Ensaio em PostgreSQL 17 descartável com 141.500 vínculos sintéticos
