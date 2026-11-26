@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **768** (D-001 a D-886).
+Decisões registradas: **769** (D-001 a D-886).
 
 ## Por domínio
 
@@ -92,7 +92,7 @@ Decisões registradas: **768** (D-001 a D-886).
 - **D-808** — API: receptor autenticado `POST /push/tiktok-shop` (`M04`, fatia 3)
 - **D-877** — A análise de compra reconstrói o local do fim do dia por soma acumulada
 
-### banco/rls (55)
+### banco/rls (56)
 
 - **D-012** — Modelo A: `web` lê o Supabase diretamente sob RLS
 - **D-014** — Cloud Tasks é a fila; o Postgres registra o executado
@@ -147,6 +147,7 @@ Decisões registradas: **768** (D-001 a D-886).
 - **D-820** — Web Server Actions: `auth.getUser()` fail-closed nas 5 telas restantes e saneamento de erro SQL na triagem
 - **D-826** — Web exportações CSV/XLSX: eliminação de vazamento de `error.message` bruto do Postgres no HTTP 502
 - **D-830** — Web faturamento/vendas: eliminação de `error.message` bruto do Postgres no DOM
+- **D-878** — A 1ª venda da análise de compra sai dos índices do SKU
 - **D-881** — Workflow de migrations de produção gera o plano da VM
 - **D-886** — O histórico arquivado usa a ordem do índice nas primeiras páginas
 
