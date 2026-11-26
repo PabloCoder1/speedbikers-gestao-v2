@@ -18798,3 +18798,85 @@ td.sb-pco-num-linha {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ─── Central de Inteligência Financeira: DRE Gerencial e Simulador ─── */
+
+.sb-dre-tabela .sb-dre-col-barra {
+  width: 24%;
+  min-width: 120px;
+}
+
+.sb-dre-trilha {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--sb-bg-soft);
+  overflow: hidden;
+}
+
+.sb-dre-barra {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--sb-primary);
+}
+
+.sb-dre-barra-deducao {
+  background: var(--sb-muted-ink);
+}
+
+.sb-dre-barra-subtotal {
+  background: var(--sb-secondary);
+}
+
+.sb-dre-barra-resultado {
+  background: var(--sb-success);
+}
+
+.sb-dre-barra-negativa {
+  background: var(--sb-danger);
+}
+
+.sb-dre-destaque td {
+  background: var(--sb-bg-soft);
+}
+
+.sb-dre-subtotal td,
+.sb-dre-resultado td {
+  font-weight: 600;
+}
+
+.sb-dre-negativo {
+  color: var(--sb-danger-ink);
+}
+
+.sb-simulador {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sb-space-4);
+}
+
+.sb-simulador-controles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--sb-space-3);
+}
+
+.sb-simulador-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--sb-text-soft);
+}
+
+.sb-simulador-campo span {
+  font-weight: 600;
+  color: var(--sb-text);
+}
+
+@media (max-width: 768px) {
+  .sb-dre-tabela .sb-dre-col-barra {
+    display: none;
+  }
+}

@@ -13,11 +13,12 @@
  * de cada tela, e ficam nela.
  */
 
-export type TelaDaCentral = "central" | "metas" | "limites" | "frete" | "ads" | "produtos";
+export type TelaDaCentral = "central" | "custos" | "metas" | "limites" | "frete" | "ads" | "produtos";
 
-/** A ordem das abas é a da tarefa: a visão do período, o que a alimenta (metas, limites) e os diagnósticos. */
+/** A ordem das abas é a da tarefa: a visão do período, o que a alimenta (custos/fiscal, metas, limites) e os diagnósticos. */
 const TELAS: readonly { readonly tela: TelaDaCentral; readonly caminho: string; readonly rotulo: string }[] = [
   { tela: "central", caminho: "/central", rotulo: "Central" },
+  { tela: "custos", caminho: "/central/custos", rotulo: "Custos e fiscal" },
   { tela: "metas", caminho: "/central/metas", rotulo: "Metas e imposto" },
   { tela: "limites", caminho: "/central/limites", rotulo: "Limites" },
   { tela: "frete", caminho: "/central/frete", rotulo: "Detector de frete" },

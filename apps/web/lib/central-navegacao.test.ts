@@ -22,11 +22,12 @@ describe("contextoDaCentral", () => {
 });
 
 describe("abasDaCentral", () => {
-  it("são as seis telas, com a atual marcada", () => {
+  it("são as sete telas, com a atual marcada", () => {
     const abas = abasDaCentral("metas", {});
 
     expect(abas.map((aba) => aba.label)).toEqual([
       "Central",
+      "Custos e fiscal",
       "Metas e imposto",
       "Limites",
       "Detector de frete",

@@ -25,6 +25,7 @@ import { textoDaVariacao } from "../../../lib/variacao";
 import type { RespostaRpc } from "../faturamento/numeros";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { funcaoAusente, type RespostaComCodigo } from "./comum";
+import { SecaoDreGerencial } from "./dre-gerencial";
 import { SecaoMeta, type MetaIndisponivel } from "./meta";
 
 function formatar(valor: number | null, formato: Formato): string {
@@ -342,6 +343,8 @@ export async function Indicadores({
       />
 
       {GRUPOS.slice(1).map((grupo) => secaoDoGrupo(grupo, false, indicadores))}
+
+      <SecaoDreGerencial entrada={entrada} />
 
       {/*
         RECOLHIDOS, A UM TOQUE (UX_SYSTEM §6, bloco 1): a tabela repete o que os
