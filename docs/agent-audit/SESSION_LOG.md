@@ -775,12 +775,12 @@ O mapa, o plano e o registro dão continuidade a esta auditoria. Skills locais s
 - **#413 (D-875) e #414 (D-876):** mergeados com autorização do dono. A `main` está em `32e8372b`.
 - **Deploy do worker não feito:** produção roda a imagem `c5882974`, do candidato do Codex, fora da `main`. Publicar a `main` desfaria ~7 mil linhas do worker, entre elas a D-776 e as correções do M05.
   - A parte do worker da D-876 entra limpa sobre o `c5882974`.
-  - A forma de publicar espera decisão do dono.
+  - **Decisão do dono (26/11):** a D-876 chega ao worker de produção pelo candidato do Codex. Não há imagem própria. Pedido feito no #351.
 - **Correção:** o achado do Full na D-876 já estava resolvido pela D-776, na imagem de produção.
 - **Central medida como membro:** meta do mês, detector de frete e faturamento ficam abaixo de 1,1 s com o cache quente.
 - **D-877:** `get_purchase_analysis` caiu de 3,0 a 3,6 s para ~0,3 s (50 SKUs), com seis recortes iguais. A migration é `20261125200000`.
 - **Testes:** suíte de integração do `@sb/db` com a migration, com as 10 falhas de baseline. Mais `pnpm docs:check`.
 - **Próxima etapa:**
   - publicar a D-877 com autorização;
-  - a decisão do worker;
+  - conferir o `APP_COMMIT` quando o candidato publicar o worker com a D-876;
   - a 1ª venda da Shopee na análise de compra.
