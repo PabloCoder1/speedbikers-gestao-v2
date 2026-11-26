@@ -338,13 +338,88 @@ export interface ResumoDespesasPeriodo {
   readonly despesasFixas: number | null;
   readonly despesasVariaveis: number | null;
   readonly quantidade: number;
+  readonly totalPrevisto: number;
+  readonly totalRealizado: number;
+  readonly atrasadasCount: number;
 }
 
 export const DESPESAS_PERIODO_VAZIO: ResumoDespesasPeriodo = {
   despesasFixas: null,
   despesasVariaveis: null,
   quantidade: 0,
+  totalPrevisto: 0,
+  totalRealizado: 0,
+  atrasadasCount: 0,
 };
+
+export interface ResumoRegimeCaixa {
+  readonly pagoNoCaixa: number;
+  readonly aVencerEmAberto: number;
+  readonly vencidasEmAtraso: number;
+  readonly qtdPagas: number;
+  readonly qtdAVencer: number;
+  readonly qtdAtrasadas: number;
+}
+
+/**
+ * Consolida a visão de Regime de Caixa (saídas efetivamente pagas, compromissos
+ * a vencer e contas em atraso) separadamente do Regime de Competência da DRE.
+ */
+export function resumirRegimeCaixa(
+  despesas: readonly {
+    readonly status: StatusDespesa;
+    readonly planned_amount: number | string;
+    readonly actual_amount: number | string | null;
+    readonly due_date: string | null;
+  }[],
+  hoje: string,
+): ResumoRegimeCaixa {
+  let pagoNoCaixa = 0;
+  let aVencerEmAberto = 0;
+  let vencidasEmAtraso = 0;
+  let qtdPagas = 0;
+  let qtdAVencer = 0;
+  let qtdAtrasadas = 0;
+
+  for (const d of despesas) {
+    if (d.status === "cancelada") continue;
+
+    const valor = d.actual_amount !== null ? Number(d.actual_amount) : Number(d.planned_amount);
+    if (!Number.isFinite(valor) || valor < 0) continue;
+
+    if (d.status === "paga") {
+      pagoNoCaixa += valor;
+      qtdPagas += 1;
+    } else if (d.status === "atrasada" || (d.due_date !== null && d.due_date < hoje)) {
+      vencidasEmAtraso += valor;
+      qtdAtrasadas += 1;
+    } else {
+      aVencerEmAberto += valor;
+      qtdAVencer += 1;
+    }
+  }
+
+  return {
+    pagoNoCaixa: Math.round(pagoNoCaixa * 100) / 100,
+    aVencerEmAberto: Math.round(aVencerEmAberto * 100) / 100,
+    vencidasEmAtraso: Math.round(vencidasEmAtraso * 100) / 100,
+    qtdPagas,
+    qtdAVencer,
+    qtdAtrasadas,
+  };
+}
+
+/** Calcula o primeiro dia do mês seguinte (YYYY-MM-01 -> YYYY-MM-01). */
+export function proximoMes(mesYm: string): string | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(mesYm.trim());
+  if (m === null) return null;
+  const ano = Number(m[1]);
+  const mes = Number(m[2]);
+  if (mes < 1 || mes > 12) return null;
+  const proxAno = mes === 12 ? ano + 1 : ano;
+  const proxMes = mes === 12 ? 1 : mes + 1;
+  return `${String(proxAno)}-${String(proxMes).padStart(2, "0")}-01`;
+}
 
 /**
  * Soma as despesas operacionais (fixas e variáveis) que pertencem ao intervalo
@@ -362,21 +437,34 @@ export function agregarDespesasNoPeriodo(
     readonly planned_amount: number | string;
     readonly actual_amount: number | string | null;
     readonly competence_date: string;
+    readonly due_date?: string | null;
   }[],
   from: string,
   to: string,
+  hoje: string = to,
 ): ResumoDespesasPeriodo {
   let fixas = 0;
   let variaveis = 0;
   let qtdFixas = 0;
   let qtdVariaveis = 0;
+  let totalPrevisto = 0;
+  let totalRealizado = 0;
+  let atrasadasCount = 0;
 
   for (const d of despesas) {
     if (d.status === "cancelada") continue;
     if (d.competence_date < from || d.competence_date > to) continue;
 
-    const valorBruto = d.actual_amount !== null ? Number(d.actual_amount) : Number(d.planned_amount);
+    const previsto = Number(d.planned_amount);
+    const realizado = d.actual_amount !== null ? Number(d.actual_amount) : null;
+    const valorBruto = realizado ?? previsto;
     if (!Number.isFinite(valorBruto) || valorBruto < 0) continue;
+
+    if (Number.isFinite(previsto) && previsto >= 0) totalPrevisto += previsto;
+    if (realizado !== null && Number.isFinite(realizado) && realizado >= 0) totalRealizado += realizado;
+    if (d.status === "atrasada" || (d.status === "prevista" && d.due_date != null && d.due_date < hoje)) {
+      atrasadasCount += 1;
+    }
 
     if (d.cost_type === "fixo") {
       fixas += valorBruto;
@@ -391,6 +479,9 @@ export function agregarDespesasNoPeriodo(
     despesasFixas: qtdFixas > 0 ? Math.round(fixas * 100) / 100 : null,
     despesasVariaveis: qtdVariaveis > 0 ? Math.round(variaveis * 100) / 100 : null,
     quantidade: qtdFixas + qtdVariaveis,
+    totalPrevisto: Math.round(totalPrevisto * 100) / 100,
+    totalRealizado: Math.round(totalRealizado * 100) / 100,
+    atrasadasCount,
   };
 }
 
@@ -422,6 +513,7 @@ export async function carregarDespesasDoPeriodo(
                         readonly planned_amount: number | string;
                         readonly actual_amount: number | string | null;
                         readonly competence_date: string;
+                        readonly due_date: string | null;
                       }[]
                     | null;
                   error: { code?: string } | null;
@@ -435,7 +527,7 @@ export async function carregarDespesasDoPeriodo(
 
     const { data, error } = await db
       .from("operational_expenses")
-      .select("cost_type, status, planned_amount, actual_amount, competence_date")
+      .select("cost_type, status, planned_amount, actual_amount, competence_date, due_date")
       .eq("organization_id", organizationId)
       .gte("competence_date", from)
       .lte("competence_date", to)

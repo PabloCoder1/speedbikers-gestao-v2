@@ -6,8 +6,12 @@ import { RemoverComConfirmacao } from "../../../../components/remover-com-confir
 import { CabecalhoDaCentral, SendoAtivado } from "../comum";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
+import { lerVisaoAds } from "../../../../lib/ads";
+import { carregarDespesasDoPeriodo } from "../../../../lib/custos-fiscal";
+import { lerFaturamento } from "../../../../lib/faturamento";
 import { formatBusinessDate, formatCount, formatCurrency } from "../../../../lib/format";
 import {
+  avaliarMetaFinanceira,
   doMarketplaceDaMeta,
   formatarAliquota,
   rotuloDoMarketplaceDaMeta,
@@ -122,29 +126,92 @@ async function MetasContent({
   };
 
   // A situação do mês (UX_SYSTEM §6, bloco 2): a mesma leitura da central, em paralelo com as tabelas.
-  const [metas, aliquotas, metasDoMarketplace, respostaMeta, limites, metasFinanceiras] = await Promise.all([
-    supabase.from("monthly_goals").select("id, month, revenue_goal, note").order("month", { ascending: false }).limit(24),
-    supabase.from("tax_rates").select("id, valid_from, rate, note").order("valid_from", { ascending: false }).limit(50),
-    // D-473 (C-66): 24 meses dos dois marketplaces.
-    supabase
-      .from("monthly_goals_marketplace")
-      .select("id, month, marketplace, revenue_goal, note")
-      .order("month", { ascending: false })
-      .order("marketplace", { ascending: true })
-      .limit(48),
-    membership.organizationId === null
-      ? Promise.resolve(null)
-      : Promise.resolve(supabase.rpc("get_meta_do_mes", { p_organization_id: membership.organizationId })),
-    carregarLimites(supabase, membership.organizationId),
-    dbFin
-      .from("financial_goals")
-      .select("id, month, metric_kind, scope_kind, scope_ref, target_value, note")
-      .order("month", { ascending: false })
-      .limit(60),
-  ]);
+  const [metas, aliquotas, metasDoMarketplace, respostaMeta, limites, metasFinanceiras, fatMesRes, adsMesRes, despesasMes] =
+    await Promise.all([
+      supabase.from("monthly_goals").select("id, month, revenue_goal, note").order("month", { ascending: false }).limit(24),
+      supabase.from("tax_rates").select("id, valid_from, rate, note").order("valid_from", { ascending: false }).limit(50),
+      // D-473 (C-66): 24 meses dos dois marketplaces.
+      supabase
+        .from("monthly_goals_marketplace")
+        .select("id, month, marketplace, revenue_goal, note")
+        .order("month", { ascending: false })
+        .order("marketplace", { ascending: true })
+        .limit(48),
+      membership.organizationId === null
+        ? Promise.resolve(null)
+        : Promise.resolve(supabase.rpc("get_meta_do_mes", { p_organization_id: membership.organizationId })),
+      carregarLimites(supabase, membership.organizationId),
+      dbFin
+        .from("financial_goals")
+        .select("id, month, metric_kind, scope_kind, scope_ref, target_value, note")
+        .order("month", { ascending: false })
+        .limit(60),
+      supabase.rpc("get_faturamento", { p_date_from: mesAtual, p_date_to: hoje, p_detalhe: false }),
+      supabase.rpc("get_ads_overview", { p_date_from: mesAtual, p_date_to: hoje }),
+      carregarDespesasDoPeriodo(supabase, membership.organizationId, mesAtual, hoje),
+    ]);
 
   // Falha ou função ausente só tiram o resumo: o cadastro continua de pé.
   const metaDoMes = respostaMeta?.error === null ? lerMetaDoMes(respostaMeta.data) : null;
+  const fatMes = fatMesRes.error === null ? lerFaturamento(fatMesRes.data) : null;
+  const adsMes = adsMesRes.error === null ? lerVisaoAds(adsMesRes.data) : null;
+
+  const realizadoPorTipo = (tipo: TipoMetaFinanceira, scopeKind: string): number | null => {
+    if (scopeKind !== "global") return null;
+    const r = fatMes?.resumo ?? null;
+    switch (tipo) {
+      case "faturamento_bruto":
+        return metaDoMes?.realizado ?? r?.receita_bruta ?? null;
+      case "receita_liquida":
+        return r !== null && fatMes?.imposto?.imposto_estimado != null
+          ? Math.round((r.receita_bruta - fatMes.imposto.imposto_estimado) * 100) / 100
+          : null;
+      case "margem_produto":
+        return r?.margem_venda ?? null;
+      case "margem_contribuicao": {
+        const apos = fatMes?.imposto?.resultado_apos_imposto ?? null;
+        const coberta = r?.receita_coberta ?? null;
+        if (apos === null || coberta === null || coberta <= 0 || r === null || r.receita_bruta <= 0 || adsMes === null) {
+          return null;
+        }
+        return (apos - (adsMes.resumo.investimento * coberta) / r.receita_bruta) / coberta;
+      }
+      case "lucro_liquido": {
+        const apos = fatMes?.imposto?.resultado_apos_imposto ?? null;
+        const coberta = r?.receita_coberta ?? null;
+        if (
+          apos === null ||
+          coberta === null ||
+          coberta <= 0 ||
+          r === null ||
+          r.receita_bruta <= 0 ||
+          adsMes === null ||
+          despesasMes.despesasFixas === null
+        ) {
+          return null;
+        }
+        return Math.round((apos - (adsMes.resumo.investimento * coberta) / r.receita_bruta - despesasMes.despesasFixas) * 100) / 100;
+      }
+      case "margem_liquida": {
+        const lucro = realizadoPorTipo("lucro_liquido", scopeKind);
+        const coberta = r?.receita_coberta ?? null;
+        return lucro !== null && coberta !== null && coberta > 0 ? lucro / coberta : null;
+      }
+      case "quantidade_vendas":
+        return r?.pedidos ?? null;
+      case "ticket_medio":
+        return r?.ticket_medio ?? null;
+      case "investimento_ads":
+        return adsMes?.resumo.investimento ?? null;
+      case "reducao_despesas":
+        return despesasMes.despesasFixas;
+      case "eficiencia_logistica": {
+        const frete = r?.frete_vendedor_coberto ?? null;
+        const coberta = r?.receita_coberta ?? null;
+        return frete !== null && coberta !== null && coberta > 0 ? frete / coberta : null;
+      }
+    }
+  };
 
   // A tabela de D-473 ausente só desliga o painel dela (a web chega antes da migration).
   const marketplaceAusente =
@@ -448,35 +515,51 @@ async function MetasContent({
                           <th>Indicador</th>
                           <th>Escopo</th>
                           <th className="sb-num">Alvo</th>
+                          <th className="sb-num">Realizado atual</th>
+                          <th>Situação</th>
                           <th>Observação</th>
                           {podeEditar && <th aria-label="Ações" />}
                         </tr>
                       </thead>
                       <tbody>
-                        {listaFinanceiras.map((mf) => (
-                          <tr key={mf.id}>
-                            <td>
-                              {rotuloDoMes(mf.month)}{" "}
-                              {mf.month === mesAtual && <StatePill tone={{ tom: "info", label: "mês atual" }} />}
-                            </td>
-                            <td>{rotuloTipoMetaFinanceira(mf.metric_kind)}</td>
-                            <td>{rotuloEscopoMetaFinanceira(mf.scope_kind, mf.scope_ref)}</td>
-                            <td className="sb-num">
-                              {formatarValorMetaFinanceira(Number(mf.target_value), mf.metric_kind)}
-                            </td>
-                            <td className="sb-texto-suave sb-cadastro-observacao">{mf.note ?? "—"}</td>
-                            {podeEditar && (
+                        {listaFinanceiras.map((mf) => {
+                          const alvo = Number(mf.target_value);
+                          const realizadoAtual =
+                            mf.month === mesAtual ? realizadoPorTipo(mf.metric_kind, mf.scope_kind) : null;
+                          const avaliacao =
+                            mf.month === mesAtual
+                              ? avaliarMetaFinanceira(mf.metric_kind, alvo, realizadoAtual)
+                              : { status: "neutro" as const, rotulo: "outro mês" };
+
+                          return (
+                            <tr key={mf.id}>
                               <td>
-                                <BotaoRemover
-                                  tabela="financial_goals"
-                                  id={mf.id}
-                                  rotulo={`Remover meta de ${rotuloTipoMetaFinanceira(mf.metric_kind)}`}
-                                  consequencia="A meta financeira sai do acompanhamento desse mês."
-                                />
+                                {rotuloDoMes(mf.month)}{" "}
+                                {mf.month === mesAtual && <StatePill tone={{ tom: "info", label: "mês atual" }} />}
                               </td>
-                            )}
-                          </tr>
-                        ))}
+                              <td>{rotuloTipoMetaFinanceira(mf.metric_kind)}</td>
+                              <td>{rotuloEscopoMetaFinanceira(mf.scope_kind, mf.scope_ref)}</td>
+                              <td className="sb-num">{formatarValorMetaFinanceira(alvo, mf.metric_kind)}</td>
+                              <td className="sb-num">
+                                {realizadoAtual === null ? "—" : formatarValorMetaFinanceira(realizadoAtual, mf.metric_kind)}
+                              </td>
+                              <td>
+                                <StatePill tone={{ tom: avaliacao.status, label: avaliacao.rotulo }} />
+                              </td>
+                              <td className="sb-texto-suave sb-cadastro-observacao">{mf.note ?? "—"}</td>
+                              {podeEditar && (
+                                <td>
+                                  <BotaoRemover
+                                    tabela="financial_goals"
+                                    id={mf.id}
+                                    rotulo={`Remover meta de ${rotuloTipoMetaFinanceira(mf.metric_kind)}`}
+                                    consequencia="A meta financeira sai do acompanhamento desse mês."
+                                  />
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

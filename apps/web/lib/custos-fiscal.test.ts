@@ -6,6 +6,8 @@ import {
   lerFormularioDespesa,
   lerFormularioEntidadeFiscal,
   lerFormularioVigenciaTributaria,
+  proximoMes,
+  resumirRegimeCaixa,
 } from "./custos-fiscal";
 
 describe("lerCnpj", () => {
@@ -111,5 +113,33 @@ describe("agregarDespesasNoPeriodo", () => {
     expect(res.despesasFixas).toBe(6200);
     expect(res.despesasVariaveis).toBeNull();
     expect(res.quantidade).toBe(2);
+  });
+});
+
+describe("resumirRegimeCaixa e proximoMes", () => {
+  it("separa pagas, a vencer e vencidas em atraso sem contar canceladas", () => {
+    const caixa = resumirRegimeCaixa(
+      [
+        { status: "paga", planned_amount: 1000, actual_amount: 1100, due_date: "2026-11-05" },
+        { status: "prevista", planned_amount: 500, actual_amount: null, due_date: "2026-11-30" },
+        { status: "prevista", planned_amount: 700, actual_amount: null, due_date: "2026-11-10" },
+        { status: "atrasada", planned_amount: 300, actual_amount: null, due_date: "2026-11-01" },
+        { status: "cancelada", planned_amount: 9999, actual_amount: 9999, due_date: "2026-11-01" },
+      ],
+      "2026-11-26",
+    );
+
+    expect(caixa.pagoNoCaixa).toBe(1100);
+    expect(caixa.aVencerEmAberto).toBe(500);
+    expect(caixa.vencidasEmAtraso).toBe(1000);
+    expect(caixa.qtdPagas).toBe(1);
+    expect(caixa.qtdAVencer).toBe(1);
+    expect(caixa.qtdAtrasadas).toBe(2);
+  });
+
+  it("calcula corretamente a virada de mês e de ano", () => {
+    expect(proximoMes("2026-11")).toBe("2026-12-01");
+    expect(proximoMes("2026-12")).toBe("2027-01-01");
+    expect(proximoMes("invalido")).toBeNull();
   });
 });

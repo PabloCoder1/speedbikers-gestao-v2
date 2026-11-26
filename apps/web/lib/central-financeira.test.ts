@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { montarAtencao } from "./central-atencao";
 import {
+  avaliarMetaFinanceira,
   lerAlvoMetaFinanceira,
   lerEscopoMetaFinanceira,
   lerTipoMetaFinanceira,
@@ -90,5 +92,34 @@ describe("Inteligência financeira de Ads (ACOS equilíbrio, projeção e risco)
     // ACOS 25% > margem 20% => margem após Ads = -5% => 1 campanha em risco (pausada fica fora)
     expect(resumo.campanhasRiscoPrejuizo).toBe(1);
     expect(resumo.investimentoEmRisco).toBe(700);
+  });
+});
+
+describe("Avaliação de Metas Financeiras e Alertas de Custos na Atenção", () => {
+  it("respeita polaridade em metas de receita/lucro (maior melhor) e tetos de Ads/despesas (menor melhor)", () => {
+    expect(avaliarMetaFinanceira("lucro_liquido", 100000, 105000).status).toBe("ok");
+    expect(avaliarMetaFinanceira("lucro_liquido", 100000, 90000).status).toBe("atencao");
+    expect(avaliarMetaFinanceira("lucro_liquido", 100000, 50000).status).toBe("perigo");
+
+    expect(avaliarMetaFinanceira("investimento_ads", 10000, 8000).status).toBe("ok");
+    expect(avaliarMetaFinanceira("investimento_ads", 10000, 9500).status).toBe("atencao");
+    expect(avaliarMetaFinanceira("investimento_ads", 10000, 12000).status).toBe("perigo");
+  });
+
+  it("gera alertas de Custos na Central de Atenção para contas vencidas e estouro > 10% do orçamento", () => {
+    const itens = montarAtencao({
+      sinaisAds: null,
+      detector: null,
+      produtos: null,
+      margem: null,
+      meta: null,
+      periodo: "nos últimos 30 dias",
+      hrefRanking: "/central/produtos",
+      despesas: { atrasadasCount: 2, totalPrevisto: 10000, totalRealizado: 12500 },
+    });
+
+    expect(itens.filter((i) => i.categoria === "Custos")).toHaveLength(2);
+    expect(itens.some((i) => i.texto.includes("2 despesas operacionais estão vencida(s)"))).toBe(true);
+    expect(itens.some((i) => i.texto.includes("ultrapassaram o orçamento previsto"))).toBe(true);
   });
 });

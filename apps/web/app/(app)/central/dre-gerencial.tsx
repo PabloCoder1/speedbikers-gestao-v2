@@ -173,6 +173,11 @@ export function SecaoDreGerencial({
     },
   ];
 
+  const lacunasSimulacao: string[] = [];
+  if (entrada.impostoAtual?.imposto_coberto == null) lacunasSimulacao.push("impostos sobre vendas");
+  if (adsProporcional === null) lacunasSimulacao.push("investimento em Ads");
+  if (despesasFixas === null) lacunasSimulacao.push("despesas operacionais fixas");
+
   return (
     <section aria-label="DRE Gerencial e Inteligência Financeira" className="sb-central-bloco" id="dre-gerencial">
       <div className="sb-section-label">
@@ -267,16 +272,21 @@ export function SecaoDreGerencial({
       {baseBruta > 0 && (
         <div className="sb-central-bloco">
           <SimuladorFinanceiro
-            base={{
-              faturamentoBruto: baseBruta,
-              impostosSobreVendas: entrada.impostoAtual?.imposto_coberto ?? 0,
-              cmv: r.custo_produtos ?? 0,
-              comissoesMarketplace: r.taxas_ml_cobertas ?? 0,
-              custosLogisticos: r.frete_vendedor_coberto ?? 0,
-              investimentoAds: adsProporcional ?? 0,
-              despesasFixas: despesasFixas ?? 0,
-              despesasVariaveis: despesasVariaveis ?? 0,
-            }}
+            base={
+              r.custo_produtos !== null && r.taxas_ml_cobertas !== null && r.frete_vendedor_coberto !== null
+                ? {
+                    faturamentoBruto: baseBruta,
+                    impostosSobreVendas: entrada.impostoAtual?.imposto_coberto ?? 0,
+                    cmv: r.custo_produtos,
+                    comissoesMarketplace: r.taxas_ml_cobertas,
+                    custosLogisticos: r.frete_vendedor_coberto,
+                    investimentoAds: adsProporcional ?? 0,
+                    despesasFixas: despesasFixas ?? 0,
+                    despesasVariaveis: despesasVariaveis ?? 0,
+                  }
+                : null
+            }
+            lacunasParciais={lacunasSimulacao}
           />
         </div>
       )}

@@ -69,9 +69,12 @@ test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({
   ]);
   await expect(abasDaCentral(page).getByRole("link", { name: "Central", exact: true })).toHaveAttribute("aria-current", "page");
 
-  // DRE Gerencial, Simulador What-If e Glossário Financeiro disponíveis na Central.
+  // DRE Gerencial, Simulador What-If (sem assumir custo zero fictício) e Glossário Financeiro disponíveis na Central.
   await expect(page.getByRole("region", { name: "DRE Gerencial e Inteligência Financeira" })).toBeVisible();
-  await expect(page.locator("summary", { hasText: "Simulador financeiro (What-If)" })).toBeVisible();
+  const resumoSimulador = page.locator("summary", { hasText: "Simulador financeiro (What-If)" });
+  await expect(resumoSimulador).toBeVisible();
+  await resumoSimulador.click();
+  await expect(page.getByText("BASE INSUFICIENTE PARA SIMULAÇÃO")).toBeVisible();
   await expect(page.locator("summary", { hasText: "Glossário financeiro da Central" })).toBeVisible();
 
   await expect(page.getByText("Não foi possível carregar o período")).toHaveCount(0);
@@ -466,7 +469,9 @@ test("/central/custos: cadastrar despesa fixa e entidade fiscal, validar DRE e l
     test.skip(true, "banco sem a migration da Central de Inteligência Financeira");
   }
 
-  // Cadastra uma despesa operacional fixa
+  await expect(page.getByRole("region", { name: "Visão por regime de caixa" })).toBeVisible();
+
+  // Cadastra uma despesa operacional fixa mensal
   await page.locator("summary", { hasText: "Cadastrar nova despesa operacional" }).click();
   const formDespesa = page.getByRole("form", { name: "Cadastrar despesa operacional" });
 
@@ -478,7 +483,21 @@ test("/central/custos: cadastrar despesa fixa e entidade fiscal, validar DRE e l
   await formDespesa.getByLabel("Data de competência").fill(doisDiasAtras);
   await formDespesa.getByRole("button", { name: "Cadastrar despesa" }).click();
   await expect(formDespesa.getByRole("status")).toContainText("Despesa operacional salva");
-  await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true }).first()).toBeVisible();
+
+  // Testa geração idempotente de despesas recorrentes para o mês seguinte
+  await page.locator("summary", { hasText: "Gerar recorrentes do próximo mês" }).click();
+  const formRecorrentes = page.getByRole("form", { name: "Gerar despesas recorrentes para o mês seguinte" });
+
+  await formRecorrentes.getByLabel("Mês de origem das despesas mensais").fill(doisDiasAtras.slice(0, 7));
+  await formRecorrentes.getByRole("button", { name: "Gerar recorrentes do próximo mês" }).click();
+  await expect(formRecorrentes.getByRole("status")).toContainText("1 despesa(s) recorrente(s) gerada(s)");
+  await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true })).toHaveCount(2);
+
+  // Segunda chamada no mesmo mês não pode duplicar
+  await formRecorrentes.getByRole("button", { name: "Gerar recorrentes do próximo mês" }).click();
+  await expect(formRecorrentes.getByRole("status")).toContainText("nenhuma duplicidade criada");
+  await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true })).toHaveCount(2);
 
   // Confirma que a despesa fixa cadastrada alimenta a DRE Gerencial na /central
   await abasDaCentral(page).getByRole("link", { name: "Central", exact: true }).click();
@@ -496,8 +515,12 @@ test("/central/custos: cadastrar despesa fixa e entidade fiscal, validar DRE e l
   await expect(formEntidade.getByRole("status")).toContainText("Entidade fiscal (CNPJ) salva");
   await expect(page.getByRole("cell", { name: "SpeedBikers E2E LTDA", exact: true })).toBeVisible();
 
-  // Limpa os registros criados no teste
-  await page.getByRole("button", { name: "Remover Aluguel Galpão E2E" }).click();
+  // Limpa os dois registros de despesa (mês atual + recorrente gerado) e a entidade fiscal
+  await page.getByRole("button", { name: "Remover Aluguel Galpão E2E" }).first().click();
+  await confirmarRemocao(page, /Remover Aluguel Galpão E2E/);
+  await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true })).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Remover Aluguel Galpão E2E" }).first().click();
   await confirmarRemocao(page, /Remover Aluguel Galpão E2E/);
   await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true })).toHaveCount(0);
 

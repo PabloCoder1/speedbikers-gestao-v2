@@ -12,6 +12,7 @@ import { METODOS_RATEIO, RECORRENCIAS_DESPESA, REGIMES_TRIBUTARIOS, STATUS_DESPE
 import { Campo, Mensagem } from "../metas/formularios";
 import type { ResultadoDoCadastro } from "../metas/actions";
 import {
+  gerarRecorrentesProximoMes,
   salvarDespesa,
   salvarEntidadeFiscal,
   salvarFechamentoMensal,
@@ -341,6 +342,31 @@ export function FormularioFechamentoMensal({ mesPadrao }: { mesPadrao: string })
       <div className="sb-cadastro-acoes">
         <button type="submit" className="sb-button sb-button-primary" disabled={salvando}>
           {salvando ? "Registrando…" : "Salvar fechamento mensal"}
+        </button>
+        <Mensagem resultado={resultado} />
+      </div>
+    </form>
+  );
+}
+
+export function FormularioGerarRecorrentes({ mesPadrao }: { mesPadrao: string }): ReactNode {
+  const [resultado, enviar, gerando] = useActionState(gerarRecorrentesProximoMes, INICIAL);
+
+  return (
+    <form action={enviar} className="sb-cadastro-form" aria-label="Gerar despesas recorrentes para o mês seguinte">
+      <div className="sb-form-grade-dupla">
+        <Campo
+          nome="source_month"
+          rotulo="Mês de origem das despesas mensais"
+          dica="Replica todas as despesas mensais ativas deste mês como previstas no mês seguinte, com proteção anti-duplicidade."
+          erro={resultado.erros.source_month}
+        >
+          {(props) => <input {...props} className="sb-input" type="month" name="source_month" defaultValue={mesPadrao} required />}
+        </Campo>
+      </div>
+      <div className="sb-cadastro-acoes">
+        <button type="submit" className="sb-button" disabled={gerando}>
+          {gerando ? "Gerando…" : "Gerar recorrentes do próximo mês"}
         </button>
         <Mensagem resultado={resultado} />
       </div>

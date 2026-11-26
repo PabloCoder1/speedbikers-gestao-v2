@@ -271,6 +271,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
           leituraAds={leituraAds}
           leituraProdutos={leituraProdutos}
           leituraLimites={leituraLimites}
+          leituraDespesas={leituraDespesas}
           periodo={periodo}
           hrefRanking={hrefDoRanking(periodoAtual, contaSlug)}
         />

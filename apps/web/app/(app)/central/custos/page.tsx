@@ -1,6 +1,7 @@
 import {
   ROTULO_CATEGORIA_DESPESA,
   ROTULO_REGIME_TRIBUTARIO,
+  ratearDespesa,
   resumirOrcadoRealizado,
   toSalesMetricDate,
   type CategoriaDespesa,
@@ -17,7 +18,8 @@ import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
 import { Panel } from "../../../../components/panel";
 import { RemoverComConfirmacao } from "../../../../components/remover-com-confirmacao";
 import { StatePill } from "../../../../components/state-pill";
-import { formatBusinessDate, formatCurrency, formatPercent } from "../../../../lib/format";
+import { resumirRegimeCaixa } from "../../../../lib/custos-fiscal";
+import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../../lib/format";
 import { formatarAliquota, rotuloDoMes } from "../../../../lib/metas-imposto";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
@@ -33,6 +35,7 @@ import {
   FormularioDespesa,
   FormularioEntidadeFiscal,
   FormularioFechamentoMensal,
+  FormularioGerarRecorrentes,
   FormularioVigenciaTributaria,
   FormularioVinculoConta,
 } from "./formularios";
@@ -236,6 +239,43 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
       metodoRateio: d.allocation_method,
     })),
   );
+  const caixa = resumirRegimeCaixa(despesas, hoje);
+  const previaRateio =
+    resumo.totalRateadas > 0 && contasDisponiveis.length > 0
+      ? ratearDespesa(
+          resumo.totalRateadas,
+          "faturamento",
+          contasDisponiveis.map((c) => ({ destinoId: c.ref, rotulo: c.label, peso: 1 })),
+        )
+      : null;
+
+  const celulasCaixa: KpiCellData[] = [
+    {
+      label: "Pago no caixa",
+      formula: "Despesas marcadas como pagas (saída efetiva de caixa)",
+      value: formatCurrency(caixa.pagoNoCaixa),
+      previous: null,
+      ressalva: `${formatCount(caixa.qtdPagas)} lançamento(s) quitado(s)`,
+    },
+    {
+      label: "A vencer (em aberto)",
+      formula: "Despesas previstas com vencimento futuro ou sem vencimento definido",
+      value: formatCurrency(caixa.aVencerEmAberto),
+      previous: null,
+      ressalva: `${formatCount(caixa.qtdAVencer)} compromisso(s) futuro(s)`,
+    },
+    {
+      label: "Vencidas / em atraso",
+      formula: "Despesas marcadas como atrasadas ou previstas com vencimento anterior a hoje",
+      value: formatCurrency(caixa.vencidasEmAtraso),
+      previous: null,
+      ressalva:
+        caixa.qtdAtrasadas === 0
+          ? "nenhuma conta em atraso"
+          : `${formatCount(caixa.qtdAtrasadas)} conta(s) vencida(s) exigem atenção`,
+      ...(caixa.qtdAtrasadas > 0 ? { destaque: "perigo" as const } : {}),
+    },
+  ];
 
   const celulas: KpiCellData[] = [
     {
@@ -288,6 +328,16 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
 
       <KpiStrip cells={celulas} />
 
+      <section aria-label="Visão por regime de caixa" className="sb-central-bloco">
+        <div className="sb-section-label">
+          <span>Regime de caixa × competência</span>
+          <span className="sb-section-note">
+            lucro gerencial (competência) não é saldo em caixa · abaixo, a posição real de pagamentos
+          </span>
+        </div>
+        <KpiStrip cells={celulasCaixa} />
+      </section>
+
       <div className="sb-central-bloco">
         <Panel
           title="Despesas operacionais (fixas e variáveis)"
@@ -296,14 +346,25 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
         >
           <div className="sb-panel-body">
             {podeEditar && (
-              <details className="sb-recolhivel sb-central-bloco">
-                <summary>
-                  Cadastrar nova despesa operacional <small>fixa ou variável · recorrente ou pontual</small>
-                </summary>
-                <div className="sb-panel-body">
-                  <FormularioDespesa dataPadrao={hoje} />
-                </div>
-              </details>
+              <div className="sb-pair-grid sb-central-bloco">
+                <details className="sb-recolhivel">
+                  <summary>
+                    Cadastrar nova despesa operacional <small>fixa ou variável · recorrente ou pontual</small>
+                  </summary>
+                  <div className="sb-panel-body">
+                    <FormularioDespesa dataPadrao={hoje} />
+                  </div>
+                </details>
+
+                <details className="sb-recolhivel">
+                  <summary>
+                    Gerar recorrentes do próximo mês <small>anti-duplicidade automática por competência</small>
+                  </summary>
+                  <div className="sb-panel-body">
+                    <FormularioGerarRecorrentes mesPadrao={hoje.slice(0, 7)} />
+                  </div>
+                </details>
+              </div>
             )}
 
             {despesasRes.error !== null ? (
@@ -390,6 +451,37 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
                             </div>
                           </td>
                         )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {previaRateio !== null && previaRateio.ok && (
+              <div className="sb-central-tabela sb-central-bloco">
+                <p className="sb-texto-suave">
+                  Prévia de rateio igualitário das despesas compartilhadas ({formatCurrency(previaRateio.total)}) entre as{" "}
+                  {formatCount(contasDisponiveis.length)} contas cadastradas — despesas diretas permanecem isoladas na sua conta.
+                </p>
+                <table className="sb-table">
+                  <thead>
+                    <tr>
+                      <th>Conta / Canal</th>
+                      <th>Origem</th>
+                      <th className="sb-num">Participação</th>
+                      <th className="sb-num">Parcela rateada</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previaRateio.parcelas.map((p) => (
+                      <tr key={p.destinoId}>
+                        <td>{p.rotulo}</td>
+                        <td>
+                          <StatePill tone={{ tom: "info", label: p.origem }} />
+                        </td>
+                        <td className="sb-num">{formatPercent(p.percentual)}</td>
+                        <td className="sb-num">{formatCurrency(p.valor)}</td>
                       </tr>
                     ))}
                   </tbody>

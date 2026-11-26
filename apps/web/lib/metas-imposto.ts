@@ -233,3 +233,38 @@ export function lerAlvoMetaFinanceira(texto: string, tipo: TipoMetaFinanceira): 
 
   return lerValorEmReais(texto);
 }
+
+export interface AvaliacaoMetaFinanceira {
+  readonly status: "ok" | "atencao" | "perigo" | "neutro";
+  readonly rotulo: string;
+}
+
+/**
+ * Avalia o realizado contra o alvo de uma meta financeira respeitando a
+ * polaridade de cada indicador (em teto de Ads, despesas e frete %, ficar
+ * abaixo do alvo é positivo; em lucro, receita, margens, ticket e vendas,
+ * atingir ou superar o alvo é positivo).
+ */
+export function avaliarMetaFinanceira(
+  tipo: TipoMetaFinanceira,
+  alvo: number,
+  realizado: number | null,
+): AvaliacaoMetaFinanceira {
+  if (realizado === null || !Number.isFinite(realizado) || !Number.isFinite(alvo) || alvo <= 0) {
+    return { status: "neutro", rotulo: "sem base atual" };
+  }
+
+  const menorMelhor = tipo === "investimento_ads" || tipo === "reducao_despesas" || tipo === "eficiencia_logistica";
+
+  if (menorMelhor) {
+    const uso = realizado / alvo;
+    if (uso <= 0.9) return { status: "ok", rotulo: `${String(Math.round(uso * 100))}% do teto` };
+    if (uso <= 1) return { status: "atencao", rotulo: `${String(Math.round(uso * 100))}% do teto` };
+    return { status: "perigo", rotulo: `acima do teto (${String(Math.round(uso * 100))}%)` };
+  }
+
+  const atingimento = realizado / alvo;
+  if (atingimento >= 1) return { status: "ok", rotulo: `${String(Math.round(atingimento * 100))}% atingido` };
+  if (atingimento >= 0.85) return { status: "atencao", rotulo: `${String(Math.round(atingimento * 100))}% atingido` };
+  return { status: "perigo", rotulo: `${String(Math.round(atingimento * 100))}% atingido` };
+}

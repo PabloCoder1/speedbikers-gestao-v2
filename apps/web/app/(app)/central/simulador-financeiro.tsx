@@ -26,7 +26,13 @@ function comSinalPp(fracao: number | null): string {
  * frete, Ads e despesas fixas diretamente sobre o período atual sem alterar
  * nenhum dado real no banco.
  */
-export function SimuladorFinanceiro({ base }: { base: BaseSimulacao }): ReactNode {
+export function SimuladorFinanceiro({
+  base,
+  lacunasParciais = [],
+}: {
+  base: BaseSimulacao | null;
+  lacunasParciais?: readonly string[];
+}): ReactNode {
   const [deltaPreco, setDeltaPreco] = useState(0);
   const [deltaVolume, setDeltaVolume] = useState(0);
   const [deltaCusto, setDeltaCusto] = useState(0);
@@ -38,16 +44,18 @@ export function SimuladorFinanceiro({ base }: { base: BaseSimulacao }): ReactNod
 
   const resultado = useMemo(
     () =>
-      simularCenarioFinanceiro(base, {
-        deltaPreco: deltaPreco / 100,
-        deltaVolume: deltaVolume / 100,
-        deltaCustoCompra: deltaCusto / 100,
-        deltaFrete: deltaFrete / 100,
-        deltaAds: deltaAds / 100,
-        deltaComissaoPp: deltaComissaoPp / 100,
-        deltaImpostoPp: deltaImpostoPp / 100,
-        deltaDespesasFixasReais: deltaFixas,
-      }),
+      base === null
+        ? null
+        : simularCenarioFinanceiro(base, {
+            deltaPreco: deltaPreco / 100,
+            deltaVolume: deltaVolume / 100,
+            deltaCustoCompra: deltaCusto / 100,
+            deltaFrete: deltaFrete / 100,
+            deltaAds: deltaAds / 100,
+            deltaComissaoPp: deltaComissaoPp / 100,
+            deltaImpostoPp: deltaImpostoPp / 100,
+            deltaDespesasFixasReais: deltaFixas,
+          }),
     [base, deltaPreco, deltaVolume, deltaCusto, deltaFrete, deltaAds, deltaComissaoPp, deltaImpostoPp, deltaFixas],
   );
 
@@ -83,14 +91,35 @@ export function SimuladorFinanceiro({ base }: { base: BaseSimulacao }): ReactNod
         title="Simulador de cenários financeiros"
         subtitle="Simulação local em memória sobre os números do período selecionado. Nenhum dado real é modificado."
         aside={
-          alterado ? (
+          resultado !== null && alterado ? (
             <button type="button" className="sb-button" onClick={zerar}>
               Resetar simulação
             </button>
           ) : undefined
         }
       >
+        {resultado === null ? (
+          <div className="sb-panel-body">
+            <div className="sb-note">
+              <span>BASE INSUFICIENTE PARA SIMULAÇÃO</span>
+              <p>
+                Nenhum pedido deste período tem custo do produto (CMV), comissão e frete observados ao mesmo tempo. Para
+                não assumir custo zero silenciosamente nem exibir margem fictícia de 100%, o simulador só é habilitado
+                quando há pedidos cobertos na base da DRE.
+              </p>
+            </div>
+          </div>
+        ) : (
         <div className="sb-panel-body sb-simulador">
+          {lacunasParciais.length > 0 && (
+            <div className="sb-note">
+              <span>BASE PARCIAL NA SIMULAÇÃO</span>
+              <p>
+                Ausente(s) no período: {lacunasParciais.join(", ")}. Nesta simulação local eles partem de R$ 0,00 para
+                permitir testar cenários — na DRE oficial acima seguem explicitamente sem dado.
+              </p>
+            </div>
+          )}
           <div className="sb-simulador-controles">
             <label className="sb-simulador-campo">
               <span>Preço de venda (%)</span>
@@ -260,6 +289,7 @@ export function SimuladorFinanceiro({ base }: { base: BaseSimulacao }): ReactNod
             </table>
           </div>
         </div>
+        )}
       </Panel>
     </details>
   );

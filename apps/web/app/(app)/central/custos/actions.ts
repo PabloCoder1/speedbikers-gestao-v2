@@ -6,6 +6,7 @@ import {
   lerFormularioDespesa,
   lerFormularioEntidadeFiscal,
   lerFormularioVigenciaTributaria,
+  proximoMes,
 } from "../../../../lib/custos-fiscal";
 import { lerMes, lerNota } from "../../../../lib/metas-imposto";
 import { currentMembership } from "../../../../lib/membership";
@@ -403,6 +404,139 @@ export async function salvarFechamentoMensal(
       status === "fechado"
         ? "Competência fechada e registrada para auditoria."
         : `Status da competência atualizado para ${status}.`,
+    erros: {},
+  };
+}
+
+/**
+ * Replica todas as despesas mensais ativas de um mês de origem para o mês
+ * seguinte usando `idempotency_key` único por `(organização, competência,
+ * categoria, nome)`: cliques repetidos nunca geram lançamentos duplicados.
+ */
+export async function gerarRecorrentesProximoMes(
+  _anterior: ResultadoDoCadastro,
+  formData: FormData,
+): Promise<ResultadoDoCadastro> {
+  const supabase = await createClient();
+  const membership = await currentMembership(supabase);
+
+  if (membership.organizationId === null) {
+    return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
+  }
+
+  const mesOrigem = campoDe(formData)("source_month").trim();
+  const inicioDestino = proximoMes(mesOrigem);
+
+  if (inicioDestino === null) {
+    return { ...SEM_ERRO, erros: { source_month: "Escolha o mês de origem para replicar as despesas recorrentes." } };
+  }
+
+  const inicioOrigem = `${mesOrigem}-01`;
+  const [anoOrig, mesOrig] = mesOrigem.split("-").map(Number);
+  const ultimoDiaOrigem = new Date(Date.UTC(anoOrig ?? 2026, mesOrig ?? 1, 0)).toISOString().slice(0, 10);
+
+  const dbRead = supabase as unknown as {
+    from: (t: string) => {
+      select: (c: string) => {
+        eq: (k: string, v: string) => {
+          eq: (k: string, v: string) => {
+            neq: (k: string, v: string) => {
+              gte: (k: string, v: string) => {
+                lte: (k: string, v: string) => {
+                  limit: (n: number) => Promise<{
+                    data:
+                      | readonly {
+                          readonly name: string;
+                          readonly category: string;
+                          readonly cost_type: string;
+                          readonly allocation_method: string;
+                          readonly planned_amount: number | string;
+                          readonly marketplace: string | null;
+                          readonly cost_center: string | null;
+                          readonly note: string | null;
+                        }[]
+                      | null;
+                    error: DbErro | null;
+                  }>;
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+
+  const { data: origens, error: readErr } = await dbRead
+    .from("operational_expenses")
+    .select("name, category, cost_type, allocation_method, planned_amount, marketplace, cost_center, note")
+    .eq("organization_id", membership.organizationId)
+    .eq("recurrence", "mensal")
+    .neq("status", "cancelada")
+    .gte("competence_date", inicioOrigem)
+    .lte("competence_date", ultimoDiaOrigem)
+    .limit(200);
+
+  if (readErr !== null) return traduzirErro(readErr, "despesas recorrentes");
+  if (origens === null || origens.length === 0) {
+    return { ...SEM_ERRO, mensagem: `Nenhuma despesa mensal ativa encontrada em ${mesOrigem} para replicar.` };
+  }
+
+  const { data: usuario } = await supabase.auth.getUser();
+  const userId = usuario.user?.id ?? null;
+  const destinoYm = inicioDestino.slice(0, 7);
+
+  let criadas = 0;
+  let jaExistiam = 0;
+
+  for (const item of origens) {
+    const slug = item.name
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 48);
+
+    const idempotencyKey = `exp:${destinoYm}:${item.category}:${slug}`;
+    const { error: insErr } = await tabela(supabase, "operational_expenses")
+      .insert({
+        organization_id: membership.organizationId,
+        name: item.name,
+        category: item.category,
+        cost_type: item.cost_type,
+        recurrence: "mensal",
+        allocation_method: item.allocation_method,
+        planned_amount: Number(item.planned_amount),
+        actual_amount: null,
+        competence_date: inicioDestino,
+        status: "prevista",
+        marketplace: item.marketplace ?? "TODOS",
+        cost_center: item.cost_center,
+        note: item.note,
+        idempotency_key: idempotencyKey,
+        created_by: userId,
+        updated_by: userId,
+      })
+      .select("id");
+
+    if (insErr === null) {
+      criadas += 1;
+    } else if (insErr.code === "23505") {
+      jaExistiam += 1;
+    } else {
+      return traduzirErro(insErr, "despesas recorrentes");
+    }
+  }
+
+  revalidar();
+
+  return {
+    ok: true,
+    mensagem:
+      criadas > 0
+        ? `${String(criadas)} despesa(s) recorrente(s) gerada(s) para ${destinoYm}${jaExistiam > 0 ? ` (${String(jaExistiam)} já existiam — duplicidade evitada)` : ""}.`
+        : `Todas as ${String(jaExistiam)} despesas recorrentes já existem em ${destinoYm} — nenhuma duplicidade criada.`,
     erros: {},
   };
 }
