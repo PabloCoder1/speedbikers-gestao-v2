@@ -647,8 +647,14 @@ export async function carregarDespesasDoPeriodo(
 }
 
 /**
- * Lê o faturamento bruto agregado em SQL por conta do Mercado Livre
- * (`get_faturamento_por_conta`) para ponderar o rateio de despesas compartilhadas.
+ * Lê o faturamento bruto agregado em SQL por conta do Mercado Livre e por loja
+ * da Shopee (`get_faturamento_por_conta_multicanal`, régua de
+ * `multicanal_receita_bruta`) para ponderar o rateio de despesas compartilhadas.
+ *
+ * A chave é a referência da conta na tela: `MERCADO_LIVRE:<id>` ou
+ * `SHOPEE:<id>`. Enquanto a função nova não existe no banco, lê a antiga
+ * (`get_faturamento_por_conta`, só o ML). Conta sem faturamento conhecido fica
+ * fora do mapa, e nunca vira zero aqui.
  */
 export async function carregarFaturamentoPorConta(
   supabase: unknown,
@@ -659,29 +665,38 @@ export async function carregarFaturamentoPorConta(
   const mapa = new Map<string, number>();
   if (organizationId === null) return mapa;
 
+  const guardar = (chave: string, receita: number | string): void => {
+    const valor = Number(receita);
+    if (Number.isFinite(valor) && valor > 0) mapa.set(chave, Math.round(valor * 100) / 100);
+  };
+
   try {
     const client = supabase as {
       rpc?: (
         fn: string,
         args: Record<string, unknown>,
-      ) => Promise<{
-        data: readonly { readonly ml_account_id: string; readonly receita_bruta: number | string }[] | null;
-        error: { code?: string } | null;
-      }>;
+      ) => Promise<{ data: readonly Record<string, unknown>[] | null; error: { code?: string } | null }>;
     };
     if (typeof client.rpc !== "function") return mapa;
+    const args = { p_organization_id: organizationId, p_from: from, p_to: to };
 
-    const { data, error } = await client.rpc("get_faturamento_por_conta", {
-      p_organization_id: organizationId,
-      p_from: from,
-      p_to: to,
-    });
-    if (error !== null || data === null) return mapa;
+    const multicanal = await client.rpc("get_faturamento_por_conta_multicanal", args);
+    if (multicanal.error === null && multicanal.data !== null) {
+      for (const row of multicanal.data) {
+        const marketplace = row.marketplace;
+        const conta = row.conta_id;
+        if ((marketplace === "MERCADO_LIVRE" || marketplace === "SHOPEE") && typeof conta === "string") {
+          guardar(`${marketplace}:${conta}`, row.receita_bruta as number | string);
+        }
+      }
+      return mapa;
+    }
 
-    for (const row of data) {
-      const valor = Number(row.receita_bruta);
-      if (Number.isFinite(valor) && valor > 0) {
-        mapa.set(row.ml_account_id, Math.round(valor * 100) / 100);
+    const soMl = await client.rpc("get_faturamento_por_conta", args);
+    if (soMl.error !== null || soMl.data === null) return mapa;
+    for (const row of soMl.data) {
+      if (typeof row.ml_account_id === "string") {
+        guardar(`MERCADO_LIVRE:${row.ml_account_id}`, row.receita_bruta as number | string);
       }
     }
   } catch {
