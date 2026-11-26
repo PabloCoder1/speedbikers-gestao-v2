@@ -11,7 +11,7 @@ import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-li
 import { z } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
-import { readAllPages } from "../read-all-pages.js";
+import { readAllPagesByKey } from "../read-all-pages.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { classifyShipmentFailure, readShipmentLogistic } from "./shipment-logistics.js";
@@ -142,6 +142,8 @@ interface MovimentoDoLedger {
   idempotency_key: string;
   occurred_at: string;
   movement_type: string;
+  /** A PK, que é a chave da paginação. */
+  id: string;
 }
 
 /**
@@ -240,16 +242,20 @@ function doPedido(pedidos: Map<string, PedidoNoLedger>, pedido: string): PedidoN
  * a varredura não sabia se um pedido capturado tinha devolução sem anulação.
  */
 async function lerLedger(db: AdminClient, organizationId: string): Promise<Ledger> {
-  const linhas = await readAllPages<MovimentoDoLedger>(
-    (from, to) =>
-      db
+  // Pela chave, e não por `range` (D-876): o ledger inteiro é lido a cada
+  // rodada, e com OFFSET a última página custava dezenas de vezes a primeira.
+  const linhas = await readAllPagesByKey<MovimentoDoLedger, string>(
+    (depois, limite) => {
+      const consulta = db
         .from("stock_movements")
         .select("source_type, source_id, sku_id, qty_delta, idempotency_key, occurred_at, movement_type, id")
         .eq("organization_id", organizationId)
-        .in("movement_type", TIPOS_LIDOS)
-        // Ordenação estável obrigatória (D-131): `id` é a PK.
-        .order("id")
-        .range(from, to),
+        .in("movement_type", TIPOS_LIDOS);
+
+      // Ordenação estável obrigatória (D-131): `id` é a PK.
+      return (depois === null ? consulta : consulta.gt("id", depois)).order("id").limit(limite);
+    },
+    (linha) => linha.id,
     { label: "falha ao ler stock_movements" },
   );
 

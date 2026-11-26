@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 
 export function eligibleBlockBases(ports, excluded) {
   const blocks = [
-    ...Array.from({ length: 50 }, (_, index) => 60000 + index * 100),
+    ...Array.from({ length: 40 }, (_, index) => 61000 + index * 100),
     ...Array.from({ length: 400 }, (_, index) => 20000 + index * 100),
   ];
   return blocks.filter((base) => {

@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **764** (D-001 a D-886).
+Decisões registradas: **767** (D-001 a D-886).
 
 ## Por domínio
 
@@ -149,7 +149,7 @@ Decisões registradas: **764** (D-001 a D-886).
 - **D-881** — Workflow de migrations de produção gera o plano da VM
 - **D-886** — O histórico arquivado usa a ordem do índice nas primeiras páginas
 
-### estoque (69)
+### estoque (71)
 
 - **D-001** — Mesmo repositório, branch V3 limpa
 - **D-002** — Repositório é a memória oficial
@@ -220,6 +220,8 @@ Decisões registradas: **764** (D-001 a D-886).
 - **D-871** — O Full do dashboard do SKU é desconhecido, e não zero, sem captura recente
 - **D-872** — A faixa de /estoque não junta os saldos ao escopo de novo no plano genérico
 - **D-873** — A curva ABC calcula o Full por SKU uma vez, e não a cada linha
+- **D-874** — A Central Full lê o saldo local por SKU, e não reagrega todos a cada linha
+- **D-876** — A varredura de logística lê o ledger pela chave, e não por OFFSET
 
 ### interface (80)
 
@@ -675,7 +677,7 @@ Decisões registradas: **764** (D-001 a D-886).
 - **D-867** — A importação de pedidos anteriores sobrevive à Server Action que não responde
 - **D-882** — Agendamento de margem percorre todas as organizações com alerta ativo
 
-### worker/infra (129)
+### worker/infra (130)
 
 - **D-003** — Infraestrutura principal
 - **D-013** — `api` e `worker` como dois serviços Cloud Run
@@ -805,5 +807,6 @@ Decisões registradas: **764** (D-001 a D-886).
 - **D-828** — Worker `page-writes.ts`: fatiamento em lotes de 100 na exclusão da cauda de `order_items`
 - **D-857** — Avisos em tempo real respeitam o ciclo da sessão
 - **D-863** — "Esqueci a senha" por conta própria, ligado só com SMTP real no Auth
+- **D-875** — A stack de testes da CI usa portas acima da faixa temporária do Linux
 - **D-883** — Preservar os traces das falhas Playwright na CI
 

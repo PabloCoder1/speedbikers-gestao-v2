@@ -12,15 +12,15 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-11-25 |
+| **Atualizado em** | 2026-11-26 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | `origin/main` em `628ff887` (#406). O #364 reúne D-870 a D-873 e D-884. [Checkpoint](agent-audit/SESSION_LOG.md). |
+| **HEAD conhecido** | `origin/main` em `32e8372b` (#414). O #364 reúne D-870 a D-876 e D-884 a D-886. [Checkpoint](agent-audit/SESSION_LOG.md). |
 | **Fechamento da V3** | 173/226 pontos (76,55%), 33/43 entregas. [Inventário Sentinel](agent-audit/CLOSURE_INVENTORY.json). [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7107161168). |
 | **Sentinel: próximo passo** | Upgrade local e catálogo da VM conferidos (D-884). Gemini conserva D-832 a D-837 no #401 e M04. D04 reúne histórico, índice temporal e teste local de transferência e restauração (#407). A recuperação de `sync_runs` tem ensaio manual com permissões e checkpoints. I06 aceito com custo de outubro informado pelo dono. |
 | **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo, com 2,0 GB acima do limite gratuito. Google Cloud segue como ambiente atual. Retomada do Supabase Pro prevista pelo dono para 01/12/2026. Confirmar Dev ativo antes da esteira. Rotinas Dev pausadas (D-350). |
 | **Supabase** | Produção usa a VM `sb-db`. O antigo hosted `imvjfgnaprqsfjlnsyev` segue inativo em 24/11. SMTP real do Auth ativo. [VM](../infra/vm/README.md). |
 | **Produção** | D-859 a D-862 no [#388](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/388). Recuperação de senha e monitoramento no [#394](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/394). Multiget do #377 em produção, reconciliação completada. |
-| **Migrations** | Catálogo: VM 337, candidato 340. D-873, D-885 e D-886 precedem o corte da web. Upgrade local 334 → 339 preservou o seed. Conferir Dev na retomada. [VM](../infra/vm/README.md). |
+| **Migrations** | Catálogo: VM 339, candidato 341. D-874 já consta na VM. D-885 e D-886 são lacunas anteriores à última versão e o preflight bloqueia o plano. Conciliar antes da web. [VM](../infra/vm/README.md). |
 | **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | Compras inteligentes, importação anterior e invoice/proforma entregues. #347 integrado para ler a moeda da invoice. D-792 acrescenta entrada no LOCAL e criação do SKU na conferência. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
 | **Notas (D-765, D-766)** | #334 registrou saída para Full. #335 incorporou Saída Manual e edição de itens. O aceite operacional de ponta a ponta segue no fechamento. |
 | **UX (Agente 3)** | Central integrada até D-519. [Escopo e evidências](UX_SYSTEM.md). |

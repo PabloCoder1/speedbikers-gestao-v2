@@ -21431,6 +21431,73 @@ No plano genérico da curva, a CTE `full_by_sku`, usada uma vez, é incorporada 
 - As tabelas temporárias da comparação existiram só dentro de uma transação encerrada com `rollback`.
 - Localmente, a suíte do `@sb/db` teve as mesmas 10 falhas de baseline.
 
+**Em produção (25/11):** depois da CI verde da `main` em `628ff887` (run 45662352513, disparado à mão porque o GitHub perdeu o evento do push), a migration `20261125150000` foi aplicada na VM com `psql -1` e registrada no histórico. O corpo tem o `as materialized`, e os grants seguem `authenticated`, `postgres` e `service_role`. Como membro, a curva de 30 dias levou 346 e 440 ms, contra 1,3 a 1,6 s antes. O filtro "sem Full" de 90 dias levou 393 ms.
+
+## D-874 - A Central Full lê o saldo local por SKU, e não reagrega todos a cada linha
+
+**Contexto:** a varredura da D-873 deixou `get_fulfillment_overview` (`/full`) em aberto: ~1,5 s como membro, e o mesmo tempo com o SQL escrito por extenso. Então não é o plano genérico. O plano real mostrou:
+- a CTE `saldo_local`, que agrega `inventory_balances` local de todos os SKUs, é incorporada à consulta;
+- o `left join` com ela vira um laço aninhado que reagrega o saldo de todos os SKUs a cada linha da lista, descartando milhões de linhas no filtro do join.
+
+**Decisão:**
+- **Saldo local por SKU, numa subconsulta escalar.** `classificado` lê `sum(quantity)` de `inventory_balances` com `location_kind = 'LOCAL'` só para o SKU da linha. A chave única `(sku_id, location_kind)` da tabela faz disso uma leitura por índice.
+- A CTE `saldo_local` e o `left join` saem. Mais nada muda: assinatura, retorno, filtros, ordenações, a definição do Full (D-173) e a guarda da D-204 (`inventory_id` e captura de 3 dias). `create or replace` preserva comentário e grants.
+- **Descartada:** `saldo_local as materialized`. Ficou em ~0,8 s, contra ~0,16 s da subconsulta.
+
+**Verificação:**
+- Em produção, só leitura, como membro: o corpo atual levou 1,5 a 2,0 s, o materializado 0,75 a 0,9 s, e o novo 155 a 164 ms, tanto no plano normal quanto no genérico forçado.
+- As três versões devolveram as mesmas linhas, na mesma ordem, por hash, em 12 recortes:
+  - ordenações prioridade, padrão, cobertura (página 2), local, SKU (lista inteira) e vendas com ruptura;
+  - focos "enviável" e "acabando" em 30 dias;
+  - uma conta em 90 dias, uma busca, um SKU e uma busca sem resultado.
+- As tabelas temporárias da comparação existiram só dentro de uma transação encerrada com `rollback`.
+- Localmente, a suíte do `@sb/db` teve as mesmas 10 falhas de baseline.
+
+**Em produção (25/11):** com autorização do dono, o #411 entrou na `main` em `57eb7961`.
+- **CI:** os quatro jobs obrigatórios passaram (run 45676090002). Na primeira tentativa, o e2e não subiu o Supabase porque a porta 60022 do runner estava ocupada; passou na segunda. O job do Dev falhou com "project is paused", como esperado.
+- **Migration:** `20261125183000` foi aplicada na VM com `psql -1` e registrada no histórico.
+- **Conferido depois:** o corpo novo, o comentário e os grants (`authenticated`, `postgres` e `service_role`).
+- **Tempo:** como membro, a chamada de 30 dias levou 282 ms, contra 1,49 a 1,54 s antes; a ordem "local" levou 258 ms, contra 1,61 s.
+
+## D-875 - A stack de testes da CI usa portas acima da faixa temporária do Linux
+
+**Contexto:** em 25/11, o e2e da `main` no merge do #411 falhou antes de rodar qualquer teste, com `failed to bind host port 0.0.0.0:60022/tcp: address already in use`, e passou ao repetir o job. Desde 10/11, a mesma falha na 60022 apareceu em mais um run (45441658929), entre os 17 jobs de e2e e integração que falharam.
+- O `scripts/isolate-supabase.mjs` testa um bloco de portas livre a partir de 60000, libera e só então o `supabase start` sobe os containers.
+- No Ubuntu do runner, a faixa de portas temporárias (`ip_local_port_range`) vai de 32768 a 60999. Uma conexão de saída feita nesse intervalo, como o download das imagens, pode pegar a porta testada.
+- Cada falsa falha na `main` atrasa migrations de produção, que esperam a CI verde.
+
+**Decisão:**
+- **O primeiro bloco passa a ser 61000.** Com o `config.toml` atual, a stack usa de 61020 a 61029. O laço continua procurando o próximo bloco livre até 65000.
+- O teste ocupa a 61022 para forçar outro bloco e confere que nenhuma porta escolhida fica abaixo de 61000.
+- **Fica de fora:** a disputa entre o teste e o `docker run` continua possível com outro processo que escute nessas portas, mas fora da faixa temporária o sistema não as entrega sozinho.
+
+**Verificação:** `node --test scripts/isolate-supabase.test.mjs` passou, e com o código antigo a nova asserção falharia. Rodado no `config.toml` real, o script escolheu o bloco 61000.
+
+## D-876 - A varredura de logística lê o ledger pela chave, e não por OFFSET
+
+**Contexto:** a leitura do `pg_stat_statements` na VM (acumulado desde 18/11) mostrou que a consulta que mais soma tempo no banco é a do `sync.order-logistics`.
+- A cada rodada, por conta, o handler lê o ledger inteiro da organização (vendas, reversões, devoluções e estornos) com `readAllPages`, que pagina por `range`, ou seja, por `OFFSET`.
+- Com `OFFSET`, o Postgres percorre e descarta tudo o que vem antes da página. Em produção, só leitura: a primeira página custou 9 ms e a última 253 ms, lendo ~135 mil buffers.
+- A média por página ficou em 295 ms, e a rodada dura ~37 s. O custo cresce com o quadrado do ledger.
+
+**Decisão:**
+- **`readAllPagesByKey`** em `apps/worker/src/read-all-pages.ts`. Cada página pede as linhas com `id` maior que o da última, ordenadas por `id` e com `limit`. Toda página custa o mesmo que a primeira, pela chave primária.
+- Se a chave não avançar (consulta sem o `gt` ou ordenada por outra coluna), ele para com erro, em vez de repetir a página.
+- **`lerLedger`** passa a usá-lo. As linhas e a ordem são as mesmas: o `id` é a PK, e a ordem já era por ela.
+- **Fica de fora:** o ledger inteiro continua indo para a memória do worker. O próprio `read-all-pages.ts` diz que conjunto grande pertence a uma RPC. Essa troca pede migration e deploy juntos e é a fatia seguinte, se a rodada continuar longa.
+
+**Achado para a próxima fatia:** o `ml-fulfillment-fetch` lê todo o histórico de `fulfillment_stock_snapshots` dos inventários da conta para ficar com a captura mais recente de cada um.
+- Média de 255 ms por página.
+- A paginação ordena por `captured_at`, que não é único entre inventários, contra a regra da D-131. Na fronteira de uma página, a captura mais recente de um inventário pode ser pulada, e a "anterior" usada na comparação sai mais velha.
+- A correção é uma leitura da última captura por inventário no SQL (`distinct on`, pelo índice `fulfillment_stock_snapshots_timeline_idx`).
+
+**Verificação:**
+- Testes novos do helper: o conjunto inteiro em três páginas; as mesmas linhas e a mesma ordem que a leitura por `range`; a página extra no múltiplo exato; o erro quando a chave não avança; o rótulo no erro.
+- O banco falso do teste do handler passou a aplicar `gt`, `order` e `limit`, e lança se a leitura voltar a usar `range`.
+- `tsc`, `eslint` e os 1.037 testes do worker passaram.
+
+**Publicação:** pede deploy do `worker` em produção, com autorização do dono. Não há migration.
+
 ## D-884 - Conferir a base aplicada antes do ensaio local de upgrade
 
 O planejador exige que o catálogo da stack descartável coincida com a base Git. O candidato preserva os nomes e blobs dos SQLs aplicados. As adições são identificadas com o objeto Git e a posição em relação à última versão. As versões temporárias do laboratório ficam fora dos manifestos de publicação.

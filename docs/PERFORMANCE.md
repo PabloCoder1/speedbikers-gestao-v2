@@ -2626,6 +2626,35 @@ Medido em produção, como membro autenticado, com o cache quente (duas chamadas
 
 - **Curva ABC:** é o plano genérico. No plano genérico forçado, o corpo antigo levou 3,1 s e o da D-873 483 ms.
 - **`/full`:** a consulta é cara mesmo escrita por extenso. Precisa de outra investigação.
+- **Em produção (25/11):** a curva ABC de 30 dias, como membro, levou 346 e 440 ms depois da D-873, contra 1,3 a 1,6 s antes.
+
+### Central Full: saldo local por SKU (Claude Sentinel, D-874, 25/11/2026)
+
+Medido em produção, como membro autenticado, com `prepare` das três versões dentro de uma transação desfeita (30 dias, ordem prioridade, 50 linhas):
+
+| Versão | Plano normal | Plano genérico forçado |
+|---|---|---|
+| Atual (`saldo_local` incorporada) | 1,5 a 2,0 s | 2,0 s |
+| `saldo_local as materialized` | 0,75 a 0,87 s | 0,91 s |
+| Subconsulta escalar por SKU (D-874) | 155 a 159 ms | 164 ms |
+
+- **Causa:** o `left join` com a agregação de todo o saldo local virava laço aninhado, reagregando o saldo a cada linha da lista.
+- **Equivalência:** 12 recortes com as mesmas linhas e a mesma ordem nas três versões.
+- **Em produção (25/11):** a chamada real, como membro, levou 282 ms (antes, 1,49 a 1,54 s) e a ordem "local" 258 ms (antes, 1,61 s). A chamada inclui as facetas, por isso fica acima dos ~160 ms do `prepare`.
+
+### Consultas mais caras na VM (Claude Sentinel, D-876, 25/11/2026)
+
+Leitura do `pg_stat_statements`, acumulado desde 18/11, só leitura:
+
+| Consulta | Quem | Média | Leitura |
+|---|---|---|---|
+| `stock_movements` do ledger inteiro, por `OFFSET` | worker, `sync.order-logistics` | 295 ms por página | D-876: pela chave |
+| `fulfillment_stock_snapshots`, todo o histórico por `OFFSET` | worker, `ml-fulfillment-fetch` | 255 ms por página | Próxima fatia: última captura no SQL |
+| `get_meta_do_mes`, `get_purchase_analysis`, `get_detector_frete` | telas | 4 a 5 s | A investigar |
+| `get_faturamento`, `get_shopee_faturamento` | telas | 3 a 3,6 s | A investigar |
+
+- **Ledger por `OFFSET`:** a primeira página custou 9 ms e a última 253 ms (~135 mil buffers). Pela chave, toda página custa o mesmo que a primeira.
+- **Mais de 4 s:** as médias das telas misturam cache frio e quente. Precisam ser medidas como membro antes de qualquer conclusão.
 
 ### Histórico da Central com arquivo (Sentinel D04, 25/11/2026)
 

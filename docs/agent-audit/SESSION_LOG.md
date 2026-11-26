@@ -1143,3 +1143,83 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 
 - Acrescentei `packages/db/scripts/rehearse-sync-run-archive.mjs`. O ensaio local separa o papel da movimentação do papel da recuperação, delimita a conta permitida e reverte todas as alterações ao terminar. A recuperação de erro tardio preservou a referência e suprimiu o alerta histórico. Falha operacional comum ainda gerou alerta.
 - O corte recusou os checkpoints. Saúde, cartões de conta, checkpoints de pedidos e claims e o resultado do vigia corresponderam antes do corte, depois dele e após a recuperação. O ensaio recusou o acesso fora do escopo, a escrita direta pelo operador e o host externo.
+
+### 25/11/2026 · Claude Sentinel: publicação da D-873, I06, L03 e L04
+
+- **D-873.** Merge do #406 autorizado pelo dono. A `main` está em `628ff887`.
+  - O GitHub teve incidente nesse horário, perdeu o evento do push e o PR segue aberto.
+  - A CI foi disparada à mão (`workflow_dispatch`, run 45662352513).
+  - Os quatro jobs obrigatórios passaram. O job do Dev falhou com "project is paused", como esperado.
+  - A migration `20261125150000` foi aplicada na VM e registrada no histórico.
+  - Como membro, a curva de 30 dias levou de 346 a 440 ms, contra 1,3 a 1,6 s antes.
+  - O #406 foi fechado à mão com comentário. Não houve deploy da Vercel para `628ff887`, que não muda a web.
+- **I06.** Detalhes em `docs/agent-audit/CLOUD_COST_AND_RETENTION.md`, só com leituras, e complementa o #408 do Gemini (D-836).
+  - VM e Cloud Run adequados, com as medições no documento.
+  - O Postgres está com parâmetros de fábrica (`shared_buffers` e `effective_cache_size` de 128 MB).
+  - Custo estimado de tabela: ~R$ 740 por mês na parte fixa.
+  - O bucket de backups tem versionamento sem regra para versões antigas.
+  - O orçamento "Dev" cobre a conta inteira.
+- **S05.** O `editor` saiu da conta padrão às 13:23 UTC, mas nem ela nem o `v3-builder` têm hoje permissão no repositório de imagens. O próximo deploy de `api` ou `worker` deve falhar até o dono conceder os papéis ao `v3-builder`.
+- **L04 e L03.** Novas linhas em `CLEANUP_CANDIDATES.md`.
+  - 15 PRs do Codex já estão contidos no #378.
+  - 13 PRs de telas de setembro e outubro esperam decisão do dono.
+- **Testes.** Só `pnpm docs:check`; não houve mudança de código.
+- **Próxima etapa.**
+  - Em 26/11, conferir UpSeller e `sync.listing.item`.
+  - Quando o dono conceder os papéis ao `v3-builder`, fazer o deploy seguinte com `--service-account`.
+  - Investigar `get_fulfillment_overview`.
+
+### 25/11/2026 · Claude Sentinel: Central Full (D-874) e fechamento do S05
+
+- **Respostas do dono.**
+  - Concedeu os três papéis ao `v3-builder`.
+  - Leu o custo dos últimos 30 dias, bem abaixo da estimativa. O valor fica fora do repositório.
+  - Autorizou a regra de versões antigas no bucket de backups, aplicada às 18:02 UTC só em `diario/`.
+  - O orçamento "Dev" segue sem filtro de projeto.
+- **S05 fechado.** Conferi os três vínculos e rodei um build de teste como `v3-builder` (`cdb5c897`, SUCCESS, imagem `worker-sentinel-iam:*`). O deploy seguinte usa `--service-account`. A imagem de teste entra na lista do L04.
+- **D-874.** `get_fulfillment_overview` agora soma o saldo local só do SKU de cada linha.
+  - Em produção, só leitura: de 1,5 a 2,0 s para 155 a 164 ms, também no plano genérico.
+  - 12 recortes iguais em linhas e ordem.
+  - A migration é `20261125183000`.
+- **Testes.** Suíte de integração do `@sb/db` com a migration: as mesmas 10 falhas de baseline. Mais `pnpm docs:check`.
+- **Próxima etapa.**
+  - Autorização do dono para o merge e a migration da D-874 na VM.
+  - Em 26/11, conferir UpSeller e `sync.listing.item`.
+
+### 25/11/2026 · Claude Sentinel: D-874 em produção
+
+- **Merge:** o #411 foi mergeado com autorização do dono, e a `main` está em `57eb7961`.
+  - Os quatro jobs obrigatórios passaram no run 45676090002.
+  - Na primeira tentativa, o e2e falhou porque o runner estava com a porta 60022 ocupada. Nenhum teste rodou, e o job passou na segunda tentativa.
+  - O job do Dev falhou com "project is paused", como esperado.
+- **Migration:** `20261125183000` foi aplicada na VM com `psql -1`, e o hash do arquivo bateu com o da `main`.
+- **Conferido depois:** o corpo novo, o comentário, os grants e o registro no histórico.
+- **Tempo, como membro:** a Central Full de 30 dias levou 282 ms, contra 1,49 a 1,54 s antes.
+- **Vercel:** publicou o `57eb7961`. A web não muda.
+- **Próxima etapa:** em 26/11, conferir UpSeller e `sync.listing.item`.
+
+### 25/11/2026 · Claude Sentinel: portas da stack de testes (D-875)
+
+- **Causa:** o e2e da `main` falhou hoje com a 60022 ocupada. O bloco de portas da stack de testes caía na faixa temporária do Linux.
+- **Correção:** o `isolate-supabase` passa a começar em 61000, e o teste confere o limite.
+- **Testes:** `node --test scripts/isolate-supabase.test.mjs`.
+- **Próxima etapa:** varredura das consultas mais caras na VM, só com leitura.
+
+### 25/11/2026 · Claude Sentinel: consultas mais caras e ledger pela chave (D-876)
+
+- **Leitura:** `pg_stat_statements` na VM, só leitura. A soma maior é a do worker em `sync.order-logistics`, que lê o ledger inteiro por `OFFSET` (última página ~28 vezes a primeira).
+- **D-876:** `readAllPagesByKey` no worker, usado pelo `lerLedger`. As linhas e a ordem são as mesmas.
+- **Achado:** o `ml-fulfillment-fetch` lê todo o histórico de snapshots por `OFFSET`, ordenado por coluna não única (D-131). É a próxima fatia.
+- **Testes:** `tsc`, `eslint` e os 1.037 testes do worker.
+- **Próxima etapa:**
+  - deploy do `worker`, com autorização do dono;
+  - a última captura do Full no SQL;
+  - medir como membro as RPCs de 4 a 5 s.
+
+### 26/11/2026 · Conciliação do ensaio de D04 e da main #414
+
+- O ensaio manual de D04, `a9ef1247` (#407), entrou localmente em `db68fd0d`. Foi repetido com rollback e recusou banco populado, host externo e redirecionamento por parâmetro da URL. As CIs de `32d4ad4b` (#364, run `45667109649`) e `a9ef1247` (#407, run `45669808681`) terminaram verdes.
+- Main `32e8372b` (#414). A conciliação preserva D-874, D-875 e D-876 de Claude. Para as portas, o candidato começa em 61.000 e mantém a detecção da faixa efêmera real e das portas publicadas pelo Docker.
+- Preflight em leitura: VM com 339 versões, candidato com 341. A VM tem `20261125183000` (D-874); `20261125160000` e `20261125170000` faltam abaixo dela. A guarda bloqueou a aplicação. Próximo passo é ensaiar e revisar a conciliação das duas versões antes de qualquer publicação web.
+- O #409 em `7cd9753b` colide com a versão de D-886. Gemini recebeu o pedido de versão livre e teste do catálogo conjunto. #401 e #408 seguem reservados. S05 aguarda autorização de IAM. Dev e o Supabase hosted antigo seguem inativos. Inventário em 173/226.
+- A instalação limpa do candidato com 341 versões passou no ensaio manual e em 1.260 testes SQL/PostgREST. Check 37/37, build 10/10, docs:check e isolamento/preflight 12/12. Em outro laboratório, duas cópias byte a byte das migrations D04 receberam versões temporárias posteriores a D-874. O upgrade de 339 para 341 passou, e as definições e permissões das duas views, da RPC e da policy corresponderam à instalação limpa. As versões temporárias ficaram no laboratório.
