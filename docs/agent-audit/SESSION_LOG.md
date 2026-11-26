@@ -891,3 +891,12 @@ Tudo lido pela VM em modo só leitura.
   1. merge do #420 e a migration `20261126190000` pela VM;
   2. a conferência como membro com 3, 5 e 50 SKUs;
   3. o mesmo com o #421 (rebase na `main` depois do merge do #420) e a migration `20261126200000`.
+
+### 26/11/2026 · Claude Sentinel: correção da D-879 em produção (#420)
+
+- **Publicação.** Com autorização do dono, o #420 entrou na `main` em `473370ad`.
+  - Os 4 jobs obrigatórios passaram. O do Dev falhou com "project is paused", como esperado.
+  - A migration `20261126190000` foi aplicada pela VM com `psql -1`, com o mesmo sha256 dos dois lados, e registrada no histórico. A Vercel concluiu a web, que não muda.
+- **Conferência:** corpo novo (ramo com e sem lista), `plan_cache_mode`, grants, comentário e registro estão certos. Reposição, contagem de estados e página da sugestão responderam.
+- **Tempo como membro:** `get_purchase_analysis` com sugestão foi de ~11,7 s para 0,36–0,40 s com 5 SKUs e de ~9 s para 0,59 s com 3. Com 50 SKUs, 0,65 s.
+- **#421:** a base passou para a `main` sem reescrever a branch, e um commit vazio (`1788c836`) disparou a CI. A publicação espera autorização do dono.
