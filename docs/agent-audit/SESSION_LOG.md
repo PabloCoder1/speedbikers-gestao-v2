@@ -1138,3 +1138,8 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - Em PostgreSQL 17.11 descartável, 12.782 de 58.000 execuções foram movidas. O teste recuperou a linha original no erro tardio, preservou a FK nas duas ordens de concorrência e verificou repetição após `40001`. A redução sintética de espaço foi 21,97% no ativo e 6,85% no conjunto antes da recuperação.
 - A conferência dos leitores mostrou risco de perder checkpoints de contas inativas em corte por idade. Com as linhas que sustentam esses checkpoints preservadas, nove resultados sintéticos foram idênticos. Na cópia do catálogo real, confirmei a recusa de DELETE, o sumiço de conta inativa em `get_sync_health` após corte por idade e a emissão de alerta novo ao reinserir falha histórica sem evento prévio. A transação foi revertida.
 - Revisão técnica e observações de armazenamento em `PERFORMANCE.md`. D04 segue em andamento. Inventário em 173/226, com V01/V02 dependentes do Dev alojado e S05 da autorização de IAM.
+
+### 25/11/2026 · D04, ensaio repetível de permissões e checkpoints de sync_runs
+
+- Acrescentei `packages/db/scripts/rehearse-sync-run-archive.mjs`. O ensaio local separa o papel da movimentação do papel da recuperação, delimita a conta permitida e reverte todas as alterações ao terminar. A recuperação de erro tardio preservou a referência e suprimiu o alerta histórico. Falha operacional comum ainda gerou alerta.
+- O corte recusou os checkpoints. Saúde, cartões de conta, checkpoints de pedidos e claims e o resultado do vigia corresponderam antes do corte, depois dele e após a recuperação. O ensaio recusou o acesso fora do escopo, a escrita direta pelo operador e o host externo.

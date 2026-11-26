@@ -17,7 +17,7 @@ Há 124 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou mediçõe
 
 1. O #364 em `998cc5e3` passou na CI. Conferir o próximo HEAD. Na retomada do Dev, reconciliar o catálogo. Gemini conserva M04 e o #401, com CI e separação da retenção solicitadas.
 2. M05 validado em produção com o worker do #377, reconciliação e recuperação do recorte identificável. Acompanhar a revisão nas rodadas regulares.
-3. Conferir a CI de D-886 no candidato. A CI verde em `237d287d` cobre D-885. Para `sync_runs`, prototipar um caminho restrito que preserve o append-only e evite alertas históricos. Conferir os checkpoints dos workers, cartões e vigias no catálogo de laboratório. A janela de retenção depende do responsável. S05 aguarda autorização para os papéis mínimos da conta de build.
+3. Conferir a CI de D-886 no candidato. A CI verde em `237d287d` cobre D-885. Para `sync_runs`, o ensaio manual conferiu permissões, checkpoints, cartões e vigia. Definir a política e testar lotes e volume representativos antes de propor uma migration operacional. A janela de retenção depende do responsável. S05 aguarda autorização para os papéis mínimos da conta de build.
 
 ## Frentes de execução
 

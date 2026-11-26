@@ -1,5 +1,5 @@
 {
-  "corte": "25/11/2026, ensaio de sync_runs e conferência do candidato #364",
+  "corte": "25/11/2026, ensaio manual de recuperação restrita e conciliação do candidato #364",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "D-885, D-886 e ensaio de transferência e restauração (#407) no candidato. A prova sintética de sync_runs preservou a FK e revelou os checkpoints a poupar; faltam equivalência com as triggers reais, política, operação e publicação.",
+      "evidencia": "D-885, D-886 e ensaios locais no #407. A recuperação restrita de sync_runs preservou referências, checkpoints e avisos operacionais. Faltam política, teste de lote representativo, execução e publicação.",
       "fase": 3
     },
     {
