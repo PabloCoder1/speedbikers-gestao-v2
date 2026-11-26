@@ -2535,6 +2535,19 @@ Com 8.285 erros já presentes, três inserções alternadas de 3.000 linhas por 
 
 A consulta somente leitura de 26/11 mediu a frequência recente de erros vinculados e simulou janelas de 30, 60 e 90 dias, preservando checkpoints e relações. A janela de 90 dias não selecionou linhas. As outras duas produziram recortes elegíveis separados. O dono escolheu 60 dias para preparação e teste. O ensaio passou a recusar uma execução de 59 dias, aceitou uma de 61 dias elegível e respeitou um corte adicional mais restritivo. A adoção operacional e o índice ainda dependem de autorização.
 
+### Índice da FK no primeiro piloto de sync_runs (D04, 26/11/2026)
+
+A consulta somente leitura registrou 64.147 execuções, 706 erros vinculados e 214 erros vinculados nos sete dias anteriores. O ensaio --benchmark-pilot usa esse volume com dados sintéticos, concentra as execuções numa conta e distribui 706 referências entre elas. Foram seis pares de lotes de 100. A ordem das variantes foi alternada. Em cada variante, o lote foi revertido antes de inserir 31 erros vinculados, arredondando a média diária observada. O WAL vem de EXPLAIN (ANALYZE, WAL). Cada amostra foi revertida.
+
+| Métrica | Sem índice | Com índice |
+| --- | ---: | ---: |
+| Lote de 100, mediana | 224,5 ms | 237 ms |
+| Lote de 100, intervalo observado | 190–412 ms | 178–565 ms |
+| Inserção de 31 erros, mediana | 2,10 ms | 1,70 ms |
+| WAL da inserção, mediana | 11.514 bytes | 13.798 bytes |
+
+Três lotes foram mais rápidos em cada variante. A mediana de WAL subiu 19,8%. O ensaio de lotes de mil continua mostrando benefício sob densidade de erros maior. Para o primeiro piloto de até 100, a proposta é usar os índices atuais e medir latência e espera por trava. Reavaliar antes de aumentar o lote ou se a espera pela FK ultrapassar o orçamento aprovado. O ensaio sequencial mede o trabalho local e não mede commit, réplica nem carga concorrente.
+
 ### Custo da ordenação da Central de Notificações (D-851)
 
 Ensaio em PostgreSQL 17 descartável com 141.500 vínculos sintéticos

@@ -282,6 +282,63 @@ async function watcher() {
     }
 }
 const alerts = async () => (await db.query(`select count(*)::int n from public.domain_events where organization_id=$1 and event_type in ('sync.failed','sync.delayed')`, [org])).rows[0].n;
+async function measurePilotIndex() {
+    // Perfil agregado da VM em 26/11. Concentrar as execuções em uma conta
+    // torna a seleção deliberadamente mais pesada do que distribuí-las.
+    const runs = 64_147;
+    const linkedErrors = 706;
+    const batchSize = 100;
+    const dailyErrors = 31;
+    const before = daysAgo(81);
+    await db.query(`insert into public.sync_runs
+      (id,organization_id,ml_account_id,job_id,resource,channel,status,started_at,finished_at)
+      select md5('d04-piloto:' || n)::uuid,$1,$2,gen_random_uuid(),'orders','reconciliation',
+        'done',finished-interval '1 minute',finished
+      from generate_series(1,$4::int) n
+      cross join lateral (select $3::timestamptz-n*interval '3 minutes' finished) t`,
+    [org, account, before, runs]);
+    const writeErrors = `insert into public.sync_errors
+      (organization_id,ml_account_id,sync_run_id,resource,error_class,message,occurred_at)
+      select $1,$2,md5('d04-piloto:' || (n*$4::int/$5::int))::uuid,
+        'orders','retryable','fixture D04',$3
+      from generate_series(1,$5::int) n`;
+    await db.query(writeErrors, [org, account, before, runs, linkedErrors]);
+    await db.query("analyze public.sync_runs; analyze public.sync_errors");
+    const baseline = await snapshot();
+    const watchBefore = await watcher();
+    for (let sample = 1; sample <= 6; sample += 1) {
+        for (const withIndex of sample % 2 ? [false, true] : [true, false]) {
+            await db.query("savepoint pilot_variant");
+            try {
+                if (withIndex) {
+                    await db.query("create index d04_probe_error_run_idx on public.sync_errors(sync_run_id) where sync_run_id is not null");
+                }
+                await db.query("savepoint pilot_archive");
+                const started = performance.now();
+                assert.equal(await moveBatch(account, before, batchSize), batchSize);
+                const archiveMs = performance.now() - started;
+                assert.deepEqual(await snapshot(), baseline);
+                assert.deepEqual(await watcher(), watchBefore);
+                // Reverta o lote antes de medir a escrita. A distribuição de pais é a mesma nos dois cenários.
+                await db.query("rollback to pilot_archive");
+                const { rows: [explain] } = await db.query(
+                    `explain (analyze, wal, format json) ${writeErrors}`,
+                    [org, account, before, runs, dailyErrors],
+                );
+                const [statement] = explain["QUERY PLAN"];
+                assert.ok(statement.Plan["WAL Bytes"] > 0);
+                console.log(JSON.stringify({
+                    withIndex, sample, batchSize, archiveMs: Math.round(archiveMs),
+                    writeMs: statement["Execution Time"], writeWalBytes: statement.Plan["WAL Bytes"],
+                }));
+            } finally {
+                await db.query("rollback to pilot_variant");
+                await db.query("release savepoint pilot_variant");
+            }
+        }
+    }
+}
+
 async function measureBatches() {
     const before = daysAgo(81);
     await db.query(`insert into public.sync_runs
@@ -497,6 +554,7 @@ async function rehearse() {
         assert.deepEqual(await snapshot(), retentionBaseline);
         await verifyBatchRollback();
         if (process.argv.includes('--benchmark')) await measureBatches();
+        else if (process.argv.includes('--benchmark-pilot')) await measurePilotIndex();
         console.log('Papéis restritos, erro tardio sem alerta, alerta normal preservado, saúde, cartões e checkpoints equivalentes, vigia idêntico, piso de 60 dias, corte de checkpoints recusado e UPDATE protegido.');
     }
     finally {
