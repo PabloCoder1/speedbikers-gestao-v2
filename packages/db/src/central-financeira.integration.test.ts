@@ -198,7 +198,7 @@ describe("Central de Inteligência Financeira — SQL, RLS e Constraints", () =>
     const [closing] = await asUser<{ status: string }>(
       ADMIN_A,
       `insert into public.monthly_financial_closings (organization_id, month, status, dre_snapshot, notes)
-       values ($1, '2026-10-01', 'fechado', '{"faturamento": 500000}'::jsonb, 'Fechamento outubro conferido')
+       values ($1, '2026-06-01', 'fechado', '{"faturamento": 500000}'::jsonb, 'Fechamento junho conferido')
        returning status`,
       [ORG_A],
     );
