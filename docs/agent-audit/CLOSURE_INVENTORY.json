@@ -1,5 +1,5 @@
 {
-  "corte": "26/11/2026, lote concorrente de sync_runs e custo do índice",
+  "corte": "26/11/2026, piso de 60 dias no ensaio de sync_runs",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "Histórico, índice temporal e ensaio de recuperação no candidato. Lotes de até mil execuções preservaram checkpoints e integridade. Concorrência foi verificada nas duas ordens, com custo de WAL do índice medido. Faltam política, adoção operacional e publicação.",
+      "evidencia": "Histórico, índice temporal e ensaio de recuperação no candidato. Lotes e concorrência passaram, com custo de WAL medido. O dono confirmou 60 dias para preparação e teste; aplicação e publicação aguardam autorização.",
       "fase": 3
     },
     {

@@ -2533,7 +2533,7 @@ São duas execuções locais, uma medição por combinação em cada rodada, do 
 
 Com 8.285 erros já presentes, três inserções alternadas de 3.000 linhas por variante registraram 113–152 ms sem índice e 139–166 ms com índice. Os intervalos se sobrepõem. A mediana de WAL subiu de 1.043.793 para 1.298.344 bytes (+24,4%). O teste usou `EXPLAIN (ANALYZE, WAL)` e rollback entre amostras. Ele mede manutenção do índice durante a inserção, sem commit, e não mede sua criação concorrente nem a réplica.
 
-A consulta somente leitura de 26/11 mediu a frequência recente de erros vinculados e simulou janelas de 30, 60 e 90 dias, preservando checkpoints e relações. A janela de 90 dias não selecionou linhas. As outras duas produziram recortes elegíveis separados. A janela e o índice ainda dependem de decisão antes da adoção.
+A consulta somente leitura de 26/11 mediu a frequência recente de erros vinculados e simulou janelas de 30, 60 e 90 dias, preservando checkpoints e relações. A janela de 90 dias não selecionou linhas. As outras duas produziram recortes elegíveis separados. O dono escolheu 60 dias para preparação e teste. O ensaio passou a recusar uma execução de 59 dias, aceitou uma de 61 dias elegível e respeitou um corte adicional mais restritivo. A adoção operacional e o índice ainda dependem de autorização.
 
 ### Custo da ordenação da Central de Notificações (D-851)
 

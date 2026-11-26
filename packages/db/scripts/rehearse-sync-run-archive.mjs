@@ -20,6 +20,12 @@ const historical = randomUUID();
 const latest = randomUUID();
 const normal = randomUUID();
 const claims = randomUUID();
+const minimumRetentionDays = 60;
+const fixtureNow = Date.now();
+
+function daysAgo(days) {
+    return new Date(fixtureNow - days * 86_400_000).toISOString();
+}
 
 const ddl = `
 create role d04_mover nologin;
@@ -89,7 +95,7 @@ begin
     join group_marks g using (resource, channel)
     cross join scope_marks m
     join public.sync_runs r on r.id=s.id
-    where s.finished_at < least(p_before, now() - interval '24 hours')
+    where s.finished_at < least(p_before, now() - make_interval(days => ${minimumRetentionDays}))
       and (p_id is null or s.id=p_id)
       and not coalesce(
         s.finished_at=g.last_run
@@ -135,7 +141,7 @@ revoke all on function d04_probe.ensure_run() from public,anon,authenticated,ser
 create trigger d04_sync_error_parent before insert on public.sync_errors for each row execute function d04_probe.ensure_run();
 revoke create on schema d04_probe from d04_mover,d04_hydrator;
 `;
-const date = '2026-09-07T12:00:00Z';
+const historicalDate = daysAgo(80);
 async function seed(id, status, finished, resource = 'orders') {
     await db.query(`insert into public.sync_runs(id,organization_id,ml_account_id,job_id,resource,channel,status,reason,started_at,finished_at,latest_record_at)
   values ($1,$2,$3,$4,$8,'reconciliation',$5,$6,$7::timestamptz-interval '1 minute',$7,case when $5='done' then $7::timestamptz end)`, [id, org, account, randomUUID(), status, status === 'failed' ? 'D04 fixture' : null, finished, resource]);
@@ -181,14 +187,14 @@ async function moveBatch(accountId, before, limit, id = null) {
     return result.moved;
 }
 
-function moveOne(accountId, id = historical, before = "2026-09-08T00:00:00Z") {
+function moveOne(accountId, id = historical, before = daysAgo(79.75)) {
     return moveBatch(accountId, before, 1, id);
 }
 
 async function watcher() {
     await db.query('savepoint probe_watch');
     try {
-        const result = await db.query(`select private.avisar_sincronizacao_parada($1,'2026-09-09T00:00:00Z',null) as sent`, [account]);
+        const result = await db.query(`select private.avisar_sincronizacao_parada($1,$2,null) as sent`, [account, daysAgo(79)]);
         const events = await db.query(`select event_type,dedup_key,after from public.domain_events where organization_id=$1 and event_type in ('sync.failed','sync.delayed')`, [org]);
         return { sent: result.rows[0].sent, events: events.rows };
     }
@@ -199,7 +205,7 @@ async function watcher() {
 }
 const alerts = async () => (await db.query(`select count(*)::int n from public.domain_events where organization_id=$1 and event_type in ('sync.failed','sync.delayed')`, [org])).rows[0].n;
 async function measureBatches() {
-    const before = "2026-09-01T00:00:00Z";
+    const before = daysAgo(81);
     await db.query(`insert into public.sync_runs
       (id,organization_id,ml_account_id,job_id,resource,channel,status,started_at,finished_at,latest_record_at)
       select md5('d04-lote:' || n)::uuid,$1,$2,gen_random_uuid(),'orders','reconciliation',
@@ -270,17 +276,17 @@ async function rehearse() {
         await db.query("insert into public.organizations(id,name,slug) values($1,'D04 ACL','d04-acl')", [org]);
         await db.query("insert into public.organization_members(organization_id,user_id,role) values($1,$2,'ADMIN')", [org, user]);
         await db.query(`insert into public.ml_accounts(id,organization_id,label,slug,seller_id,status,connected_at) values
-    ($1,$3,'Principal','d04-acl-main',842313301,'CONNECTED','2026-09-01'),
-    ($2,$3,'Outra','d04-acl-other',842313302,'CONNECTED','2026-09-01')`, [account, other, org]);
+    ($1,$3,'Principal','d04-acl-main',842313301,'CONNECTED',$4),
+    ($2,$3,'Outra','d04-acl-other',842313302,'CONNECTED',$4)`, [account, other, org, daysAgo(90)]);
         await db.query("insert into d04_probe.allowed_scope values ($1, $2)", [org, account]);
         const { rows: [membership] } = await db.query(`select
           pg_has_role('service_role', 'd04_hydrator', 'MEMBER') as hydrator,
           pg_has_role('service_role', 'd04_mover', 'MEMBER') as mover`);
         assert.deepEqual(membership, { hydrator: false, mover: false });
         await db.query('alter table public.sync_runs disable trigger sync_runs_aviso_de_parada');
-        await seed(historical, 'failed', date);
-        await seed(latest, 'done', '2026-09-08T12:00:00Z');
-        await seed(claims, 'done', '2026-09-07T10:00:00Z', 'claims');
+        await seed(historical, 'failed', historicalDate);
+        await seed(latest, 'done', daysAgo(79.5));
+        await seed(claims, 'done', daysAgo(80.5), 'claims');
         await db.query('alter table public.sync_runs enable trigger sync_runs_aviso_de_parada');
         assert.equal(await alerts(), 0);
         const baseline = await snapshot();
@@ -291,8 +297,8 @@ async function rehearse() {
         const watchBefore = await watcher();
         assert.equal(watchBefore.sent, true);
         assert.equal(watchBefore.events.length, 1);
-        assert.equal(await moveOne(account, latest, "2026-09-20T00:00:00Z"), 0);
-        assert.equal(await moveOne(account, claims, "2026-09-20T00:00:00Z"), 0);
+        assert.equal(await moveOne(account, latest, daysAgo(70)), 0);
+        assert.equal(await moveOne(account, claims, daysAgo(70)), 0);
         await expectDenied(() => asRole('d04_operator', () => db.query('delete from public.sync_runs where id=$1', [historical])), '42501');
         await expectDenied(() => asRole('d04_operator', () => db.query('select * from d04_probe.cold')), '42501');
         await expectDenied(() => asRole('service_role', () => db.query('select d04_probe.move_batch($1,$2,now(),1,$3)', [org, account, historical])), '42501');
@@ -308,21 +314,25 @@ async function rehearse() {
         assert.deepEqual(await watcher(), watchBefore);
         assert.equal(await moveOne(account), 0);
         await expectDenied(() => db.query('update public.sync_runs set reason=$2 where id=$1', [historical, 'bypass']), 'P0001');
-        await asRole('service_role', () => seed(normal, 'failed', '2026-09-10T12:00:00Z'));
+        await asRole('service_role', () => seed(normal, 'failed', daysAgo(78)));
         assert.equal(await alerts(), 1);
-        await expectDenied(() => moveBatch(account, date, 1001), '22023');
+        await expectDenied(() => moveBatch(account, historicalDate, 1001), '22023');
         await expectDenied(() => moveBatch(account, null, 1), '22023');
 
-        // Um corte no futuro ainda precisa preservar os indicadores de 24h.
-        const recent = randomUUID();
-        const now = Date.now();
-        await seed(recent, "done", new Date(now - 2 * 60 * 60 * 1000).toISOString());
-        await seed(randomUUID(), "done", new Date(now - 60 * 60 * 1000).toISOString());
-        const recentBaseline = await snapshot();
-        assert.equal(await moveOne(account, recent, new Date(now + 60 * 60 * 1000).toISOString()), 0);
-        assert.deepEqual(await snapshot(), recentBaseline);
+        // O corte do operador pode ampliar a retenção. O piso de 60 dias
+        // protege a execução de 59 dias e, por consequência, a janela de 24h.
+        const protectedRun = randomUUID();
+        const eligibleRun = randomUUID();
+        await seed(protectedRun, "done", daysAgo(59));
+        await seed(eligibleRun, "done", daysAgo(61));
+        await seed(randomUUID(), "done", daysAgo(1 / 24));
+        const retentionBaseline = await snapshot();
+        assert.equal(await moveOne(account, protectedRun, daysAgo(0)), 0);
+        assert.equal(await moveOne(account, eligibleRun, daysAgo(62)), 0);
+        assert.equal(await moveOne(account, eligibleRun, daysAgo(0)), 1);
+        assert.deepEqual(await snapshot(), retentionBaseline);
         if (process.argv.includes('--benchmark')) await measureBatches();
-        console.log('Papéis restritos, erro tardio sem alerta, alerta normal preservado, saúde, cartões e checkpoints equivalentes, vigia idêntico, corte de checkpoints recusado e UPDATE protegido.');
+        console.log('Papéis restritos, erro tardio sem alerta, alerta normal preservado, saúde, cartões e checkpoints equivalentes, vigia idêntico, piso de 60 dias, corte de checkpoints recusado e UPDATE protegido.');
     }
     finally {
         await db.query('rollback');
