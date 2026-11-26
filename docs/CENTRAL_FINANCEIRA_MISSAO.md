@@ -10,13 +10,13 @@
 Transformar a Central do SpeedBikers Gestão em uma **Central de Inteligência Financeira e Rentabilidade** completa, precisa, intuitiva, visualmente profissional e sustentável para uso diário em operação real multi-marketplace (Mercado Livre + Shopee) e multi-contas.
 
 **Páginas no escopo prioritário:**
-- `/central` — Cockpit executivo financeiro + DRE Gerencial + Ponto de Equilíbrio + Simulador What-If
-- `/central/custos` — *(Nova)* Gestão de Custos Fixos/Variáveis, Rateios, Orçamento × Realizado e Entidades Fiscais (CNPJs/Regimes)
-- `/central/metas` — Gestão de metas financeiras e alíquotas
-- `/central/limites` — Limites de controle, prevenção de riscos e alerta de venda abaixo da margem
-- `/central/frete` — Inteligência logística e detector de frete anômalo
-- `/central/ads` — Inteligência financeira de publicidade (ROAS, ACOS, TACoS, ponto de equilíbrio)
-- `/central/produtos` — Rentabilidade por produto, consolidação por SKU e simulação de margem
+- `/central` — Cockpit executivo financeiro + DRE Gerencial + Ponto de Equilíbrio + Simulador What-If + Exportação CSV
+- `/central/custos` — *(Nova)* Gestão de Custos Fixos/Variáveis (CRUD + auditoria + anti-duplicidade), Rateios, Orçamento × Realizado e Entidades Fiscais (CNPJs/Regimes/Vigências)
+- `/central/metas` — Gestão de metas de faturamento (geral e por marketplace), metas financeiras expandidas (lucro, margens, Ads, despesas, logística) e alíquotas
+- `/central/limites` — Limites de controle, prevenção de riscos, hierarquia de prioridade e alerta de venda abaixo da margem
+- `/central/frete` — Inteligência logística, custo médio por modalidade, detector de frete anômalo e prevenção de dupla contagem
+- `/central/ads` — Inteligência financeira de publicidade (orçamento ativo, projeção mensal, ROAS/ACOS de equilíbrio, risco de prejuízo e margem após Ads)
+- `/central/produtos` — Rentabilidade por produto, diagnóstico estratégico automático e simulador de preço/margem pela fórmula oficial
 
 ---
 
@@ -31,86 +31,79 @@ Transformar a Central do SpeedBikers Gestão em uma **Central de Inteligência F
 2. **DRE Gerencial e Ponto de Equilíbrio:**
    - Separação clara entre Faturamento Bruto, Receita Líquida, Lucro Bruto, Margem de Contribuição, Resultado Operacional e Resultado Líquido Gerencial.
    - Toda linha declara sua origem (`real` | `estimado` | `manual` | `calculado` | `ausente`).
+   - Despesas operacionais cadastradas em `/central/custos` alimentam automaticamente a DRE e o Ponto de Equilíbrio da `/central` (em paralelo, zero waterfall).
    - Ponto de Equilíbrio = `Despesas Fixas ÷ Margem de Contribuição (%)`, tratando explicitamente margem nula ou negativa como inalcançável.
 3. **Diferenciação de variação (%) vs. pontos percentuais (p.p.):**
-   - Margem de 20% → 25% = `+5 p.p.` e `+25%` relativo.
+   - Margem de 20% → 25% = `+5 p.p.` e `+25%` relativo (documentado em `/central`, `/central/limites` e Glossário).
 
 ---
 
-## 3. Auditoria inicial (Fase 1) — Achados e limitações
+## 3. Histórico de rodadas e commits
 
-### Pontos fortes reaproveitados de `origin/main`
-- Fórmula oficial de margem já consistente em `get_faturamento`, `get_ranking_produtos`, `get_sku_margins`, `calculadora-preco.ts` e `detectar_vendas_abaixo_da_margem` (D-858).
-- Arquitetura de streaming sem waterfalls (`check:waterfalls`), degradação graciosa de migrations pendentes (`PGRST202`/`PGRST205`/`42P01`), e Design System `--sb-*` bem estruturado.
-- Alerta de venda abaixo da margem já integrado ao sino e e-mail (D-858).
-
-### Lacunas identificadas
-1. **Ausência de despesas operacionais (fixas/variáveis)** → impedia calcular Lucro Operacional, Resultado Líquido Gerencial, Margem Líquida Final, Ponto de Equilíbrio e Orçamento × Realizado.
-2. **Tributação restrita a alíquota única global** (`tax_rates`) → sem suporte a múltiplos CNPJs, vínculos conta→CNPJ, regimes tributários distintos (Simples Nacional, Lucro Presumido, Lucro Real) nem créditos tributários.
-3. **DRE Gerencial e Simulador What-If ausentes na `/central`**.
-4. **Glossário financeiro incompleto** na `/central` e explicação de **p.p. vs. %** sem exemplo numérico em `/central/limites`.
-5. **Expansões pendentes nas páginas especializadas** (Rodadas seguintes): formulários CRUD completos em `/central/custos`, metas financeiras expandidas em `/central/metas`, limites financeiros adicionais em `/central/limites`, ACOS de equilíbrio/orçamento mensal em `/central/ads`, impacto logístico consolidado em `/central/frete`, simulador de preço por SKU e alertas de classificação em `/central/produtos`, e exportação de relatórios.
-
-### Limitações de ambiente documentadas
-- O checkout raiz local está na branch antiga `v3` com alterações pendentes de outros agentes (Configurações, SAC, Curva ABC). Para total isolamento e governança, esta missão opera em worktree dedicado `.worktrees/central-inteligencia-financeira` a partir de `origin/main` (`f0c35bab`).
-- O Supabase local/Docker não foi iniciado nesta rodada; a migration `20261126100000_central_inteligencia_financeira_fundacao.sql` foi criada versionada e a UI degrada graciosamente (`<SendoAtivado>`) até sua aplicação via esteira/CI.
+- **Rodada 1 (`55c67dca`):** Auditoria completa, criação do worktree isolado, motor financeiro canônico em `packages/domain/src/financial/` (16 testes), migration versionada `20261126100000_central_inteligencia_financeira_fundacao.sql`, DRE Gerencial + Ponto de Equilíbrio + Simulador What-If + Glossário na `/central`, página `/central/custos` na navegação, refinamento de `p.p.` vs. `%` em `/central/limites`.
+- **Rodada 2 (em consolidação):**
+  - Atualização segura do **Next.js `16.4.1 → 16.4.6`** (patch de segurança validado sem regressões).
+  - CRUD completo e auditável em `/central/custos` (`actions.ts`, `formularios.tsx`, `custos-fiscal.ts` + testes): despesas fixas/variáveis com prevenção de duplicidade mensal, marcar como paga, remoção com confirmação, histórico em `operational_expense_history`, cadastro de CNPJs (validação matemática de DV) e vigências tributárias multi-regime.
+  - Integração real de `operational_expenses` na DRE e Ponto de Equilíbrio da `/central` (leitura paralela sem waterfall, degradação graciosa se tabela ausente) + botão **Exportar DRE (CSV)** em UTF-8 BOM.
+  - Expansão de `/central/metas` com **Metas Financeiras Expandidas** (`financial_goals`: lucro líquido, margens, ticket médio, teto de Ads, despesas e logística por escopo global/marketplace/conta/marca).
+  - Evolução de `/central/ads`: **ACOS de equilíbrio** ao lado do ROAS de equilíbrio, painel de orçamento diário ativo / projeção mensal (30d) / campanhas em risco de prejuízo após Ads e coluna **Margem após Ads** com `StatePill`.
+  - Evolução de `/central/frete`: coluna **Custo médio por envio (vendedor)** comparando modalidades logísticas e aviso explícito de prevenção de dupla contagem + link para custos logísticos complementares.
+  - Evolução de `/central/produtos`: **Diagnóstico estratégico automático** (alto faturamento/baixa margem, frete > 15%, custo atual sem histórico) e **Simulador de Preço e Margem Desejada** usando a fórmula oficial.
+  - Evolução de `/central/limites`: **Hierarquia de prioridade** (específico > empresa > padrão), garantia de zero duplicidade de alertas e glossário `p.p.` × `%`.
 
 ---
 
 ## 4. Plano de execução e checklist
 
-- [x] **Fase 1 — Reconhecimento e auditoria** (100%): Git, branches, 6 telas da Central, RPCs, migrations, domínio e design system auditados.
-- [x] **Fase 2 — Planejamento técnico e financeiro** (100%): Arquitetura financeira, modelo de dados e plano fatiado definidos.
-- [~] **Fase 3 — Fundação financeira e backend** (65%):
-  - [x] Motor puro em `packages/domain/src/financial/` (`margin.ts`, `dre.ts`, `expenses.ts`, `tax.ts`, `simulator.ts`) + 16 testes unitários.
-  - [x] Migration versionada `20261126100000_central_inteligencia_financeira_fundacao.sql` (entidades fiscais, vigência tributária, despesas fixas/variáveis, rateio, histórico, metas financeiras, fechamento mensal, RLS completa).
-  - [ ] Server Actions CRUD completas para despesas, rateios, entidades fiscais e fechamento mensal + leitura real de despesas fixas alimentando a DRE da `/central`.
-- [~] **Fase 4 — Central principal e DRE gerencial** (60%):
-  - [x] DRE Gerencial interativa na `/central` sem dupla contagem e com badges de origem.
-  - [x] Indicadores de Ponto de Equilíbrio e Resultado Líquido Gerencial integrados.
-  - [x] Simulador Financeiro (What-If) interativo sem alterar dados reais.
-  - [x] Glossário Financeiro completo na `/central`.
-  - [ ] Integrar despesas fixas/variáveis reais cadastradas na `/central/custos` diretamente na DRE da `/central` + gráfico de evolução histórica e exportação.
-- [~] **Fase 5 — Evolução das páginas especializadas** (30%):
-  - [x] Nova página `/central/custos` integrada à navegação da Central.
-  - [x] Refinamento das explicações de `p.p.` vs. `%` em `/central/limites`.
-  - [ ] Formulários CRUD de despesas e entidades fiscais em `/central/custos`.
-  - [ ] Metas financeiras expandidas (lucro, margens, Ads, despesas) em `/central/metas`.
-  - [ ] Limites financeiros adicionais (TACoS máx., frete máx., teto de despesas) em `/central/limites`.
-  - [ ] Inteligência logística expandida em `/central/frete`.
-  - [ ] Orçamento mensal e ACOS de equilíbrio explícito em `/central/ads`.
-  - [ ] Simulador de preço/margem e classificação estratégica de SKUs em `/central/produtos`.
-- [~] **Fase 6 — Funcionalidades complementares** (45%):
-  - [x] Ponto de Equilíbrio e Simulador Financeiro (What-If).
-  - [x] Estrutura de Orçamento × Realizado e Fechamento Mensal (domínio + migration).
-  - [ ] Interface de fechamento mensal e exportação (CSV/XLSX).
-- [~] **Fase 7 — Refinamento visual** (40%):
-  - [x] Estilos `--sb-*` para DRE Gerencial e Simulador respeitando contraste e responsividade.
-  - [ ] Validação visual no navegador em múltiplas resoluções (desktop/tablet/mobile).
-- [~] **Fase 8 — Auditoria, testes e otimização** (45%):
-  - [x] 16 testes unitários do motor financeiro + testes de navegação + guardas estáticas + build.
-  - [ ] Testes de integração SQL em Postgres local e testes E2E Playwright.
-- [~] **Fase 9 — Documentação e entrega** (50%):
-  - [x] Documento de acompanhamento da missão criado (`docs/CENTRAL_FINANCEIRA_MISSAO.md`).
-  - [ ] Atualização de `docs/METRICS.md`, `docs/DATABASE.md` e `docs/HANDOFF.md` ao final da entrega completa.
+- [x] **Fase 1 — Reconhecimento e auditoria** (100%)
+- [x] **Fase 2 — Planejamento técnico e financeiro** (100%)
+- [~] **Fase 3 — Fundação financeira e backend** (85%):
+  - [x] Motor puro em `packages/domain/src/financial/` + 16 testes unitários.
+  - [x] Migration versionada `20261126100000_central_inteligencia_financeira_fundacao.sql` com RLS completa.
+  - [x] Server Actions CRUD sob RLS para despesas, entidades fiscais, vigências tributárias e metas financeiras + leitura paralela de despesas reais alimentando a DRE da `/central`.
+  - [ ] Vínculo UI conta→CNPJ (`fiscal_entity_accounts`), fluxo UI de fechamento mensal (`monthly_financial_closings`) e aplicação/teste SQL da migration em Supabase local/Docker.
+- [~] **Fase 4 — Central principal e DRE gerencial** (85%):
+  - [x] DRE Gerencial interativa alimentada por despesas reais (quando cadastradas), com badges de origem e exportação CSV.
+  - [x] Ponto de Equilíbrio, Simulador Financeiro (What-If) e Glossário Financeiro completo.
+  - [ ] Gráfico visual de evolução histórica faturamento × rentabilidade + visão competência vs. caixa quando dados de repasse/pagamento estiverem povoados.
+- [~] **Fase 5 — Evolução das páginas especializadas** (75%):
+  - [x] `/central/custos`: CRUD de despesas, previsto × realizado, CNPJs e vigências tributárias.
+  - [x] `/central/metas`: metas financeiras expandidas além do faturamento.
+  - [x] `/central/limites`: explicação `p.p.` × `%`, hierarquia de prioridade e prevenção de duplicidade.
+  - [x] `/central/frete`: custo médio por envio por modalidade logística e proteção contra dupla contagem.
+  - [x] `/central/ads`: ACOS de equilíbrio, orçamento ativo, projeção mensal, risco de prejuízo e margem após Ads.
+  - [x] `/central/produtos`: diagnóstico estratégico automático e simulador de preço/margem desejada.
+  - [ ] Filtros avançados adicionais (ex.: filtro de marca/categoria na `/central/produtos` via RPC, orçamento manual vs. automático em `/central/ads`, edição inline de despesas existentes e alocação detalhada em `/central/custos`).
+- [~] **Fase 6 — Funcionalidades complementares** (75%):
+  - [x] Ponto de Equilíbrio, Simulador Financeiro, Orçamento × Realizado e Exportação CSV da DRE.
+  - [ ] UI completa de Fechamento Mensal Auditável + exportação CSV/XLSX de despesas e rentabilidade de produtos.
+- [~] **Fase 7 — Refinamento visual** (65%):
+  - [x] Design Contract `--sb-*`, tabelas responsivas, formulários padronizados e todas as guardas visuais verdes.
+  - [ ] Validação visual no navegador (desktop/tablet/mobile) com evidências de tela.
+- [~] **Fase 8 — Auditoria, testes e otimização** (65%):
+  - [x] Testes unitários (`@sb/domain` + `@sb/web`), `typecheck`, `lint`, todas as 6 guardas estáticas, `docs:check` e `build` em Next.js 16.4.6.
+  - [ ] Subir Supabase local no Docker para testar a migration `20261126100000` em Postgres real (RLS, constraints, triggers) e executar E2E Playwright.
+- [~] **Fase 9 — Documentação e entrega** (70%):
+  - [x] `docs/CENTRAL_FINANCEIRA_MISSAO.md` mantido atualizado a cada rodada.
+  - [ ] Atualizar `docs/METRICS.md`, `docs/DATABASE.md` e `docs/HANDOFF.md` na rodada de fechamento.
 
 ---
 
-## 5. Progresso consolidado (Rodada 1 — 2026-11-26)
+## 5. Progresso consolidado (Rodada 2 — 2026-11-26)
 
 | Indicador | Progresso |
 |---|---|
-| Progresso geral da missão | 42% |
+| Progresso geral da missão | 74% |
 | Reconhecimento e auditoria | 100% |
-| Arquitetura e backend | 60% |
-| Regras e cálculos financeiros | 85% |
-| Central principal | 60% |
-| Gestão de metas | 20% |
-| Gestão de limites | 35% |
-| Inteligência de frete | 15% |
-| Inteligência de ADS | 15% |
-| Rentabilidade de produtos | 20% |
-| UX/UI | 40% |
-| Performance | 50% |
-| Segurança e testes | 45% |
-| Documentação | 50% |
+| Arquitetura e backend | 85% |
+| Regras e cálculos financeiros | 95% |
+| Central principal | 85% |
+| Gestão de metas | 75% |
+| Gestão de limites | 75% |
+| Inteligência de frete | 65% |
+| Inteligência de ADS | 75% |
+| Rentabilidade de produtos | 70% |
+| UX/UI | 65% |
+| Performance | 75% |
+| Segurança e testes | 70% |
+| Documentação | 70% |

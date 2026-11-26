@@ -18,6 +18,7 @@ import {
   type Sinal,
 } from "../../../lib/central-indicadores";
 import type { PeriodoCentral } from "../../../lib/central-periodo";
+import { DESPESAS_PERIODO_VAZIO, type ResumoDespesasPeriodo } from "../../../lib/custos-fiscal";
 import { lerFaturamento } from "../../../lib/faturamento";
 import { formatCount, formatCurrency, formatPercent } from "../../../lib/format";
 import type { LimitesDaCentral } from "../../../lib/limites-central";
@@ -238,6 +239,7 @@ export async function Indicadores({
   leituras,
   leituraMeta,
   leituraLimites,
+  leituraDespesas,
   periodo,
   podeEditar,
   tentarDeNovo,
@@ -245,16 +247,18 @@ export async function Indicadores({
   leituras: Promise<readonly [RespostaRpc, RespostaRpc, RespostaRpc, RespostaRpc]>;
   leituraMeta: Promise<RespostaComCodigo> | null;
   leituraLimites: Promise<LimitesDaCentral>;
+  leituraDespesas?: Promise<ResumoDespesasPeriodo>;
   periodo: PeriodoCentral;
   podeEditar: boolean;
   /** A mesma URL, para "Tentar de novo" (D-472). */
   tentarDeNovo: string;
 }): Promise<ReactNode> {
   const acao = { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true };
-  const [[atualResult, anteriorResult, adsResult, adsAnteriorResult], respostaMeta, limites] = await Promise.all([
+  const [[atualResult, anteriorResult, adsResult, adsAnteriorResult], respostaMeta, limites, despesas] = await Promise.all([
     leituras,
     leituraMeta,
     leituraLimites,
+    leituraDespesas ?? Promise.resolve(DESPESAS_PERIODO_VAZIO),
   ]);
   const { meta, indisponivel } = lerMeta(respostaMeta);
 
@@ -344,7 +348,12 @@ export async function Indicadores({
 
       {GRUPOS.slice(1).map((grupo) => secaoDoGrupo(grupo, false, indicadores))}
 
-      <SecaoDreGerencial entrada={entrada} />
+      <SecaoDreGerencial
+        entrada={entrada}
+        periodoRotulo={`${periodo.atual.from}_a_${periodo.atual.to}`}
+        despesasFixas={despesas.despesasFixas}
+        despesasVariaveis={despesas.despesasVariaveis}
+      />
 
       {/*
         RECOLHIDOS, A UM TOQUE (UX_SYSTEM §6, bloco 1): a tabela repete o que os

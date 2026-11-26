@@ -9,6 +9,7 @@ import { StatePill } from "../../../components/state-pill";
 import type { Tom } from "../../../components/tone";
 import type { EntradaCentral } from "../../../lib/central-indicadores";
 import { formatCurrency, formatPercent } from "../../../lib/format";
+import { ExportarDreCsv } from "./exportar-dre";
 import { SimuladorFinanceiro } from "./simulador-financeiro";
 
 const ORIGEM_LABEL: Readonly<Record<OrigemDadoFinanceiro, { readonly rotulo: string; readonly tom: Tom }>> = {
@@ -89,10 +90,12 @@ function barraLargura(linha: LinhaDre): string {
  */
 export function SecaoDreGerencial({
   entrada,
+  periodoRotulo = "periodo",
   despesasFixas = null,
   despesasVariaveis = null,
 }: {
   entrada: EntradaCentral;
+  periodoRotulo?: string;
   despesasFixas?: number | null;
   despesasVariaveis?: number | null;
 }): ReactNode {
@@ -189,9 +192,12 @@ export function SecaoDreGerencial({
           title="Demonstrativo de Resultado (DRE Gerencial)"
           subtitle="Cada linha declara sua origem (real, estimado, manual ou calculado). Dados ausentes ficam em aberto, nunca zerados."
           aside={
-            <Link className="sb-button" href="/central/custos">
-              Gerenciar custos e fiscal
-            </Link>
+            <div className="sb-custos-acoes">
+              <ExportarDreCsv linhas={dre.linhas} periodoRotulo={periodoRotulo} />
+              <Link className="sb-button" href="/central/custos">
+                Gerenciar custos e fiscal
+              </Link>
+            </div>
           }
         >
           <div className="sb-panel-body">

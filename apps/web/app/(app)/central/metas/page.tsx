@@ -6,12 +6,16 @@ import { RemoverComConfirmacao } from "../../../../components/remover-com-confir
 import { CabecalhoDaCentral, SendoAtivado } from "../comum";
 import { Panel } from "../../../../components/panel";
 import { StatePill } from "../../../../components/state-pill";
-import { formatBusinessDate, formatCurrency } from "../../../../lib/format";
+import { formatBusinessDate, formatCount, formatCurrency } from "../../../../lib/format";
 import {
   doMarketplaceDaMeta,
   formatarAliquota,
   rotuloDoMarketplaceDaMeta,
   rotuloDoMes,
+  rotuloEscopoMetaFinanceira,
+  rotuloTipoMetaFinanceira,
+  unidadeMetaFinanceira,
+  type TipoMetaFinanceira,
 } from "../../../../lib/metas-imposto";
 import { lerMetaDoMes } from "../../../../lib/central-meta";
 import { carregarLimites } from "../../../../lib/limites-central";
@@ -20,7 +24,12 @@ import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { ResumoDaMeta } from "../meta";
 import { remover } from "./actions";
-import { FormularioAliquota, FormularioMeta, FormularioMetaDoMarketplace } from "./formularios";
+import {
+  FormularioAliquota,
+  FormularioMeta,
+  FormularioMetaDoMarketplace,
+  FormularioMetaFinanceira,
+} from "./formularios";
 
 export const metadata = { title: "Metas e imposto — Speed Bikers Gestão" };
 
@@ -65,12 +74,29 @@ function BotaoRemover({
   rotulo,
   consequencia,
 }: {
-  tabela: "monthly_goals" | "monthly_goals_marketplace" | "tax_rates";
+  tabela: "monthly_goals" | "monthly_goals_marketplace" | "tax_rates" | "financial_goals";
   id: string;
   rotulo: string;
   consequencia: string;
 }): ReactNode {
   return <RemoverComConfirmacao acao={remover} campos={{ tabela, id }} rotulo={rotulo} consequencia={consequencia} />;
+}
+
+interface MetaFinanceiraRow {
+  readonly id: string;
+  readonly month: string;
+  readonly metric_kind: TipoMetaFinanceira;
+  readonly scope_kind: string;
+  readonly scope_ref: string | null;
+  readonly target_value: number | string;
+  readonly note: string | null;
+}
+
+function formatarValorMetaFinanceira(valor: number, tipo: TipoMetaFinanceira): string {
+  const unidade = unidadeMetaFinanceira(tipo);
+  if (unidade === "percentual") return formatarAliquota(valor);
+  if (unidade === "contagem") return formatCount(valor);
+  return formatCurrency(valor);
 }
 
 async function MetasContent({
@@ -85,8 +111,18 @@ async function MetasContent({
   const hoje = toSalesMetricDate(new Date());
   const mesAtual = `${hoje.slice(0, 8)}01`;
 
+  const dbFin = supabase as unknown as {
+    from: (table: string) => {
+      select: (cols: string) => {
+        order: (c: string, o: { ascending: boolean }) => {
+          limit: (n: number) => Promise<{ data: unknown[] | null; error: { message: string; code?: string } | null }>;
+        };
+      };
+    };
+  };
+
   // A situação do mês (UX_SYSTEM §6, bloco 2): a mesma leitura da central, em paralelo com as tabelas.
-  const [metas, aliquotas, metasDoMarketplace, respostaMeta, limites] = await Promise.all([
+  const [metas, aliquotas, metasDoMarketplace, respostaMeta, limites, metasFinanceiras] = await Promise.all([
     supabase.from("monthly_goals").select("id, month, revenue_goal, note").order("month", { ascending: false }).limit(24),
     supabase.from("tax_rates").select("id, valid_from, rate, note").order("valid_from", { ascending: false }).limit(50),
     // D-473 (C-66): 24 meses dos dois marketplaces.
@@ -100,6 +136,11 @@ async function MetasContent({
       ? Promise.resolve(null)
       : Promise.resolve(supabase.rpc("get_meta_do_mes", { p_organization_id: membership.organizationId })),
     carregarLimites(supabase, membership.organizationId),
+    dbFin
+      .from("financial_goals")
+      .select("id, month, metric_kind, scope_kind, scope_ref, target_value, note")
+      .order("month", { ascending: false })
+      .limit(60),
   ]);
 
   // Falha ou função ausente só tiram o resumo: o cadastro continua de pé.
@@ -109,6 +150,11 @@ async function MetasContent({
   const marketplaceAusente =
     metasDoMarketplace.error !== null &&
     (metasDoMarketplace.error.code === "PGRST205" || metasDoMarketplace.error.code === "42P01");
+
+  const financeirasAusentes =
+    metasFinanceiras.error !== null &&
+    (metasFinanceiras.error.code === "PGRST205" || metasFinanceiras.error.code === "42P01");
+  const listaFinanceiras = (metasFinanceiras.data ?? []) as MetaFinanceiraRow[];
 
   // Tabela ausente (PGRST205 no PostgREST, 42P01 no Postgres) não é erro: a
   // web da `main` vai ao ar antes de a migration passar pelo workflow de
@@ -361,6 +407,82 @@ async function MetasContent({
                 data, a geral muda de base no meio do mês.
               </p>
             </div>
+          </div>
+        </Panel>
+      </div>
+
+      <div className="sb-central-bloco">
+        <Panel
+          title="Metas financeiras e de rentabilidade"
+          subtitle="Além do faturamento: defina alvos de lucro líquido, margem do produto, margem de contribuição, margem líquida, ticket médio, teto de Ads, despesas e logística."
+        >
+          <div className="sb-panel-body">
+            {financeirasAusentes ? (
+              <SendoAtivado>
+                As metas financeiras expandidas aguardam a aplicação da migration{" "}
+                <code>20261126100000_central_inteligencia_financeira_fundacao.sql</code> neste ambiente.
+              </SendoAtivado>
+            ) : (
+              <>
+                {podeEditar && <FormularioMetaFinanceira mesPadrao={mesAtual.slice(0, 7)} />}
+
+                {metasFinanceiras.error !== null ? (
+                  <EstadoDaTela
+                    tipo="erro"
+                    titulo="Não foi possível carregar as metas financeiras"
+                    detalhe={metasFinanceiras.error.message}
+                    acao={{ href: "/central/metas", rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+                  />
+                ) : listaFinanceiras.length === 0 ? (
+                  <EstadoDaTela
+                    tipo="vazio"
+                    titulo="Nenhuma meta financeira expandida cadastrada."
+                    descricao="Cadastre metas de lucro líquido, margem de contribuição, teto de Ads ou redução de despesas para acompanhar a saúde completa da operação."
+                  />
+                ) : (
+                  <div className="sb-cadastro-rolagem">
+                    <table className="sb-table sb-cadastro-tabela" aria-label="Metas financeiras expandidas">
+                      <thead>
+                        <tr>
+                          <th>Mês</th>
+                          <th>Indicador</th>
+                          <th>Escopo</th>
+                          <th className="sb-num">Alvo</th>
+                          <th>Observação</th>
+                          {podeEditar && <th aria-label="Ações" />}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {listaFinanceiras.map((mf) => (
+                          <tr key={mf.id}>
+                            <td>
+                              {rotuloDoMes(mf.month)}{" "}
+                              {mf.month === mesAtual && <StatePill tone={{ tom: "info", label: "mês atual" }} />}
+                            </td>
+                            <td>{rotuloTipoMetaFinanceira(mf.metric_kind)}</td>
+                            <td>{rotuloEscopoMetaFinanceira(mf.scope_kind, mf.scope_ref)}</td>
+                            <td className="sb-num">
+                              {formatarValorMetaFinanceira(Number(mf.target_value), mf.metric_kind)}
+                            </td>
+                            <td className="sb-texto-suave sb-cadastro-observacao">{mf.note ?? "—"}</td>
+                            {podeEditar && (
+                              <td>
+                                <BotaoRemover
+                                  tabela="financial_goals"
+                                  id={mf.id}
+                                  rotulo={`Remover meta de ${rotuloTipoMetaFinanceira(mf.metric_kind)}`}
+                                  consequencia="A meta financeira sai do acompanhamento desse mês."
+                                />
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </Panel>
       </div>

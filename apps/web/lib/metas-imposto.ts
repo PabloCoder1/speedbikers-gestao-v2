@@ -140,3 +140,96 @@ export function rotuloDoMes(primeiroDia: string): string {
 export function formatarAliquota(fracao: number): string {
   return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 }).format(fracao * 100)}%`;
 }
+
+// ─── Metas financeiras expandidas (`financial_goals`) ─────────────────────
+
+export type TipoMetaFinanceira =
+  | "faturamento_bruto"
+  | "receita_liquida"
+  | "lucro_liquido"
+  | "margem_produto"
+  | "margem_contribuicao"
+  | "margem_liquida"
+  | "quantidade_vendas"
+  | "ticket_medio"
+  | "investimento_ads"
+  | "reducao_despesas"
+  | "eficiencia_logistica";
+
+export type UnidadeMetaFinanceira = "moeda" | "percentual" | "contagem";
+
+export const TIPOS_META_FINANCEIRA: readonly {
+  readonly id: TipoMetaFinanceira;
+  readonly rotulo: string;
+  readonly unidade: UnidadeMetaFinanceira;
+  readonly dica: string;
+}[] = [
+  { id: "lucro_liquido", rotulo: "Lucro líquido gerencial", unidade: "moeda", dica: "Alvo mensal em R$" },
+  { id: "receita_liquida", rotulo: "Receita líquida", unidade: "moeda", dica: "Alvo mensal em R$" },
+  { id: "margem_produto", rotulo: "Margem do produto (%)", unidade: "percentual", dica: "Alvo em % (fórmula oficial)" },
+  { id: "margem_contribuicao", rotulo: "Margem de contribuição (%)", unidade: "percentual", dica: "Alvo em %" },
+  { id: "margem_liquida", rotulo: "Margem líquida final (%)", unidade: "percentual", dica: "Alvo em %" },
+  { id: "quantidade_vendas", rotulo: "Quantidade de vendas", unidade: "contagem", dica: "Pedidos válidos no mês" },
+  { id: "ticket_medio", rotulo: "Ticket médio", unidade: "moeda", dica: "Alvo em R$" },
+  { id: "investimento_ads", rotulo: "Orçamento / Teto de Ads", unidade: "moeda", dica: "Teto mensal de investimento em R$" },
+  { id: "reducao_despesas", rotulo: "Teto / Meta de despesas fixas", unidade: "moeda", dica: "Alvo mensal em R$" },
+  { id: "eficiencia_logistica", rotulo: "Eficiência logística (frete % receita)", unidade: "percentual", dica: "Teto de frete % sobre a receita" },
+  { id: "faturamento_bruto", rotulo: "Faturamento bruto (por conta/marca)", unidade: "moeda", dica: "Alvo mensal em R$" },
+];
+
+export type EscopoMetaFinanceira = "global" | "marketplace" | "account" | "brand";
+
+export const ESCOPOS_META_FINANCEIRA: readonly { readonly id: EscopoMetaFinanceira; readonly rotulo: string }[] = [
+  { id: "global", rotulo: "Empresa inteira (global)" },
+  { id: "marketplace", rotulo: "Marketplace específico" },
+  { id: "account", rotulo: "Conta específica" },
+  { id: "brand", rotulo: "Marca específica" },
+];
+
+export function lerTipoMetaFinanceira(texto: string): Leitura<TipoMetaFinanceira> {
+  const valor = texto.trim();
+  const encontrado = TIPOS_META_FINANCEIRA.find((t) => t.id === valor);
+  return encontrado !== undefined
+    ? { ok: true, valor: encontrado.id }
+    : { ok: false, erro: "Escolha um indicador financeiro válido." };
+}
+
+export function lerEscopoMetaFinanceira(texto: string): Leitura<EscopoMetaFinanceira> {
+  const valor = texto.trim();
+  const encontrado = ESCOPOS_META_FINANCEIRA.find((e) => e.id === valor);
+  return encontrado !== undefined
+    ? { ok: true, valor: encontrado.id }
+    : { ok: false, erro: "Escolha o escopo da meta." };
+}
+
+export function unidadeMetaFinanceira(tipo: TipoMetaFinanceira): UnidadeMetaFinanceira {
+  return TIPOS_META_FINANCEIRA.find((t) => t.id === tipo)?.unidade ?? "moeda";
+}
+
+export function rotuloTipoMetaFinanceira(tipo: string): string {
+  return TIPOS_META_FINANCEIRA.find((t) => t.id === tipo)?.rotulo ?? tipo;
+}
+
+export function rotuloEscopoMetaFinanceira(escopo: string, referencia: string | null): string {
+  const base = ESCOPOS_META_FINANCEIRA.find((e) => e.id === escopo)?.rotulo ?? escopo;
+  return referencia !== null && referencia !== "" ? `${base}: ${referencia}` : base;
+}
+
+/** Lê o alvo conforme a unidade do indicador: moeda (>0), percentual (0..99,99% -> fração) ou contagem (inteiro >0). */
+export function lerAlvoMetaFinanceira(texto: string, tipo: TipoMetaFinanceira): Leitura<number> {
+  const unidade = unidadeMetaFinanceira(tipo);
+
+  if (unidade === "percentual") {
+    return lerPercentual(texto);
+  }
+
+  if (unidade === "contagem") {
+    const n = numeroDigitado(texto);
+    if (n === null || !Number.isInteger(n) || n <= 0) {
+      return { ok: false, erro: "Informe uma quantidade inteira maior que zero." };
+    }
+    return { ok: true, valor: n };
+  }
+
+  return lerValorEmReais(texto);
+}

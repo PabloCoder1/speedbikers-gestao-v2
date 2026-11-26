@@ -18875,6 +18875,28 @@ td.sb-pco-num-linha {
   color: var(--sb-text);
 }
 
+.sb-form-grade-dupla {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--sb-space-3);
+}
+
+.sb-custos-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sb-checkbox-linha {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--sb-text);
+  cursor: pointer;
+}
+
 @media (max-width: 768px) {
   .sb-dre-tabela .sb-dre-col-barra {
     display: none;

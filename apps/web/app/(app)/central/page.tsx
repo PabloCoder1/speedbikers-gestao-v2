@@ -14,6 +14,7 @@ import {
   rotuloDoIntervalo,
   type PeriodoNaUrl,
 } from "../../../lib/central-periodo";
+import { carregarDespesasDoPeriodo } from "../../../lib/custos-fiscal";
 import { carregarLimites } from "../../../lib/limites-central";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
@@ -151,6 +152,13 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
   // D-408: os limites que julgam os números, da organização. Nunca rejeita:
   // sem linha ou com erro, os padrões.
   const leituraLimites = carregarLimites(supabase, membership.organizationId);
+  // Despesas operacionais (fixas e variáveis) cadastradas no período para fechar a DRE e o Ponto de Equilíbrio.
+  const leituraDespesas = carregarDespesasDoPeriodo(
+    supabase,
+    membership.organizationId,
+    periodo.atual.from,
+    periodo.atual.to,
+  );
 
   // O detector de frete é da organização e dos últimos 14 dias: não depende do
   // período nem da conta. Sai junto com as outras leituras e chega sozinho.
@@ -273,6 +281,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
           leituras={leituras}
           leituraMeta={leituraMeta}
           leituraLimites={leituraLimites}
+          leituraDespesas={leituraDespesas}
           periodo={periodo}
           podeEditar={podeEditar}
           tentarDeNovo={montarHref(periodoAtual, contaSlug)}

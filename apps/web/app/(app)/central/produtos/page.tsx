@@ -41,6 +41,7 @@ import {
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { AvisoDePeriodoInvalido, CabecalhoDaCentral, funcaoAusente, SendoAtivado } from "../comum";
+import { SimuladorMargemProduto } from "./simulador-margem";
 
 export const metadata = { title: "Ranking de produtos — Speed Bikers Gestão" };
 
@@ -265,6 +266,10 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
 
       <KpiStrip cells={celulasDoResumo(ranking, estado)} />
 
+      <DiagnosticoEstrategico itens={ranking.itens} margemMinima={(await leituraLimites).margemMinima} />
+
+      <SimuladorMargemProduto />
+
       {/* As colunas só se explicavam no title, que o toque não abre (UX_SYSTEM §6, bloco 4). */}
       <div className="sb-central-bloco">
         <Glossario titulo="O que significa cada coluna" termos={TERMOS_DO_RANKING} />
@@ -393,6 +398,67 @@ function celulasDoResumo(r: RankingDeProdutos, estado: Estado): KpiCellData[] {
       href: montarHref({ ...estado, ordem: "crescimento", pagina: 1 }),
     },
   ];
+}
+
+function DiagnosticoEstrategico({
+  itens,
+  margemMinima,
+}: {
+  itens: readonly ProdutoDoRanking[];
+  margemMinima: number;
+}): ReactNode {
+  if (itens.length === 0) return null;
+
+  const receitaMediana =
+    itens
+      .map((i) => i.receita_bruta)
+      .sort((a, b) => a - b)[Math.floor(itens.length / 2)] ?? 0;
+
+  const altoFaturamentoBaixaMargem = itens.filter(
+    (p) => p.receita_bruta >= receitaMediana && p.margem_venda !== null && p.margem_venda >= 0 && p.margem_venda < margemMinima,
+  );
+  const fretePesado = itens.filter((p) => p.frete_sobre_receita !== null && p.frete_sobre_receita >= 0.15);
+  const comCustoAtual = itens.filter((p) => p.custo_atual);
+
+  if (altoFaturamentoBaixaMargem.length === 0 && fretePesado.length === 0 && comCustoAtual.length === 0) {
+    return null;
+  }
+
+  const celulas: KpiCellData[] = [
+    {
+      label: "Alto faturamento · baixa margem",
+      formula: "SKUs desta página acima da mediana de receita mas abaixo da margem mínima configurada",
+      value: formatCount(altoFaturamentoBaixaMargem.length),
+      previous: null,
+      ressalva: `candidatos prioritários a reajuste de preço (corte ${formatPercent(margemMinima)})`,
+      ...(altoFaturamentoBaixaMargem.length > 0 ? { destaque: "atencao" as const } : {}),
+    },
+    {
+      label: "Frete acima de 15% da receita",
+      formula: "SKUs desta página cujo frete do vendedor consome 15% ou mais da receita coberta",
+      value: formatCount(fretePesado.length),
+      previous: null,
+      ressalva: "revise dimensões, faixa de R$ 79 ou modalidade logística",
+      ...(fretePesado.length > 0 ? { destaque: "atencao" as const } : {}),
+    },
+    {
+      label: "Com custo atual (sem histórico)",
+      formula: "SKUs desta página que incluem pedidos avaliados pelo custo atual de cadastro",
+      value: formatCount(comCustoAtual.length),
+      previous: null,
+      ressalva: "sinalizados com * na coluna Custo",
+    },
+  ];
+
+  return (
+    <section aria-label="Diagnóstico estratégico da página" className="sb-central-bloco">
+      <div className="sb-section-label">
+        <span>Oportunidades de rentabilidade (página atual)</span>
+        <span className="sb-section-note">classificação automática sobre os {formatCount(itens.length)} produtos exibidos abaixo</span>
+      </div>
+      <KpiStrip cells={celulas} />
+    </section>
+  );
 }
 
 function Resumo({ ranking, estado }: { ranking: RankingDeProdutos; estado: Estado }): ReactNode {

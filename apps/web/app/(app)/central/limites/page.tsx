@@ -1,7 +1,7 @@
 import { Suspense, type ReactNode } from "react";
 
 import { CarregandoConteudo } from "../../../../components/carregando";
-import { Ajuda } from "../../../../components/ajuda";
+import { Ajuda, Glossario } from "../../../../components/ajuda";
 import { RemoverComConfirmacao } from "../../../../components/remover-com-confirmacao";
 import { CabecalhoDaCentral, SendoAtivado } from "../comum";
 import { Panel } from "../../../../components/panel";
@@ -179,6 +179,52 @@ async function LimitesContent({ searchParams }: { searchParams: Promise<Consulta
       {membership.organizationId !== null && (
         <AlertaDeMargem organizationId={membership.organizationId} podeEditar={podeEditar} />
       )}
+
+      <div className="sb-central-bloco">
+        <Panel
+          title="Hierarquia de prioridade e prevenção de alertas duplicados"
+          subtitle="Como os limites globais, regras por marca e alertas operacionais convivem sem gerar ruído."
+        >
+          <div className="sb-panel-body sb-sinal-metodo">
+            <ul>
+              <li>
+                <strong>1. Regra específica prevalece sobre a global:</strong> no Alerta de venda abaixo da margem, um SKU de
+                marca importada (ex.: Off Racer, Navetec, Off Volt) ou kit com componente dela usa a meta de importados;
+                os demais usam a meta padrão.
+              </li>
+              <li>
+                <strong>2. Limite da empresa prevalece sobre o padrão do sistema:</strong> qualquer valor salvo em{" "}
+                <code>central_thresholds</code> substitui os padrões globais na Central, no Ranking e em Sinais de Ads.
+              </li>
+              <li>
+                <strong>3. Zero notificações duplicadas:</strong> cada venda alertada gera uma única linha por{" "}
+                <code>(organização, marketplace, pedido)</code> em <code>sale_margin_alerts</code> e um único evento com{" "}
+                <code>dedup_key</code> no mecanismo unificado de notificações (sino e e-mail).
+              </li>
+            </ul>
+            <Glossario
+              titulo="Entenda pontos percentuais (p.p.) × variação percentual (%)"
+              termos={[
+                {
+                  termo: "Pontos percentuais (p.p.)",
+                  definicao:
+                    "Diferença aritmética direta entre duas porcentagens. Exemplo: se a margem sobe de 20% para 25%, houve aumento de +5,0 p.p. (25 − 20).",
+                },
+                {
+                  termo: "Variação percentual relativa (%)",
+                  definicao:
+                    "Crescimento proporcional sobre a base anterior: (atual − anterior) ÷ anterior. No mesmo exemplo (20% → 25%), o crescimento relativo é de +25% ((25 − 20) ÷ 20).",
+                },
+                {
+                  termo: "Por que os limites separam os dois?",
+                  definicao:
+                    "Oscilações em reais (faturamento, frete, ticket) são avaliadas em % relativa; oscilações em razões já expressas em % (margem, ACOS, TACoS, participação de comissão) são avaliadas em p.p. para evitar falsos alarmes.",
+                },
+              ]}
+            />
+          </div>
+        </Panel>
+      </div>
     </>
   );
 }
