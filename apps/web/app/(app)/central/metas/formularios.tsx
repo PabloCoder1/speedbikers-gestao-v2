@@ -4,7 +4,14 @@ import { useActionState, useId, type ReactNode } from "react";
 
 import { Ajuda } from "../../../../components/ajuda";
 
-import { salvarAliquota, salvarMeta, salvarMetaDoMarketplace, type ResultadoDoCadastro } from "./actions";
+import { ESCOPOS_META_FINANCEIRA, TIPOS_META_FINANCEIRA } from "../../../../lib/metas-imposto";
+import {
+  salvarAliquota,
+  salvarMeta,
+  salvarMetaDoMarketplace,
+  salvarMetaFinanceira,
+  type ResultadoDoCadastro,
+} from "./actions";
 
 const INICIAL: ResultadoDoCadastro = { ok: false, mensagem: null, erros: {} };
 
@@ -257,6 +264,83 @@ export function FormularioAliquota({ dataPadrao }: { dataPadrao: string }): Reac
       <div className="sb-cadastro-acoes">
         <button type="submit" className="sb-button sb-button-primary" disabled={salvando}>
           {salvando ? "Salvando…" : "Salvar alíquota"}
+        </button>
+        <Mensagem resultado={resultado} />
+      </div>
+    </form>
+  );
+}
+
+/** Metas financeiras expandidas (lucro líquido, margens, Ads, despesas, logística, ticket médio). */
+export function FormularioMetaFinanceira({ mesPadrao }: { mesPadrao: string }): ReactNode {
+  const [resultado, enviar, salvando] = useActionState(salvarMetaFinanceira, INICIAL);
+
+  return (
+    <form action={enviar} className="sb-cadastro-form" aria-label="Cadastrar meta financeira expandida">
+      <p className="sb-form-legenda">
+        Configure metas além do faturamento: lucro líquido, margens, ticket médio, teto de Ads ou redução de despesas.
+      </p>
+
+      <div className="sb-form-grade-dupla">
+        <Campo nome="month" rotulo="Mês" dica="Competência mensal da meta." erro={resultado.erros.month}>
+          {(props) => <input {...props} className="sb-input" type="month" name="month" defaultValue={mesPadrao} required />}
+        </Campo>
+
+        <Campo
+          nome="metric_kind"
+          rotulo="Indicador financeiro"
+          dica="Define a unidade do valor alvo (R$, % ou pedidos)."
+          erro={resultado.erros.metric_kind}
+        >
+          {(props) => (
+            <select {...props} className="sb-input" name="metric_kind" defaultValue="lucro_liquido" required>
+              {TIPOS_META_FINANCEIRA.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.rotulo} — {t.dica}
+                </option>
+              ))}
+            </select>
+          )}
+        </Campo>
+
+        <Campo
+          nome="target_value"
+          rotulo="Valor alvo"
+          dica="Para margens/eficiência digite em % (ex.: 28,5); para valores em R$ (ex.: 150.000); para vendas, número inteiro."
+          erro={resultado.erros.target_value}
+        >
+          {(props) => <input {...props} className="sb-input" name="target_value" inputMode="decimal" required />}
+        </Campo>
+
+        <Campo nome="scope_kind" rotulo="Escopo" dica="Global ou segmentado por canal, conta ou marca." erro={resultado.erros.scope_kind}>
+          {(props) => (
+            <select {...props} className="sb-input" name="scope_kind" defaultValue="global" required>
+              {ESCOPOS_META_FINANCEIRA.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.rotulo}
+                </option>
+              ))}
+            </select>
+          )}
+        </Campo>
+
+        <Campo
+          nome="scope_ref"
+          rotulo="Referência do escopo (quando não global)"
+          dica="Ex.: MERCADO_LIVRE, SHOPEE, nome da conta ou marca (Off Racer, Navetec)."
+          erro={resultado.erros.scope_ref}
+        >
+          {(props) => <input {...props} className="sb-input" name="scope_ref" maxLength={80} />}
+        </Campo>
+
+        <Campo nome="note" rotulo="Observação (opcional)" dica="Até 300 caracteres." erro={resultado.erros.note}>
+          {(props) => <input {...props} className="sb-input" name="note" maxLength={300} />}
+        </Campo>
+      </div>
+
+      <div className="sb-cadastro-acoes">
+        <button type="submit" className="sb-button sb-button-primary" disabled={salvando}>
+          {salvando ? "Salvando…" : "Salvar meta financeira"}
         </button>
         <Mensagem resultado={resultado} />
       </div>

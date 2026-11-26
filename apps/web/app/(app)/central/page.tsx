@@ -14,6 +14,7 @@ import {
   rotuloDoIntervalo,
   type PeriodoNaUrl,
 } from "../../../lib/central-periodo";
+import { carregarContextoFiscal, carregarDespesasComparadas } from "../../../lib/custos-fiscal";
 import { carregarLimites } from "../../../lib/limites-central";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
@@ -151,6 +152,24 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
   // D-408: os limites que julgam os números, da organização. Nunca rejeita:
   // sem linha ou com erro, os padrões.
   const leituraLimites = carregarLimites(supabase, membership.organizationId);
+  // Despesas operacionais (fixas e variáveis) dos períodos atual e anterior em UMA única consulta
+  // para fechar a DRE comparativa, o Ponto de Equilíbrio e os alertas de custos.
+  const leituraDespesasComparadas = carregarDespesasComparadas(
+    supabase,
+    membership.organizationId,
+    periodo.atual.from,
+    periodo.atual.to,
+    periodo.anterior.from,
+    periodo.anterior.to,
+  );
+  const leituraDespesasAtual = leituraDespesasComparadas.then((d) => d.atual);
+  // Contexto fiscal multi-CNPJ (entidade e vigência tributária da conta filtrada ou resumo da organização).
+  const leituraFiscal = carregarContextoFiscal(
+    supabase,
+    membership.organizationId,
+    selectedAccount?.id ?? null,
+    periodo.atual.to,
+  );
 
   // O detector de frete é da organização e dos últimos 14 dias: não depende do
   // período nem da conta. Sai junto com as outras leituras e chega sozinho.
@@ -263,6 +282,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
           leituraAds={leituraAds}
           leituraProdutos={leituraProdutos}
           leituraLimites={leituraLimites}
+          leituraDespesas={leituraDespesasAtual}
           periodo={periodo}
           hrefRanking={hrefDoRanking(periodoAtual, contaSlug)}
         />
@@ -273,6 +293,8 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
           leituras={leituras}
           leituraMeta={leituraMeta}
           leituraLimites={leituraLimites}
+          leituraDespesas={leituraDespesasComparadas}
+          leituraFiscal={leituraFiscal}
           periodo={periodo}
           podeEditar={podeEditar}
           tentarDeNovo={montarHref(periodoAtual, contaSlug)}

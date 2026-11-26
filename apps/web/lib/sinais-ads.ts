@@ -352,6 +352,56 @@ export function roasDeEquilibrio(margem: number | null): number | null {
   return margem === null || margem <= 0 ? null : 1 / margem;
 }
 
+/** ACOS máximo sustentável antes de a campanha gerar prejuízo (= margem antes do Ads). */
+export function acosDeEquilibrio(margem: number | null): number | null {
+  return margem === null || margem <= 0 ? null : margem;
+}
+
+export interface ResumoFinanceiroAds {
+  /** Soma dos orçamentos diários configurados nas campanhas não pausadas. */
+  readonly orcamentoDiarioAtivo: number;
+  /** Orçamento mensal teórico (30 × orçamento diário ativo). */
+  readonly orcamentoMensalEstimado: number;
+  /** Projeção mensal baseada no ritmo dos 7 dias consolidados (investimento ÷ 7 × 30). */
+  readonly projecaoMensalRitmo: number;
+  /** Quantas campanhas ativas apresentam margem estimada após Ads negativa (ACOS > margem). */
+  readonly campanhasRiscoPrejuizo: number;
+  /** Soma do investimento semanal nessas campanhas em risco de prejuízo. */
+  readonly investimentoEmRisco: number;
+}
+
+export function resumirFinanceiroAds(
+  campanhas: readonly CampanhaSinal[],
+  investimentoSemana: number,
+  margem: number | null,
+): ResumoFinanceiroAds {
+  let orcamentoDiarioAtivo = 0;
+  let campanhasRiscoPrejuizo = 0;
+  let investimentoEmRisco = 0;
+
+  for (const c of campanhas) {
+    if (c.nivel !== "pausada" && c.orcamento !== null && c.orcamento > 0) {
+      orcamentoDiarioAtivo += c.orcamento;
+    }
+
+    const { margemAposAds } = estimar(c, margem);
+    if (c.nivel !== "pausada" && margemAposAds !== null && margemAposAds < 0 && c.investimento > 0) {
+      campanhasRiscoPrejuizo += 1;
+      investimentoEmRisco += c.investimento;
+    }
+  }
+
+  orcamentoDiarioAtivo = Math.round(orcamentoDiarioAtivo * 100) / 100;
+
+  return {
+    orcamentoDiarioAtivo,
+    orcamentoMensalEstimado: Math.round(orcamentoDiarioAtivo * 30 * 100) / 100,
+    projecaoMensalRitmo: Math.round((investimentoSemana / 7) * 30 * 100) / 100,
+    campanhasRiscoPrejuizo,
+    investimentoEmRisco: Math.round(investimentoEmRisco * 100) / 100,
+  };
+}
+
 
 // ── texto ──────────────────────────────────────────────────────────────────
 

@@ -4,11 +4,14 @@ import { revalidatePath } from "next/cache";
 
 import { currentMembership } from "../../../../lib/membership";
 import {
+  lerAlvoMetaFinanceira,
   lerData,
+  lerEscopoMetaFinanceira,
   lerMarketplaceDaMeta,
   lerMes,
   lerNota,
   lerPercentual,
+  lerTipoMetaFinanceira,
   lerValorEmReais,
   doMarketplaceDaMeta,
 } from "../../../../lib/metas-imposto";
@@ -179,16 +182,104 @@ export async function salvarAliquota(_anterior: ResultadoDoCadastro, formData: F
   return { ok: true, mensagem: "Alíquota salva.", erros: {} };
 }
 
+export async function salvarMetaFinanceira(
+  _anterior: ResultadoDoCadastro,
+  formData: FormData,
+): Promise<ResultadoDoCadastro> {
+  const supabase = await createClient();
+  const membership = await currentMembership(supabase);
+
+  if (membership.organizationId === null) return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
+
+  const mes = lerMes(texto(formData, "month"));
+  const tipo = lerTipoMetaFinanceira(texto(formData, "metric_kind"));
+  const escopo = lerEscopoMetaFinanceira(texto(formData, "scope_kind"));
+  const scopeRefRaw = texto(formData, "scope_ref").trim();
+  const nota = lerNota(texto(formData, "note"));
+  const erros: Record<string, string> = {};
+
+  if (!mes.ok) erros.month = mes.erro;
+  if (!tipo.ok) erros.metric_kind = tipo.erro;
+  if (!escopo.ok) erros.scope_kind = escopo.erro;
+  if (!nota.ok) erros.note = nota.erro;
+
+  const alvo = tipo.ok ? lerAlvoMetaFinanceira(texto(formData, "target_value"), tipo.valor) : null;
+  if (alvo !== null && !alvo.ok) erros.target_value = alvo.erro;
+
+  if (escopo.ok && escopo.valor !== "global" && scopeRefRaw === "") {
+    erros.scope_ref = "Informe qual marketplace, conta ou marca esta meta acompanha.";
+  }
+
+  if (!mes.ok || !tipo.ok || !escopo.ok || !nota.ok || alvo === null || !alvo.ok || Object.keys(erros).length > 0) {
+    return { ...SEM_ERRO, erros };
+  }
+
+  const db = supabase as unknown as {
+    from: (table: string) => {
+      insert: (payload: Record<string, unknown>) => {
+        select: (cols: string) => Promise<{ data: readonly unknown[] | null; error: { message: string; code?: string } | null }>;
+      };
+    };
+  };
+
+  const { data, error } = await db
+    .from("financial_goals")
+    .insert({
+      organization_id: membership.organizationId,
+      month: mes.valor,
+      metric_kind: tipo.valor,
+      scope_kind: escopo.valor,
+      scope_ref: escopo.valor === "global" ? null : scopeRefRaw.slice(0, 80),
+      target_value: alvo.valor,
+      note: nota.valor,
+    })
+    .select("id");
+
+  if (error !== null) {
+    if (error.code === "PGRST205" || error.code === "42P01") {
+      return { ...SEM_ERRO, mensagem: "As metas financeiras expandidas ainda estão sendo ativadas neste ambiente." };
+    }
+    if (error.code === "23505") {
+      return { ...SEM_ERRO, mensagem: "Já existe uma meta para este mesmo indicador, mês e escopo. Remova a anterior para alterar." };
+    }
+
+    return traduzir(error);
+  }
+
+  if (data === null || data.length === 0) {
+    return { ...SEM_ERRO, mensagem: "A meta financeira não foi gravada: você não tem permissão." };
+  }
+
+  revalidar();
+
+  return { ok: true, mensagem: "Meta financeira salva.", erros: {} };
+}
+
 /** Remove uma meta ou uma vigência. O `id` vem do formulário; a RLS decide se a pessoa pode. */
 export async function remover(formData: FormData): Promise<void> {
   const tabela = texto(formData, "tabela");
   const id = texto(formData, "id");
 
-  if ((tabela !== "monthly_goals" && tabela !== "monthly_goals_marketplace" && tabela !== "tax_rates") || id === "") return;
+  if (
+    (tabela !== "monthly_goals" &&
+      tabela !== "monthly_goals_marketplace" &&
+      tabela !== "tax_rates" &&
+      tabela !== "financial_goals") ||
+    id === ""
+  ) {
+    return;
+  }
 
   const supabase = await createClient();
 
-  await supabase.from(tabela).delete().eq("id", id);
+  if (tabela === "financial_goals") {
+    const db = supabase as unknown as {
+      from: (t: string) => { delete: () => { eq: (c: string, v: string) => Promise<unknown> } };
+    };
+    await db.from("financial_goals").delete().eq("id", id);
+  } else {
+    await supabase.from(tabela).delete().eq("id", id);
+  }
 
   revalidar();
 }

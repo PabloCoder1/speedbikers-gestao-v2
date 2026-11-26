@@ -1,4 +1,5 @@
 import { shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
@@ -122,6 +123,7 @@ export async function QuemPagaOFrete({
                     <th className="sb-col-fixa">Logística</th>
                     <th className="sb-num">Envios</th>
                     <th className="sb-num">Vendedor pagou</th>
+                    <th className="sb-num">Médio / envio (vendedor)</th>
                     <th className="sb-num">ML bancou do vendedor</th>
                     <th className="sb-num">Comprador pagou</th>
                     <th className="sb-num">ML bancou do comprador</th>
@@ -131,12 +133,14 @@ export async function QuemPagaOFrete({
                 <tbody>
                   {q.por_logistica.map((l) => {
                     const ml = mlNoFreteDoVendedor(l);
+                    const medioVendedor = l.envios > 0 ? l.vendedor_pagou / l.envios : null;
 
                     return (
                       <tr key={l.logistica}>
                         <td className="sb-col-fixa">{rotuloDaLogistica(l.logistica)}</td>
                         <td className="sb-num">{formatCount(l.envios)}</td>
                         <td className="sb-num">{formatCurrency(l.vendedor_pagou)}</td>
+                        <td className="sb-num">{medioVendedor === null ? "—" : formatCurrency(medioVendedor)}</td>
                         <td className="sb-num">
                           {formatCurrency(l.ml_bancou_vendedor)}
                           {ml === null ? "" : ` (${formatPercent(ml)})`}
@@ -152,8 +156,14 @@ export async function QuemPagaOFrete({
             </div>
 
             <div className="sb-note sb-central-bloco">
-              <span>COBERTURA</span>
+              <span>COBERTURA E NÃO DUPLA CONTAGEM</span>
               <p>{coberturaDoQuemPaga(q)}</p>
+              <p>
+                O frete pago pelo vendedor acima já entra na dedução do valor líquido recebido na DRE e no resultado da
+                venda — nunca é subtraído duas vezes. Custos logísticos fora do pedido (embalagens, envio ao Full,
+                armazenagem e logística reversa) podem ser registrados separadamente em{" "}
+                <Link href="/central/custos">Custos e fiscal</Link>.
+              </p>
             </div>
           </>
         )}

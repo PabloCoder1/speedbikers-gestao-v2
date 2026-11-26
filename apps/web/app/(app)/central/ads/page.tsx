@@ -13,11 +13,13 @@ import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "
 import { carregarLimites } from "../../../../lib/limites-central";
 import { currentMembership } from "../../../../lib/request-membership";
 import {
+  acosDeEquilibrio,
   estimar,
   lerCampanhaSinal,
   lerSinaisAds,
   NIVEIS_COM_SINAL,
   NIVEL_ADS,
+  resumirFinanceiroAds,
   roasDeEquilibrio,
   type CampanhaSinal,
   type NivelAds,
@@ -27,6 +29,8 @@ import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { mesmaUrl } from "../../../../lib/mesma-url";
 import { CabecalhoDaCentral, funcaoAusente, SendoAtivado } from "../comum";
+import { ExportarAdsCsv } from "./exportar-ads";
+import { SimuladorAds } from "./simulador-ads";
 
 export const metadata = { title: "Sinais de Ads — Speed Bikers Gestão" };
 
@@ -158,6 +162,7 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
           titulo="Nenhuma semana de Ads consolidada nos últimos 21 dias"
           descricao="Sem campanha com gasto e venda atribuída, não há o que comparar."
         />
+        <SimuladorAds />
       </>
     );
   }
@@ -186,6 +191,16 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
       />
 
       <KpiStrip cells={celulasDoResumo(sinais, margem)} />
+
+      <section aria-label="Controle financeiro de publicidade" className="sb-central-bloco">
+        <div className="sb-section-label">
+          <span>Controle financeiro de Ads</span>
+          <span className="sb-section-note">orçamento ativo, projeção mensal (30d), ACOS de equilíbrio e risco de prejuízo</span>
+        </div>
+        <KpiStrip cells={celulasFinanceirasAds(sinais, margem)} />
+      </section>
+
+      <SimuladorAds margemInicial={margem.valor} />
 
       {/* As siglas do Mercado Ads, perto dos números (UX_SYSTEM §6, bloco 3). Os níveis ficam em "Como os sinais são decididos". */}
       <div className="sb-central-bloco">
@@ -237,7 +252,7 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
         </div>
       </Panel>
 
-      <TabelaDeCampanhas sinais={sinais} margem={margem} />
+      <TabelaDeCampanhas sinais={sinais} margem={margem} margemBaixa={margemBaixa} />
 
       <ComoDecide sinais={sinais} margem={margem} margemBaixa={margemBaixa} />
     </>
@@ -299,6 +314,11 @@ const TERMOS_DE_ADS = [
       "1 ÷ a margem média da empresa: o ROAS em que a margem das vendas paga exatamente o investimento. Abaixo dele, a campanha tira dinheiro da margem.",
   },
   {
+    termo: "ACOS de equilíbrio",
+    definicao:
+      "Igual à margem média antes do Ads: é o teto máximo de ACOS para a campanha não operar no prejuízo. Se o ACOS ultrapassa esse limite, a margem após Ads fica negativa.",
+  },
+  {
     termo: "ACOS",
     definicao: "Investimento ÷ vendas com Ads, em porcentagem: o inverso do ROAS. ROAS 4 é ACOS de 25%.",
   },
@@ -326,6 +346,52 @@ const TERMOS_DE_ADS = [
       "Normal é a campanha ativa sem nenhum sinal; pausada não recebe sinal, porque quem pausou já agiu.",
   },
 ] as const;
+
+function celulasFinanceirasAds(s: SinaisAds, margem: MargemDaSemana): KpiCellData[] {
+  const fin = resumirFinanceiroAds(s.campanhas, s.resumo.investimento, margem.valor);
+  const acosEq = acosDeEquilibrio(margem.valor);
+  const roasEq = roasDeEquilibrio(margem.valor);
+  const usoProjetado =
+    fin.orcamentoMensalEstimado > 0 ? fin.projecaoMensalRitmo / fin.orcamentoMensalEstimado : null;
+
+  return [
+    {
+      label: "Orçamento diário ativo",
+      formula: "Soma dos orçamentos diários configurados nas campanhas não pausadas",
+      value: formatCurrency(fin.orcamentoDiarioAtivo),
+      previous: null,
+      ressalva: `teto teórico 30 dias: ${formatCurrency(fin.orcamentoMensalEstimado)}`,
+    },
+    {
+      label: "Projeção mensal de gasto",
+      formula: "Investimento da semana consolidada ÷ 7 × 30 dias (projeção linear pelo ritmo recente)",
+      value: formatCurrency(fin.projecaoMensalRitmo),
+      previous: null,
+      ressalva:
+        usoProjetado === null
+          ? "projeção pelo ritmo dos últimos 7 dias"
+          : `${formatPercent(usoProjetado)} do orçamento mensal teórico`,
+    },
+    {
+      label: "ACOS / ROAS de equilíbrio",
+      formula: "ACOS máximo = margem antes do Ads; ROAS mínimo = 1 ÷ margem",
+      value: acosEq === null ? "—" : `${formatPercent(acosEq)} / ${formatRoas(roasEq)}`,
+      previous: null,
+      ressalva: margem.valor === null ? margem.rotulo : `base: ${margem.rotulo}`,
+    },
+    {
+      label: "Risco de prejuízo após Ads",
+      formula: "Campanhas ativas com ACOS acima da margem média da empresa (margem após Ads < 0)",
+      value: formatCount(fin.campanhasRiscoPrejuizo),
+      previous: null,
+      ressalva:
+        fin.campanhasRiscoPrejuizo === 0
+          ? "nenhuma campanha ativa acima do ACOS de equilíbrio"
+          : `${formatCurrency(fin.investimentoEmRisco)} investidos na semana em risco`,
+      ...(fin.campanhasRiscoPrejuizo > 0 ? { destaque: "perigo" as const } : {}),
+    },
+  ];
+}
 
 function celulasDoResumo(s: SinaisAds, margem: MargemDaSemana): KpiCellData[] {
   const r = s.resumo;
@@ -487,11 +553,20 @@ function CartaoDaCampanha({
   );
 }
 
-function TabelaDeCampanhas({ sinais, margem }: { sinais: SinaisAds; margem: MargemDaSemana }): ReactNode {
+function TabelaDeCampanhas({
+  sinais,
+  margem,
+  margemBaixa,
+}: {
+  sinais: SinaisAds;
+  margem: MargemDaSemana;
+  margemBaixa: number;
+}): ReactNode {
   return (
     <Panel
       title="Todas as campanhas da semana"
-      subtitle="Com gasto nesta semana ou na anterior. Lucro estimado pela margem média da empresa — premissa, não medida por campanha."
+      subtitle="Com gasto nesta semana ou na anterior. Lucro e margem após Ads usam a margem média da empresa — premissa, não medida por produto."
+      aside={<ExportarAdsCsv campanhas={sinais.campanhas} margemMedia={margem.valor} />}
     >
       <div className="sb-panel-body sb-central-tabela">
         <p className="sb-tabela-dica" aria-hidden="true">Deslize a tabela para o lado para ver todas as colunas.</p>
@@ -511,12 +586,21 @@ function TabelaDeCampanhas({ sinais, margem }: { sinais: SinaisAds; margem: Marg
               <th className="sb-num">CPA</th>
               <th className="sb-num">Ticket</th>
               <th className="sb-num">Orçamento</th>
+              <th className="sb-num">Margem após Ads</th>
               <th className="sb-num">Lucro estimado</th>
             </tr>
           </thead>
           <tbody>
             {sinais.campanhas.map((c) => {
-              const { lucro } = estimar(c, margem.valor);
+              const { lucro, margemAposAds } = estimar(c, margem.valor);
+              const tomMargemAds =
+                margemAposAds === null
+                  ? null
+                  : margemAposAds < 0
+                    ? ("perigo" as const)
+                    : margemAposAds < margemBaixa
+                      ? ("atencao" as const)
+                      : ("ok" as const);
 
               return (
                 <tr key={`${c.ml_account_id}:${String(c.campaign_id)}`}>
@@ -540,6 +624,13 @@ function TabelaDeCampanhas({ sinais, margem }: { sinais: SinaisAds; margem: Marg
                   <td className="sb-num">{formatCurrency(c.cpa)}</td>
                   <td className="sb-num">{formatCurrency(c.ticket)}</td>
                   <td className="sb-num">{formatPercent(c.uso_orcamento)}</td>
+                  <td className="sb-num">
+                    {tomMargemAds === null ? (
+                      "—"
+                    ) : (
+                      <StatePill tone={{ tom: tomMargemAds, label: formatPercent(margemAposAds) }} />
+                    )}
+                  </td>
                   <td className="sb-num">{formatCurrency(lucro)}</td>
                 </tr>
               );

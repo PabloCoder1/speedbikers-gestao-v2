@@ -661,6 +661,19 @@ A Curva ABC usa essa leitura para os SKUs da página, no período e no canal sel
 
 A situação nunca vira pontuação: a tela mostra os motivos com os números, e a decisão é do comprador.
 
+## 5Z. Central de Inteligência Financeira (DRE Gerencial, Ponto de Equilíbrio e ACOS de Equilíbrio)
+
+> Implementada em `packages/domain/src/financial/` e integrada na `/central`, `/central/custos`, `/central/ads`, `/central/metas` e `/central/produtos`.
+
+| ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
+|---|---|---|---|---|
+| `margem_produto_oficial` | Margem do Produto (%) | `(valor_liquido_recebido − custo_produto) × 100 ÷ valor_venda` | `orders`, `order_items`, `order_financials`, `sku_cost_history` / `skus.purchase_cost`, `sku_components` | Consolidação sempre ponderada pelo faturamento coberto (`Σ recebido − Σ custo ÷ Σ venda`), jamais média simples. Custo desconhecido nunca vira zero silenciosamente. |
+| `resultado_operacional_gerencial` | Resultado Operacional (EBIT gerencial) | `margem_contribuicao − despesas_operacionais_fixas` | `get_faturamento` + `get_ads_overview` + `operational_expenses` (`cost_type = 'fixo'`) | Fica em branco (`—`) quando não há despesas fixas cadastradas na competência — ausência de cadastro nunca vira zero. |
+| `resultado_liquido_gerencial` | Resultado Líquido Gerencial | `resultado_operacional + resultado_financeiro − tributos_sobre_resultado` | componentes acima + `fiscal_entity_tax_configs` | Finalidade gerencial; não substitui a apuração contábil oficial e não se confunde com saldo em caixa. |
+| `margem_liquida_final` | Margem Líquida Final | `resultado_liquido_gerencial ÷ faturamento_bruto` | componentes acima | Não substitui a fórmula oficial da Margem do Produto. |
+| `ponto_de_equilibrio` | Ponto de Equilíbrio | `despesas_operacionais_fixas ÷ margem_contribuicao_fracao` | `operational_expenses` + `margem_contribuicao` | Inalcançável (NULL, sinalizado explicitamente) quando `margem_contribuicao_fracao <= 0`. |
+| `acos_equilibrio` | ACOS de Equilíbrio | `margem_antes_do_ads` (inverso do `roas_equilibrio = 1 ÷ margem`) | `get_faturamento` + `get_sinais_ads` | Campanha ativa com `ACOS > acos_equilibrio` apresenta risco de prejuízo após publicidade (`margem_apos_ads < 0`). |
+
 ## 5H. Indicadores operacionais de sincronização
 
 | ID | Nome | Fórmula | Fonte | Ressalva obrigatória na tela |
