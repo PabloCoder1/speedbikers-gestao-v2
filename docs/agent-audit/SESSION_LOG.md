@@ -833,3 +833,12 @@ Tudo lido pela VM em modo só leitura.
   - teste novo com um bucket do Full que trocou de SKU (mutação conferida);
   - `pnpm run check` e `pnpm docs:check`.
 - **Próxima etapa:** publicar a D-879 com autorização do dono. A faixa de números do Claude acabou: a próxima decisão espera a resposta sobre a faixa nova no #351.
+
+### 26/11/2026 · Claude Sentinel: D-879 em produção
+
+- **Publicação.** Com autorização do dono, o #419 entrou na `main` em `3fda54d0`.
+  - Os 4 jobs obrigatórios passaram. O do Dev falhou com "project is paused", como esperado.
+  - A migration `20261126170000` foi aplicada pela VM com `psql -1`, com o mesmo sha256 dos dois lados, e registrada no histórico. O PostgREST recarregou o cache de schema às 13:57 UTC.
+- **Conferência.** `get_purchase_suggestions` agora só existe com `p_sku_ids`. Corpos, grants, comentário e registro estão certos, e as funções que chamam a sugestão responderam.
+- **Tempo como membro, com 50 SKUs:** `get_purchase_analysis` com sugestão foi de 1,00–1,58 s para 0,83–0,87 s.
+- **Próxima etapa:** a faixa de números do Claude acabou. A próxima decisão espera a confirmação da faixa D-887–899 no #351.
