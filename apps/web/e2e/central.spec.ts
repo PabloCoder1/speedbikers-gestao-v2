@@ -57,9 +57,10 @@ test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({
   await page.locator("summary", { hasText: "Comparação completa" }).click();
   await expect(page.getByRole("region", { name: "Comparação completa" })).toBeVisible();
 
-  // As seis telas da Central, nas abas (UX_SYSTEM §6, bloco 1).
+  // As sete telas da Central, nas abas (UX_SYSTEM §6, bloco 1 + Central de Inteligência Financeira).
   await expect(abasDaCentral(page).getByRole("link")).toHaveText([
     "Central",
+    "Custos e fiscal",
     "Metas e imposto",
     "Limites",
     "Detector de frete",
@@ -67,6 +68,11 @@ test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({
     "Ranking de produtos",
   ]);
   await expect(abasDaCentral(page).getByRole("link", { name: "Central", exact: true })).toHaveAttribute("aria-current", "page");
+
+  // DRE Gerencial, Simulador What-If e Glossário Financeiro disponíveis na Central.
+  await expect(page.getByRole("region", { name: "DRE Gerencial e Inteligência Financeira" })).toBeVisible();
+  await expect(page.locator("summary", { hasText: "Simulador financeiro (What-If)" })).toBeVisible();
+  await expect(page.locator("summary", { hasText: "Glossário financeiro da Central" })).toBeVisible();
 
   await expect(page.getByText("Não foi possível carregar o período")).toHaveCount(0);
   await expect(page.getByText("Não foi possível carregar a meta")).toHaveCount(0);
@@ -449,4 +455,76 @@ test("/central: a Shopee entra lado a lado, sem total de resultado, e some com u
   await page.goto("/central?account=e2e-loja");
   await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Por marketplace" })).toHaveCount(0);
+});
+
+test("/central/custos: cadastrar despesa fixa e entidade fiscal, validar DRE e limpar", async ({ page }) => {
+  await login(page, "/central/custos");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Custos operacionais e fiscal" })).toBeVisible();
+
+  if ((await page.getByText("SENDO ATIVADO").count()) > 0) {
+    test.skip(true, "banco sem a migration da Central de Inteligência Financeira");
+  }
+
+  // Cadastra uma despesa operacional fixa
+  await page.locator("summary", { hasText: "Cadastrar nova despesa operacional" }).click();
+  const formDespesa = page.getByRole("form", { name: "Cadastrar despesa operacional" });
+
+  const doisDiasAtras = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
+
+  await formDespesa.getByLabel("Nome da despesa").fill("Aluguel Galpão E2E");
+  await formDespesa.getByLabel("Valor previsto (R$)").fill("4.500,00");
+  await formDespesa.getByLabel("Valor realizado (R$, opcional)").fill("4.500,00");
+  await formDespesa.getByLabel("Data de competência").fill(doisDiasAtras);
+  await formDespesa.getByRole("button", { name: "Cadastrar despesa" }).click();
+  await expect(formDespesa.getByRole("status")).toContainText("Despesa operacional salva");
+  await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true })).toBeVisible();
+
+  // Confirma que a despesa fixa cadastrada alimenta a DRE Gerencial na /central
+  await abasDaCentral(page).getByRole("link", { name: "Central", exact: true }).click();
+  await expect(page.getByRole("region", { name: "DRE Gerencial e Inteligência Financeira" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "DRE Gerencial e Inteligência Financeira" })).toContainText("4.500,00");
+
+  // Volta para /central/custos e cadastra entidade fiscal com CNPJ matematicamente válido
+  await abasDaCentral(page).getByRole("link", { name: "Custos e fiscal", exact: true }).click();
+  await page.locator("summary", { hasText: "Cadastrar empresa (CNPJ)" }).click();
+  const formEntidade = page.getByRole("form", { name: "Cadastrar entidade fiscal" });
+
+  await formEntidade.getByLabel("Razão social").fill("SpeedBikers E2E LTDA");
+  await formEntidade.getByLabel("CNPJ").fill("11.222.333/0001-81");
+  await formEntidade.getByRole("button", { name: "Salvar entidade fiscal" }).click();
+  await expect(formEntidade.getByRole("status")).toContainText("Entidade fiscal (CNPJ) salva");
+  await expect(page.getByRole("cell", { name: "SpeedBikers E2E LTDA", exact: true })).toBeVisible();
+
+  // Limpa os registros criados no teste
+  await page.getByRole("button", { name: "Remover Aluguel Galpão E2E" }).click();
+  await confirmarRemocao(page, /Remover Aluguel Galpão E2E/);
+  await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Remover SpeedBikers E2E LTDA" }).click();
+  await confirmarRemocao(page, /Remover SpeedBikers E2E LTDA/);
+  await expect(page.getByRole("cell", { name: "SpeedBikers E2E LTDA", exact: true })).toHaveCount(0);
+});
+
+test("/central/produtos: simulador de preço por margem oficial calcula corretamente", async ({ page }) => {
+  await login(page, "/central/produtos");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Ranking de produtos" })).toBeVisible();
+  await page.locator("summary", { hasText: "Simulador de preço de venda e margem desejada" }).click();
+  await expect(page.getByRole("region", { name: "Simulador de preço por margem desejada" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "30,0%" })).toBeVisible();
+});
+
+test("/central e /central/custos: responsividade sem overflow horizontal em desktop e mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await login(page, "/central");
+  await expect(page.getByRole("region", { name: "DRE Gerencial e Inteligência Financeira" })).toBeVisible();
+  const overflowDesktop = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflowDesktop).toBeLessThanOrEqual(2);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/central/custos");
+  await expect(page.getByRole("heading", { level: 1, name: "Custos operacionais e fiscal" })).toBeVisible();
+  const overflowMobile = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflowMobile).toBeLessThanOrEqual(2);
 });

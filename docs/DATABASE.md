@@ -957,6 +957,25 @@ O payload bruto não entra nessa conta porque não vive no Postgres (D-015).
 
 ---
 
+### Central de Inteligência Financeira (`20261126180000_central_inteligencia_financeira_fundacao.sql`)
+
+Tabelas criadas para sustentar a DRE Gerencial, gestão de custos fixos/variáveis, tributação multi-CNPJ/multi-regime, metas financeiras expandidas e fechamento mensal auditável:
+
+```text
+fiscal_entities                 organization_id, legal_name, trade_name?, cnpj (14 dígitos, UNIQUE por org), tax_regime, active
+fiscal_entity_accounts          vínculo exclusivo 1:1 conta ML ou loja Shopee -> fiscal_entity_id (índices únicos parciais)
+fiscal_entity_tax_configs       vigência histórica (fiscal_entity_id, valid_from) UNIQUE, nominal_rate, effective_sales_rate, tax_credits_rate, profit_tax_rate, is_estimate, validated_by_accountant
+operational_expenses            despesas fixas e variáveis, previsto/realizado, competência/vencimento/pagamento, recorrência, rateio, status, idempotency_key (UNIQUE parcial anti-duplicidade)
+operational_expense_allocations rateio explícito (fiscal_entity | marketplace | ml_account | shopee_shop)
+operational_expense_history     trilha de auditoria (before_data / after_data / changed_by)
+financial_goals                 metas financeiras expandidas (lucro, margens, ticket, Ads, despesas, logística) por escopo
+monthly_financial_closings      fechamento financeiro mensal auditável (status + dre_snapshot jsonb)
+```
+
+Todas nascem com RLS habilitada: leitura por `organization_id in (select private.accessible_orgs())` e escrita restrita a `private.has_org_role(organization_id, array['ADMIN','GESTOR'])`. Valores monetários em `numeric(14,2)` e alíquotas em `numeric(7,5)`. Nenhuma linha semeada com zero falso.
+
+---
+
 ## 9. Convenções
 
 - Nomes de tabela em `snake_case`, plural.

@@ -11,7 +11,13 @@ import { useActionState, type ReactNode } from "react";
 import { METODOS_RATEIO, RECORRENCIAS_DESPESA, REGIMES_TRIBUTARIOS, STATUS_DESPESA } from "../../../../lib/custos-fiscal";
 import { Campo, Mensagem } from "../metas/formularios";
 import type { ResultadoDoCadastro } from "../metas/actions";
-import { salvarDespesa, salvarEntidadeFiscal, salvarVigenciaTributaria } from "./actions";
+import {
+  salvarDespesa,
+  salvarEntidadeFiscal,
+  salvarFechamentoMensal,
+  salvarVigenciaTributaria,
+  vincularContaEntidade,
+} from "./actions";
 
 const INICIAL: ResultadoDoCadastro = { ok: false, mensagem: null, erros: {} };
 
@@ -251,6 +257,90 @@ export function FormularioVigenciaTributaria({
       <div className="sb-cadastro-acoes">
         <button type="submit" className="sb-button sb-button-primary" disabled={salvando}>
           {salvando ? "Salvando…" : "Salvar vigência tributária"}
+        </button>
+        <Mensagem resultado={resultado} />
+      </div>
+    </form>
+  );
+}
+
+export function FormularioVinculoConta({
+  entidades,
+  contas,
+}: {
+  entidades: readonly { readonly id: string; readonly label: string }[];
+  contas: readonly { readonly ref: string; readonly label: string }[];
+}): ReactNode {
+  const [resultado, enviar, salvando] = useActionState(vincularContaEntidade, INICIAL);
+
+  if (entidades.length === 0 || contas.length === 0) return null;
+
+  return (
+    <form action={enviar} className="sb-cadastro-form" aria-label="Vincular conta a CNPJ">
+      <div className="sb-form-grade-dupla">
+        <Campo nome="fiscal_entity_id" rotulo="Empresa (CNPJ)" dica="Entidade fiscal dona da conta." erro={resultado.erros.fiscal_entity_id}>
+          {(props) => (
+            <select {...props} className="sb-input" name="fiscal_entity_id" required>
+              {entidades.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </Campo>
+
+        <Campo nome="account_ref" rotulo="Conta / loja de marketplace" dica="Cada conta vincula-se a apenas um CNPJ." erro={resultado.erros.account_ref}>
+          {(props) => (
+            <select {...props} className="sb-input" name="account_ref" required>
+              {contas.map((c) => (
+                <option key={c.ref} value={c.ref}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </Campo>
+      </div>
+
+      <div className="sb-cadastro-acoes">
+        <button type="submit" className="sb-button sb-button-primary" disabled={salvando}>
+          {salvando ? "Vinculando…" : "Vincular conta ao CNPJ"}
+        </button>
+        <Mensagem resultado={resultado} />
+      </div>
+    </form>
+  );
+}
+
+export function FormularioFechamentoMensal({ mesPadrao }: { mesPadrao: string }): ReactNode {
+  const [resultado, enviar, salvando] = useActionState(salvarFechamentoMensal, INICIAL);
+
+  return (
+    <form action={enviar} className="sb-cadastro-form" aria-label="Registrar fechamento financeiro mensal">
+      <div className="sb-form-grade-dupla">
+        <Campo nome="month" rotulo="Mês de competência" dica="Mês a fechar ou reabrir para auditoria." erro={resultado.erros.month}>
+          {(props) => <input {...props} className="sb-input" type="month" name="month" defaultValue={mesPadrao} required />}
+        </Campo>
+
+        <Campo nome="status" rotulo="Status do fechamento" dica="Competência fechada registra data, responsável e snapshot auditável." erro={resultado.erros.status}>
+          {(props) => (
+            <select {...props} className="sb-input" name="status" defaultValue="fechado" required>
+              <option value="fechado">Fechado (auditado)</option>
+              <option value="aberto">Aberto (em apuração)</option>
+              <option value="reaberto">Reaberto para ajuste</option>
+            </select>
+          )}
+        </Campo>
+
+        <Campo nome="notes" rotulo="Notas do fechamento (opcional)" dica="Registre ajustes, conferências ou motivo de reabertura." erro={resultado.erros.notes}>
+          {(props) => <input {...props} className="sb-input" name="notes" maxLength={300} />}
+        </Campo>
+      </div>
+
+      <div className="sb-cadastro-acoes">
+        <button type="submit" className="sb-button sb-button-primary" disabled={salvando}>
+          {salvando ? "Registrando…" : "Salvar fechamento mensal"}
         </button>
         <Mensagem resultado={resultado} />
       </div>

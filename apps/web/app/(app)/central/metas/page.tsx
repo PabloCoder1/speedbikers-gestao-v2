@@ -420,7 +420,7 @@ async function MetasContent({
             {financeirasAusentes ? (
               <SendoAtivado>
                 As metas financeiras expandidas aguardam a aplicação da migration{" "}
-                <code>20261126100000_central_inteligencia_financeira_fundacao.sql</code> neste ambiente.
+                <code>20261126180000_central_inteligencia_financeira_fundacao.sql</code> neste ambiente.
               </SendoAtivado>
             ) : (
               <>

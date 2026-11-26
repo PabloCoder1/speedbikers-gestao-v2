@@ -23,6 +23,7 @@ import { lerFaturamento } from "../../../lib/faturamento";
 import { formatCount, formatCurrency, formatPercent } from "../../../lib/format";
 import type { LimitesDaCentral } from "../../../lib/limites-central";
 import { textoDaVariacao } from "../../../lib/variacao";
+import { BarrasDiarias } from "../faturamento/barras-diarias";
 import type { RespostaRpc } from "../faturamento/numeros";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { funcaoAusente, type RespostaComCodigo } from "./comum";
@@ -347,6 +348,24 @@ export async function Indicadores({
       />
 
       {GRUPOS.slice(1).map((grupo) => secaoDoGrupo(grupo, false, indicadores))}
+
+      {atual.diario !== null && atual.diario.length > 0 && (
+        <section aria-label="Evolução diária de faturamento e rentabilidade" className="sb-central-bloco">
+          <Panel
+            title="Evolução diária: faturamento e margem"
+            subtitle="Receita bruta de todos os pedidos válidos e margem sobre a venda nos pedidos cobertos, dia a dia."
+          >
+            <div className="sb-panel-body">
+              <BarrasDiarias
+                dias={atual.diario}
+                rangeFrom={periodo.atual.from}
+                rangeTo={periodo.atual.to}
+                margemMinima={limites.margemMinima}
+              />
+            </div>
+          </Panel>
+        </section>
+      )}
 
       <SecaoDreGerencial
         entrada={entrada}

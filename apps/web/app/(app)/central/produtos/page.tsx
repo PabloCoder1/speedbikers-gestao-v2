@@ -41,6 +41,7 @@ import {
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { AvisoDePeriodoInvalido, CabecalhoDaCentral, funcaoAusente, SendoAtivado } from "../comum";
+import { ExportarRankingCsv } from "./exportar-ranking";
 import { SimuladorMargemProduto } from "./simulador-margem";
 
 export const metadata = { title: "Ranking de produtos — Speed Bikers Gestão" };
@@ -542,6 +543,12 @@ function Lista({
     <Panel
       title={definicao.rotulo}
       subtitle={`${definicao.descricao} ${formatCount(ranking.total)} ${ranking.total === 1 ? "produto" : "produtos"}.`}
+      aside={
+        <ExportarRankingCsv
+          itens={ranking.itens}
+          periodoRotulo={`${ranking.periodo.inicio}_a_${ranking.periodo.fim}`}
+        />
+      }
     >
       <div className="sb-panel-body">
         <nav className="sb-sinal-filtros" aria-label="Ordem do ranking">

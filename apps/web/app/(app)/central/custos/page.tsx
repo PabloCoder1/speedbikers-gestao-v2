@@ -18,12 +18,24 @@ import { Panel } from "../../../../components/panel";
 import { RemoverComConfirmacao } from "../../../../components/remover-com-confirmacao";
 import { StatePill } from "../../../../components/state-pill";
 import { formatBusinessDate, formatCurrency, formatPercent } from "../../../../lib/format";
-import { formatarAliquota } from "../../../../lib/metas-imposto";
+import { formatarAliquota, rotuloDoMes } from "../../../../lib/metas-imposto";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { CabecalhoDaCentral, SendoAtivado } from "../comum";
-import { marcarDespesaPaga, removerDespesa, removerEntidadeFiscal } from "./actions";
-import { FormularioDespesa, FormularioEntidadeFiscal, FormularioVigenciaTributaria } from "./formularios";
+import {
+  marcarDespesaPaga,
+  removerDespesa,
+  removerEntidadeFiscal,
+  removerVinculoContaEntidade,
+} from "./actions";
+import { ExportarDespesasCsv } from "./exportar-despesas";
+import {
+  FormularioDespesa,
+  FormularioEntidadeFiscal,
+  FormularioFechamentoMensal,
+  FormularioVigenciaTributaria,
+  FormularioVinculoConta,
+} from "./formularios";
 
 export const metadata = { title: "Custos e fiscal — Speed Bikers Gestão" };
 
@@ -69,6 +81,22 @@ interface VigenciaFiscalRow {
   readonly profit_tax_rate: number | string;
   readonly validated_by_accountant: boolean;
   readonly source_note: string | null;
+}
+
+interface VinculoContaRow {
+  readonly id: string;
+  readonly fiscal_entity_id: string;
+  readonly marketplace: "MERCADO_LIVRE" | "SHOPEE";
+  readonly ml_account_id: string | null;
+  readonly shopee_shop_id: string | null;
+}
+
+interface FechamentoMensalRow {
+  readonly id: string;
+  readonly month: string;
+  readonly status: "aberto" | "fechado" | "reaberto";
+  readonly notes: string | null;
+  readonly closed_at: string | null;
 }
 
 function formatarCnpj(cnpj: string): string {
@@ -121,30 +149,45 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
     };
   };
 
-  const [despesasRes, entidadesRes, vigenciasRes] = await Promise.all([
-    db
-      .from("operational_expenses")
-      .select(
-        "id, name, category, cost_type, recurrence, allocation_method, planned_amount, actual_amount, competence_date, due_date, status, marketplace, cost_center, note",
-      )
-      .eq("organization_id", membership.organizationId)
-      .order("competence_date", { ascending: false })
-      .limit(200),
-    db
-      .from("fiscal_entities")
-      .select("id, legal_name, trade_name, cnpj, tax_regime, active")
-      .eq("organization_id", membership.organizationId)
-      .order("legal_name", { ascending: true })
-      .limit(50),
-    db
-      .from("fiscal_entity_tax_configs")
-      .select(
-        "id, fiscal_entity_id, tax_regime, valid_from, nominal_rate, effective_sales_rate, tax_credits_rate, profit_tax_rate, validated_by_accountant, source_note",
-      )
-      .eq("organization_id", membership.organizationId)
-      .order("valid_from", { ascending: false })
-      .limit(100),
-  ]);
+  const [despesasRes, entidadesRes, vigenciasRes, vinculosRes, fechamentosRes, mlContasRes, shopeeLojasRes] =
+    await Promise.all([
+      db
+        .from("operational_expenses")
+        .select(
+          "id, name, category, cost_type, recurrence, allocation_method, planned_amount, actual_amount, competence_date, due_date, status, marketplace, cost_center, note",
+        )
+        .eq("organization_id", membership.organizationId)
+        .order("competence_date", { ascending: false })
+        .limit(200),
+      db
+        .from("fiscal_entities")
+        .select("id, legal_name, trade_name, cnpj, tax_regime, active")
+        .eq("organization_id", membership.organizationId)
+        .order("legal_name", { ascending: true })
+        .limit(50),
+      db
+        .from("fiscal_entity_tax_configs")
+        .select(
+          "id, fiscal_entity_id, tax_regime, valid_from, nominal_rate, effective_sales_rate, tax_credits_rate, profit_tax_rate, validated_by_accountant, source_note",
+        )
+        .eq("organization_id", membership.organizationId)
+        .order("valid_from", { ascending: false })
+        .limit(100),
+      db
+        .from("fiscal_entity_accounts")
+        .select("id, fiscal_entity_id, marketplace, ml_account_id, shopee_shop_id")
+        .eq("organization_id", membership.organizationId)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      db
+        .from("monthly_financial_closings")
+        .select("id, month, status, notes, closed_at")
+        .eq("organization_id", membership.organizationId)
+        .order("month", { ascending: false })
+        .limit(24),
+      supabase.from("ml_accounts").select("id, label").order("label", { ascending: true }),
+      supabase.from("shopee_shops").select("id, shop_name, shop_id").order("shop_name", { ascending: true }),
+    ]);
 
   const tabelaAusente = [despesasRes.error, entidadesRes.error, vigenciasRes.error].some(
     (e) => e !== null && (e.code === "PGRST205" || e.code === "42P01"),
@@ -157,7 +200,7 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
         <SendoAtivado>
           A gestão de custos operacionais (fixos e variáveis) e entidades fiscais (CNPJs e regimes tributários) está
           pronta no código e aguarda a aplicação da migration{" "}
-          <code>20261126100000_central_inteligencia_financeira_fundacao.sql</code> neste ambiente. Assim que aplicada,
+          <code>20261126180000_central_inteligencia_financeira_fundacao.sql</code> neste ambiente. Assim que aplicada,
           esta tela habilitará o cadastro e acompanhamento completo de despesas, rateios, orçamento × realizado e
           regimes fiscais por CNPJ.
         </SendoAtivado>
@@ -168,7 +211,21 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
   const despesas = (despesasRes.data ?? []) as DespesaRow[];
   const entidades = (entidadesRes.data ?? []) as EntidadeFiscalRow[];
   const vigencias = (vigenciasRes.data ?? []) as VigenciaFiscalRow[];
+  const vinculos = (vinculosRes.data ?? []) as VinculoContaRow[];
+  const fechamentos = (fechamentosRes.data ?? []) as FechamentoMensalRow[];
+  const mlContas = mlContasRes.data ?? [];
+  const shopeeLojas = shopeeLojasRes.data ?? [];
+
   const nomeEntidadePorId = new Map(entidades.map((e) => [e.id, e.trade_name ?? e.legal_name]));
+  const nomeMlPorId = new Map(mlContas.map((c) => [c.id, c.label]));
+  const nomeShopeePorId = new Map(shopeeLojas.map((s) => [s.id, s.shop_name ?? `Shopee #${String(s.shop_id)}`]));
+  const contasDisponiveis = [
+    ...mlContas.map((c) => ({ ref: `MERCADO_LIVRE:${c.id}`, label: `Mercado Livre · ${c.label}` })),
+    ...shopeeLojas.map((s) => ({
+      ref: `SHOPEE:${s.id}`,
+      label: `Shopee · ${s.shop_name ?? `#${String(s.shop_id)}`}`,
+    })),
+  ];
 
   const resumo = resumirOrcadoRealizado(
     despesas.map((d) => ({
@@ -235,6 +292,7 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
         <Panel
           title="Despesas operacionais (fixas e variáveis)"
           subtitle="Acompanhamento de previsto × realizado, classificação de custo, recorrência e critério de rateio. Alimenta automaticamente a DRE da Central."
+          aside={<ExportarDespesasCsv despesas={despesas} />}
         >
           <div className="sb-panel-body">
             {podeEditar && (
@@ -474,6 +532,65 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
               </div>
             )}
 
+            {podeEditar && entidades.length > 0 && contasDisponiveis.length > 0 && (
+              <details className="sb-recolhivel sb-central-bloco">
+                <summary>
+                  Vincular conta de marketplace a um CNPJ <small>cada conta pertence a uma única entidade fiscal</small>
+                </summary>
+                <div className="sb-panel-body">
+                  <FormularioVinculoConta
+                    entidades={entidades.map((e) => ({
+                      id: e.id,
+                      label: `${e.trade_name ?? e.legal_name} (${formatarCnpj(e.cnpj)})`,
+                    }))}
+                    contas={contasDisponiveis}
+                  />
+                </div>
+              </details>
+            )}
+
+            {vinculos.length > 0 && (
+              <div className="sb-central-tabela sb-central-bloco">
+                <p className="sb-texto-suave">Contas de marketplace vinculadas a CNPJs</p>
+                <table className="sb-table">
+                  <thead>
+                    <tr>
+                      <th>Marketplace</th>
+                      <th>Conta / Loja</th>
+                      <th>Entidade fiscal (CNPJ)</th>
+                      {podeEditar && <th aria-label="Ações" />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vinculos.map((v) => {
+                      const contaNome =
+                        v.marketplace === "MERCADO_LIVRE"
+                          ? (nomeMlPorId.get(v.ml_account_id ?? "") ?? v.ml_account_id ?? "—")
+                          : (nomeShopeePorId.get(v.shopee_shop_id ?? "") ?? v.shopee_shop_id ?? "—");
+
+                      return (
+                        <tr key={v.id}>
+                          <td>{v.marketplace === "MERCADO_LIVRE" ? "Mercado Livre" : "Shopee"}</td>
+                          <td>{contaNome}</td>
+                          <td>{nomeEntidadePorId.get(v.fiscal_entity_id) ?? "Empresa"}</td>
+                          {podeEditar && (
+                            <td>
+                              <RemoverComConfirmacao
+                                acao={removerVinculoContaEntidade}
+                                campos={{ id: v.id }}
+                                rotulo={`Desvincular ${contaNome}`}
+                                consequencia="A conta deixa de estar associada a este CNPJ."
+                              />
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             <div className="sb-note sb-central-bloco">
               <span>FINALIDADE GERENCIAL</span>
               <p>
@@ -481,6 +598,68 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
                 estimadas são sempre sinalizadas como estimativa e devem ser validadas periodicamente com a contabilidade.
               </p>
             </div>
+          </div>
+        </Panel>
+      </div>
+
+      <div className="sb-central-bloco">
+        <Panel
+          title="Fechamento financeiro mensal"
+          subtitle="Registre o fechamento auditável de cada competência com data, responsável e proteção contra alterações retroativas sem rastro."
+        >
+          <div className="sb-panel-body">
+            {podeEditar && (
+              <details className="sb-recolhivel sb-central-bloco">
+                <summary>
+                  Registrar fechamento ou reabertura de competência <small>controle mensal auditável</small>
+                </summary>
+                <div className="sb-panel-body">
+                  <FormularioFechamentoMensal mesPadrao={hoje.slice(0, 7)} />
+                </div>
+              </details>
+            )}
+
+            {fechamentos.length === 0 ? (
+              <EstadoDaTela
+                tipo="vazio"
+                titulo="Nenhuma competência fechada ainda"
+                descricao="Ao encerrar um mês e conferir despesas e impostos, registre o fechamento mensal para manter histórico auditável."
+              />
+            ) : (
+              <div className="sb-central-tabela">
+                <table className="sb-table">
+                  <thead>
+                    <tr>
+                      <th>Competência</th>
+                      <th>Status</th>
+                      <th>Fechado em</th>
+                      <th>Notas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fechamentos.map((f) => (
+                      <tr key={f.id}>
+                        <td>{rotuloDoMes(f.month)}</td>
+                        <td>
+                          <StatePill
+                            tone={{
+                              tom: f.status === "fechado" ? "ok" : f.status === "reaberto" ? "atencao" : "neutro",
+                              label: f.status,
+                            }}
+                          />
+                        </td>
+                        <td>
+                          {f.closed_at === null
+                            ? "—"
+                            : new Date(f.closed_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                        </td>
+                        <td className="sb-texto-suave">{f.notes ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </Panel>
       </div>

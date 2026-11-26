@@ -7,6 +7,7 @@ import {
   lerFormularioEntidadeFiscal,
   lerFormularioVigenciaTributaria,
 } from "../../../../lib/custos-fiscal";
+import { lerMes, lerNota } from "../../../../lib/metas-imposto";
 import { currentMembership } from "../../../../lib/membership";
 import { createClient } from "../../../../lib/supabase/server";
 import type { ResultadoDoCadastro } from "../metas/actions";
@@ -68,7 +69,7 @@ function traduzirErro(error: DbErro, entidade: string): ResultadoDoCadastro {
     return {
       ...SEM_ERRO,
       mensagem:
-        "As tabelas financeiras ainda não foram aplicadas neste banco (migration 20261126100000 pendente).",
+        "As tabelas financeiras ainda não foram aplicadas neste banco (migration 20261126180000 pendente).",
     };
   }
   if (error.code === "42501") {
@@ -270,4 +271,138 @@ export async function removerEntidadeFiscal(formData: FormData): Promise<void> {
     .eq("organization_id", membership.organizationId);
 
   revalidar();
+}
+
+export async function vincularContaEntidade(
+  _anterior: ResultadoDoCadastro,
+  formData: FormData,
+): Promise<ResultadoDoCadastro> {
+  const supabase = await createClient();
+  const membership = await currentMembership(supabase);
+
+  if (membership.organizationId === null) {
+    return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
+  }
+
+  const campos = campoDe(formData);
+  const fiscalEntityId = campos("fiscal_entity_id").trim();
+  const contaComposta = campos("account_ref").trim();
+  const erros: Record<string, string> = {};
+
+  if (fiscalEntityId === "") erros.fiscal_entity_id = "Selecione o CNPJ.";
+  if (!contaComposta.includes(":")) erros.account_ref = "Selecione a conta de marketplace.";
+
+  const [marketplace, accountId] = contaComposta.split(":");
+  if ((marketplace !== "MERCADO_LIVRE" && marketplace !== "SHOPEE") || !accountId) {
+    erros.account_ref = "Conta inválida.";
+  }
+
+  if (Object.keys(erros).length > 0) return { ...SEM_ERRO, erros };
+
+  const payload =
+    marketplace === "MERCADO_LIVRE"
+      ? {
+          organization_id: membership.organizationId,
+          fiscal_entity_id: fiscalEntityId,
+          marketplace: "MERCADO_LIVRE",
+          ml_account_id: accountId,
+          shopee_shop_id: null,
+        }
+      : {
+          organization_id: membership.organizationId,
+          fiscal_entity_id: fiscalEntityId,
+          marketplace: "SHOPEE",
+          ml_account_id: null,
+          shopee_shop_id: accountId,
+        };
+
+  const { data, error } = await tabela(supabase, "fiscal_entity_accounts").insert(payload).select("id");
+
+  if (error !== null) return traduzirErro(error, "vínculo conta → CNPJ");
+  if (data === null || data.length === 0) {
+    return { ...SEM_ERRO, mensagem: "O vínculo não foi gravado: verifique suas permissões." };
+  }
+
+  revalidar();
+
+  return { ok: true, mensagem: "Conta vinculada à entidade fiscal (CNPJ).", erros: {} };
+}
+
+export async function removerVinculoContaEntidade(formData: FormData): Promise<void> {
+  const id = campoDe(formData)("id").trim();
+  if (id === "") return;
+
+  const supabase = await createClient();
+  const membership = await currentMembership(supabase);
+  if (membership.organizationId === null) return;
+
+  await tabela(supabase, "fiscal_entity_accounts")
+    .delete()
+    .eq("id", id)
+    .eq("organization_id", membership.organizationId);
+
+  revalidar();
+}
+
+export async function salvarFechamentoMensal(
+  _anterior: ResultadoDoCadastro,
+  formData: FormData,
+): Promise<ResultadoDoCadastro> {
+  const supabase = await createClient();
+  const membership = await currentMembership(supabase);
+
+  if (membership.organizationId === null) {
+    return { ...SEM_ERRO, mensagem: "Sessão sem organização — atualize a página." };
+  }
+
+  const campos = campoDe(formData);
+  const mes = lerMes(campos("month"));
+  const statusRaw = campos("status").trim();
+  const status = statusRaw === "aberto" || statusRaw === "fechado" || statusRaw === "reaberto" ? statusRaw : null;
+  const nota = lerNota(campos("notes"));
+  const erros: Record<string, string> = {};
+
+  if (!mes.ok) erros.month = mes.erro;
+  if (status === null) erros.status = "Selecione o status do fechamento.";
+  if (!nota.ok) erros.notes = nota.erro;
+
+  if (!mes.ok || status === null || !nota.ok) return { ...SEM_ERRO, erros };
+
+  const { data: usuario } = await supabase.auth.getUser();
+  const agora = new Date().toISOString();
+
+  const { data, error } = await tabela(supabase, "monthly_financial_closings")
+    .upsert(
+      {
+        organization_id: membership.organizationId,
+        month: mes.valor,
+        status,
+        notes: nota.valor,
+        dre_snapshot: {
+          recorded_at: agora,
+          competence_month: mes.valor,
+          status,
+        },
+        closed_by: status === "fechado" ? (usuario.user?.id ?? null) : null,
+        closed_at: status === "fechado" ? agora : null,
+      },
+      { onConflict: "organization_id,month" },
+    )
+    .select("id");
+
+  if (error !== null) return traduzirErro(error, "fechamento mensal");
+  if (data === null || data.length === 0) {
+    return { ...SEM_ERRO, mensagem: "O fechamento não foi gravado: verifique suas permissões." };
+  }
+
+  revalidar();
+
+  return {
+    ok: true,
+    mensagem:
+      status === "fechado"
+        ? "Competência fechada e registrada para auditoria."
+        : `Status da competência atualizado para ${status}.`,
+    erros: {},
+  };
 }
