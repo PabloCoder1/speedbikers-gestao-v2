@@ -1,6 +1,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { montarDreGerencial, type LinhaDre, type OrigemDadoFinanceiro } from "@sb/domain";
+import {
+  ROTULO_REGIME_TRIBUTARIO,
+  calcularTributosEntidade,
+  montarDreGerencial,
+  type LinhaDre,
+  type OrigemDadoFinanceiro,
+} from "@sb/domain";
 
 import { Glossario } from "../../../components/ajuda";
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
@@ -8,6 +14,7 @@ import { Panel } from "../../../components/panel";
 import { StatePill } from "../../../components/state-pill";
 import type { Tom } from "../../../components/tone";
 import type { EntradaCentral } from "../../../lib/central-indicadores";
+import { CONTEXTO_FISCAL_VAZIO, formatarCnpj, type ContextoFiscalDre } from "../../../lib/custos-fiscal";
 import { formatCurrency, formatPercent } from "../../../lib/format";
 import { ExportarDreCsv } from "./exportar-dre";
 import { SimuladorFinanceiro } from "./simulador-financeiro";
@@ -106,6 +113,7 @@ export function SecaoDreGerencial({
   despesasVariaveis = null,
   despesasFixasAnterior = null,
   despesasVariaveisAnterior = null,
+  contextoFiscal = CONTEXTO_FISCAL_VAZIO,
 }: {
   entrada: EntradaCentral;
   periodoRotulo?: string;
@@ -113,6 +121,7 @@ export function SecaoDreGerencial({
   despesasVariaveis?: number | null;
   despesasFixasAnterior?: number | null;
   despesasVariaveisAnterior?: number | null;
+  contextoFiscal?: ContextoFiscalDre;
 }): ReactNode {
   const r = entrada.atual;
   const baseBruta = r.receita_coberta ?? r.receita_bruta;
@@ -126,10 +135,33 @@ export function SecaoDreGerencial({
         ? Math.round(((entrada.adsAtual.investimento * r.receita_coberta) / r.receita_bruta) * 100) / 100
         : null;
 
+  // Contexto fiscal multi-CNPJ: quando a conta filtrada está vinculada a um CNPJ com
+  // vigência tributária ativa, calcula tributos pelo motor multi-regime (incluindo créditos no Lucro Real).
+  const entidadeDaConta = contextoFiscal.entidadeDaConta;
+  const apuracaoCnpjAtual =
+    entidadeDaConta?.configVigente != null && baseBruta > 0
+      ? calcularTributosEntidade({
+          config: entidadeDaConta.configVigente,
+          faturamentoBruto: baseBruta,
+          cmv: r.custo_produtos,
+        })
+      : null;
+
+  const impostoDreAtual =
+    entrada.impostoAtual?.imposto_coberto ?? apuracaoCnpjAtual?.impostoLiquidoVendas ?? null;
+  const avisoDivergenciaFiscal =
+    entrada.impostoAtual?.imposto_coberto != null &&
+    apuracaoCnpjAtual !== null &&
+    baseBruta > 0 &&
+    Math.abs(entrada.impostoAtual.imposto_coberto / baseBruta - (apuracaoCnpjAtual.aliquotaEfetivaSobreFaturamento ?? 0)) >
+      0.002
+      ? ` Atenção: a DRE está usando a alíquota global de Metas e imposto; pelo regime específico deste CNPJ, o tributo líquido estimado seria ${formatCurrency(apuracaoCnpjAtual.impostoLiquidoVendas)}.`
+      : "";
+
   const dre = montarDreGerencial({
     faturamentoBruto: baseBruta,
-    impostosSobreVendas: entrada.impostoAtual?.imposto_coberto ?? null,
-    origemImpostos: entrada.impostoAtual?.imposto_coberto != null ? "estimado" : "ausente",
+    impostosSobreVendas: impostoDreAtual,
+    origemImpostos: impostoDreAtual !== null ? "estimado" : "ausente",
     cmv: r.custo_produtos,
     comissoesMarketplace: r.taxas_ml_cobertas,
     custosLogisticos: r.frete_vendedor_coberto,
@@ -221,7 +253,7 @@ export function SecaoDreGerencial({
   ];
 
   const lacunasSimulacao: string[] = [];
-  if (entrada.impostoAtual?.imposto_coberto == null) lacunasSimulacao.push("impostos sobre vendas");
+  if (impostoDreAtual === null) lacunasSimulacao.push("impostos sobre vendas");
   if (adsProporcional === null) lacunasSimulacao.push("investimento em Ads");
   if (despesasFixas === null) lacunasSimulacao.push("despesas operacionais fixas");
 
@@ -335,6 +367,30 @@ export function SecaoDreGerencial({
               </table>
             </div>
 
+            {entidadeDaConta !== null ? (
+              <div className="sb-note sb-central-bloco">
+                <span>
+                  REGIME FISCAL DA CONTA · {ROTULO_REGIME_TRIBUTARIO[entidadeDaConta.regime].toUpperCase()}
+                </span>
+                <p>
+                  <strong>{entidadeDaConta.nome}</strong> ({formatarCnpj(entidadeDaConta.cnpj)})
+                  {apuracaoCnpjAtual !== null
+                    ? ` · alíquota efetiva ${formatPercent(apuracaoCnpjAtual.aliquotaEfetivaSobreFaturamento)}${apuracaoCnpjAtual.creditosAbatidos > 0 ? ` (créditos abatidos: ${formatCurrency(apuracaoCnpjAtual.creditosAbatidos)})` : ""} · ${entidadeDaConta.configVigente?.validadoContabilidade ? "validado pela contabilidade" : "estimativa gerencial"}`
+                    : " · sem vigência tributária cadastrada em Custos e Fiscal."}
+                  {avisoDivergenciaFiscal}
+                </p>
+              </div>
+            ) : contextoFiscal.totalEntidadesAtivas > 1 ? (
+              <div className="sb-note sb-central-bloco">
+                <span>OPERAÇÃO MULTI-CNPJ ({String(contextoFiscal.totalEntidadesAtivas)} ENTIDADES ATIVAS)</span>
+                <p>
+                  No consolidado geral a DRE usa a alíquota de <Link href="/central/metas">Metas e imposto</Link>. Filtre
+                  por uma conta específica acima para aplicar ou conferir o regime tributário individualizado do CNPJ
+                  vinculado.
+                </p>
+              </div>
+            ) : null}
+
             {dre.lacunas.length > 0 && (
               <div className="sb-note sb-central-bloco">
                 <span>LACUNAS DE DADOS NESTE PERÍODO</span>
@@ -352,7 +408,7 @@ export function SecaoDreGerencial({
               r.custo_produtos !== null && r.taxas_ml_cobertas !== null && r.frete_vendedor_coberto !== null
                 ? {
                     faturamentoBruto: baseBruta,
-                    impostosSobreVendas: entrada.impostoAtual?.imposto_coberto ?? 0,
+                    impostosSobreVendas: impostoDreAtual ?? 0,
                     cmv: r.custo_produtos,
                     comissoesMarketplace: r.taxas_ml_cobertas,
                     custosLogisticos: r.frete_vendedor_coberto,

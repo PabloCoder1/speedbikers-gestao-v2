@@ -3,6 +3,7 @@ import {
   ROTULO_REGIME_TRIBUTARIO,
   ratearDespesa,
   resumirOrcadoRealizado,
+  shiftBusinessDate,
   toSalesMetricDate,
   type CategoriaDespesa,
   type ClassificacaoCusto,
@@ -18,7 +19,7 @@ import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
 import { Panel } from "../../../../components/panel";
 import { RemoverComConfirmacao } from "../../../../components/remover-com-confirmacao";
 import { StatePill } from "../../../../components/state-pill";
-import { resumirRegimeCaixa } from "../../../../lib/custos-fiscal";
+import { carregarFaturamentoPorConta, resumirRegimeCaixa } from "../../../../lib/custos-fiscal";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../../lib/format";
 import { formatarAliquota, rotuloDoMes } from "../../../../lib/metas-imposto";
 import { currentMembership } from "../../../../lib/request-membership";
@@ -177,6 +178,7 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
     historicoRes,
     mlContasRes,
     shopeeLojasRes,
+    faturamentoContasMap,
   ] = await Promise.all([
     db
       .from("operational_expenses")
@@ -220,6 +222,12 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
       .limit(30),
     supabase.from("ml_accounts").select("id, label").order("label", { ascending: true }),
     supabase.from("shopee_shops").select("id, shop_name, shop_id").order("shop_name", { ascending: true }),
+    carregarFaturamentoPorConta(
+      supabase,
+      membership.organizationId,
+      shiftBusinessDate(hoje, -30),
+      shiftBusinessDate(hoje, -1),
+    ),
   ]);
 
   const tabelaAusente = [despesasRes.error, entidadesRes.error, vigenciasRes.error].some(
@@ -233,7 +241,7 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
         <SendoAtivado>
           A gestão de custos operacionais (fixos e variáveis) e entidades fiscais (CNPJs e regimes tributários) está
           pronta no código e aguarda a aplicação da migration{" "}
-          <code>20261126180000_central_inteligencia_financeira_fundacao.sql</code> neste ambiente. Assim que aplicada,
+          <code>20261126200000_central_inteligencia_financeira_fundacao.sql</code> neste ambiente. Assim que aplicada,
           esta tela habilitará o cadastro e acompanhamento completo de despesas, rateios, orçamento × realizado e
           regimes fiscais por CNPJ.
         </SendoAtivado>
@@ -273,12 +281,20 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
     })),
   );
   const caixa = resumirRegimeCaixa(despesas, hoje);
+  const contasComPesoReal = contasDisponiveis.map((c) => {
+    const mlId = c.ref.startsWith("MERCADO_LIVRE:") ? c.ref.slice("MERCADO_LIVRE:".length) : null;
+    const peso = mlId !== null ? (faturamentoContasMap.get(mlId) ?? 0) : 0;
+    return { destinoId: c.ref, rotulo: c.label, peso };
+  });
+  const temFaturamentoParaRateio = contasComPesoReal.some((c) => c.peso > 0);
   const previaRateio =
     resumo.totalRateadas > 0 && contasDisponiveis.length > 0
       ? ratearDespesa(
           resumo.totalRateadas,
           "faturamento",
-          contasDisponiveis.map((c) => ({ destinoId: c.ref, rotulo: c.label, peso: 1 })),
+          temFaturamentoParaRateio
+            ? contasComPesoReal
+            : contasDisponiveis.map((c) => ({ destinoId: c.ref, rotulo: c.label, peso: 1 })),
         )
       : null;
 
@@ -502,7 +518,11 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
             {previaRateio !== null && previaRateio.ok && (
               <div className="sb-central-tabela sb-central-bloco">
                 <p className="sb-texto-suave">
-                  Prévia de rateio igualitário das despesas compartilhadas ({formatCurrency(previaRateio.total)}) entre as{" "}
+                  Prévia de rateio{" "}
+                  {temFaturamentoParaRateio
+                    ? "ponderado pelo faturamento real dos últimos 30 dias"
+                    : "igualitário (sem faturamento recente nos últimos 30 dias)"}{" "}
+                  das despesas compartilhadas ({formatCurrency(previaRateio.total)}) entre as{" "}
                   {formatCount(contasDisponiveis.length)} contas cadastradas — despesas diretas permanecem isoladas na sua conta.
                 </p>
                 <table className="sb-table">

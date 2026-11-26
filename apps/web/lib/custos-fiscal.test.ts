@@ -6,6 +6,7 @@ import {
   lerFormularioDespesa,
   lerFormularioEntidadeFiscal,
   lerFormularioVigenciaTributaria,
+  lerResumoDespesasRpc,
   proximoMes,
   resumirRegimeCaixa,
 } from "./custos-fiscal";
@@ -141,5 +142,50 @@ describe("resumirRegimeCaixa e proximoMes", () => {
     expect(proximoMes("2026-11")).toBe("2026-12-01");
     expect(proximoMes("2026-12")).toBe("2027-01-01");
     expect(proximoMes("invalido")).toBeNull();
+  });
+});
+
+describe("lerResumoDespesasRpc", () => {
+  it("converte o JSONB de get_resumo_despesas preservando nulos e rejeitando payloads inválidos", () => {
+    const parsed = lerResumoDespesasRpc({
+      atual: {
+        despesas_fixas: 6200,
+        despesas_variaveis: null,
+        quantidade: 2,
+        total_previsto: 6000,
+        total_realizado: 5200,
+        atrasadas: 1,
+      },
+      anterior: {
+        despesas_fixas: null,
+        despesas_variaveis: 800,
+        quantidade: 1,
+        total_previsto: 750,
+        total_realizado: 800,
+        atrasadas: 0,
+      },
+    });
+
+    expect(parsed).toEqual({
+      atual: {
+        despesasFixas: 6200,
+        despesasVariaveis: null,
+        quantidade: 2,
+        totalPrevisto: 6000,
+        totalRealizado: 5200,
+        atrasadasCount: 1,
+      },
+      anterior: {
+        despesasFixas: null,
+        despesasVariaveis: 800,
+        quantidade: 1,
+        totalPrevisto: 750,
+        totalRealizado: 800,
+        atrasadasCount: 0,
+      },
+    });
+
+    expect(lerResumoDespesasRpc(null)).toBeNull();
+    expect(lerResumoDespesasRpc({ atual: {} })).toBeNull();
   });
 });

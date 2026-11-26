@@ -18,7 +18,12 @@ import {
   type Sinal,
 } from "../../../lib/central-indicadores";
 import type { PeriodoCentral } from "../../../lib/central-periodo";
-import { DESPESAS_COMPARADAS_VAZIAS, type DespesasComparadas } from "../../../lib/custos-fiscal";
+import {
+  CONTEXTO_FISCAL_VAZIO,
+  DESPESAS_COMPARADAS_VAZIAS,
+  type ContextoFiscalDre,
+  type DespesasComparadas,
+} from "../../../lib/custos-fiscal";
 import { lerFaturamento } from "../../../lib/faturamento";
 import { formatCount, formatCurrency, formatPercent } from "../../../lib/format";
 import type { LimitesDaCentral } from "../../../lib/limites-central";
@@ -241,6 +246,7 @@ export async function Indicadores({
   leituraMeta,
   leituraLimites,
   leituraDespesas,
+  leituraFiscal,
   periodo,
   podeEditar,
   tentarDeNovo,
@@ -249,18 +255,21 @@ export async function Indicadores({
   leituraMeta: Promise<RespostaComCodigo> | null;
   leituraLimites: Promise<LimitesDaCentral>;
   leituraDespesas?: Promise<DespesasComparadas>;
+  leituraFiscal?: Promise<ContextoFiscalDre>;
   periodo: PeriodoCentral;
   podeEditar: boolean;
   /** A mesma URL, para "Tentar de novo" (D-472). */
   tentarDeNovo: string;
 }): Promise<ReactNode> {
   const acao = { href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true };
-  const [[atualResult, anteriorResult, adsResult, adsAnteriorResult], respostaMeta, limites, despesas] = await Promise.all([
-    leituras,
-    leituraMeta,
-    leituraLimites,
-    leituraDespesas ?? Promise.resolve(DESPESAS_COMPARADAS_VAZIAS),
-  ]);
+  const [[atualResult, anteriorResult, adsResult, adsAnteriorResult], respostaMeta, limites, despesas, contextoFiscal] =
+    await Promise.all([
+      leituras,
+      leituraMeta,
+      leituraLimites,
+      leituraDespesas ?? Promise.resolve(DESPESAS_COMPARADAS_VAZIAS),
+      leituraFiscal ?? Promise.resolve(CONTEXTO_FISCAL_VAZIO),
+    ]);
   const { meta, indisponivel } = lerMeta(respostaMeta);
 
   if (atualResult.error !== null) {
@@ -374,6 +383,7 @@ export async function Indicadores({
         despesasVariaveis={despesas.atual.despesasVariaveis}
         despesasFixasAnterior={despesas.anterior.despesasFixas}
         despesasVariaveisAnterior={despesas.anterior.despesasVariaveis}
+        contextoFiscal={contextoFiscal}
       />
 
       {/*

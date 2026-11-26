@@ -9,6 +9,7 @@ import {
   proximoMes,
 } from "../../../../lib/custos-fiscal";
 import { lerMes, lerNota } from "../../../../lib/metas-imposto";
+import { lerNumero } from "../../../../lib/numero-ptbr";
 import { currentMembership } from "../../../../lib/membership";
 import { createClient } from "../../../../lib/supabase/server";
 import type { ResultadoDoCadastro } from "../metas/actions";
@@ -70,7 +71,7 @@ function traduzirErro(error: DbErro, entidade: string): ResultadoDoCadastro {
     return {
       ...SEM_ERRO,
       mensagem:
-        "As tabelas financeiras ainda não foram aplicadas neste banco (migration 20261126180000 pendente).",
+        "As tabelas financeiras ainda não foram aplicadas neste banco (migration 20261126200000 pendente).",
     };
   }
   if (error.code === "42501") {
@@ -131,19 +132,8 @@ export async function salvarDespesa(
     return { ...SEM_ERRO, mensagem: "A despesa não foi gravada: verifique suas permissões." };
   }
 
-  const createdId = typeof data[0]?.id === "string" ? data[0].id : null;
-  if (createdId !== null) {
-    await tabela(supabase, "operational_expense_history")
-      .insert({
-        organization_id: membership.organizationId,
-        expense_id: createdId,
-        action: "created",
-        after_data: payload,
-        changed_by: userId,
-      })
-      .select("id");
-  }
-
+  // A trilha de auditoria em `operational_expense_history` é gravada automaticamente
+  // pelo trigger `operational_expenses_audit` no Postgres (migration 20261126210000).
   revalidar();
 
   return { ok: true, mensagem: "Despesa operacional salva e conectada à DRE do período.", erros: {} };
@@ -161,7 +151,8 @@ export async function marcarDespesaPaga(formData: FormData): Promise<void> {
   const { data: usuario } = await supabase.auth.getUser();
   const userId = usuario.user?.id ?? null;
 
-  const valor = Number(valorRealizadoTexto);
+  const valorPt = lerNumero(valorRealizadoTexto);
+  const valor = valorPt ?? Number(valorRealizadoTexto);
   const hoje = new Date().toISOString().slice(0, 10);
   const patch = {
     status: "paga",
@@ -170,22 +161,10 @@ export async function marcarDespesaPaga(formData: FormData): Promise<void> {
     ...(Number.isFinite(valor) && valor >= 0 ? { actual_amount: Math.round(valor * 100) / 100 } : {}),
   };
 
-  const { error } = await tabela(supabase, "operational_expenses")
+  await tabela(supabase, "operational_expenses")
     .update(patch)
     .eq("id", id)
     .eq("organization_id", membership.organizationId);
-
-  if (error === null) {
-    await tabela(supabase, "operational_expense_history")
-      .insert({
-        organization_id: membership.organizationId,
-        expense_id: id,
-        action: "status_changed",
-        after_data: patch,
-        changed_by: userId,
-      })
-      .select("id");
-  }
 
   revalidar();
 }
@@ -202,22 +181,10 @@ export async function cancelarDespesa(formData: FormData): Promise<void> {
   const userId = usuario.user?.id ?? null;
   const patch = { status: "cancelada", updated_by: userId };
 
-  const { error } = await tabela(supabase, "operational_expenses")
+  await tabela(supabase, "operational_expenses")
     .update(patch)
     .eq("id", id)
     .eq("organization_id", membership.organizationId);
-
-  if (error === null) {
-    await tabela(supabase, "operational_expense_history")
-      .insert({
-        organization_id: membership.organizationId,
-        expense_id: id,
-        action: "status_changed",
-        after_data: patch,
-        changed_by: userId,
-      })
-      .select("id");
-  }
 
   revalidar();
 }

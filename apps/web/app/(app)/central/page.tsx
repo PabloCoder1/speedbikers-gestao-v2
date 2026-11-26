@@ -14,7 +14,7 @@ import {
   rotuloDoIntervalo,
   type PeriodoNaUrl,
 } from "../../../lib/central-periodo";
-import { carregarDespesasComparadas } from "../../../lib/custos-fiscal";
+import { carregarContextoFiscal, carregarDespesasComparadas } from "../../../lib/custos-fiscal";
 import { carregarLimites } from "../../../lib/limites-central";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
@@ -163,6 +163,13 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
     periodo.anterior.to,
   );
   const leituraDespesasAtual = leituraDespesasComparadas.then((d) => d.atual);
+  // Contexto fiscal multi-CNPJ (entidade e vigência tributária da conta filtrada ou resumo da organização).
+  const leituraFiscal = carregarContextoFiscal(
+    supabase,
+    membership.organizationId,
+    selectedAccount?.id ?? null,
+    periodo.atual.to,
+  );
 
   // O detector de frete é da organização e dos últimos 14 dias: não depende do
   // período nem da conta. Sai junto com as outras leituras e chega sozinho.
@@ -287,6 +294,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
           leituraMeta={leituraMeta}
           leituraLimites={leituraLimites}
           leituraDespesas={leituraDespesasComparadas}
+          leituraFiscal={leituraFiscal}
           periodo={periodo}
           podeEditar={podeEditar}
           tentarDeNovo={montarHref(periodoAtual, contaSlug)}

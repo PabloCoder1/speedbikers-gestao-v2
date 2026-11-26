@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
  * Testes de integração SQL da fundação da Central de Inteligência Financeira
- * (`20261126100000_central_inteligencia_financeira_fundacao.sql`) contra Postgres real.
+ * (`20261126200000` e `20261126210000`) contra Postgres real.
  *
  * Verifica:
  * 1. Isolamento multi-tenant e RLS por papel (ADMIN/GESTOR escrevem, ANALISTA só lê,
@@ -11,6 +11,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * 2. Prevenção de duplicidade via `idempotency_key` em `operational_expenses`.
  * 3. Constraints físicas (`CHECK`) de CNPJ, alíquotas, datas e vínculo exclusivo conta → CNPJ.
  * 4. Persistência de `financial_goals` e `monthly_financial_closings`.
+ * 5. Agregação em SQL (`get_resumo_despesas`, `get_faturamento_por_conta`) e trilha
+ *    de auditoria via trigger (`operational_expenses_audit`) com bloqueio de INSERT forjado.
  */
 
 const DB_URL = process.env.SUPABASE_DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
@@ -201,5 +203,167 @@ describe("Central de Inteligência Financeira — SQL, RLS e Constraints", () =>
       [ORG_A],
     );
     expect(closing?.status).toBe("fechado");
+  });
+
+  it("get_resumo_despesas agrega atual e anterior em SQL, preserva nulos e respeita RLS", async () => {
+    await client.query("delete from public.operational_expenses where organization_id in ($1, $2)", [ORG_A, ORG_B]);
+
+    // Periodo atual (2026-11): 1 fixa paga (realizado 5200), 1 fixa prevista vencida (1000), 1 cancelada (9000)
+    // Periodo anterior (2026-10): 1 variável paga (800)
+    await asUser(
+      ADMIN_A,
+      `insert into public.operational_expenses
+         (organization_id, name, category, cost_type, recurrence, allocation_method, planned_amount, actual_amount, competence_date, due_date, status)
+       values
+         ($1, 'Aluguel Nov', 'aluguel', 'fixo', 'mensal', 'faturamento', 5000, 5200, '2026-11-05', '2026-11-10', 'paga'),
+         ($1, 'Energia Nov', 'energia_eletrica', 'fixo', 'mensal', 'faturamento', 1000, null, '2026-11-12', '2026-11-15', 'prevista'),
+         ($1, 'Cancelada Nov', 'outras', 'fixo', 'pontual', 'direto', 9000, 9000, '2026-11-10', null, 'cancelada'),
+         ($1, 'Embalagens Out', 'embalagens', 'variavel', 'mensal', 'faturamento', 750, 800, '2026-10-15', '2026-10-20', 'paga')`,
+      [ORG_A],
+    );
+
+    const [resA] = await asUser<{
+      resumo: {
+        atual: {
+          despesas_fixas: number | null;
+          despesas_variaveis: number | null;
+          quantidade: number;
+          total_previsto: number;
+          total_realizado: number;
+          atrasadas: number;
+        };
+        anterior: {
+          despesas_fixas: number | null;
+          despesas_variaveis: number | null;
+          quantidade: number;
+          total_previsto: number;
+          total_realizado: number;
+          atrasadas: number;
+        };
+      };
+    }>(
+      ANALISTA_A,
+      `select public.get_resumo_despesas($1, '2026-11-01', '2026-11-30', '2026-10-01', '2026-10-31', '2026-11-26') as resumo`,
+      [ORG_A],
+    );
+
+    expect(resA?.resumo.atual).toEqual({
+      despesas_fixas: 6200,
+      despesas_variaveis: null,
+      quantidade: 2,
+      total_previsto: 6000,
+      total_realizado: 5200,
+      atrasadas: 1,
+    });
+    expect(resA?.resumo.anterior).toEqual({
+      despesas_fixas: null,
+      despesas_variaveis: 800,
+      quantidade: 1,
+      total_previsto: 750,
+      total_realizado: 800,
+      atrasadas: 0,
+    });
+
+    // Outra organização (ORG_B) chamando com ORG_A vê tudo vazio/nulo por RLS (SECURITY INVOKER)
+    const [resB] = await asUser<{
+      resumo: {
+        atual: { despesas_fixas: number | null; quantidade: number };
+      };
+    }>(
+      ADMIN_B,
+      `select public.get_resumo_despesas($1, '2026-11-01', '2026-11-30', '2026-10-01', '2026-10-31', '2026-11-26') as resumo`,
+      [ORG_A],
+    );
+    expect(resB?.resumo.atual.despesas_fixas).toBeNull();
+    expect(resB?.resumo.atual.quantidade).toBe(0);
+  });
+
+  it("trigger grava auditoria automaticamente e bloqueia INSERT forjado em operational_expense_history", async () => {
+    const [criada] = await asUser<{ id: string }>(
+      ADMIN_A,
+      `insert into public.operational_expenses
+         (organization_id, name, category, cost_type, recurrence, allocation_method, planned_amount, competence_date, status)
+       values ($1, 'Internet Fibra', 'internet', 'fixo', 'mensal', 'faturamento', 300, '2026-11-01', 'prevista')
+       returning id`,
+      [ORG_A],
+    );
+    const expenseId = criada?.id ?? "";
+    expect(expenseId).not.toBe("");
+
+    // Edição de valor -> 'updated'
+    await asUser(
+      ADMIN_A,
+      `update public.operational_expenses set actual_amount = 320 where id = $1`,
+      [expenseId],
+    );
+
+    // Mudança de status -> 'status_changed'
+    await asUser(
+      ADMIN_A,
+      `update public.operational_expenses set status = 'paga', paid_date = '2026-11-26' where id = $1`,
+      [expenseId],
+    );
+
+    const eventos = await asUser<{ action: string; before_data: Record<string, unknown> | null; after_data: Record<string, unknown> | null }>(
+      ANALISTA_A,
+      `select action, before_data, after_data from public.operational_expense_history where expense_id = $1 order by changed_at asc, id asc`,
+      [expenseId],
+    );
+    expect(eventos.map((e) => e.action)).toEqual(["created", "updated", "status_changed"]);
+    expect(eventos[1]?.before_data?.actual_amount).toBeNull();
+    expect(eventos[1]?.after_data?.actual_amount).toBe(320);
+    expect(eventos[2]?.after_data?.status).toBe("paga");
+
+    // INSERT forjado direto em operational_expense_history por authenticated é barrado
+    await expect(
+      asUser(
+        ADMIN_A,
+        `insert into public.operational_expense_history (organization_id, expense_id, action)
+         values ($1, $2, 'created')`,
+        [ORG_A, expenseId],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("get_faturamento_por_conta agrega receita bruta por conta em SQL respeitando RLS", async () => {
+    await client.query("delete from public.daily_account_metrics where organization_id = $1 and ml_account_id = $2", [
+      ORG_A,
+      ML_ACC_A,
+    ]);
+    await client.query(
+      `insert into public.daily_account_metrics (organization_id, ml_account_id, metric_date, units_sold, gross_revenue, orders_count, purchases_count)
+       values
+         ($1, $2, '2026-11-20', 4, 1200.50, 4, 4),
+         ($1, $2, '2026-11-21', 2, 799.50, 2, 2)`,
+      [ORG_A, ML_ACC_A],
+    );
+
+    // ADMIN da ORG_A tem acesso a todas as contas da organização
+    const linhasA = await asUser<{ ml_account_id: string; receita_bruta: string }>(
+      ADMIN_A,
+      `select ml_account_id, receita_bruta from public.get_faturamento_por_conta($1, '2026-11-01', '2026-11-30')`,
+      [ORG_A],
+    );
+    expect(linhasA).toEqual([{ ml_account_id: ML_ACC_A, receita_bruta: "2000.00" }]);
+
+    // ANALISTA sem grant explícito na conta e ADMIN de outra org veem 0 linhas (RLS por conta)
+    const linhasAnalista = await asUser<{ ml_account_id: string }>(
+      ANALISTA_A,
+      `select ml_account_id from public.get_faturamento_por_conta($1, '2026-11-01', '2026-11-30')`,
+      [ORG_A],
+    );
+    expect(linhasAnalista).toHaveLength(0);
+
+    const linhasB = await asUser<{ ml_account_id: string }>(
+      ADMIN_B,
+      `select ml_account_id from public.get_faturamento_por_conta($1, '2026-11-01', '2026-11-30')`,
+      [ORG_A],
+    );
+    expect(linhasB).toHaveLength(0);
+
+    await client.query("delete from public.daily_account_metrics where organization_id = $1 and ml_account_id = $2", [
+      ORG_A,
+      ML_ACC_A,
+    ]);
   });
 });
