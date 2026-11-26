@@ -485,6 +485,81 @@ export function agregarDespesasNoPeriodo(
   };
 }
 
+export interface DespesasComparadas {
+  readonly atual: ResumoDespesasPeriodo;
+  readonly anterior: ResumoDespesasPeriodo;
+}
+
+export const DESPESAS_COMPARADAS_VAZIAS: DespesasComparadas = {
+  atual: DESPESAS_PERIODO_VAZIO,
+  anterior: DESPESAS_PERIODO_VAZIO,
+};
+
+/**
+ * Lê as despesas operacionais dos dois períodos (atual e anterior) em UMA
+ * única consulta, particionando em memória por data de competência.
+ * Nunca rejeita: se a tabela ainda não existir (`PGRST205`/`42P01`), devolve
+ * ambos os resumos vazios (null, nunca zero silencioso).
+ */
+export async function carregarDespesasComparadas(
+  supabase: unknown,
+  organizationId: string | null,
+  atualFrom: string,
+  atualTo: string,
+  anteriorFrom: string,
+  anteriorTo: string,
+): Promise<DespesasComparadas> {
+  if (organizationId === null) return DESPESAS_COMPARADAS_VAZIAS;
+
+  const minFrom = atualFrom < anteriorFrom ? atualFrom : anteriorFrom;
+  const maxTo = atualTo > anteriorTo ? atualTo : anteriorTo;
+
+  try {
+    const db = supabase as {
+      from: (table: string) => {
+        select: (cols: string) => {
+          eq: (c: string, v: string) => {
+            gte: (c: string, v: string) => {
+              lte: (c: string, v: string) => {
+                limit: (n: number) => Promise<{
+                  data:
+                    | readonly {
+                        readonly cost_type: ClassificacaoCusto;
+                        readonly status: StatusDespesa;
+                        readonly planned_amount: number | string;
+                        readonly actual_amount: number | string | null;
+                        readonly competence_date: string;
+                        readonly due_date: string | null;
+                      }[]
+                    | null;
+                  error: { code?: string } | null;
+                }>;
+              };
+            };
+          };
+        };
+      };
+    };
+
+    const { data, error } = await db
+      .from("operational_expenses")
+      .select("cost_type, status, planned_amount, actual_amount, competence_date, due_date")
+      .eq("organization_id", organizationId)
+      .gte("competence_date", minFrom)
+      .lte("competence_date", maxTo)
+      .limit(1000);
+
+    if (error !== null || data === null) return DESPESAS_COMPARADAS_VAZIAS;
+
+    return {
+      atual: agregarDespesasNoPeriodo(data, atualFrom, atualTo),
+      anterior: agregarDespesasNoPeriodo(data, anteriorFrom, anteriorTo),
+    };
+  } catch {
+    return DESPESAS_COMPARADAS_VAZIAS;
+  }
+}
+
 /**
  * Lê as despesas operacionais do período para alimentar a DRE da `/central`.
  * Nunca rejeita: se a tabela ainda não existir neste banco (`PGRST205`/`42P01`)

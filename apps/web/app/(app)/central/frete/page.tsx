@@ -24,7 +24,9 @@ import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { mesmaUrl } from "../../../../lib/mesma-url";
 import { CabecalhoDaCentral, funcaoAusente, SendoAtivado } from "../comum";
+import { ExportarFreteCsv } from "./exportar-frete";
 import { lerQuemPagaOFrete, QuemPagaOFrete } from "./quem-paga";
+import { SimuladorImpactoFrete } from "./simulador-frete";
 
 export const metadata = { title: "Detector de frete — Speed Bikers Gestão" };
 
@@ -184,6 +186,8 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
         />
       </div>
 
+      <SimuladorImpactoFrete />
+
       <Panel
         title="Anúncios para revisar"
         subtitle={
@@ -191,6 +195,7 @@ async function DetectorContent({ searchParams }: { searchParams: Promise<Consult
             ? "Do mais forte para o mais fraco; dentro do nível, o que mais pagou de frete a mais primeiro."
             : `Só ${NIVEL[nivel].rotulo.toLowerCase()}.`
         }
+        aside={<ExportarFreteCsv alertas={alertas} />}
       >
         <div className="sb-panel-body">
           <div className="sb-sinal-filtros">

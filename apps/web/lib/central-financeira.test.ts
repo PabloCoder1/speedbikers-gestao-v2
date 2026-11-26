@@ -9,6 +9,7 @@ import {
   rotuloEscopoMetaFinanceira,
   rotuloTipoMetaFinanceira,
 } from "./metas-imposto";
+import { classificarMatrizRentabilidade, type ProdutoDoRanking } from "./ranking-produtos";
 import { acosDeEquilibrio, resumirFinanceiroAds, type CampanhaSinal } from "./sinais-ads";
 
 describe("Metas financeiras expandidas", () => {
@@ -121,5 +122,53 @@ describe("Avaliação de Metas Financeiras e Alertas de Custos na Atenção", ()
     expect(itens.filter((i) => i.categoria === "Custos")).toHaveLength(2);
     expect(itens.some((i) => i.texto.includes("2 despesas operacionais estão vencida(s)"))).toBe(true);
     expect(itens.some((i) => i.texto.includes("ultrapassaram o orçamento previsto"))).toBe(true);
+  });
+
+  it("classifica produtos em quadrantes mutuamente exclusivos sem zerar margem desconhecida", () => {
+    const base: ProdutoDoRanking = {
+      sku_id: "s1",
+      sku: "SKU-1",
+      title: "Produto",
+      unidades: 10,
+      pedidos: 10,
+      receita_bruta: 1000,
+      taxas_ml: 120,
+      pedidos_cobertos: 10,
+      receita_coberta: 1000,
+      taxas_ml_cobertas: 120,
+      frete_vendedor: 100,
+      custo_produtos: 500,
+      resultado_venda: 280,
+      margem_venda: 0.28,
+      imposto: null,
+      resultado_apos_imposto: null,
+      margem_apos_imposto: null,
+      custo_atual: false,
+      pedidos_anterior: 5,
+      receita_anterior: 500,
+      margem_anterior: 0.25,
+      variacao_receita: 1,
+      variacao_margem: 0.03,
+      frete_sobre_receita: 0.1,
+    };
+
+    const matriz = classificarMatrizRentabilidade(
+      [
+        { ...base, sku_id: "estrela", receita_bruta: 5000, margem_venda: 0.25 },
+        { ...base, sku_id: "alto-baixa", receita_bruta: 4000, margem_venda: 0.05, frete_sobre_receita: 0.18 },
+        { ...base, sku_id: "joia", receita_bruta: 500, margem_venda: 0.32 },
+        { ...base, sku_id: "prejuizo", receita_bruta: 3000, margem_venda: -0.04 },
+        { ...base, sku_id: "sem-cobertura", receita_bruta: 800, margem_venda: null, custo_atual: true },
+      ],
+      0.1,
+    );
+
+    expect(matriz.estrelas.map((p) => p.sku_id)).toEqual(["estrela"]);
+    expect(matriz.altoFaturamentoBaixaMargem.map((p) => p.sku_id)).toEqual(["alto-baixa"]);
+    expect(matriz.joiasOcultas.map((p) => p.sku_id)).toEqual(["joia"]);
+    expect(matriz.prejuizo.map((p) => p.sku_id)).toEqual(["prejuizo"]);
+    expect(matriz.semCobertura.map((p) => p.sku_id)).toEqual(["sem-cobertura"]);
+    expect(matriz.fretePesado.map((p) => p.sku_id)).toEqual(["alto-baixa"]);
+    expect(matriz.comCustoAtual.map((p) => p.sku_id)).toEqual(["sem-cobertura"]);
   });
 });

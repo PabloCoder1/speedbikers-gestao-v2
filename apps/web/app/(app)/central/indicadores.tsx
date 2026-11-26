@@ -18,7 +18,7 @@ import {
   type Sinal,
 } from "../../../lib/central-indicadores";
 import type { PeriodoCentral } from "../../../lib/central-periodo";
-import { DESPESAS_PERIODO_VAZIO, type ResumoDespesasPeriodo } from "../../../lib/custos-fiscal";
+import { DESPESAS_COMPARADAS_VAZIAS, type DespesasComparadas } from "../../../lib/custos-fiscal";
 import { lerFaturamento } from "../../../lib/faturamento";
 import { formatCount, formatCurrency, formatPercent } from "../../../lib/format";
 import type { LimitesDaCentral } from "../../../lib/limites-central";
@@ -248,7 +248,7 @@ export async function Indicadores({
   leituras: Promise<readonly [RespostaRpc, RespostaRpc, RespostaRpc, RespostaRpc]>;
   leituraMeta: Promise<RespostaComCodigo> | null;
   leituraLimites: Promise<LimitesDaCentral>;
-  leituraDespesas?: Promise<ResumoDespesasPeriodo>;
+  leituraDespesas?: Promise<DespesasComparadas>;
   periodo: PeriodoCentral;
   podeEditar: boolean;
   /** A mesma URL, para "Tentar de novo" (D-472). */
@@ -259,7 +259,7 @@ export async function Indicadores({
     leituras,
     leituraMeta,
     leituraLimites,
-    leituraDespesas ?? Promise.resolve(DESPESAS_PERIODO_VAZIO),
+    leituraDespesas ?? Promise.resolve(DESPESAS_COMPARADAS_VAZIAS),
   ]);
   const { meta, indisponivel } = lerMeta(respostaMeta);
 
@@ -370,8 +370,10 @@ export async function Indicadores({
       <SecaoDreGerencial
         entrada={entrada}
         periodoRotulo={`${periodo.atual.from}_a_${periodo.atual.to}`}
-        despesasFixas={despesas.despesasFixas}
-        despesasVariaveis={despesas.despesasVariaveis}
+        despesasFixas={despesas.atual.despesasFixas}
+        despesasVariaveis={despesas.atual.despesasVariaveis}
+        despesasFixasAnterior={despesas.anterior.despesasFixas}
+        despesasVariaveisAnterior={despesas.anterior.despesasVariaveis}
       />
 
       {/*

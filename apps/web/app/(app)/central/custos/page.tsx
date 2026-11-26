@@ -25,6 +25,7 @@ import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { CabecalhoDaCentral, SendoAtivado } from "../comum";
 import {
+  cancelarDespesa,
   marcarDespesaPaga,
   removerDespesa,
   removerEntidadeFiscal,
@@ -63,6 +64,21 @@ interface DespesaRow {
   readonly cost_center: string | null;
   readonly note: string | null;
 }
+
+interface HistoricoDespesaRow {
+  readonly id: string;
+  readonly expense_id: string;
+  readonly action: "created" | "updated" | "status_changed" | "deleted";
+  readonly after_data: Record<string, unknown> | null;
+  readonly changed_at: string;
+}
+
+const ROTULO_ACAO_AUDITORIA: Readonly<Record<HistoricoDespesaRow["action"], string>> = {
+  created: "Criada",
+  updated: "Atualizada",
+  status_changed: "Status alterado",
+  deleted: "Removida",
+};
 
 interface EntidadeFiscalRow {
   readonly id: string;
@@ -152,45 +168,59 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
     };
   };
 
-  const [despesasRes, entidadesRes, vigenciasRes, vinculosRes, fechamentosRes, mlContasRes, shopeeLojasRes] =
-    await Promise.all([
-      db
-        .from("operational_expenses")
-        .select(
-          "id, name, category, cost_type, recurrence, allocation_method, planned_amount, actual_amount, competence_date, due_date, status, marketplace, cost_center, note",
-        )
-        .eq("organization_id", membership.organizationId)
-        .order("competence_date", { ascending: false })
-        .limit(200),
-      db
-        .from("fiscal_entities")
-        .select("id, legal_name, trade_name, cnpj, tax_regime, active")
-        .eq("organization_id", membership.organizationId)
-        .order("legal_name", { ascending: true })
-        .limit(50),
-      db
-        .from("fiscal_entity_tax_configs")
-        .select(
-          "id, fiscal_entity_id, tax_regime, valid_from, nominal_rate, effective_sales_rate, tax_credits_rate, profit_tax_rate, validated_by_accountant, source_note",
-        )
-        .eq("organization_id", membership.organizationId)
-        .order("valid_from", { ascending: false })
-        .limit(100),
-      db
-        .from("fiscal_entity_accounts")
-        .select("id, fiscal_entity_id, marketplace, ml_account_id, shopee_shop_id")
-        .eq("organization_id", membership.organizationId)
-        .order("created_at", { ascending: false })
-        .limit(100),
-      db
-        .from("monthly_financial_closings")
-        .select("id, month, status, notes, closed_at")
-        .eq("organization_id", membership.organizationId)
-        .order("month", { ascending: false })
-        .limit(24),
-      supabase.from("ml_accounts").select("id, label").order("label", { ascending: true }),
-      supabase.from("shopee_shops").select("id, shop_name, shop_id").order("shop_name", { ascending: true }),
-    ]);
+  const [
+    despesasRes,
+    entidadesRes,
+    vigenciasRes,
+    vinculosRes,
+    fechamentosRes,
+    historicoRes,
+    mlContasRes,
+    shopeeLojasRes,
+  ] = await Promise.all([
+    db
+      .from("operational_expenses")
+      .select(
+        "id, name, category, cost_type, recurrence, allocation_method, planned_amount, actual_amount, competence_date, due_date, status, marketplace, cost_center, note",
+      )
+      .eq("organization_id", membership.organizationId)
+      .order("competence_date", { ascending: false })
+      .limit(200),
+    db
+      .from("fiscal_entities")
+      .select("id, legal_name, trade_name, cnpj, tax_regime, active")
+      .eq("organization_id", membership.organizationId)
+      .order("legal_name", { ascending: true })
+      .limit(50),
+    db
+      .from("fiscal_entity_tax_configs")
+      .select(
+        "id, fiscal_entity_id, tax_regime, valid_from, nominal_rate, effective_sales_rate, tax_credits_rate, profit_tax_rate, validated_by_accountant, source_note",
+      )
+      .eq("organization_id", membership.organizationId)
+      .order("valid_from", { ascending: false })
+      .limit(100),
+    db
+      .from("fiscal_entity_accounts")
+      .select("id, fiscal_entity_id, marketplace, ml_account_id, shopee_shop_id")
+      .eq("organization_id", membership.organizationId)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    db
+      .from("monthly_financial_closings")
+      .select("id, month, status, notes, closed_at")
+      .eq("organization_id", membership.organizationId)
+      .order("month", { ascending: false })
+      .limit(24),
+    db
+      .from("operational_expense_history")
+      .select("id, expense_id, action, after_data, changed_at")
+      .eq("organization_id", membership.organizationId)
+      .order("changed_at", { ascending: false })
+      .limit(30),
+    supabase.from("ml_accounts").select("id, label").order("label", { ascending: true }),
+    supabase.from("shopee_shops").select("id, shop_name, shop_id").order("shop_name", { ascending: true }),
+  ]);
 
   const tabelaAusente = [despesasRes.error, entidadesRes.error, vigenciasRes.error].some(
     (e) => e !== null && (e.code === "PGRST205" || e.code === "42P01"),
@@ -216,8 +246,11 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
   const vigencias = (vigenciasRes.data ?? []) as VigenciaFiscalRow[];
   const vinculos = (vinculosRes.data ?? []) as VinculoContaRow[];
   const fechamentos = (fechamentosRes.data ?? []) as FechamentoMensalRow[];
+  const historico = (historicoRes.data ?? []) as HistoricoDespesaRow[];
   const mlContas = mlContasRes.data ?? [];
   const shopeeLojas = shopeeLojasRes.data ?? [];
+
+  const nomeDespesaPorId = new Map(despesas.map((d) => [d.id, d.name]));
 
   const nomeEntidadePorId = new Map(entidades.map((e) => [e.id, e.trade_name ?? e.legal_name]));
   const nomeMlPorId = new Map(mlContas.map((c) => [c.id, c.label]));
@@ -439,6 +472,14 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
                                   />
                                   <button type="submit" className="sb-button">
                                     Marcar paga
+                                  </button>
+                                </form>
+                              )}
+                              {d.status !== "cancelada" && (
+                                <form action={cancelarDespesa}>
+                                  <input type="hidden" name="id" value={d.id} />
+                                  <button type="submit" className="sb-button">
+                                    Cancelar
                                   </button>
                                 </form>
                               )}
@@ -754,6 +795,87 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
             )}
           </div>
         </Panel>
+      </div>
+
+      <div className="sb-central-bloco">
+        <details className="sb-recolhivel">
+          <summary>
+            Trilha de auditoria de despesas <small>{formatCount(historico.length)} evento(s) recente(s)</small>
+          </summary>
+          <Panel
+            title="Histórico auditável de lançamentos"
+            subtitle="Registro automático de criações e mudanças de status (quitação/cancelamento) em despesas operacionais."
+          >
+            <div className="sb-panel-body">
+              {historico.length === 0 ? (
+                <EstadoDaTela
+                  tipo="vazio"
+                  titulo="Nenhum evento de auditoria registrado ainda"
+                  descricao="Criações, quitações e cancelamentos de despesas operacionais passam a aparecer aqui com data e detalhe."
+                />
+              ) : (
+                <div className="sb-central-tabela">
+                  <table className="sb-table">
+                    <thead>
+                      <tr>
+                        <th>Data / hora</th>
+                        <th>Evento</th>
+                        <th>Despesa</th>
+                        <th>Detalhe</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historico.map((h) => {
+                        const nomeSnapshot =
+                          typeof h.after_data?.name === "string" ? h.after_data.name : null;
+                        const statusSnapshot =
+                          typeof h.after_data?.status === "string" ? h.after_data.status : null;
+                        const valorSnapshot =
+                          typeof h.after_data?.actual_amount === "number"
+                            ? formatCurrency(h.after_data.actual_amount)
+                            : typeof h.after_data?.planned_amount === "number"
+                              ? formatCurrency(h.after_data.planned_amount)
+                              : null;
+
+                        return (
+                          <tr key={h.id}>
+                            <td>
+                              {new Date(h.changed_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                            </td>
+                            <td>
+                              <StatePill
+                                tone={{
+                                  tom:
+                                    h.action === "created"
+                                      ? "info"
+                                      : statusSnapshot === "paga"
+                                        ? "ok"
+                                        : statusSnapshot === "cancelada"
+                                          ? "atencao"
+                                          : "neutro",
+                                  label: ROTULO_ACAO_AUDITORIA[h.action],
+                                }}
+                              />
+                            </td>
+                            <td>{nomeDespesaPorId.get(h.expense_id) ?? nomeSnapshot ?? h.expense_id.slice(0, 8)}</td>
+                            <td className="sb-texto-suave">
+                              {[
+                                statusSnapshot === null ? null : `status: ${statusSnapshot}`,
+                                valorSnapshot === null ? null : `valor: ${valorSnapshot}`,
+                              ]
+                                .filter((x): x is string => x !== null)
+                                .join(" · ") || "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </Panel>
+        </details>
       </div>
     </>
   );

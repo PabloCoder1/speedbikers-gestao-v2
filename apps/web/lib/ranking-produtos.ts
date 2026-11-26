@@ -320,6 +320,81 @@ function plural(n: number, um: string, varios: string): string {
   return `${formatCount(n)} ${n === 1 ? um : varios}`;
 }
 
+export interface MatrizRentabilidadeProdutos {
+  readonly receitaMediana: number;
+  readonly estrelas: readonly ProdutoDoRanking[];
+  readonly altoFaturamentoBaixaMargem: readonly ProdutoDoRanking[];
+  readonly joiasOcultas: readonly ProdutoDoRanking[];
+  readonly baixaMargemBaixoVolume: readonly ProdutoDoRanking[];
+  readonly prejuizo: readonly ProdutoDoRanking[];
+  readonly semCobertura: readonly ProdutoDoRanking[];
+  readonly fretePesado: readonly ProdutoDoRanking[];
+  readonly comCustoAtual: readonly ProdutoDoRanking[];
+}
+
+/**
+ * Classifica os produtos da página em quadrantes mutuamente exclusivos de
+ * rentabilidade (mais sem cobertura, frete pesado e custo sem histórico) sem
+ * alterar os números oficiais do SQL.
+ *
+ * - Estrelas: receita >= mediana e margem >= margemMinima
+ * - Alto faturamento · baixa margem: receita >= mediana e 0 <= margem < margemMinima
+ * - Joias ocultas: receita < mediana e margem >= margemMinima
+ * - Baixa margem · baixo volume: receita < mediana e 0 <= margem < margemMinima
+ * - No prejuízo: margem < 0
+ * - Sem cobertura: margem desconhecida (nunca tratada como zero)
+ */
+export function classificarMatrizRentabilidade(
+  itens: readonly ProdutoDoRanking[],
+  margemMinima: number,
+): MatrizRentabilidadeProdutos {
+  const receitasOrdenadas = itens.map((i) => i.receita_bruta).sort((a, b) => a - b);
+  const receitaMediana =
+    receitasOrdenadas.length === 0 ? 0 : (receitasOrdenadas[Math.floor(receitasOrdenadas.length / 2)] ?? 0);
+
+  const estrelas: ProdutoDoRanking[] = [];
+  const altoFaturamentoBaixaMargem: ProdutoDoRanking[] = [];
+  const joiasOcultas: ProdutoDoRanking[] = [];
+  const baixaMargemBaixoVolume: ProdutoDoRanking[] = [];
+  const prejuizo: ProdutoDoRanking[] = [];
+  const semCobertura: ProdutoDoRanking[] = [];
+  const fretePesado: ProdutoDoRanking[] = [];
+  const comCustoAtual: ProdutoDoRanking[] = [];
+
+  for (const p of itens) {
+    if (p.frete_sobre_receita !== null && p.frete_sobre_receita >= 0.15) fretePesado.push(p);
+    if (p.custo_atual) comCustoAtual.push(p);
+
+    if (p.margem_venda === null) {
+      semCobertura.push(p);
+    } else if (p.margem_venda < 0) {
+      prejuizo.push(p);
+    } else if (p.receita_bruta >= receitaMediana) {
+      if (p.margem_venda >= margemMinima) {
+        estrelas.push(p);
+      } else {
+        altoFaturamentoBaixaMargem.push(p);
+      }
+    } else if (p.margem_venda >= margemMinima) {
+      joiasOcultas.push(p);
+    } else {
+      baixaMargemBaixoVolume.push(p);
+    }
+  }
+
+  return {
+    receitaMediana,
+    estrelas,
+    altoFaturamentoBaixaMargem,
+    joiasOcultas,
+    baixaMargemBaixoVolume,
+    prejuizo,
+    semCobertura,
+    fretePesado,
+    comCustoAtual,
+  };
+}
+
 export interface FraseDoRanking {
   readonly texto: string;
   /** A aba que abre a lista da frase. */

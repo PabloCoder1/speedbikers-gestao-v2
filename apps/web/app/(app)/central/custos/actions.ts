@@ -158,17 +158,66 @@ export async function marcarDespesaPaga(formData: FormData): Promise<void> {
   const membership = await currentMembership(supabase);
   if (membership.organizationId === null) return;
 
+  const { data: usuario } = await supabase.auth.getUser();
+  const userId = usuario.user?.id ?? null;
+
   const valor = Number(valorRealizadoTexto);
   const hoje = new Date().toISOString().slice(0, 10);
+  const patch = {
+    status: "paga",
+    paid_date: hoje,
+    updated_by: userId,
+    ...(Number.isFinite(valor) && valor >= 0 ? { actual_amount: Math.round(valor * 100) / 100 } : {}),
+  };
 
-  await tabela(supabase, "operational_expenses")
-    .update({
-      status: "paga",
-      paid_date: hoje,
-      ...(Number.isFinite(valor) && valor >= 0 ? { actual_amount: Math.round(valor * 100) / 100 } : {}),
-    })
+  const { error } = await tabela(supabase, "operational_expenses")
+    .update(patch)
     .eq("id", id)
     .eq("organization_id", membership.organizationId);
+
+  if (error === null) {
+    await tabela(supabase, "operational_expense_history")
+      .insert({
+        organization_id: membership.organizationId,
+        expense_id: id,
+        action: "status_changed",
+        after_data: patch,
+        changed_by: userId,
+      })
+      .select("id");
+  }
+
+  revalidar();
+}
+
+export async function cancelarDespesa(formData: FormData): Promise<void> {
+  const id = campoDe(formData)("id").trim();
+  if (id === "") return;
+
+  const supabase = await createClient();
+  const membership = await currentMembership(supabase);
+  if (membership.organizationId === null) return;
+
+  const { data: usuario } = await supabase.auth.getUser();
+  const userId = usuario.user?.id ?? null;
+  const patch = { status: "cancelada", updated_by: userId };
+
+  const { error } = await tabela(supabase, "operational_expenses")
+    .update(patch)
+    .eq("id", id)
+    .eq("organization_id", membership.organizationId);
+
+  if (error === null) {
+    await tabela(supabase, "operational_expense_history")
+      .insert({
+        organization_id: membership.organizationId,
+        expense_id: id,
+        action: "status_changed",
+        after_data: patch,
+        changed_by: userId,
+      })
+      .select("id");
+  }
 
   revalidar();
 }

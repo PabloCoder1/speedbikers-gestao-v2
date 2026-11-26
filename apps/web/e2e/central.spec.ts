@@ -69,8 +69,10 @@ test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({
   ]);
   await expect(abasDaCentral(page).getByRole("link", { name: "Central", exact: true })).toHaveAttribute("aria-current", "page");
 
-  // DRE Gerencial, Simulador What-If (sem assumir custo zero fictício) e Glossário Financeiro disponíveis na Central.
-  await expect(page.getByRole("region", { name: "DRE Gerencial e Inteligência Financeira" })).toBeVisible();
+  // DRE Gerencial comparativa (vs. Anterior), Simulador What-If (sem assumir custo zero fictício) e Glossário Financeiro.
+  const secaoDre = page.getByRole("region", { name: "DRE Gerencial e Inteligência Financeira" });
+  await expect(secaoDre).toBeVisible();
+  await expect(secaoDre.getByRole("columnheader", { name: "vs. Anterior" })).toBeVisible();
   const resumoSimulador = page.locator("summary", { hasText: "Simulador financeiro (What-If)" });
   await expect(resumoSimulador).toBeVisible();
   await resumoSimulador.click();
@@ -307,6 +309,9 @@ test("/central/frete: resumo, filtro de nível e o caminho a partir da central",
   await expect(page.getByRole("region", { name: "Anúncios para revisar" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Como o detector decide" })).toBeVisible();
 
+  await page.locator("summary", { hasText: "Simulador de impacto do frete na margem oficial" }).click();
+  await expect(page.getByRole("region", { name: "Simulador de impacto do frete na margem" })).toBeVisible();
+
   await page.getByRole("link", { name: /^Forte indício \(/ }).click();
   await expect(page).toHaveURL(/nivel=forte/);
   await expect(page.getByRole("region", { name: "Anúncios para revisar" }).getByText("Só forte indício.")).toBeVisible();
@@ -343,6 +348,8 @@ test("/central/ads: abre a partir da central, sem erro, com o motivo quando não
 
   if ((await vazio.count()) > 0) {
     await expect(vazio).toBeVisible();
+    await page.locator("summary", { hasText: "Simulador de ROAS e ACOS de equilíbrio" }).click();
+    await expect(page.getByRole("region", { name: "Simulador de ROAS e ACOS de equilíbrio" })).toBeVisible();
 
     return;
   }
@@ -498,6 +505,12 @@ test("/central/custos: cadastrar despesa fixa e entidade fiscal, validar DRE e l
   await formRecorrentes.getByRole("button", { name: "Gerar recorrentes do próximo mês" }).click();
   await expect(formRecorrentes.getByRole("status")).toContainText("nenhuma duplicidade criada");
   await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true })).toHaveCount(2);
+
+  // Marca uma despesa como paga e confirma registro na trilha de auditoria
+  await page.getByRole("button", { name: "Marcar paga" }).first().click();
+  await expect(page.getByText("paga", { exact: true }).first()).toBeVisible();
+  await page.locator("summary", { hasText: "Trilha de auditoria de despesas" }).click();
+  await expect(page.getByRole("table").filter({ hasText: "Status alterado" }).first()).toBeVisible();
 
   // Confirma que a despesa fixa cadastrada alimenta a DRE Gerencial na /central
   await abasDaCentral(page).getByRole("link", { name: "Central", exact: true }).click();

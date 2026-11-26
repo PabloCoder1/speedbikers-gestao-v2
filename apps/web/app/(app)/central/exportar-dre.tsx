@@ -17,21 +17,40 @@ function escaparCsv(valor: string): string {
  */
 export function ExportarDreCsv({
   linhas,
+  linhasAnterior = null,
   periodoRotulo,
 }: {
   linhas: readonly LinhaDre[];
+  linhasAnterior?: readonly LinhaDre[] | null;
   periodoRotulo: string;
 }): ReactNode {
   function baixar(): void {
-    const cabecalho = ["Etapa", "Tipo", "Origem", "Valor (R$)", "% sobre Bruto", "Explicação"];
-    const corpo = linhas.map((l) => [
-      escaparCsv(l.rotulo),
-      escaparCsv(l.tipo),
-      escaparCsv(l.origem),
-      l.valor === null ? "" : l.valor.toFixed(2).replace(".", ","),
-      l.percentualSobreBruto === null ? "" : `${(l.percentualSobreBruto * 100).toFixed(2).replace(".", ",")}%`,
-      escaparCsv(l.explicacao),
-    ]);
+    const mapaAnterior = new Map((linhasAnterior ?? []).map((l) => [l.id, l]));
+    const cabecalho = [
+      "Etapa",
+      "Tipo",
+      "Origem",
+      "Valor Atual (R$)",
+      "% sobre Bruto",
+      "Valor Anterior (R$)",
+      "Variação (R$)",
+      "Explicação",
+    ];
+    const corpo = linhas.map((l) => {
+      const ant = mapaAnterior.get(l.id) ?? null;
+      const variacao = l.valor !== null && ant !== null && ant.valor !== null ? l.valor - ant.valor : null;
+
+      return [
+        escaparCsv(l.rotulo),
+        escaparCsv(l.tipo),
+        escaparCsv(l.origem),
+        l.valor === null ? "" : l.valor.toFixed(2).replace(".", ","),
+        l.percentualSobreBruto === null ? "" : `${(l.percentualSobreBruto * 100).toFixed(2).replace(".", ",")}%`,
+        ant?.valor == null ? "" : ant.valor.toFixed(2).replace(".", ","),
+        variacao === null ? "" : variacao.toFixed(2).replace(".", ","),
+        escaparCsv(l.explicacao),
+      ];
+    });
 
     const csv = `\uFEFF${[cabecalho.join(";"), ...corpo.map((r) => r.join(";"))].join("\r\n")}`;
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });

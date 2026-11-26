@@ -29,6 +29,8 @@ import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { mesmaUrl } from "../../../../lib/mesma-url";
 import { CabecalhoDaCentral, funcaoAusente, SendoAtivado } from "../comum";
+import { ExportarAdsCsv } from "./exportar-ads";
+import { SimuladorAds } from "./simulador-ads";
 
 export const metadata = { title: "Sinais de Ads — Speed Bikers Gestão" };
 
@@ -160,6 +162,7 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
           titulo="Nenhuma semana de Ads consolidada nos últimos 21 dias"
           descricao="Sem campanha com gasto e venda atribuída, não há o que comparar."
         />
+        <SimuladorAds />
       </>
     );
   }
@@ -196,6 +199,8 @@ async function SinaisContent({ searchParams }: { searchParams: Promise<Consulta>
         </div>
         <KpiStrip cells={celulasFinanceirasAds(sinais, margem)} />
       </section>
+
+      <SimuladorAds margemInicial={margem.valor} />
 
       {/* As siglas do Mercado Ads, perto dos números (UX_SYSTEM §6, bloco 3). Os níveis ficam em "Como os sinais são decididos". */}
       <div className="sb-central-bloco">
@@ -561,6 +566,7 @@ function TabelaDeCampanhas({
     <Panel
       title="Todas as campanhas da semana"
       subtitle="Com gasto nesta semana ou na anterior. Lucro e margem após Ads usam a margem média da empresa — premissa, não medida por produto."
+      aside={<ExportarAdsCsv campanhas={sinais.campanhas} margemMedia={margem.valor} />}
     >
       <div className="sb-panel-body sb-central-tabela">
         <p className="sb-tabela-dica" aria-hidden="true">Deslize a tabela para o lado para ver todas as colunas.</p>

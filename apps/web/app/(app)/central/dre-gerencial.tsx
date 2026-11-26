@@ -79,9 +79,20 @@ function barraLargura(linha: LinhaDre): string {
   return `${pct.toFixed(1)}%`;
 }
 
+function formatarDeltaMoeda(delta: number): string {
+  const sinal = delta > 0 ? "+" : delta < 0 ? "−" : "";
+  return `${sinal}${formatCurrency(Math.abs(delta))}`;
+}
+
+function formatarDeltaPp(deltaFracao: number): string {
+  const sinal = deltaFracao > 0 ? "+" : deltaFracao < 0 ? "−" : "";
+  const pp = Math.abs(deltaFracao) * 100;
+  return `${sinal}${pp.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} p.p.`;
+}
+
 /**
- * Seção de DRE Gerencial Interativa, Ponto de Equilíbrio, Simulador Financeiro
- * e Glossário Financeiro na `/central`.
+ * Seção de DRE Gerencial Interativa (com comparação contra o período anterior),
+ * Ponto de Equilíbrio, Simulador Financeiro e Glossário Financeiro na `/central`.
  *
  * Reutiliza integralmente os dados já carregados em `EntradaCentral` — zero
  * roundtrips extras ao banco. Quando `despesasFixas` ainda não estiverem
@@ -93,11 +104,15 @@ export function SecaoDreGerencial({
   periodoRotulo = "periodo",
   despesasFixas = null,
   despesasVariaveis = null,
+  despesasFixasAnterior = null,
+  despesasVariaveisAnterior = null,
 }: {
   entrada: EntradaCentral;
   periodoRotulo?: string;
   despesasFixas?: number | null;
   despesasVariaveis?: number | null;
+  despesasFixasAnterior?: number | null;
+  despesasVariaveisAnterior?: number | null;
 }): ReactNode {
   const r = entrada.atual;
   const baseBruta = r.receita_coberta ?? r.receita_bruta;
@@ -124,6 +139,38 @@ export function SecaoDreGerencial({
     despesasFixas,
     coberturaReceita: cobertura,
   });
+
+  // DRE do período anterior (quando carregado) para coluna comparativa "vs. Anterior"
+  const rAnt = entrada.anterior;
+  const dreAnterior = (() => {
+    if (rAnt === null) return null;
+    const baseBrutaAnt = rAnt.receita_coberta ?? rAnt.receita_bruta;
+    const coberturaAnt =
+      rAnt.receita_bruta > 0 && rAnt.receita_coberta !== null ? rAnt.receita_coberta / rAnt.receita_bruta : null;
+    const adsAntProporcional = entrada.adsZeroLegitimo
+      ? 0
+      : entrada.adsAnterior !== null &&
+          entrada.coberturaAdsAnterior.completa &&
+          rAnt.receita_bruta > 0 &&
+          rAnt.receita_coberta !== null
+        ? Math.round(((entrada.adsAnterior.investimento * rAnt.receita_coberta) / rAnt.receita_bruta) * 100) / 100
+        : null;
+
+    return montarDreGerencial({
+      faturamentoBruto: baseBrutaAnt,
+      impostosSobreVendas: entrada.impostoAnterior?.imposto_coberto ?? null,
+      origemImpostos: entrada.impostoAnterior?.imposto_coberto != null ? "estimado" : "ausente",
+      cmv: rAnt.custo_produtos,
+      comissoesMarketplace: rAnt.taxas_ml_cobertas,
+      custosLogisticos: rAnt.frete_vendedor_coberto,
+      despesasVariaveis: despesasVariaveisAnterior,
+      investimentoAds: adsAntProporcional,
+      origemAds: entrada.adsZeroLegitimo ? "real" : adsAntProporcional !== null ? "real" : "ausente",
+      despesasFixas: despesasFixasAnterior,
+      coberturaReceita: coberturaAnt,
+    });
+  })();
+  const linhasAnteriorPorId = new Map((dreAnterior?.linhas ?? []).map((l) => [l.id, l]));
 
   const pe = dre.pontoDeEquilibrio;
 
@@ -198,7 +245,11 @@ export function SecaoDreGerencial({
           subtitle="Cada linha declara sua origem (real, estimado, manual ou calculado). Dados ausentes ficam em aberto, nunca zerados."
           aside={
             <div className="sb-custos-acoes">
-              <ExportarDreCsv linhas={dre.linhas} periodoRotulo={periodoRotulo} />
+              <ExportarDreCsv
+                linhas={dre.linhas}
+                linhasAnterior={dreAnterior?.linhas ?? null}
+                periodoRotulo={periodoRotulo}
+              />
               <Link className="sb-button" href="/central/custos">
                 Gerenciar custos e fiscal
               </Link>
@@ -215,12 +266,25 @@ export function SecaoDreGerencial({
                     <th className="sb-dre-col-barra">Composição</th>
                     <th className="sb-num">Valor (R$)</th>
                     <th className="sb-num">% s/ Bruto</th>
+                    <th className="sb-num">vs. Anterior</th>
                   </tr>
                 </thead>
                 <tbody>
                   {dre.linhas.map((linha) => {
                     const origemInfo = ORIGEM_LABEL[linha.origem];
                     const negativo = linha.valor !== null && linha.valor < 0;
+                    const linhaAnt = linhasAnteriorPorId.get(linha.id) ?? null;
+                    const deltaReais =
+                      linha.valor !== null && linhaAnt !== null && linhaAnt.valor !== null
+                        ? Math.round((linha.valor - linhaAnt.valor) * 100) / 100
+                        : null;
+                    const deltaPp =
+                      linha.id !== "faturamento_bruto" &&
+                      linha.percentualSobreBruto !== null &&
+                      linhaAnt !== null &&
+                      linhaAnt.percentualSobreBruto !== null
+                        ? linha.percentualSobreBruto - linhaAnt.percentualSobreBruto
+                        : null;
                     const rowClass = [
                       linha.destaque ? "sb-dre-destaque" : null,
                       linha.tipo === "subtotal" ? "sb-dre-subtotal" : null,
@@ -251,6 +315,18 @@ export function SecaoDreGerencial({
                         </td>
                         <td className="sb-num">
                           {linha.percentualSobreBruto === null ? "—" : formatPercent(linha.percentualSobreBruto)}
+                        </td>
+                        <td className="sb-num">
+                          {deltaReais === null ? (
+                            "—"
+                          ) : (
+                            <>
+                              {formatarDeltaMoeda(deltaReais)}
+                              {deltaPp !== null && (
+                                <span className="sb-central-motivo">{formatarDeltaPp(deltaPp)}</span>
+                              )}
+                            </>
+                          )}
                         </td>
                       </tr>
                     );

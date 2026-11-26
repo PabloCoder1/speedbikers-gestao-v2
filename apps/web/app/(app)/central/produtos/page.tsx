@@ -24,6 +24,7 @@ import { currentMembership } from "../../../../lib/request-membership";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../../lib/format";
 import { lerMargens, type LeituraMargens, type MargemRecorte } from "../../../../lib/purchase-analysis";
 import {
+  classificarMatrizRentabilidade,
   definicaoDaOrdem,
   formatPontos,
   formatVariacao,
@@ -410,54 +411,105 @@ function DiagnosticoEstrategico({
 }): ReactNode {
   if (itens.length === 0) return null;
 
-  const receitaMediana =
-    itens
-      .map((i) => i.receita_bruta)
-      .sort((a, b) => a - b)[Math.floor(itens.length / 2)] ?? 0;
+  const matriz = classificarMatrizRentabilidade(itens, margemMinima);
+  const cobertos =
+    matriz.estrelas.length +
+    matriz.altoFaturamentoBaixaMargem.length +
+    matriz.joiasOcultas.length +
+    matriz.baixaMargemBaixoVolume.length +
+    matriz.prejuizo.length;
 
-  const altoFaturamentoBaixaMargem = itens.filter(
-    (p) => p.receita_bruta >= receitaMediana && p.margem_venda !== null && p.margem_venda >= 0 && p.margem_venda < margemMinima,
-  );
-  const fretePesado = itens.filter((p) => p.frete_sobre_receita !== null && p.frete_sobre_receita >= 0.15);
-  const comCustoAtual = itens.filter((p) => p.custo_atual);
-
-  if (altoFaturamentoBaixaMargem.length === 0 && fretePesado.length === 0 && comCustoAtual.length === 0) {
+  if (cobertos === 0 && matriz.fretePesado.length === 0 && matriz.comCustoAtual.length === 0) {
     return null;
   }
 
-  const celulas: KpiCellData[] = [
+  const somarReceita = (lista: readonly ProdutoDoRanking[]): number =>
+    lista.reduce((acc, p) => acc + p.receita_bruta, 0);
+
+  const quadrantes = [
     {
-      label: "Alto faturamento · baixa margem",
-      formula: "SKUs desta página acima da mediana de receita mas abaixo da margem mínima configurada",
-      value: formatCount(altoFaturamentoBaixaMargem.length),
-      previous: null,
-      ressalva: `candidatos prioritários a reajuste de preço (corte ${formatPercent(margemMinima)})`,
-      ...(altoFaturamentoBaixaMargem.length > 0 ? { destaque: "atencao" as const } : {}),
+      rotulo: "Estrelas (alto faturamento · margem saudável)",
+      tom: "ok" as const,
+      qtd: matriz.estrelas.length,
+      receita: somarReceita(matriz.estrelas),
+      acao: "Proteger estoque, manter preço competitivo e escalar com segurança.",
     },
     {
-      label: "Frete acima de 15% da receita",
-      formula: "SKUs desta página cujo frete do vendedor consome 15% ou mais da receita coberta",
-      value: formatCount(fretePesado.length),
-      previous: null,
-      ressalva: "revise dimensões, faixa de R$ 79 ou modalidade logística",
-      ...(fretePesado.length > 0 ? { destaque: "atencao" as const } : {}),
+      rotulo: "Alto faturamento · baixa margem",
+      tom: "atencao" as const,
+      qtd: matriz.altoFaturamentoBaixaMargem.length,
+      receita: somarReceita(matriz.altoFaturamentoBaixaMargem),
+      acao: `Prioridade máxima de revisão: reajuste de preço, frete ou comissão (corte ${formatPercent(margemMinima)}).`,
     },
     {
-      label: "Com custo atual (sem histórico)",
-      formula: "SKUs desta página que incluem pedidos avaliados pelo custo atual de cadastro",
-      value: formatCount(comCustoAtual.length),
-      previous: null,
-      ressalva: "sinalizados com * na coluna Custo",
+      rotulo: "Joias ocultas (margem alta · menor volume)",
+      tom: "info" as const,
+      qtd: matriz.joiasOcultas.length,
+      receita: somarReceita(matriz.joiasOcultas),
+      acao: "Espaço para tráfego, Ads ou melhoria de anúncio mantendo margem saudável.",
+    },
+    {
+      rotulo: "No prejuízo (margem negativa)",
+      tom: "perigo" as const,
+      qtd: matriz.prejuizo.length,
+      receita: somarReceita(matriz.prejuizo),
+      acao: "Ação corretiva imediata: cada venda está consumindo caixa operacional.",
     },
   ];
 
   return (
-    <section aria-label="Diagnóstico estratégico da página" className="sb-central-bloco">
-      <div className="sb-section-label">
-        <span>Oportunidades de rentabilidade (página atual)</span>
-        <span className="sb-section-note">classificação automática sobre os {formatCount(itens.length)} produtos exibidos abaixo</span>
-      </div>
-      <KpiStrip cells={celulas} />
+    <section aria-label="Matriz de rentabilidade da página" className="sb-central-bloco">
+      <Panel
+        title="Matriz de rentabilidade e sinais estratégicos (página atual)"
+        subtitle={`Classificação automática dos ${formatCount(itens.length)} produtos exibidos (mediana de receita: ${formatCurrency(matriz.receitaMediana)}; margem mínima: ${formatPercent(margemMinima)}).`}
+      >
+        <div className="sb-panel-body">
+          <div className="sb-central-tabela">
+            <table className="sb-table">
+              <thead>
+                <tr>
+                  <th>Quadrante</th>
+                  <th className="sb-num">SKUs</th>
+                  <th className="sb-num">Receita bruta</th>
+                  <th>Direcionamento sugerido</th>
+                </tr>
+              </thead>
+              <tbody>
+                {quadrantes.map((q) => (
+                  <tr key={q.rotulo}>
+                    <td>
+                      <StatePill tone={{ tom: q.tom, label: q.rotulo }} />
+                    </td>
+                    <td className="sb-num">
+                      <strong>{formatCount(q.qtd)}</strong>
+                    </td>
+                    <td className="sb-num">{q.qtd > 0 ? formatCurrency(q.receita) : "—"}</td>
+                    <td className="sb-texto-suave">{q.acao}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {(matriz.fretePesado.length > 0 || matriz.comCustoAtual.length > 0 || matriz.semCobertura.length > 0) && (
+            <p className="sb-central-motivo">
+              {[
+                matriz.fretePesado.length > 0
+                  ? `${formatCount(matriz.fretePesado.length)} SKU(s) com frete ≥ 15% da receita`
+                  : null,
+                matriz.comCustoAtual.length > 0
+                  ? `${formatCount(matriz.comCustoAtual.length)} SKU(s) avaliados com custo atual (*)`
+                  : null,
+                matriz.semCobertura.length > 0
+                  ? `${formatCount(matriz.semCobertura.length)} SKU(s) sem cobertura de custo/frete (nunca zerados)`
+                  : null,
+              ]
+                .filter((x): x is string => x !== null)
+                .join(" · ")}
+            </p>
+          )}
+        </div>
+      </Panel>
     </section>
   );
 }
