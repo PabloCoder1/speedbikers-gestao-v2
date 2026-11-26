@@ -842,3 +842,20 @@ Tudo lido pela VM em modo só leitura.
 - **Conferência.** `get_purchase_suggestions` agora só existe com `p_sku_ids`. Corpos, grants, comentário e registro estão certos, e as funções que chamam a sugestão responderam.
 - **Tempo como membro, com 50 SKUs:** `get_purchase_analysis` com sugestão foi de 1,00–1,58 s para 0,83–0,87 s.
 - **Próxima etapa:** a faixa de números do Claude acabou. A próxima decisão espera a confirmação da faixa D-887–899 no #351.
+
+### 26/11/2026 · Claude Sentinel: checkpoint do fim da rodada
+
+- **Branch e HEAD:** `claude/sessao-26-11`, a partir de `3fda54d0` (main com a D-879). O worktree é `.worktrees/sentinel-rodada`.
+- **Em produção hoje, conferido:** D-877 (#415), D-878 (#417) e D-879 (#419), todas aplicadas pela VM e registradas no histórico.
+- **Candidato integrado** (`8ca5e19c`): 173 de 226 pontos (76,55 %) e 33 de 43 entregas. Nada mudou nesta rodada, porque as três entregas são de compras, fora do inventário.
+- **SKUs descontinuados com saldo negativo:** o dono pediu para excluí-los. Por enquanto só houve leitura.
+  - A exclusão de fato esbarra em chaves `restrict`: ledger, pedidos, métricas, histórico de custo e vínculos. Dois deles são componentes de kit.
+  - Ela também contraria a D-860, que manda marcar, nunca apagar.
+  - A alternativa é um ajuste manual pela tela de ajuste, que zera o saldo LOCAL e mantém o histórico. Ela espera a escolha do dono.
+- **Esperando o Codex (#351):**
+  - confirmação da faixa D-887–899;
+  - o worker do candidato com a D-876, para conferir o `APP_COMMIT` e medir a leitura do ledger.
+- **Gemini:** sem comentário novo no #351 hoje.
+- **Próxima etapa:**
+  - a escolha do dono sobre os SKUs;
+  - depois, `get_purchase_order_suggestions` com `p_sku_ids` (hoje filtra por marca sobre o catálogo inteiro). Essa fatia precisa de número de decisão.
