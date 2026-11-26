@@ -814,3 +814,22 @@ Tudo lido pela VM em modo só leitura.
   - teste novo da 1ª venda da Shopee, que pega a falta do filtro `live` (mutação conferida);
   - `pnpm run check` e `pnpm docs:check`. O `build` não rodou: a mudança não toca código de app.
 - **Próxima etapa:** publicar a D-878 com autorização do dono. Depois, `get_purchase_suggestions`, que é o que sobra com a sugestão ligada.
+
+### 26/11/2026 · Claude Sentinel: D-878 em produção
+
+- **Publicação.** Com autorização do dono, o #417 entrou na `main` em `f0c35bab`.
+  - Os 4 jobs obrigatórios passaram. O do Dev falhou com "project is paused", como esperado.
+  - A migration `20261126150000` foi aplicada pela VM com `psql -1`, com o mesmo sha256 dos dois lados, e registrada no histórico. A Vercel concluiu a web, que não muda.
+- **Conferência.** Corpo novo, grants, comentário e registro certos. Como membro, com 50 SKUs: 0,25 s sem sugestão e com o cache quente, e 1,19 s com sugestão.
+- **Próxima etapa:** `get_purchase_suggestions`, que é quase todo o tempo com a sugestão ligada. A numeração de decisões depois do D-879 está proposta no #351.
+
+### 26/11/2026 · Claude Sentinel: sugestão de compra por SKU (D-879)
+
+- **Medição:** `get_purchase_suggestions` custa 0,75–1,0 s, com o catálogo inteiro calculado a cada chamada. Duas trocas seguras sem lista tiravam só ~13 %. O dono escolheu a variante por SKU.
+- **Entrega:** a migration `20261126170000`. `p_sku_ids` é opcional em `get_purchase_suggestions`, e `get_purchase_analysis` passa a lista. A curva ABC e o histórico continuam do catálogo inteiro.
+- **Em produção, só leitura:** sem lista, o catálogo saiu IGUAL com a ordem. Com lista, dez recortes saíram IGUAIS. Com 50 SKUs, o tempo foi de 0,69–0,84 s para 0,47–0,51 s.
+- **Testes:**
+  - suíte de integração do `@sb/db`, 17 arquivos, todos passaram;
+  - teste novo com um bucket do Full que trocou de SKU (mutação conferida);
+  - `pnpm run check` e `pnpm docs:check`.
+- **Próxima etapa:** publicar a D-879 com autorização do dono. A faixa de números do Claude acabou: a próxima decisão espera a resposta sobre a faixa nova no #351.

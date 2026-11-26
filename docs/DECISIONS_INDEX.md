@@ -12,7 +12,7 @@ relevante para a tarefa e leia **apenas** aquela seção, por exemplo:
 grep -n "^## D-171" -A 40 docs/DECISIONS.md
 ```
 
-Decisões registradas: **657** (D-001 a D-878).
+Decisões registradas: **658** (D-001 a D-879).
 
 ## Por domínio
 
@@ -407,7 +407,7 @@ Decisões registradas: **657** (D-001 a D-878).
 - **D-719** — O diálogo de vincular anúncio do SKU conserva o anúncio após falha da ação
 - **D-861** — O produto fora do catálogo que ainda tem anúncio ativo vira ação na Central
 
-### outros (100)
+### outros (101)
 
 - **D-004** — SKU como entidade central
 - **D-007** — UX com progressive disclosure
@@ -509,6 +509,7 @@ Decisões registradas: **657** (D-001 a D-878).
 - **D-865** — O detalhe do pedido de compra sobrevive à Server Action que não responde
 - **D-866** — "Já fiz o pedido" e o cadastro de fornecedor sobrevivem à Server Action que não responde
 - **D-868** — Produção avisa por e-mail quando o disco da VM enche ou quando api, web ou auth saem do ar
+- **D-879** — A sugestão de compra pode ser calculada só para uma lista de SKUs
 
 ### processo/docs (1)
 
