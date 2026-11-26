@@ -947,3 +947,21 @@ Tudo lido pela VM em modo só leitura.
   1. esperar a CI do #426;
   2. com autorização, merge e publicação das três migrations na ordem;
   3. depois, a curva ABC, quando a faixa de decisões for confirmada.
+
+### 26/11/2026 · Claude Sentinel: Central publicada
+
+- **Autorização:** o dono autorizou ("Sim, publicar").
+- **Publicação:**
+  - o #426 entrou na `main` no merge `c26d0f66`;
+  - a CI da `main` passou nos 4 jobs obrigatórios. O do Dev falhou, como esperado, porque o projeto está pausado;
+  - a Vercel terminou o deploy.
+- **Produção (VM `sb-db`):** `20261126233000`, `234000` e `235000` foram aplicadas numa transação só (sha do arquivo `1152ace2…`, conferido nos dois lados). Antes da aplicação, a produção estava em `20261126200000`.
+- **Conferido:**
+  - as 7 tabelas, com RLS;
+  - 8 FKs `*_mesma_org`, e o histórico sem FK;
+  - os triggers de auditoria e de mês fechado;
+  - os privilégios: sem `delete` no fechamento, sem `insert` no histórico, e `anon` sem execução;
+  - como ADMIN, o resumo levou ~3 ms e o faturamento ~4 ms.
+- **Comentado:** no #424 e no #351.
+- **Pendente com o autor:** o peso zero da Shopee no rateio e o erro ignorado em `removerDespesa`.
+- **Próxima etapa:** a curva ABC, quando a faixa D-887–899 for confirmada no #351.
