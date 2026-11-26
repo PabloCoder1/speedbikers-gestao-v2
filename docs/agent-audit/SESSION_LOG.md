@@ -1255,3 +1255,17 @@ Tudo lido pela VM em modo só leitura.
 - A VM tinha 339 versões até D-874 e nenhum registro dos números antigos da Central. Renumerei D-885 e D-886 de `20261125160000`/`20261125170000` para `20261126120000`/`20261126121000`. Os blobs SQL são idênticos. O #407 conserva os números originais como histórico da entrega, e o #364 é a referência do plano.
 - Em laboratório com as 339 versões da VM, as três pendências entraram em ordem: D-877, D-885 e D-886. O catálogo final coincidiu com as 342 versões do checkout. Integração 1.260/1.260, ensaio de recuperação de sync_runs, preflight 10/10, check 37/37, build 10/10 e docs:check passaram.
 - Próxima etapa: acompanhar a nova CI, reconferir o catálogo da VM antes da aplicação e conferir o Dev quando voltar. O #409 recebeu as novas reservas de versão. M04 e D-836 seguem com Gemini; S05 aguarda autorização de IAM. Nenhuma migration foi aplicada em produção nesta rodada. Progresso em 173/226.
+
+### 26/11/2026 · D04, lotes de sync_runs no laboratório
+
+- Base do ensaio: candidato `1067fd57` (#364), main `14d8c9bc`. O script manual passou a medir lotes limitados com seleção única dos checkpoints, bloqueio das linhas e rechecagem da FK. O corte conserva a janela de 24 horas.
+- Em PostgreSQL local, 58 mil execuções adicionais e 8.285 erros vinculados. Lotes de 100, 500 e 1.000 preservaram saúde, cartões, pedidos, claims, vigia e pais com erros. Dois lotes consecutivos moveram 200 IDs distintos. Para mil linhas: 582–643 ms sem índice na FK e 144–157 ms com o índice parcial. Script padrão e modo benchmark passaram. [Medição](../PERFORMANCE.md#lotes-de-arquivamento-com-erros-vinculados-d04-26112026)
+- CI de código, infraestrutura e integração do #364 passou, com E2E ainda em andamento ao preparar a mudança. #401, #408 e #409 continuam com Gemini. O ensaio de lotes segue para revisão separada para preservar a execução de CI do candidato.
+- Progresso em 173/226. Próximo ensaio: medir concorrência com escritores e impacto do índice. A política de retenção, S05/IAM, a aplicação das migrations na VM e a homologação no Dev continuam pendentes.
+
+### 26/11/2026 · D04, concorrência e custo de escrita do índice
+
+- Base `1067fd57` (#364), main `14d8c9bc` e ensaio do #416 em `bed30c68`. A conciliação no candidato preservou o ensaio de lote. #401, #408 e #409 continuam sem avanço na revisão.
+- No catálogo real do Supabase local, com dados sintéticos, medi as duas ordens de concorrência. O arquivador pulou o pai bloqueado por um escritor. Na ordem inversa, o escritor aguardou e recuperou a linha original. Uma escrita em outra conta concluiu durante a espera.
+- Com erros já presentes, o índice parcial elevou a mediana do WAL de inserção em 24,4%. Os intervalos de latência se sobrepuseram. A conclusão é local, sem commit ou tráfego operacional. [Medição](../PERFORMANCE.md#lotes-de-arquivamento-com-erros-vinculados-d04-26112026)
+- A leitura agregada da VM mediu os erros recentes e comparou janelas de 30, 60 e 90 dias. Próxima etapa: escolher a janela de retenção e revisar a implantação do índice. O índice e a política continuam fora das migrations de produção. A aprovação do IAM de S05 e a recuperação do Dev continuam pendentes. Inventário em 173/226.

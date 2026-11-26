@@ -2517,6 +2517,24 @@ Na cópia local do catálogo atual, a guarda de `sync_runs` recusou `DELETE` com
 
 A adoção exige um caminho autorizado e restrito para movimentar linhas e recuperar o pai sem disparar avisos históricos. Antes de implementar o corte, verificar a equivalência de `resolveWindowFrom`, claims, cartões de conta e vigias nas tabelas do laboratório.
 
+#### Lotes de arquivamento com erros vinculados (D04, 26/11/2026)
+
+O ensaio manual com `--benchmark` usou o catálogo Supabase do candidato, 58 mil execuções adicionais em uma conta e 8.285 erros com referência ao pai. A seleção calculou os checkpoints uma vez por lote, reservou as linhas selecionadas com `FOR UPDATE SKIP LOCKED` e conferiu a ausência de erros novamente antes de mover. O corte da simulação excluiu a janela móvel de 24 horas para preservar os contadores da saúde da sincronização.
+
+| Tamanho | Sem índice na FK dos erros | Com índice parcial em `sync_errors(sync_run_id)` |
+| --- | ---: | ---: |
+| 100 | 190–241 ms | 156–194 ms |
+| 500 | 349–377 ms | 144–158 ms |
+| 1.000 | 582–643 ms | 144–157 ms |
+
+São duas execuções locais, uma medição por combinação em cada rodada, do comando de movimentação até a resposta dentro da transação. Os números excluem commit, replicação e o custo de manutenção do índice em produção. A medição também exclui a leitura posterior de controle. Saúde, cartões, checkpoints de pedidos e claims e vigia mantiveram os resultados. Dois lotes de 100 moveram 200 IDs distintos. O índice e os dados foram revertidos junto com os demais objetos do ensaio.
+
+**Concorrência e manutenção do índice.** Três conexões no catálogo completo do candidato concorreram com 58 mil execuções sintéticas na conta do lote e uma execução em outra conta. Quando o escritor iniciou primeiro, o lote de mil linhas pulou o pai bloqueado e, após o commit do escritor, recusou movê-lo. Quando o arquivador iniciou primeiro, o escritor ficou 118 ms em espera até a recuperação da referência, incluindo 90 ms de espera induzida. Uma gravação na outra conta concluiu em 6 ms durante o bloqueio. São observações de um ensaio local, com espera deliberada e sem tráfego operacional.
+
+Com 8.285 erros já presentes, três inserções alternadas de 3.000 linhas por variante registraram 113–152 ms sem índice e 139–166 ms com índice. Os intervalos se sobrepõem. A mediana de WAL subiu de 1.043.793 para 1.298.344 bytes (+24,4%). O teste usou `EXPLAIN (ANALYZE, WAL)` e rollback entre amostras. Ele mede manutenção do índice durante a inserção, sem commit, e não mede sua criação concorrente nem a réplica.
+
+A consulta somente leitura de 26/11 mediu a frequência recente de erros vinculados e simulou janelas de 30, 60 e 90 dias, preservando checkpoints e relações. A janela de 90 dias não selecionou linhas. As outras duas produziram recortes elegíveis separados. A janela e o índice ainda dependem de decisão antes da adoção.
+
 ### Custo da ordenação da Central de Notificações (D-851)
 
 Ensaio em PostgreSQL 17 descartável com 141.500 vínculos sintéticos

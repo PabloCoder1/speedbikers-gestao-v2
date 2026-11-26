@@ -53,36 +53,70 @@ drop trigger sync_runs_aviso_de_parada on public.sync_runs;
 create trigger sync_runs_aviso_de_parada after insert on public.sync_runs for each row
 when (new.status='failed' and new.resource='orders' and new.channel='reconciliation' and current_user <> 'd04_hydrator')
 execute function private.aviso_de_reconciliacao_parada();
-create function d04_probe.move_one(p_org uuid,p_account uuid,p_id uuid,p_before timestamptz) returns boolean
+-- Seleciona as referências uma vez por lote. O segundo comando confere
+-- filhos após obter os locks, sob READ COMMITTED.
+create function d04_probe.move_batch(
+  p_org uuid, p_account uuid, p_before timestamptz, p_limit integer, p_id uuid default null
+) returns integer
 language plpgsql security definer set search_path='' as $$
-declare picked public.sync_runs%rowtype;
+declare
+  selected uuid[];
+  moved integer;
 begin
+  if p_limit is null or p_limit not between 1 and 1000 then
+    raise exception using errcode='22023', message='limite do ensaio deve estar entre 1 e 1000';
+  end if;
+  if p_before is null then
+    raise exception using errcode='22023', message='data de corte é obrigatória no ensaio';
+  end if;
   if not exists (select from d04_probe.allowed_scope
-    where (organization_id, ml_account_id) = (p_org, p_account)) then return false; end if;
-  select * into picked from public.sync_runs where id=p_id and organization_id=p_org and ml_account_id=p_account and finished_at<p_before for update skip locked;
-  if not found then return false; end if;
-  if exists (select from public.sync_errors where sync_run_id=p_id) then return false; end if;
-  if exists (
-    with marks as (
-      select max(finished_at) filter (where resource=picked.resource and channel=picked.channel) as last_run,
-             max(finished_at) filter (where resource=picked.resource and channel=picked.channel and status in ('done','partial')) as last_success,
-             max(latest_record_at) filter (where resource=picked.resource and channel=picked.channel and status in ('done','partial')) as watermark,
-             max(finished_at) filter (where status='done') as card,
-             max(latest_record_at) filter (where resource='claims') as claims_mark
-        from public.sync_runs where organization_id=p_org and ml_account_id=p_account
-    )
-    select from marks where picked.finished_at=last_run
-      or (picked.status in ('done','partial') and (picked.finished_at=last_success or picked.latest_record_at=watermark))
-      or (picked.status='done' and picked.finished_at=card)
-      or (picked.resource='claims' and picked.latest_record_at=claims_mark)
-  ) then return false; end if;
-  insert into d04_probe.cold select r.* from public.sync_runs r where r.id=p_id;
-  delete from public.sync_runs where id=p_id;
-  return found;
+    where (organization_id, ml_account_id) = (p_org, p_account)) then return 0; end if;
+
+  with scoped as materialized (
+    select id, resource, channel, status, finished_at, latest_record_at
+    from public.sync_runs where organization_id=p_org and ml_account_id=p_account
+  ), scope_marks as (
+    select max(finished_at) filter (where status='done') as card,
+           max(latest_record_at) filter (where resource='claims') as claims_mark
+    from scoped
+  ), group_marks as (
+    select resource, channel, max(finished_at) as last_run,
+           max(finished_at) filter (where status in ('done','partial')) as last_success,
+           max(latest_record_at) filter (where status in ('done','partial')) as watermark
+    from scoped group by resource, channel
+  ), locked as (
+    select r.id from scoped s
+    join group_marks g using (resource, channel)
+    cross join scope_marks m
+    join public.sync_runs r on r.id=s.id
+    where s.finished_at < least(p_before, now() - interval '24 hours')
+      and (p_id is null or s.id=p_id)
+      and not coalesce(
+        s.finished_at=g.last_run
+        or (s.status in ('done','partial') and (s.finished_at=g.last_success or s.latest_record_at=g.watermark))
+        or (s.status='done' and s.finished_at=m.card)
+        or (s.resource='claims' and s.latest_record_at=m.claims_mark), false)
+      and not exists (select from public.sync_errors e where e.sync_run_id=s.id)
+      and not exists (select from d04_probe.cold c where c.id=s.id)
+    order by s.finished_at, s.id
+    limit p_limit for update of r skip locked
+  )
+  select array_agg(id) into selected from locked;
+
+  with copied as (
+    insert into d04_probe.cold
+    select r.* from public.sync_runs r where r.id=any(selected)
+      and not exists (select from public.sync_errors e where e.sync_run_id=r.id)
+    returning id
+  )
+  delete from public.sync_runs r using copied c where r.id=c.id;
+
+  get diagnostics moved = row_count;
+  return moved;
 end;$$;
-alter function d04_probe.move_one(uuid,uuid,uuid,timestamptz) owner to d04_mover;
-revoke all on function d04_probe.move_one(uuid,uuid,uuid,timestamptz) from public,anon,authenticated,service_role;
-grant execute on function d04_probe.move_one(uuid,uuid,uuid,timestamptz) to d04_operator;
+alter function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid) owner to d04_mover;
+revoke all on function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid) from public,anon,authenticated,service_role;
+grant execute on function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid) to d04_operator;
 create function d04_probe.ensure_run() returns trigger language plpgsql security definer set search_path='' as $$
 begin
   if new.sync_run_id is null then return new; end if;
@@ -141,7 +175,16 @@ async function snapshot() {
     });
 }
 const error = (id, accountId) => db.query(`insert into public.sync_errors(organization_id,ml_account_id,sync_run_id,resource,error_class,message,occurred_at) values($1,$2,$3,'orders','retryable','D04 fixture',now())`, [org, accountId, id]);
-const move = (accountId, id = historical, before = '2026-09-08T00:00:00Z') => asRole('d04_operator', () => db.query('select d04_probe.move_one($1,$2,$3,$4) moved', [org, accountId, id, before]));
+async function moveBatch(accountId, before, limit, id = null) {
+    const { rows: [result] } = await asRole("d04_operator", () =>
+        db.query("select d04_probe.move_batch($1,$2,$3,$4,$5) moved", [org, accountId, before, limit, id]));
+    return result.moved;
+}
+
+function moveOne(accountId, id = historical, before = "2026-09-08T00:00:00Z") {
+    return moveBatch(accountId, before, 1, id);
+}
+
 async function watcher() {
     await db.query('savepoint probe_watch');
     try {
@@ -155,6 +198,60 @@ async function watcher() {
     }
 }
 const alerts = async () => (await db.query(`select count(*)::int n from public.domain_events where organization_id=$1 and event_type in ('sync.failed','sync.delayed')`, [org])).rows[0].n;
+async function measureBatches() {
+    const before = "2026-09-01T00:00:00Z";
+    await db.query(`insert into public.sync_runs
+      (id,organization_id,ml_account_id,job_id,resource,channel,status,started_at,finished_at,latest_record_at)
+      select md5('d04-lote:' || n)::uuid,$1,$2,gen_random_uuid(),'orders','reconciliation',
+             'done',finished-interval '1 minute',finished,finished
+      from generate_series(1,58000) n
+      cross join lateral (select $3::timestamptz-n*interval '3 minutes' as finished) t`, [org, account, before]);
+    await db.query(`insert into public.sync_errors
+      (organization_id,ml_account_id,sync_run_id,resource,error_class,message,occurred_at)
+      select $1,$2,md5('d04-lote:' || n)::uuid,'orders','retryable','fixture D04',$3
+      from generate_series(7,58000,7) n`, [org, account, before]);
+    await db.query("analyze public.sync_runs; analyze public.sync_errors");
+    const baseline = await snapshot();
+    const watchBefore = await watcher();
+
+    for (const withIndex of [false, true]) {
+        if (withIndex) {
+            await db.query("create index d04_probe_error_run_idx on public.sync_errors(sync_run_id) where sync_run_id is not null");
+        }
+        for (const limit of [100, 500, 1000]) {
+            await db.query("savepoint measure_batch");
+            try {
+                const started = performance.now();
+                const moved = await moveBatch(account, before, limit);
+                const ms = performance.now() - started;
+                assert.equal(moved, limit);
+                const { rows: [result] } = await db.query(`select
+                  (select count(*)::int from d04_probe.cold c where c.finished_at < $1) as archived,
+                  exists (select from d04_probe.cold c join public.sync_errors e on e.sync_run_id=c.id
+                          where c.finished_at < $1) as linked`, [before]);
+                assert.deepEqual(result, { archived: limit, linked: false });
+                assert.deepEqual(await snapshot(), baseline);
+                assert.deepEqual(await watcher(), watchBefore);
+                console.log(JSON.stringify({ limit, moved, withIndex, ms: Math.round(ms) }));
+            } finally {
+                await db.query("rollback to measure_batch");
+                await db.query("release savepoint measure_batch");
+            }
+        }
+    }
+
+    assert.equal(await moveBatch(account, before, 100), 100);
+    assert.equal(await moveBatch(account, before, 100), 100);
+    const { rows: [repeated] } = await db.query(
+        "select count(*)::int as archived from d04_probe.cold where finished_at < $1",
+        [before]);
+    assert.equal(repeated.archived, 200);
+    assert.deepEqual(await snapshot(), baseline);
+    assert.deepEqual(await watcher(), watchBefore);
+    console.log("Dois lotes consecutivos moveram 200 execuções distintas, mantendo as leituras.");
+
+}
+
 async function rehearse() {
     await db.connect();
     try {
@@ -194,13 +291,13 @@ async function rehearse() {
         const watchBefore = await watcher();
         assert.equal(watchBefore.sent, true);
         assert.equal(watchBefore.events.length, 1);
-        assert.equal((await move(account, latest, '2026-09-20T00:00:00Z')).rows[0].moved, false);
-        assert.equal((await move(account, claims, '2026-09-20T00:00:00Z')).rows[0].moved, false);
+        assert.equal(await moveOne(account, latest, "2026-09-20T00:00:00Z"), 0);
+        assert.equal(await moveOne(account, claims, "2026-09-20T00:00:00Z"), 0);
         await expectDenied(() => asRole('d04_operator', () => db.query('delete from public.sync_runs where id=$1', [historical])), '42501');
         await expectDenied(() => asRole('d04_operator', () => db.query('select * from d04_probe.cold')), '42501');
-        await expectDenied(() => asRole('service_role', () => db.query('select d04_probe.move_one($1,$2,$3,now())', [org, account, historical])), '42501');
-        assert.equal((await move(other)).rows[0].moved, false);
-        assert.equal((await move(account)).rows[0].moved, true);
+        await expectDenied(() => asRole('service_role', () => db.query('select d04_probe.move_batch($1,$2,now(),1,$3)', [org, account, historical])), '42501');
+        assert.equal(await moveOne(other), 0);
+        assert.equal(await moveOne(account), 1);
         assert.deepEqual(await snapshot(), baseline);
         assert.deepEqual(await watcher(), watchBefore);
         await expectDenied(() => asRole('service_role', () => error(historical, other)), '23503');
@@ -209,10 +306,22 @@ async function rehearse() {
         assert.equal(await alerts(), 0);
         assert.deepEqual(await snapshot(), baseline);
         assert.deepEqual(await watcher(), watchBefore);
-        assert.equal((await move(account)).rows[0].moved, false);
+        assert.equal(await moveOne(account), 0);
         await expectDenied(() => db.query('update public.sync_runs set reason=$2 where id=$1', [historical, 'bypass']), 'P0001');
         await asRole('service_role', () => seed(normal, 'failed', '2026-09-10T12:00:00Z'));
         assert.equal(await alerts(), 1);
+        await expectDenied(() => moveBatch(account, date, 1001), '22023');
+        await expectDenied(() => moveBatch(account, null, 1), '22023');
+
+        // Um corte no futuro ainda precisa preservar os indicadores de 24h.
+        const recent = randomUUID();
+        const now = Date.now();
+        await seed(recent, "done", new Date(now - 2 * 60 * 60 * 1000).toISOString());
+        await seed(randomUUID(), "done", new Date(now - 60 * 60 * 1000).toISOString());
+        const recentBaseline = await snapshot();
+        assert.equal(await moveOne(account, recent, new Date(now + 60 * 60 * 1000).toISOString()), 0);
+        assert.deepEqual(await snapshot(), recentBaseline);
+        if (process.argv.includes('--benchmark')) await measureBatches();
         console.log('Papéis restritos, erro tardio sem alerta, alerta normal preservado, saúde, cartões e checkpoints equivalentes, vigia idêntico, corte de checkpoints recusado e UPDATE protegido.');
     }
     finally {
