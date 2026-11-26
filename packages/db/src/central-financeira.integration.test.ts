@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
  * Testes de integração SQL da fundação da Central de Inteligência Financeira
- * (`20261126200000` e `20261126210000`) contra Postgres real.
+ * (`20261126233000` e `20261126234000`) contra Postgres real.
  *
  * Verifica:
  * 1. Isolamento multi-tenant e RLS por papel (ADMIN/GESTOR escrevem, ANALISTA só lê,

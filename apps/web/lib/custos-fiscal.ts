@@ -549,7 +549,7 @@ export function lerResumoDespesasRpc(raw: unknown): DespesasComparadas | null {
  * Lê o resumo agregado das despesas operacionais (atual e anterior) via RPC
  * `public.get_resumo_despesas` (agregação 100% em SQL, sem risco de truncamento
  * em 1.000 linhas). Se a RPC ainda não existir no banco (`PGRST202`, deploy
- * web antes da migration `20261126210000`), cai com segurança para leitura
+ * web antes da migration `20261126234000`), cai com segurança para leitura
  * filtrada; se a tabela também não existir (`PGRST205`/`42P01`), devolve nulos.
  */
 export async function carregarDespesasComparadas(

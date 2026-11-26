@@ -241,7 +241,7 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
         <SendoAtivado>
           A gestão de custos operacionais (fixos e variáveis) e entidades fiscais (CNPJs e regimes tributários) está
           pronta no código e aguarda a aplicação da migration{" "}
-          <code>20261126200000_central_inteligencia_financeira_fundacao.sql</code> neste ambiente. Assim que aplicada,
+          <code>20261126233000_central_inteligencia_financeira_fundacao.sql</code> neste ambiente. Assim que aplicada,
           esta tela habilitará o cadastro e acompanhamento completo de despesas, rateios, orçamento × realizado e
           regimes fiscais por CNPJ.
         </SendoAtivado>

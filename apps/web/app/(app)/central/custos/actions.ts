@@ -71,7 +71,7 @@ function traduzirErro(error: DbErro, entidade: string): ResultadoDoCadastro {
     return {
       ...SEM_ERRO,
       mensagem:
-        "As tabelas financeiras ainda não foram aplicadas neste banco (migration 20261126200000 pendente).",
+        "As tabelas financeiras ainda não foram aplicadas neste banco (migration 20261126233000 pendente).",
     };
   }
   if (error.code === "42501") {
@@ -133,7 +133,7 @@ export async function salvarDespesa(
   }
 
   // A trilha de auditoria em `operational_expense_history` é gravada automaticamente
-  // pelo trigger `operational_expenses_audit` no Postgres (migration 20261126210000).
+  // pelo trigger `operational_expenses_audit` no Postgres (migration 20261126234000).
   revalidar();
 
   return { ok: true, mensagem: "Despesa operacional salva e conectada à DRE do período.", erros: {} };

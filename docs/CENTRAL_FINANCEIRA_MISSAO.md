@@ -1,7 +1,7 @@
 # Missão — Central de Inteligência Financeira SpeedBikers
 
 > Documento de controle contínuo da missão (Seção 23).
-> Branch dedicada: `feat/central-inteligencia-financeira` (worktree `.worktrees/central-inteligencia-financeira`, rebased sobre `origin/main` `473370ad`).
+> Branch dedicada: `feat/central-inteligencia-financeira` (worktree `.worktrees/central-inteligencia-financeira`, rebased sobre `origin/main` `16f6ca60`).
 
 ---
 
@@ -49,7 +49,7 @@ Transformar a Central do SpeedBikers Gestão em uma **Central de Inteligência F
 - **Rodada 4 (`bf7ceb2e`):** Visão Regime de Caixa × Competência, Geração idempotente de despesas recorrentes, Prévia de Rateio, Realizado × Meta em `/central/metas`, Alertas de Custos na `/central`, inspeção visual real por screenshots (desktop `1440×900` e mobile `390×844` nas 7 rotas, 0px overflow) e correção anti-zero-silencioso no Simulador What-If.
 - **Rodada 5 (`f1ee3c9c`):** DRE Comparativa (`vs. Anterior` em R\$ e `p.p.`) + CSV comparativo, cancelamento auditável de despesas, Simuladores + CSVs de Frete e Ads, Matriz de Quadrantes de Rentabilidade em `/central/produtos`.
 - **Rodada 6 (fechamento SQL/Auditoria/Multi-CNPJ sobre `origin/main` `473370ad`):**
-  - **Rebase limpo** sobre `origin/main` `473370ad` (PR #420 `20261126190000_sugestao_shopee_pedido_pela_chave.sql`) e ordenação estrita das migrations para **`20261126200000_central_inteligencia_financeira_fundacao.sql`** e **`20261126210000_resumo_e_auditoria_de_despesas.sql`**.
+  - **Rebase limpo** sobre `origin/main` `16f6ca60` (PR #421 `20261126200000_sugestao_do_pedido_por_sku.sql`) e ordenação estrita das migrations para **`20261126233000_central_inteligencia_financeira_fundacao.sql`** e **`20261126234000_resumo_e_auditoria_de_despesas.sql`**.
   - **Agregação 100% em SQL:** `public.get_resumo_despesas` (DRE/metas/alertas sem risco de truncamento em 1.000 linhas) e `public.get_faturamento_por_conta` (rateio ponderado pelo faturamento real dos últimos 30 dias em `/central/custos`).
   - **Auditoria à prova de forjamento no banco:** trigger `operational_expenses_audit` gravando `created`/`updated`/`status_changed` em `operational_expense_history` com revogação de `INSERT` direto de `authenticated` (escrita manual removida das Server Actions).
   - **Contexto fiscal Multi-CNPJ conectado à DRE da `/central`:** exibe CNPJ/regime/validação contábil da conta filtrada, aplica `calcularTributosEntidade` (inclusive créditos no Lucro Real) quando sem alíquota global e alerta divergências > 0,2 p.p.
