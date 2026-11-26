@@ -25,6 +25,7 @@ const GESTOR = "aaaaaaaa-0000-4000-8000-00000002d720";
 const CONTA_A = "aaaa7200-0000-4000-8000-00000000aaaa";
 const CONTA_B = "aaaa7200-0000-4000-8000-00000000bbbb";
 const LOJA = "dddd7200-0000-4000-8000-0000000a0720";
+const LOJA_SANDBOX = "dddd7200-0000-4000-8000-0000000b0720";
 const PEDIDOS_ML = [9907200001, 9907200002, 9907200003, 9907200004, 9907200005];
 const DE = "2026-08-10";
 const ATE = "2026-08-11";
@@ -259,7 +260,7 @@ afterAll(async () => {
   await client.query("delete from public.order_financials where order_id = any($1)", [PEDIDOS_ML]);
   await client.query("delete from public.orders where id = any($1)", [PEDIDOS_ML]);
   await client.query("delete from public.fulfillment_stock_snapshots where organization_id = $1", [ORG]);
-  await client.query("delete from public.shopee_shops where id = $1", [LOJA]);
+  await client.query("delete from public.shopee_shops where id = any($1)", [[LOJA, LOJA_SANDBOX]]);
   await client.end();
 });
 
@@ -649,5 +650,47 @@ describe("get_purchase_analysis (D-721)", () => {
 
     expect(a.a.linhas[0]?.stockout_days_30).toBeNull();
     await client.query("update public.skus set stock_is_virtual = false where id = $1", [skuB]);
+  });
+
+  it("1ª venda: a Shopee conta só pedido live e válido, e vale o menor dia entre ML e Shopee (D-878)", async () => {
+    await client.query(
+      `insert into public.shopee_shops (id, organization_id, environment, shop_id, shop_name, status, connected_at)
+       values ($1, $2, 'sandbox', 990720002, 'Sandbox D720', 'CONNECTED', now())
+       on conflict do nothing`,
+      [LOJA_SANDBOX, ORG],
+    );
+
+    // C não vende no ML. Antes do pedido válido de 20/07 há um cancelado, um em
+    // cancelamento, um não pago e um do sandbox: nenhum deles é a 1ª venda.
+    for (const [loja, sn, status, criado, pago] of [
+      [LOJA, "C-VALIDA", "COMPLETED", "2026-07-20T15:00:00Z", "2026-07-20T15:00:00Z"],
+      [LOJA, "C-CANCELADA", "CANCELLED", "2026-07-01T15:00:00Z", "2026-07-01T15:00:00Z"],
+      [LOJA, "C-EM-CANCELAMENTO", "IN_CANCEL", "2026-07-02T15:00:00Z", "2026-07-02T15:00:00Z"],
+      [LOJA, "C-NAO-PAGA", "READY_TO_SHIP", "2026-07-05T15:00:00Z", null],
+      [LOJA_SANDBOX, "C-SANDBOX", "COMPLETED", "2026-06-01T15:00:00Z", "2026-06-01T15:00:00Z"],
+    ] as const) {
+      await client.query(
+        `insert into public.shopee_orders (shopee_shop_id, organization_id, order_sn, order_status, shopee_created_at, shopee_updated_at, paid_at)
+         values ($1, $2, $3, $4, $5, $5, $6)
+         on conflict do nothing`,
+        [loja, ORG, sn, status, criado, pago],
+      );
+      await client.query(
+        `insert into public.shopee_order_items (shopee_shop_id, order_sn, position, organization_id, item_id, quantity, discounted_price, sku_id, vinculo_via)
+         values ($1, $2, 0, $3, 1, 1, 50, $4, 'SKU_DO_PEDIDO')
+         on conflict do nothing`,
+        [loja, sn, ORG, skuC],
+      );
+    }
+
+    const a = await one<{ a: { linhas: { sku_id: string; first_sale_date: string | null }[] } }>(
+      ADMIN,
+      `select public.get_purchase_analysis('${ORG}', array['${skuA}'::uuid, '${skuC}'::uuid], null, null, null, false) as a`,
+    );
+    const dia = (sku: string) => a.a.linhas.find((l) => l.sku_id === sku)?.first_sale_date;
+
+    expect(dia(skuC)).toBe("2026-07-20");
+    // A vende no ML e na Shopee no mesmo 10/08.
+    expect(dia(skuA)).toBe("2026-08-10");
   });
 });
