@@ -1271,3 +1271,10 @@ Tudo lido pela VM em modo só leitura.
 - A leitura agregada da VM mediu os erros recentes e comparou janelas de 30, 60 e 90 dias. Próxima etapa: escolher a janela de retenção e revisar a implantação do índice. O índice e a política continuam fora das migrations de produção. A aprovação do IAM de S05 e a recuperação do Dev continuam pendentes. Inventário em 173/226.
 - O dono confirmou a janela de 60 dias para preparar e testar. O ensaio passou a limitar o corte a essa janela e verificou proteção aos 59 dias, elegibilidade aos 61 e possibilidade de ampliar a retenção com um corte mais antigo. O ensaio padrão e o benchmark passaram. A aplicação operacional usa aprovação própria.
 - A CI de `1067fd57` (#364, run `45811993635`) encerrou verde com 1.260 testes SQL/PostgREST e 414 E2E antes do push do candidato atualizado.
+
+### 26/11/2026 · D04, reversão integral de lote de 60 dias
+
+- Base `64d0aac9` do candidato #364 e main `14d8c9bc`. O ensaio confere a igualdade entre as linhas copiadas e retiradas do ativo. A falha simulada de uma exclusão disparou `23514`, preservou as duas linhas no ativo e deixou o arquivo vazio. A nova tentativa moveu as duas e preservou saúde, cartões e checkpoints.
+- O ensaio padrão e o benchmark passaram no catálogo local de 342 versões. O laboratório descartável foi encerrado. O [procedimento](../../infra/vm/README.md#conferência-de-lotes-de-sync_runs-na-preparação-de-d04) registra as verificações antes e depois do lote, com os critérios de interrupção. A mudança está reservada ao ensaio e ao procedimento de D04.
+- Próxima etapa de D04: ensaiar a recuperação de um lote já confirmado, incluindo erro tardio e repetição. A rotina e o índice ainda dependem de revisão. A aplicação operacional exige aprovação própria. V01/V02 dependem da recuperação do Dev e S05 depende da aprovação de IAM. Inventário em 173/226.
+- Os gates locais passaram: `pnpm run check` 37/37, `pnpm run build` 10/10, `pnpm docs:check` e `git diff --check`. O candidato tinha código, infraestrutura e integração verdes, com E2E em execução ao isolar esta alteração na branch `codex/sentinel-d04-guardas-lote`.

@@ -240,3 +240,15 @@ definições e permissões coincidiram. O agendamento de retenção estava desat
    de convite ou recuperação Auth e os agendamentos no banco. Comparar
    backlog e falhas com a leitura anterior ao deploy. O dono ou gestor
    registra o aceite com as evidências dessa observação.
+
+### Conferência de lotes de `sync_runs` na preparação de D04
+
+A janela é de 60 dias e a seleção preserva as linhas que sustentam checkpoints e as execuções com erros vinculados. O procedimento abaixo descreve os critérios para a rotina operacional ainda pendente. O ensaio em `packages/db/scripts/rehearse-sync-run-archive.mjs` é executado somente em um Supabase local descartável.
+
+1. Identificar a revisão, a organização, a conta, a janela e o limite do lote. Registrar o catálogo atual e confirmar que o meio de restauração está disponível.
+2. Capturar a linha de base de saúde da sincronização, cartões da conta, checkpoints de pedidos e claims e o estado do vigia. Comparar com o resultado após o lote usando o mesmo instante de referência para os indicadores móveis.
+3. Em cada transação, conferir a janela e os vínculos após o bloqueio de linha. Confirmar a igualdade entre cópias no arquivo e remoções no ativo. Em caso de diferença, reverter o lote.
+4. Após o commit, conferir o estado das linhas movidas e das referências. Se um erro tardio já tiver restaurado a execução no ativo, verificar a identidade e a FK antes de classificar a ocorrência. Interromper a sequência em caso de referência inválida, mudança inexplicada em um checkpoint ou alerta histórico.
+5. Antes de repetir, consultar as linhas elegíveis e confirmar o resultado do lote anterior. A recuperação de um lote já confirmado exige um procedimento de restauração validado para esse lote.
+
+A política e o procedimento precisam de aprovação para uso em produção. A preparação desta etapa usa dados sintéticos.

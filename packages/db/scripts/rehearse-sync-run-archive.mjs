@@ -67,6 +67,7 @@ create function d04_probe.move_batch(
 language plpgsql security definer set search_path='' as $$
 declare
   selected uuid[];
+  copied_count integer;
   moved integer;
 begin
   if p_limit is null or p_limit not between 1 and 1000 then
@@ -114,10 +115,17 @@ begin
     select r.* from public.sync_runs r where r.id=any(selected)
       and not exists (select from public.sync_errors e where e.sync_run_id=r.id)
     returning id
+  ), removed as (
+    delete from public.sync_runs r using copied c where r.id=c.id
+    returning r.id
   )
-  delete from public.sync_runs r using copied c where r.id=c.id;
+  select (select count(*) from copied), (select count(*) from removed)
+    into copied_count, moved;
 
-  get diagnostics moved = row_count;
+  if copied_count <> moved then
+    raise exception using errcode='23514', message='lote arquivado com cópia e remoção divergentes';
+  end if;
+
   return moved;
 end;$$;
 alter function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid) owner to d04_mover;
@@ -258,6 +266,42 @@ async function measureBatches() {
 
 }
 
+async function verifyBatchRollback() {
+    await db.query("savepoint verify_batch");
+    try {
+        const skipped = randomUUID();
+        const moved = randomUUID();
+        const ids = [skipped, moved];
+        await seed(skipped, "done", daysAgo(96));
+        await seed(moved, "done", daysAgo(95));
+        const expected = await snapshot();
+
+        // Simula uma exclusão recusada sem impedir a cópia nem a outra exclusão.
+        await db.query(`create function d04_probe.skip_delete() returns trigger
+          language plpgsql set search_path='' as $$ begin return null; end; $$;
+          create trigger d04_probe_skip_delete before delete on public.sync_runs
+          for each row when (old.id = '${skipped}'::uuid) execute function d04_probe.skip_delete()`);
+        await expectDenied(() => moveBatch(account, daysAgo(94), 2), "23514");
+        const { rows: [afterFailure] } = await db.query(`select
+          (select count(*)::int from public.sync_runs where id=any($1::uuid[])) as active,
+          (select count(*)::int from d04_probe.cold where id=any($1::uuid[])) as archived`, [ids]);
+        assert.deepEqual(afterFailure, { active: 2, archived: 0 });
+        assert.deepEqual(await snapshot(), expected);
+
+        await db.query("drop trigger d04_probe_skip_delete on public.sync_runs");
+        assert.equal(await moveBatch(account, daysAgo(94), 2), 2);
+        const { rows: [afterRetry] } = await db.query(`select
+          (select count(*)::int from public.sync_runs where id=any($1::uuid[])) as active,
+          (select count(*)::int from d04_probe.cold where id=any($1::uuid[])) as archived`, [ids]);
+        assert.deepEqual(afterRetry, { active: 0, archived: 2 });
+        assert.deepEqual(await snapshot(), expected);
+        console.log("Divergência entre cópia e remoção reverteu o lote inteiro; nova tentativa moveu as duas linhas.");
+    } finally {
+        await db.query("rollback to verify_batch");
+        await db.query("release savepoint verify_batch");
+    }
+}
+
 async function rehearse() {
     await db.connect();
     try {
@@ -331,6 +375,7 @@ async function rehearse() {
         assert.equal(await moveOne(account, eligibleRun, daysAgo(62)), 0);
         assert.equal(await moveOne(account, eligibleRun, daysAgo(0)), 1);
         assert.deepEqual(await snapshot(), retentionBaseline);
+        await verifyBatchRollback();
         if (process.argv.includes('--benchmark')) await measureBatches();
         console.log('Papéis restritos, erro tardio sem alerta, alerta normal preservado, saúde, cartões e checkpoints equivalentes, vigia idêntico, piso de 60 dias, corte de checkpoints recusado e UPDATE protegido.');
     }

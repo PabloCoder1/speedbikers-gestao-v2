@@ -1,5 +1,5 @@
 {
-  "corte": "26/11/2026, piso de 60 dias no ensaio de sync_runs",
+  "corte": "26/11/2026, verificação atômica dos lotes de sync_runs",
   "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
   "entregas": [
     {
@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "Histórico, índice temporal e ensaio de recuperação no candidato. Lotes e concorrência passaram, com custo de WAL medido. O dono confirmou 60 dias para preparação e teste; aplicação e publicação aguardam autorização.",
+      "evidencia": "Histórico e ensaio de 60 dias no candidato. Lotes e concorrência passaram. A divergência entre cópia e remoção abortou o lote e a repetição foi validada. Falta validar restauração de lote confirmado, autorizar a execução e publicar.",
       "fase": 3
     },
     {
