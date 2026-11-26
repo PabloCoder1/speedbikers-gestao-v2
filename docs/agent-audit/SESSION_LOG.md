@@ -794,3 +794,13 @@ Tudo lido pela VM em modo só leitura.
   - **2 dos 8** estão na planilha nova. São vendas depois da captura acima do saldo dela, e somem com a próxima planilha.
   - **Ação do dono:** decidir o que fazer com o saldo negativo de SKU descontinuado. As opções são zerar com um ajuste manual ou deixar como está, já que o SKU está inativo.
 - **Próxima etapa:** publicar a D-877 com autorização. Conferir o `APP_COMMIT` quando o candidato publicar o worker com a D-876.
+
+### 26/11/2026 · Claude Sentinel: D-877 em produção
+
+- **Publicação.** Com autorização do dono, o #415 entrou na `main` em `14d8c9bc`.
+  - Os 4 jobs obrigatórios passaram. O do Dev falhou com "project is paused", como esperado.
+  - A migration `20261125200000` foi aplicada pela VM com `psql -1`, com o mesmo sha256 dos dois lados, e registrada no histórico. A Vercel concluiu a web, que não muda.
+- **Conferência.** Corpo novo, grants, comentário e registro certos. Como membro, com 50 SKUs:
+  - 0,35 s sem sugestão e com o cache quente (era 3,16 s);
+  - 1,31 s com sugestão (era 3,81 s).
+- **Próxima etapa:** a 1ª venda da Shopee na análise de compra.
