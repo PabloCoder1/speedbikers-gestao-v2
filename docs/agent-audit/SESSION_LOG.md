@@ -965,3 +965,24 @@ Tudo lido pela VM em modo só leitura.
 - **Comentado:** no #424 e no #351.
 - **Pendente com o autor:** o peso zero da Shopee no rateio e o erro ignorado em `removerDespesa`.
 - **Próxima etapa:** a curva ABC, quando a faixa D-887–899 for confirmada no #351.
+
+### 26/11/2026 · Claude Sentinel: rateio da Shopee e erros da Central (#427)
+
+- **Estado:** a worktree `.worktrees/sentinel-rodada` está em `claude/central-rateio-e-erros` (`51d448ef`, base `main` `c26d0f66`), sem mudança local. O config.toml foi restaurado e o stack `sb-claude-compras` está parado.
+- **#427, aberto, publicação espera o dono:**
+  - **Migration `20261126235500`:** `get_faturamento_por_conta_multicanal` devolve a receita bruta do ML e a da Shopee (régua `multicanal_receita_bruta`, pedido `VALIDA`, loja live lida). A prévia do rateio deixa de dar peso zero à Shopee. A web cai na função antiga enquanto a nova não existe, então a ordem entre o merge e a migration é livre.
+  - **Web:** as cinco ações de linha de `/central/custos` voltam com `?falha=` (código fixo) e mostram o motivo: mês fechado, permissão ou nada alterado.
+- **Testes:**
+  - integração inteira do `@sb/db` num banco zerado: 19 arquivos, 1255 testes;
+  - mutação conferida: sem `VALIDA`, o teste cai;
+  - unidade: 8 testes de `custos-falha` e 3 do loader;
+  - `check`, `build`, `docs:check` e as 7 guardas `check:*` passaram;
+  - em produção, só leitura, como ADMIN: ~70 ms;
+  - o alerta não foi visto no navegador.
+- **Comentado:** no #424 e no #351.
+- **Codex e Gemini:** nenhuma resposta nova no #351 desde a manhã. A faixa D-887–899 segue sem confirmação.
+- **Inventário:** sem mudança no candidato `ec76c2e8`: 173/226 (76,55 %), 0 p.p.
+- **Próxima etapa:**
+  1. CI do #427;
+  2. com a autorização do dono, merge e migration `235500` pela VM, e depois conferir os grants e o tempo como membro;
+  3. depois, a curva ABC (~0,3 s), quando houver número de decisão.
