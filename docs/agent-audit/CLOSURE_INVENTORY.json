@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "Histórico e ensaio de 60 dias no candidato. Lotes e concorrência passaram. A divergência entre cópia e remoção abortou o lote e a repetição foi validada. Recuperação após commit passou com erro tardio e repetição. Falta definir controle operacional por lote, autorizar a execução e publicar.",
+      "evidencia": "Histórico e ensaio de 60 dias no candidato. Lotes e concorrência passaram. A divergência entre cópia e remoção abortou o lote e a repetição foi validada. Recibo atômico e recuperação concorrente após commit passaram em laboratório. Falta preparar o piloto autorizado e publicar.",
       "fase": 3
     },
     {
@@ -409,7 +409,7 @@
       "peso": 5,
       "status": "Em andamento",
       "responsavel": "Sentinel/QA",
-      "evidencia": "Candidato #364 integrado até a main #415. O preflight reconhece as 339 versões da VM e três pendências posteriores. Faltam a conferência do catálogo do Dev e a homologação do SHA integrado.",
+      "evidencia": "Candidato #364 conciliado até a main #417. O preflight reconhece as 340 versões da VM e três pendências posteriores. Faltam a conferência do catálogo do Dev e a homologação do SHA integrado.",
       "fase": 5
     },
     {
@@ -419,7 +419,7 @@
       "peso": 8,
       "status": "Bloqueado",
       "responsavel": "Dono/Infra",
-      "evidencia": "O preflight local passou de bloqueado a pendente após conciliar D04. A VM tem 339 versões. D-877, D-885 e D-886 integram o plano; a aplicação coordenada e sua validação seguem pendentes.",
+      "evidencia": "O preflight local passou de bloqueado a pendente após conciliar D04. A VM tem 340 versões, até D-877. O plano registra D-885, D-886 e D-878 nessa ordem; a aplicação coordenada e sua validação seguem pendentes.",
       "fase": 5
     },
     {

@@ -37,10 +37,26 @@ create table d04_probe.allowed_scope (organization_id uuid, ml_account_id uuid, 
 grant select on d04_probe.allowed_scope to d04_mover;
 create table d04_probe.cold (like public.sync_runs including defaults including constraints);
 alter table d04_probe.cold add primary key (id);
+create table d04_probe.batches (
+  id uuid primary key,
+  organization_id uuid not null,
+  ml_account_id uuid not null,
+  requested_before timestamptz not null,
+  batch_limit integer not null,
+  requested_run_id uuid,
+  run_ids uuid[] not null default '{}',
+  archived_at timestamptz not null default now(),
+  restored_at timestamptz,
+  restored_count integer
+);
 grant usage on schema d04_probe to d04_mover,d04_hydrator,d04_operator;
 grant create on schema d04_probe to d04_mover,d04_hydrator;
 grant insert,select on d04_probe.cold to d04_mover;
 grant select on d04_probe.cold to d04_hydrator;
+grant select on d04_probe.batches to d04_mover,d04_hydrator;
+grant insert on d04_probe.batches to d04_mover;
+grant update (run_ids) on d04_probe.batches to d04_mover;
+grant update (restored_at,restored_count) on d04_probe.batches to d04_hydrator;
 grant select,delete on public.sync_runs to d04_mover;
 grant select,insert on public.sync_runs to d04_hydrator;
 grant update (id) on public.sync_runs to d04_mover,d04_hydrator;
@@ -62,22 +78,36 @@ execute function private.aviso_de_reconciliacao_parada();
 -- Seleciona as referências uma vez por lote. O segundo comando confere
 -- filhos após obter os locks, sob READ COMMITTED.
 create function d04_probe.move_batch(
-  p_org uuid, p_account uuid, p_before timestamptz, p_limit integer, p_id uuid default null
+  p_org uuid, p_account uuid, p_before timestamptz, p_limit integer, p_id uuid default null,
+  p_batch uuid default gen_random_uuid()
 ) returns integer
 language plpgsql security definer set search_path='' as $$
 declare
   selected uuid[];
+  prior d04_probe.batches%rowtype;
+  removed_ids uuid[];
   copied_count integer;
   moved integer;
 begin
   if p_limit is null or p_limit not between 1 and 1000 then
     raise exception using errcode='22023', message='limite do ensaio deve estar entre 1 e 1000';
   end if;
-  if p_before is null then
-    raise exception using errcode='22023', message='data de corte é obrigatória no ensaio';
+  if p_before is null or p_batch is null then
+    raise exception using errcode='22023', message='data de corte e identidade do lote são obrigatórias';
   end if;
   if not exists (select from d04_probe.allowed_scope
     where (organization_id, ml_account_id) = (p_org, p_account)) then return 0; end if;
+
+  insert into d04_probe.batches(id,organization_id,ml_account_id,requested_before,batch_limit,requested_run_id)
+    values(p_batch,p_org,p_account,p_before,p_limit,p_id) on conflict (id) do nothing;
+  if not found then
+    select * into strict prior from d04_probe.batches where id=p_batch;
+    if (prior.organization_id,prior.ml_account_id,prior.requested_before,prior.batch_limit,prior.requested_run_id)
+        is distinct from (p_org,p_account,p_before,p_limit,p_id) then
+      raise exception using errcode='22023', message='identidade de lote já vinculada a outro pedido';
+    end if;
+    return cardinality(prior.run_ids);
+  end if;
 
   with scoped as materialized (
     select id, resource, channel, status, finished_at, latest_record_at
@@ -119,18 +149,49 @@ begin
     delete from public.sync_runs r using copied c where r.id=c.id
     returning r.id
   )
-  select (select count(*) from copied), (select count(*) from removed)
-    into copied_count, moved;
+  select (select count(*) from copied), (select count(*) from removed),
+    array(select id from removed order by id)
+    into copied_count, moved, removed_ids;
 
   if copied_count <> moved then
     raise exception using errcode='23514', message='lote arquivado com cópia e remoção divergentes';
   end if;
 
+  update d04_probe.batches set run_ids=removed_ids where id=p_batch;
   return moved;
 end;$$;
-alter function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid) owner to d04_mover;
-revoke all on function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid) from public,anon,authenticated,service_role;
-grant execute on function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid) to d04_operator;
+alter function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid,uuid) owner to d04_mover;
+revoke all on function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid,uuid) from public,anon,authenticated,service_role;
+grant execute on function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid,uuid) to d04_operator;
+create function d04_probe.restore_batch(p_org uuid,p_account uuid,p_batch uuid) returns integer
+language plpgsql security definer set search_path='' as $$
+declare
+  batch d04_probe.batches%rowtype;
+  inserted integer;
+begin
+  select * into batch from d04_probe.batches
+    where (id,organization_id,ml_account_id)=(p_batch,p_org,p_account) for update;
+  if not found then
+    raise exception using errcode='22023', message='lote inexistente no escopo informado';
+  end if;
+  if batch.restored_at is not null then return 0; end if;
+
+  insert into public.sync_runs
+    select a.* from d04_probe.cold a
+    where (a.organization_id,a.ml_account_id)=(p_org,p_account) and a.id=any(batch.run_ids)
+    order by a.id on conflict (id) do nothing;
+  get diagnostics inserted = row_count;
+  if (select count(*) from d04_probe.cold a join public.sync_runs r using (id)
+      where (a.organization_id,a.ml_account_id)=(p_org,p_account) and a.id=any(batch.run_ids)
+        and to_jsonb(a)=to_jsonb(r)) <> cardinality(batch.run_ids) then
+    raise exception using errcode='23514', message='recuperação com cópia ausente ou divergente';
+  end if;
+  update d04_probe.batches set restored_at=now(),restored_count=inserted where id=p_batch;
+  return inserted;
+end;$$;
+alter function d04_probe.restore_batch(uuid,uuid,uuid) owner to d04_hydrator;
+revoke all on function d04_probe.restore_batch(uuid,uuid,uuid) from public,anon,authenticated,service_role;
+grant execute on function d04_probe.restore_batch(uuid,uuid,uuid) to d04_operator;
 create function d04_probe.ensure_run() returns trigger language plpgsql security definer set search_path='' as $$
 begin
   if new.sync_run_id is null then return new; end if;
@@ -189,9 +250,9 @@ async function snapshot() {
     });
 }
 const error = (id, accountId) => db.query(`insert into public.sync_errors(organization_id,ml_account_id,sync_run_id,resource,error_class,message,occurred_at) values($1,$2,$3,'orders','retryable','D04 fixture',now())`, [org, accountId, id]);
-async function moveBatch(accountId, before, limit, id = null) {
+async function moveBatch(accountId, before, limit, id = null, batchId = randomUUID()) {
     const { rows: [result] } = await asRole("d04_operator", () =>
-        db.query("select d04_probe.move_batch($1,$2,$3,$4,$5) moved", [org, accountId, before, limit, id]));
+        db.query("select d04_probe.move_batch($1,$2,$3,$4,$5,$6) moved", [org, accountId, before, limit, id, batchId]));
     return result.moved;
 }
 
@@ -271,7 +332,18 @@ async function verifyBatchRollback() {
     try {
         const skipped = randomUUID();
         const moved = randomUUID();
+        const batchId = randomUUID();
+        const cutoff = daysAgo(94);
         const ids = [skipped, moved];
+        const getReceipt = async () => (await db.query(
+            "select run_ids, restored_at, restored_count from d04_probe.batches where id=$1", [batchId],
+        )).rows[0];
+        const restore = (accountId = account) => asRole('d04_operator', async () => {
+            const { rows: [row] } = await db.query(
+                "select d04_probe.restore_batch($1,$2,$3) restored", [org, accountId, batchId],
+            );
+            return row.restored;
+        });
         await seed(skipped, "done", daysAgo(96));
         await seed(moved, "done", daysAgo(95));
         const expected = await snapshot();
@@ -281,21 +353,46 @@ async function verifyBatchRollback() {
           language plpgsql set search_path='' as $$ begin return null; end; $$;
           create trigger d04_probe_skip_delete before delete on public.sync_runs
           for each row when (old.id = '${skipped}'::uuid) execute function d04_probe.skip_delete()`);
-        await expectDenied(() => moveBatch(account, daysAgo(94), 2), "23514");
+        await expectDenied(() => moveBatch(account, cutoff, 2, null, batchId), "23514");
         const { rows: [afterFailure] } = await db.query(`select
           (select count(*)::int from public.sync_runs where id=any($1::uuid[])) as active,
           (select count(*)::int from d04_probe.cold where id=any($1::uuid[])) as archived`, [ids]);
         assert.deepEqual(afterFailure, { active: 2, archived: 0 });
+        assert.equal(await getReceipt(), undefined);
         assert.deepEqual(await snapshot(), expected);
 
         await db.query("drop trigger d04_probe_skip_delete on public.sync_runs");
-        assert.equal(await moveBatch(account, daysAgo(94), 2), 2);
+        assert.equal(await moveBatch(account, cutoff, 2, null, batchId), 2);
+        assert.equal(await moveBatch(account, cutoff, 2, null, batchId), 2);
+        await expectDenied(() => moveBatch(account, cutoff, 1, null, batchId), "22023");
         const { rows: [afterRetry] } = await db.query(`select
           (select count(*)::int from public.sync_runs where id=any($1::uuid[])) as active,
           (select count(*)::int from d04_probe.cold where id=any($1::uuid[])) as archived`, [ids]);
         assert.deepEqual(afterRetry, { active: 0, archived: 2 });
         assert.deepEqual(await snapshot(), expected);
+        assert.deepEqual(await getReceipt(), { run_ids: [...ids].sort(), restored_at: null, restored_count: null });
+        await expectDenied(() => restore(other), "22023");
+        await expectDenied(() => asRole('service_role', () => db.query(
+            "select d04_probe.restore_batch($1,$2,$3)", [org, account, batchId],
+        )), "42501");
+        await asRole('service_role', () => error(skipped, account));
+        await db.query("savepoint missing_cold");
+        await db.query("delete from d04_probe.cold where id=$1", [skipped]);
+        await expectDenied(restore, "23514");
+        assert.equal((await getReceipt()).restored_at, null);
+        assert.equal((await db.query("select 1 from public.sync_runs where id=$1", [moved])).rowCount, 0);
+        await db.query("rollback to missing_cold");
+        await db.query("release savepoint missing_cold");
+        assert.equal(await restore(), 1);
+        const restoredReceipt = await getReceipt();
+        assert.equal(restoredReceipt.restored_count, 1);
+        assert.ok(restoredReceipt.restored_at);
+        assert.equal(await restore(), 0);
+        assert.deepEqual(await getReceipt(), restoredReceipt);
+        assert.equal(await moveOne(account, moved, cutoff), 0);
+        assert.deepEqual(await snapshot(), expected);
         console.log("Divergência entre cópia e remoção reverteu o lote inteiro; nova tentativa moveu as duas linhas.");
+        console.log("Recibo atômico, recuperação por escopo, cópia ausente recusada e repetição sem novas inserções.");
     } finally {
         await db.query("rollback to verify_batch");
         await db.query("release savepoint verify_batch");
