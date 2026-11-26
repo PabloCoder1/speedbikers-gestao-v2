@@ -872,3 +872,22 @@ Tudo lido pela VM em modo só leitura.
   - o saldo LOCAL de cada um é zero e igual à soma do ledger;
   - nenhum SKU fora do catálogo ficou negativo.
 - **O que não mudou:** os SKUs, o histórico de vendas, os vínculos e a marca de fora do catálogo.
+
+### 26/11/2026 · Claude Sentinel: regressão da D-879 corrigida (#420) e sugestão do pedido por SKU (#421)
+
+- **Regressão encontrada em produção (minha, da D-879):** com uma lista curta de SKUs muito vendidos, `get_purchase_suggestions` levava ~11 s (5 SKUs) e ~9 s (3 SKUs). A causa estava no plano da demanda da Shopee.
+- **#420** (`claude/sugestao-shopee-lateral`, `28174d7d`, CI verde), migration `20261126190000`: com a lista, cada item acha o pedido pela chave primária.
+  - Em produção, só leitura e como membro, o resultado saiu igual em cinco recortes.
+  - 5 SKUs foram de 11,2 s para ~0,4 s.
+- **#421** (`claude/sugestao-pedido-por-sku`, `3a3eb47c`, empilhado no #420), migration `20261126200000`: `get_purchase_order_suggestions` passa a lista ou os SKUs da marca.
+  - O resultado saiu igual em onze recortes.
+  - Teste novo em `rls.integration.test.ts`, com mutação conferida.
+- **Testes locais** na pilha isolada `sb-claude-compras` (já parada, `config.toml` restaurado):
+  - suíte do `@sb/db` inteira com o #420: 17 arquivos e 1.243 testes;
+  - `rls.integration.test.ts` com o #421 num banco recém-resetado: 1.055 testes;
+  - `pnpm run check` e `pnpm docs:check`.
+- **Sem número novo:** a correção e a extensão estão na seção da D-879.
+- **Próxima etapa exata:** com autorização do dono, nesta ordem:
+  1. merge do #420 e a migration `20261126190000` pela VM;
+  2. a conferência como membro com 3, 5 e 50 SKUs;
+  3. o mesmo com o #421 (rebase na `main` depois do merge do #420) e a migration `20261126200000`.
