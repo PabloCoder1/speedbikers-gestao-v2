@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "Histórico e ensaio de 60 dias no candidato. Lotes e concorrência passaram. A divergência entre cópia e remoção abortou o lote e a repetição foi validada. Recibo atômico e recuperação concorrente após commit passaram em laboratório. O piloto local arquivou 100 com escritores concorrentes, restaurou 99 após hidratação tardia e conferiu as referências e os autores. Faltam homologação, autorização e publicação.",
+      "evidencia": "Histórico e ensaio de 60 dias no candidato. Lotes e concorrência passaram. A divergência entre cópia e remoção abortou o lote e a repetição foi validada. Recibo atômico e recuperação concorrente após commit passaram em laboratório. O piloto local arquivou 100 com escritores concorrentes, restaurou 99 após hidratação tardia, conferiu referências e autores e reverteu cópia e recibo quando o prazo venceu. Faltam homologação, autorização e publicação.",
       "fase": 3
     },
     {

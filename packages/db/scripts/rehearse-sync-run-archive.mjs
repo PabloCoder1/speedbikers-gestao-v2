@@ -404,6 +404,9 @@ async function verifyBatchRollback() {
         const getReceipt = async () => (await db.query(
             "select run_ids, archived_by, archive_login, restored_at, restored_by, restore_login, restored_count from d04_probe.batches where id=$1", [batchId],
         )).rows[0];
+        const getCounts = async () => (await db.query(`select
+          (select count(*)::int from public.sync_runs where id=any($1::uuid[])) as active,
+          (select count(*)::int from d04_probe.cold where id=any($1::uuid[])) as archived`, [ids])).rows[0];
         const restore = (accountId = account) => asRole('d04_reviewer', async () => {
             const { rows: [row] } = await db.query(
                 "select d04_probe.restore_batch($1,$2,$3) restored", [org, accountId, batchId],
@@ -420,21 +423,41 @@ async function verifyBatchRollback() {
           create trigger d04_probe_skip_delete before delete on public.sync_runs
           for each row when (old.id = '${skipped}'::uuid) execute function d04_probe.skip_delete()`);
         await expectDenied(() => moveBatch(account, cutoff, 2, null, batchId), "23514");
-        const { rows: [afterFailure] } = await db.query(`select
-          (select count(*)::int from public.sync_runs where id=any($1::uuid[])) as active,
-          (select count(*)::int from d04_probe.cold where id=any($1::uuid[])) as archived`, [ids]);
-        assert.deepEqual(afterFailure, { active: 2, archived: 0 });
+        assert.deepEqual(await getCounts(), { active: 2, archived: 0 });
         assert.equal(await getReceipt(), undefined);
         assert.deepEqual(await snapshot(), expected);
+
+        await db.query("savepoint verify_deadline");
+        let reachedDelete = false;
+        const onNotice = notice => {
+            if (notice.message === 'd04: exclusão alcançada') reachedDelete = true;
+        };
+        db.on("notice", onNotice);
+        try {
+            await db.query(`create or replace function d04_probe.skip_delete() returns trigger
+              language plpgsql set search_path='' as $$ begin
+                raise notice 'd04: exclusão alcançada';
+                perform pg_sleep(2);
+                return old;
+              end; $$;
+              set local client_min_messages = notice;
+              set local statement_timeout = '500ms'`);
+            await expectDenied(() => moveBatch(account, cutoff, 2, null, batchId), "57014");
+            assert.ok(reachedDelete, "o prazo precisa vencer depois de a exclusão ter começado");
+            assert.deepEqual(await getCounts(), { active: 2, archived: 0 });
+            assert.equal(await getReceipt(), undefined);
+            assert.deepEqual(await snapshot(), expected);
+        } finally {
+            db.off("notice", onNotice);
+            await db.query("rollback to verify_deadline");
+            await db.query("release savepoint verify_deadline");
+        }
 
         await db.query("drop trigger d04_probe_skip_delete on public.sync_runs");
         assert.equal(await moveBatch(account, cutoff, 2, null, batchId), 2);
         assert.equal(await moveBatch(account, cutoff, 2, null, batchId), 2);
         await expectDenied(() => moveBatch(account, cutoff, 1, null, batchId), "22023");
-        const { rows: [afterRetry] } = await db.query(`select
-          (select count(*)::int from public.sync_runs where id=any($1::uuid[])) as active,
-          (select count(*)::int from d04_probe.cold where id=any($1::uuid[])) as archived`, [ids]);
-        assert.deepEqual(afterRetry, { active: 0, archived: 2 });
+        assert.deepEqual(await getCounts(), { active: 0, archived: 2 });
         assert.deepEqual(await snapshot(), expected);
         assert.deepEqual(await getReceipt(), {
             run_ids: [...ids].sort(), archived_by: 'd04_archiver', archive_login: 'postgres',
@@ -466,6 +489,7 @@ async function verifyBatchRollback() {
         assert.equal(await moveOne(account, moved, cutoff), 0);
         assert.deepEqual(await snapshot(), expected);
         console.log("Divergência entre cópia e remoção reverteu o lote inteiro; nova tentativa moveu as duas linhas.");
+        console.log("Prazo vencido durante a exclusão reverteu cópia e recibo; repetição preservou o mesmo UUID.");
         console.log("Recibo atômico, recuperação por escopo, cópia ausente recusada e repetição sem novas inserções.");
     } finally {
         await db.query("rollback to verify_batch");
