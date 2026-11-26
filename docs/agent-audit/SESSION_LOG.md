@@ -925,3 +925,25 @@ Tudo lido pela VM em modo só leitura.
 - **Próxima etapa:**
   1. responder ao autor do #424 se ele corrigir o banco;
   2. com a faixa de decisões confirmada, a curva ABC (~0,3 s), o custo estrutural que sobra na sugestão de compra.
+
+### 26/11/2026 · Claude Sentinel: integridade da Central (#426)
+
+- **Estado:** o #424 está na `main` e a web dele já está no ar. As migrations `20261126233000` e `234000` **não** foram aplicadas em produção, e a tela tolera isso.
+- **#426** (`claude/central-integridade`, base `main`, commit `7ef75ba0`) traz a migration `20261126235000_central_integridade.sql`, que corrige os achados 1, 3 e 4 da revisão:
+  - FK composta por organização;
+  - trilha com `deleted` e sem cascade;
+  - trava do mês fechado, e o fechamento não é mais apagável pela sessão.
+- **Testes:**
+  - 5 novos em `central-integridade.integration.test.ts`. Contra o esquema anterior (`db reset --version 20261126234000`), 4 falham;
+  - os 10 da Central passam;
+  - a integração inteira do `@sb/db` passa: 19 arquivos, 1254 testes;
+  - `check` e `docs:check` verdes.
+  - A fixture do autor foi para junho, porque a trava recusava a despesa de outubro.
+- **Comentado:** no #424 a ordem de publicação, e no #351 o aviso para o preflight financeiro.
+- **Ordem de publicação:** `233000` → `234000` → `235000`. Pede autorização do dono.
+- **Continua com o autor:** o peso zero da Shopee no rateio, e o `removerDespesa`, que ignora o erro (falha silenciosa num mês fechado).
+- **Inventário:** sem mudança no candidato `ec76c2e8`: 173/226 (76,55 %), 0 p.p. na rodada.
+- **Próxima etapa:**
+  1. esperar a CI do #426;
+  2. com autorização, merge e publicação das três migrations na ordem;
+  3. depois, a curva ABC, quando a faixa de decisões for confirmada.
