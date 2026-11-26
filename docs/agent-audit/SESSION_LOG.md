@@ -900,3 +900,12 @@ Tudo lido pela VM em modo só leitura.
 - **Conferência:** corpo novo (ramo com e sem lista), `plan_cache_mode`, grants, comentário e registro estão certos. Reposição, contagem de estados e página da sugestão responderam.
 - **Tempo como membro:** `get_purchase_analysis` com sugestão foi de ~11,7 s para 0,36–0,40 s com 5 SKUs e de ~9 s para 0,59 s com 3. Com 50 SKUs, 0,65 s.
 - **#421:** a base passou para a `main` sem reescrever a branch, e um commit vazio (`1788c836`) disparou a CI. A publicação espera autorização do dono.
+
+### 26/11/2026 · Claude Sentinel: sugestão do pedido por SKU em produção (#421)
+
+- **Publicação.** Com autorização do dono, o #421 entrou na `main` em `16f6ca60`.
+  - Os 4 jobs obrigatórios passaram. O do Dev falhou com "project is paused", como esperado.
+  - A migration `20261126200000` foi aplicada pela VM com `psql -1`, com o mesmo sha256 dos dois lados, e registrada no histórico. A Vercel concluiu a web, que não muda.
+- **Conferência:** corpo novo, `plan_cache_mode`, grants (`authenticated`, `postgres`, `service_role`) e registro certos. Sem SKU e sem marca, a função continua devolvendo vazio.
+- **Tempo como membro:** por lista de 5 SKUs, de 0,95–1,02 s para 0,33–0,38 s. Por marca, de 0,75–0,98 s para 0,42–0,61 s.
+- **Próxima etapa:** a faixa de números de decisão ainda espera o Codex no #351. A curva ABC do catálogo inteiro (~0,3 s) é o custo estrutural que sobra na sugestão.
