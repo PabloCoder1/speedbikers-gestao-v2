@@ -8766,6 +8766,7 @@ export type Database = {
           p_offset?: number
           p_organization_id: string
           p_search?: string | null
+          p_sku_ids?: string[]
           p_state?: string | null
           p_supplier_brand?: string | null
         }

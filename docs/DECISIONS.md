@@ -20441,3 +20441,33 @@ Na `main`, o `ml-fulfillment-fetch` lê todo o histórico de `fulfillment_stock_
 - **Só a 1ª venda:** a parte da Shopee passou de ~200 ms e ~100 mil páginas para ~64 ms e ~2,3 mil páginas. A do ML, de ~45 ms para ~1,4 ms.
 
 **Publicação:** merge e a migration `20261126150000` na VM, com autorização do dono. A web não muda.
+
+## D-879 - A sugestão de compra pode ser calculada só para uma lista de SKUs
+
+**Contexto:** com a sugestão ligada (pedido novo), `get_purchase_analysis` chamava `get_purchase_suggestions` para o catálogo inteiro e ficava com ~50 linhas. Em produção, a sugestão do catálogo custa de 0,75 a 1,0 s, e uma página custa o mesmo, porque tudo é calculado antes do `limit`. A medição está em `docs/PERFORMANCE.md` ("Sugestão de compra: onde está o tempo").
+
+**Decisão:**
+- **`p_sku_ids uuid[] default null`, no fim de `get_purchase_suggestions`.** Nulo, nada muda para as outras chamadas: Reposição, contagem de estados, alcance, sugestão do pedido e Copiloto.
+- **Com a lista**, a conta por SKU fica restrita a ela: saldos, Full, vendas do ML e da Shopee e a linha do SKU. A curva ABC, o histórico de 90 dias e a loja Shopee lida continuam sendo os do catálogo inteiro, porque a classe ABC é relativa ao catálogo. A sugestão de cada SKU é a mesma.
+- **Full com lista:** o `distinct on` só vê os buckets que tiveram algum SKU pedido na janela de 3 dias, e o recorte por SKU vem depois dele. Um bucket que trocou de SKU continua valendo para o SKU da captura mais recente. A definição do D-173 não muda.
+- **Demanda da Shopee:** passa a ler os itens antes do pedido, como na D-878, com o mesmo recorte. Sem a lista, o resultado é igual ao de antes.
+- **`get_purchase_analysis`** passa a lista dos SKUs pedidos.
+- **Assinatura nova:** a função é apagada e recriada, com o comentário e os grants de antes. Em produção, nada depende dela em `pg_depend`. Quem a chama é plpgsql ou SQL não atômico, por posição, com até sete argumentos. Os tipos de `@sb/db` ganham `p_sku_ids?: string[]`.
+
+**Verificação:**
+- **Em produção, só leitura e como membro:** o corpo atual e o novo lado a lado, pelo hash.
+  - Sem lista, o catálogo inteiro, com a ordem, saiu IGUAL hoje e com `p_date_to` há 20 dias.
+  - Com lista, as linhas da lista contra o catálogo filtrado, sem `total_count` (que conta o conjunto devolvido), saíram IGUAIS em oito recortes: 50 mais vendidos, 500 SKUs, 200 com venda na Shopee e 200 com Full, nas duas datas.
+- **Tempos com lista** (a curva ABC, ~0,3 s, fica):
+
+  | Recorte | Catálogo filtrado | Com `p_sku_ids` |
+  |---|---|---|
+  | 50 SKUs | 0,69 a 0,84 s | 0,47 a 0,51 s |
+  | 500 SKUs | 0,76 a 1,02 s | 0,57 a 0,66 s |
+
+  Sem lista, o tempo ficou igual dentro do ruído: 0,71 a 1,04 s contra 0,81 a 0,84 s.
+- **Local:**
+  - a suíte de integração do `@sb/db` passou (17 arquivos);
+  - o teste novo compara a sugestão com e sem a lista e inclui um bucket do Full que trocou de SKU. Ele falha quando o recorte do Full vai para antes do `distinct on` (mutação conferida).
+
+**Publicação:** pede merge e a migration `20261126170000` na VM, com autorização do dono. A web não muda.

@@ -2339,3 +2339,10 @@ Medido em produção, como membro e só leitura, em `get_purchase_suggestions`, 
   - O `distinct on` do Full com `collate "C"`: ~76 a 84 ms.
   - Juntas, tiram ~100 ms, cerca de 13 %, numa função usada por `/reposicao`, pelo pedido novo, por `/curva-abc`, pela inspeção de `/produtos` e pelo Copiloto.
 - **Estrutural:** a classe ABC é relativa ao catálogo inteiro, e a sugestão é recalculada a cada chamada. Um ganho grande pede outra forma, que é decisão de produto: sugestões pré-calculadas pelo worker, ou uma variante por SKU para o pedido novo, que só precisa de 50 linhas.
+
+### Sugestão de compra por SKU (Claude Sentinel, D-879, 26/11/2026)
+
+`get_purchase_suggestions` aceita `p_sku_ids`, e `get_purchase_analysis` passa a lista. Em produção, como membro, com 50 SKUs, a sugestão caiu de 0,69–0,84 s para 0,47–0,51 s. Em dez recortes, o hash foi igual ao do catálogo filtrado.
+
+- **O que sobra:** a curva ABC do catálogo inteiro, ~0,3 s, que a classe relativa exige. Também a demanda da Shopee (~0,1 s, o hash dos pedidos da janela) e o histórico de 90 dias (~30 ms).
+- **Sem lista:** o tempo é o mesmo de antes.
