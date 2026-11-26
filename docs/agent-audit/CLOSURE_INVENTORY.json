@@ -169,7 +169,7 @@
       "peso": 3,
       "status": "Em andamento",
       "responsavel": "Database/Dono",
-      "evidencia": "Histórico e ensaio de 60 dias no candidato. Lotes e concorrência passaram. A divergência entre cópia e remoção abortou o lote e a repetição foi validada. Falta validar restauração de lote confirmado, autorizar a execução e publicar.",
+      "evidencia": "Histórico e ensaio de 60 dias no candidato. Lotes e concorrência passaram. A divergência entre cópia e remoção abortou o lote e a repetição foi validada. Recuperação após commit passou com erro tardio e repetição. Falta definir controle operacional por lote, autorizar a execução e publicar.",
       "fase": 3
     },
     {

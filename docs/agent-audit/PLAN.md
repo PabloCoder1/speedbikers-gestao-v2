@@ -17,7 +17,7 @@ Há 124 achados em [FINDINGS.md](FINDINGS.md). Seis mantêm ações ou mediçõe
 
 1. O #364 em `32d4ad4b` passou na CI. Conferir a CI do #364 conciliado com a main #415. D04 recebeu versões posteriores à D-874. Revalidar o catálogo antes da publicação. Na retomada do Dev, reconciliar o catálogo. Gemini conserva M04 e o #401, com CI e separação da retenção solicitadas.
 2. M05 validado em produção com o worker do #377, reconciliação e recuperação do recorte identificável. Acompanhar a revisão nas rodadas regulares.
-3. Conferir a CI de D-886 no candidato. A CI verde em `237d287d` cobre D-885. Para `sync_runs`, o ensaio manual conferiu permissões, checkpoints, cartões e vigia. Os ensaios de lote e concorrência passaram. A VM foi consultada em leitura para estimar a frequência de erros e os recortes. A janela de 60 dias foi confirmada para preparação e ensaio. Validar a restauração de um lote já confirmado e revisar o índice antes de propor a aplicação da retenção. S05 aguarda autorização para os papéis mínimos da conta de build.
+3. Conferir a CI de D-886 no candidato. A CI verde em `237d287d` cobre D-885. Para `sync_runs`, o ensaio manual conferiu permissões, checkpoints, cartões e vigia. Os ensaios de lote e concorrência passaram. A VM foi consultada em leitura para estimar a frequência de erros e os recortes. A janela de 60 dias foi confirmada para preparação e ensaio. A recuperação de um lote confirmado passou em laboratório. Definir identidade do lote, registro da recuperação, reingresso no arquivo e estratégia do índice antes de propor a aplicação. S05 aguarda autorização para os papéis mínimos da conta de build.
 
 ## Frentes de execução
 
