@@ -20471,3 +20471,10 @@ Na `main`, o `ml-fulfillment-fetch` lê todo o histórico de `fulfillment_stock_
   - o teste novo compara a sugestão com e sem a lista e inclui um bucket do Full que trocou de SKU. Ele falha quando o recorte do Full vai para antes do `distinct on` (mutação conferida).
 
 **Publicação:** pede merge e a migration `20261126170000` na VM, com autorização do dono. A web não muda.
+
+**Correção (26/11, depois da publicação):** com uma lista curta de SKUs muito vendidos, a demanda da Shopee ficava lenta. Em produção, com a sugestão ligada, `get_purchase_analysis` levou ~11 s com 5 SKUs e ~9 s com 3. Com 1 e com 20 ou mais, levou menos de 1 s.
+
+- **Causa:** os itens materializados juntavam-se com os pedidos válidos da janela. O planejador estimava poucos itens e escolhia um laço que comparava cada pedido com todos eles (73 milhões de comparações com 5 SKUs).
+- **Correção:** a migration `20261126190000`. Com `p_sku_ids`, cada item acha o seu pedido pela chave primária (`shopee_shop_id`, `order_sn`). O `limit 1` impede que a lateral seja achatada de volta no join, e o pedido é único pela chave. Sem lista, o caminho continua o mesmo.
+- **Verificação:** em produção, só leitura e como membro, o hash do resultado saiu igual ao da função publicada em cinco recortes (sem lista, 1, 5 e 50 SKUs e uma marca). A suíte de integração do `@sb/db` passou. A mutação que tira o filtro de pedido válido só do ramo novo é pega pelo teste da D-879.
+- Sem número novo: é a mesma decisão, com o plano corrigido.

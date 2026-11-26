@@ -2346,3 +2346,19 @@ Medido em produção, como membro e só leitura, em `get_purchase_suggestions`, 
 
 - **O que sobra:** a curva ABC do catálogo inteiro, ~0,3 s, que a classe relativa exige. Também a demanda da Shopee (~0,1 s, o hash dos pedidos da janela) e o histórico de 90 dias (~30 ms).
 - **Sem lista:** o tempo é o mesmo de antes.
+
+### Sugestão de compra com poucos SKUs (Claude Sentinel, correção da D-879, 26/11/2026)
+
+Medido em produção como membro, depois da D-879. A sugestão com lista ficou lenta só para listas curtas de SKUs muito vendidos.
+
+| Recorte | Publicada (D-879) | Corrigida |
+|---|---|---|
+| Sem lista (Reposição) | 0,72–0,82 s | 0,75–1,10 s (mesmo plano; variação de cache) |
+| 1 SKU | 0,31 s | 0,39–0,41 s |
+| 5 SKUs | 11,2–15,9 s | 0,38–0,46 s |
+| 50 SKUs | 0,50–0,59 s | 0,49–0,88 s |
+| Uma marca inteira | 0,55–0,57 s | 0,54–0,63 s |
+
+- **Causa:** o `EXPLAIN` com 5 SKUs mostrou a demanda da Shopee em ~19,5 s. O laço juntava os pedidos válidos da janela com os itens materializados, sem índice do lado de dentro, e descartou 73 milhões de pares.
+- **Correção:** com a lista, cada item acha o pedido pela chave primária, com `limit 1`, que o planejador não achata.
+- **Fora daqui:** a análise sem sugestão e a primeira venda da D-878 não têm o problema (0,05–0,08 s com 1 a 5 SKUs).
