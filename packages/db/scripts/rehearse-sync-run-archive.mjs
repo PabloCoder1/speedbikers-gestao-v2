@@ -30,8 +30,9 @@ function daysAgo(days) {
 const ddl = `
 create role d04_mover nologin;
 create role d04_hydrator nologin;
-create role d04_operator nologin;
-grant d04_mover,d04_hydrator,d04_operator to postgres;
+create role d04_archiver nologin;
+create role d04_reviewer nologin;
+grant d04_mover,d04_hydrator,d04_archiver,d04_reviewer to postgres;
 create schema d04_probe;
 create table d04_probe.allowed_scope (organization_id uuid, ml_account_id uuid, primary key (organization_id, ml_account_id));
 grant select on d04_probe.allowed_scope to d04_mover;
@@ -42,21 +43,26 @@ create table d04_probe.batches (
   organization_id uuid not null,
   ml_account_id uuid not null,
   requested_before timestamptz not null,
+  effective_before timestamptz not null,
   batch_limit integer not null,
   requested_run_id uuid,
   run_ids uuid[] not null default '{}',
   archived_at timestamptz not null default now(),
+  archived_by name not null default coalesce(nullif(current_setting('role'),'none'),session_user),
+  archive_login name not null default session_user,
   restored_at timestamptz,
-  restored_count integer
+  restored_count integer,
+  restored_by name,
+  restore_login name
 );
-grant usage on schema d04_probe to d04_mover,d04_hydrator,d04_operator;
+grant usage on schema d04_probe to d04_mover,d04_hydrator,d04_archiver,d04_reviewer;
 grant create on schema d04_probe to d04_mover,d04_hydrator;
 grant insert,select on d04_probe.cold to d04_mover;
 grant select on d04_probe.cold to d04_hydrator;
 grant select on d04_probe.batches to d04_mover,d04_hydrator;
 grant insert on d04_probe.batches to d04_mover;
 grant update (run_ids) on d04_probe.batches to d04_mover;
-grant update (restored_at,restored_count) on d04_probe.batches to d04_hydrator;
+grant update (restored_at,restored_count,restored_by,restore_login) on d04_probe.batches to d04_hydrator;
 grant select,delete on public.sync_runs to d04_mover;
 grant select,insert on public.sync_runs to d04_hydrator;
 grant update (id) on public.sync_runs to d04_mover,d04_hydrator;
@@ -86,6 +92,7 @@ declare
   selected uuid[];
   prior d04_probe.batches%rowtype;
   removed_ids uuid[];
+  effective_before timestamptz;
   copied_count integer;
   moved integer;
 begin
@@ -98,8 +105,9 @@ begin
   if not exists (select from d04_probe.allowed_scope
     where (organization_id, ml_account_id) = (p_org, p_account)) then return 0; end if;
 
-  insert into d04_probe.batches(id,organization_id,ml_account_id,requested_before,batch_limit,requested_run_id)
-    values(p_batch,p_org,p_account,p_before,p_limit,p_id) on conflict (id) do nothing;
+  effective_before := least(p_before, now() - make_interval(days => ${minimumRetentionDays}));
+  insert into d04_probe.batches(id,organization_id,ml_account_id,requested_before,effective_before,batch_limit,requested_run_id)
+    values(p_batch,p_org,p_account,p_before,effective_before,p_limit,p_id) on conflict (id) do nothing;
   if not found then
     select * into strict prior from d04_probe.batches where id=p_batch;
     if (prior.organization_id,prior.ml_account_id,prior.requested_before,prior.batch_limit,prior.requested_run_id)
@@ -126,7 +134,7 @@ begin
     join group_marks g using (resource, channel)
     cross join scope_marks m
     join public.sync_runs r on r.id=s.id
-    where s.finished_at < least(p_before, now() - make_interval(days => ${minimumRetentionDays}))
+    where s.finished_at < effective_before
       and (p_id is null or s.id=p_id)
       and not coalesce(
         s.finished_at=g.last_run
@@ -162,7 +170,7 @@ begin
 end;$$;
 alter function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid,uuid) owner to d04_mover;
 revoke all on function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid,uuid) from public,anon,authenticated,service_role;
-grant execute on function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid,uuid) to d04_operator;
+grant execute on function d04_probe.move_batch(uuid,uuid,timestamptz,integer,uuid,uuid) to d04_archiver;
 create function d04_probe.restore_batch(p_org uuid,p_account uuid,p_batch uuid) returns integer
 language plpgsql security definer set search_path='' as $$
 declare
@@ -186,12 +194,13 @@ begin
         and to_jsonb(a)=to_jsonb(r)) <> cardinality(batch.run_ids) then
     raise exception using errcode='23514', message='recuperação com cópia ausente ou divergente';
   end if;
-  update d04_probe.batches set restored_at=now(),restored_count=inserted where id=p_batch;
+  update d04_probe.batches set restored_at=now(),restored_count=inserted,
+    restored_by=coalesce(nullif(current_setting('role'),'none'),session_user),restore_login=session_user where id=p_batch;
   return inserted;
 end;$$;
 alter function d04_probe.restore_batch(uuid,uuid,uuid) owner to d04_hydrator;
 revoke all on function d04_probe.restore_batch(uuid,uuid,uuid) from public,anon,authenticated,service_role;
-grant execute on function d04_probe.restore_batch(uuid,uuid,uuid) to d04_operator;
+grant execute on function d04_probe.restore_batch(uuid,uuid,uuid) to d04_reviewer;
 create function d04_probe.ensure_run() returns trigger language plpgsql security definer set search_path='' as $$
 begin
   if new.sync_run_id is null then return new; end if;
@@ -251,7 +260,7 @@ async function snapshot() {
 }
 const error = (id, accountId) => db.query(`insert into public.sync_errors(organization_id,ml_account_id,sync_run_id,resource,error_class,message,occurred_at) values($1,$2,$3,'orders','retryable','D04 fixture',now())`, [org, accountId, id]);
 async function moveBatch(accountId, before, limit, id = null, batchId = randomUUID()) {
-    const { rows: [result] } = await asRole("d04_operator", () =>
+    const { rows: [result] } = await asRole("d04_archiver", () =>
         db.query("select d04_probe.move_batch($1,$2,$3,$4,$5,$6) moved", [org, accountId, before, limit, id, batchId]));
     return result.moved;
 }
@@ -336,9 +345,9 @@ async function verifyBatchRollback() {
         const cutoff = daysAgo(94);
         const ids = [skipped, moved];
         const getReceipt = async () => (await db.query(
-            "select run_ids, restored_at, restored_count from d04_probe.batches where id=$1", [batchId],
+            "select run_ids, archived_by, archive_login, restored_at, restored_by, restore_login, restored_count from d04_probe.batches where id=$1", [batchId],
         )).rows[0];
-        const restore = (accountId = account) => asRole('d04_operator', async () => {
+        const restore = (accountId = account) => asRole('d04_reviewer', async () => {
             const { rows: [row] } = await db.query(
                 "select d04_probe.restore_batch($1,$2,$3) restored", [org, accountId, batchId],
             );
@@ -370,8 +379,14 @@ async function verifyBatchRollback() {
           (select count(*)::int from d04_probe.cold where id=any($1::uuid[])) as archived`, [ids]);
         assert.deepEqual(afterRetry, { active: 0, archived: 2 });
         assert.deepEqual(await snapshot(), expected);
-        assert.deepEqual(await getReceipt(), { run_ids: [...ids].sort(), restored_at: null, restored_count: null });
+        assert.deepEqual(await getReceipt(), {
+            run_ids: [...ids].sort(), archived_by: 'd04_archiver', archive_login: 'postgres',
+            restored_at: null, restored_by: null, restore_login: null, restored_count: null,
+        });
         await expectDenied(() => restore(other), "22023");
+        await expectDenied(() => asRole('d04_archiver', () => db.query(
+            "select d04_probe.restore_batch($1,$2,$3)", [org, account, batchId],
+        )), "42501");
         await expectDenied(() => asRole('service_role', () => db.query(
             "select d04_probe.restore_batch($1,$2,$3)", [org, account, batchId],
         )), "42501");
@@ -386,6 +401,8 @@ async function verifyBatchRollback() {
         assert.equal(await restore(), 1);
         const restoredReceipt = await getReceipt();
         assert.equal(restoredReceipt.restored_count, 1);
+        assert.equal(restoredReceipt.restored_by, 'd04_reviewer');
+        assert.equal(restoredReceipt.restore_login, 'postgres');
         assert.ok(restoredReceipt.restored_at);
         assert.equal(await restore(), 0);
         assert.deepEqual(await getReceipt(), restoredReceipt);
@@ -440,8 +457,9 @@ async function rehearse() {
         assert.equal(watchBefore.events.length, 1);
         assert.equal(await moveOne(account, latest, daysAgo(70)), 0);
         assert.equal(await moveOne(account, claims, daysAgo(70)), 0);
-        await expectDenied(() => asRole('d04_operator', () => db.query('delete from public.sync_runs where id=$1', [historical])), '42501');
-        await expectDenied(() => asRole('d04_operator', () => db.query('select * from d04_probe.cold')), '42501');
+        await expectDenied(() => asRole('d04_archiver', () => db.query('delete from public.sync_runs where id=$1', [historical])), '42501');
+        await expectDenied(() => asRole('d04_reviewer', () => db.query('select * from d04_probe.cold')), '42501');
+        await expectDenied(() => asRole('d04_reviewer', () => db.query('select d04_probe.move_batch($1,$2,now(),1,$3)', [org, account, historical])), '42501');
         await expectDenied(() => asRole('service_role', () => db.query('select d04_probe.move_batch($1,$2,now(),1,$3)', [org, account, historical])), '42501');
         assert.equal(await moveOne(other), 0);
         assert.equal(await moveOne(account), 1);
@@ -470,7 +488,12 @@ async function rehearse() {
         const retentionBaseline = await snapshot();
         assert.equal(await moveOne(account, protectedRun, daysAgo(0)), 0);
         assert.equal(await moveOne(account, eligibleRun, daysAgo(62)), 0);
-        assert.equal(await moveOne(account, eligibleRun, daysAgo(0)), 1);
+        const retentionBatch = randomUUID();
+        assert.equal(await moveBatch(account, daysAgo(0), 1, eligibleRun, retentionBatch), 1);
+        const { rows: [retention] } = await db.query(`select requested_before > effective_before as capped,
+          effective_before = now() - make_interval(days => ${minimumRetentionDays}) as floor
+          from d04_probe.batches where id=$1`, [retentionBatch]);
+        assert.deepEqual(retention, { capped: true, floor: true });
         assert.deepEqual(await snapshot(), retentionBaseline);
         await verifyBatchRollback();
         if (process.argv.includes('--benchmark')) await measureBatches();
