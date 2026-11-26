@@ -909,3 +909,19 @@ Tudo lido pela VM em modo só leitura.
 - **Conferência:** corpo novo, `plan_cache_mode`, grants (`authenticated`, `postgres`, `service_role`) e registro certos. Sem SKU e sem marca, a função continua devolvendo vazio.
 - **Tempo como membro:** por lista de 5 SKUs, de 0,95–1,02 s para 0,33–0,38 s. Por marca, de 0,75–0,98 s para 0,42–0,61 s.
 - **Próxima etapa:** a faixa de números de decisão ainda espera o Codex no #351. A curva ABC do catálogo inteiro (~0,3 s) é o custo estrutural que sobra na sugestão.
+
+### 26/11/2026 · Claude Sentinel: checkpoint e revisão do #424
+
+- **Estado:** o worktree está em `claude/sessao-26-11`, sem mudança local.
+  - `main` em `16f6ca60`, com #420 e #421 em produção.
+  - O candidato do Codex (`ec76c2e8`) já incorporou as duas.
+  - O inventário segue em 173/226 (76,55 %), com 33 de 43 entregas.
+- **SKUs descontinuados:** o pedido de exclusão voltou no texto da rodada. Já está resolvido: saldo zerado por ajuste, com histórico intacto. A exclusão de fato não é possível (D-860).
+- **Revisão cruzada do #424** (Central Financeira, base `main`, CI verde): comentário no PR.
+  - Importantes: referências de outra organização aceitas, porque as FKs são simples e o formulário manda os ids; e a Shopee com peso zero no rateio por faturamento.
+  - Médios: trilha de auditoria apagável (cascade e DELETE) e fechamento mensal sem trava no banco.
+  - Ninguém está pedindo publicação dele a mim.
+- **Esperando o Codex (#351):** a faixa D-887–899 e o worker do candidato com a D-876.
+- **Próxima etapa:**
+  1. responder ao autor do #424 se ele corrigir o banco;
+  2. com a faixa de decisões confirmada, a curva ABC (~0,3 s), o custo estrutural que sobra na sugestão de compra.
