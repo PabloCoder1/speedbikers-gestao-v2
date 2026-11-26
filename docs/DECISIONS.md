@@ -20478,3 +20478,8 @@ Na `main`, o `ml-fulfillment-fetch` lê todo o histórico de `fulfillment_stock_
 - **Correção:** a migration `20261126190000`. Com `p_sku_ids`, cada item acha o seu pedido pela chave primária (`shopee_shop_id`, `order_sn`). O `limit 1` impede que a lateral seja achatada de volta no join, e o pedido é único pela chave. Sem lista, o caminho continua o mesmo.
 - **Verificação:** em produção, só leitura e como membro, o hash do resultado saiu igual ao da função publicada em cinco recortes (sem lista, 1, 5 e 50 SKUs e uma marca). A suíte de integração do `@sb/db` passou. A mutação que tira o filtro de pedido válido só do ramo novo é pega pelo teste da D-879.
 - Sem número novo: é a mesma decisão, com o plano corrigido.
+
+**Extensão (26/11):** `get_purchase_order_suggestions` também passa `p_sku_ids` (migration `20261126200000`). É a coluna de sugestão do pedido novo, por SKU, e o "trazer da Reposição", por marca.
+- Usa a lista do chamador ou, sem ela, os SKUs da marca, pela mesma igualdade que `p_supplier_brand` aplica.
+- Em produção, só leitura e como membro, o resultado saiu igual ao da função publicada em onze recortes: listas de 5 e 80 SKUs, SKUs inativos, lista vazia, quatro marcas com os três escopos, lista com marca e marca inexistente.
+- Depende da correção acima para listas curtas.
