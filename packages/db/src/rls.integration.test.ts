@@ -10738,6 +10738,23 @@ describe("prioridade da sugestão de compra (D-150) — equivalência SQL × dom
     expect(tudo.linhas.every((l) => (l.suggested_quantity ?? 0) > 0)).toBe(true);
   });
 
+  it("por marca, a sugestão do pedido é o recorte da reposição, com lista vazia ou sem lista (20261126200000)", async () => {
+    // A função passa a calcular só os SKUs da marca; o recorte e a ordem têm
+    // que ser os da reposição do catálogo inteiro filtrada pela marca.
+    const daMarca = (await fetchAll()).filter((r) => r.supplier_brand === "PURCHPRIO-MARCA");
+
+    expect(daMarca.length).toBeGreaterThan(0);
+
+    const semLista = await sugestaoDoPedido(`null, 'PURCHPRIO-MARCA', null, 500, '${TODAY}'`);
+    const listaVazia = await sugestaoDoPedido(`'{}'::uuid[], 'PURCHPRIO-MARCA', null, 500, '${TODAY}'`);
+
+    expect(semLista.total).toBe(daMarca.length);
+    expect(semLista.linhas.map((l) => [l.sku, l.state, l.suggested_quantity])).toEqual(
+      daMarca.map((r) => [r.sku, r.state, r.suggested_quantity]),
+    );
+    expect(listaVazia).toEqual(semLista);
+  });
+
   it("D-371: sem SKU e sem marca devolve vazio, e anon não executa", async () => {
     expect(await sugestaoDoPedido(`null, '  ', null, 500, '${TODAY}'`)).toEqual({ total: 0, linhas: [] });
     await expect(asAnon(`select public.get_purchase_order_suggestions('${ORG_SB}', null, 'X')`)).rejects.toThrow(

@@ -21591,6 +21591,11 @@ Na `main`, o `ml-fulfillment-fetch` lê todo o histórico de `fulfillment_stock_
 - **Verificação:** em produção, só leitura e como membro, o hash do resultado saiu igual ao da função publicada em cinco recortes (sem lista, 1, 5 e 50 SKUs e uma marca). A suíte de integração do `@sb/db` passou. A mutação que tira o filtro de pedido válido só do ramo novo é pega pelo teste da D-879.
 - Sem número novo: é a mesma decisão, com o plano corrigido.
 
+**Extensão (26/11):** `get_purchase_order_suggestions` também passa `p_sku_ids` (migration `20261126200000`). É a coluna de sugestão do pedido novo, por SKU, e o "trazer da Reposição", por marca.
+- Usa a lista do chamador ou, sem ela, os SKUs da marca, pela mesma igualdade que `p_supplier_brand` aplica.
+- Em produção, só leitura e como membro, o resultado saiu igual ao da função publicada em onze recortes: listas de 5 e 80 SKUs, SKUs inativos, lista vazia, quatro marcas com os três escopos, lista com marca e marca inexistente.
+- Depende da correção acima para listas curtas.
+
 ## D-884 - Conferir a base aplicada antes do ensaio local de upgrade
 
 O planejador exige que o catálogo da stack descartável coincida com a base Git. O candidato preserva os nomes e blobs dos SQLs aplicados. As adições são identificadas com o objeto Git e a posição em relação à última versão. As versões temporárias do laboratório ficam fora dos manifestos de publicação.

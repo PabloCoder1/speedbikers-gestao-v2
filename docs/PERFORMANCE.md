@@ -2757,6 +2757,12 @@ Medido em produção como membro, depois da D-879. A sugestão com lista ficou l
 - **Correção:** com a lista, cada item acha o pedido pela chave primária, com `limit 1`, que o planejador não achata.
 - **Fora daqui:** a análise sem sugestão e a primeira venda da D-878 não têm o problema (0,05–0,08 s com 1 a 5 SKUs).
 
+### Sugestão do pedido de compra por SKU (Claude Sentinel, extensão da D-879, 26/11/2026)
+
+`get_purchase_order_suggestions` calculava a sugestão do catálogo inteiro para devolver alguns SKUs ou uma marca. Em produção, como membro, custava 0,95–1,02 s por lista de 5 SKUs e 0,75–0,98 s por marca.
+
+- **Com a lista:** na maior marca, o corpo novo levou 0,56–0,72 s. Com 5 SKUs, o tempo depende da correção acima: sem ela, 11–14 s; com ela, a sugestão desses 5 SKUs leva ~0,4 s. A medida final por SKU fica para depois da publicação das duas migrations.
+
 ### Histórico da Central com arquivo (Sentinel D04, 25/11/2026)
 
 PostgreSQL local com RLS, 54 mil vínculos sintéticos, três execuções por consulta. A primeira página usa 100 linhas e desempata pela ID da notificação.
