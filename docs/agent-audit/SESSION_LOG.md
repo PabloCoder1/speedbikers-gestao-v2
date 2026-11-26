@@ -804,3 +804,13 @@ Tudo lido pela VM em modo só leitura.
   - 0,35 s sem sugestão e com o cache quente (era 3,16 s);
   - 1,31 s com sugestão (era 3,81 s).
 - **Próxima etapa:** a 1ª venda da Shopee na análise de compra.
+
+### 26/11/2026 · Claude Sentinel: 1ª venda da análise de compra (D-878)
+
+- **Entrega:** a migration `20261126150000`. A 1ª venda da Shopee lê os itens pelo índice do SKU e cruza com os pedidos por hash. A do ML é a primeira linha do índice do SKU.
+- **Em produção, só leitura e como membro:** oito recortes iguais pelo hash do JSON, contra a função da D-877. Com 50 SKUs sem sugestão, o tempo foi de 0,34–0,48 s para 0,21–0,23 s, medido nas duas ordens.
+- **Testes:**
+  - suíte de integração do `@sb/db` com a migration: 17 arquivos, todos passaram;
+  - teste novo da 1ª venda da Shopee, que pega a falta do filtro `live` (mutação conferida);
+  - `pnpm run check` e `pnpm docs:check`. O `build` não rodou: a mudança não toca código de app.
+- **Próxima etapa:** publicar a D-878 com autorização do dono. Depois, `get_purchase_suggestions`, que é o que sobra com a sugestão ligada.

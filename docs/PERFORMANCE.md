@@ -2311,3 +2311,14 @@ Em seis recortes, o hash do JSON foi igual.
 
 - **Causa:** a subconsulta correlacionada por (SKU, dia) relia os movimentos do SKU 30 vezes.
 - **O que sobra:** ~300 ms, a maior parte na 1ª venda da Shopee.
+
+### Análise de compra: 1ª venda pelos índices do SKU (Claude Sentinel, D-878, 26/11/2026)
+
+Em produção, como membro, com a função da D-877 e a nova lado a lado, nas duas ordens:
+- 50 SKUs sem sugestão: de 0,34–0,48 s para 0,21–0,23 s;
+- 500 SKUs com venda na Shopee: de 0,96–1,09 s para 0,76–0,79 s.
+
+O hash do JSON foi igual em oito recortes.
+
+- **Causa:** a 1ª venda da Shopee pela view filtrava a organização do pedido e percorria todos os pedidos válidos, cerca de 100 mil páginas para 50 SKUs. Pelo índice dos itens, são ~2,3 mil.
+- **O que sobra:** com sugestão, o custo maior é `get_purchase_suggestions`. A diferença entre com e sem sugestão é de ~0,8 s, e fica para fatia própria.

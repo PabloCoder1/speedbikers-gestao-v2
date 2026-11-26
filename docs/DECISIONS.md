@@ -20416,3 +20416,28 @@ Na `main`, o `ml-fulfillment-fetch` lê todo o histórico de `fulfillment_stock_
 - Localmente, a suíte do `@sb/db` com a migration teve as mesmas 10 falhas de baseline. O `compras-inteligentes`, que cobre `stockout_days_30`, passou.
 
 **Publicação:** pede merge e a migration `20261125200000` na VM, com autorização do dono. A web não muda.
+
+## D-878 - A 1ª venda da análise de compra sai dos índices do SKU
+
+**Contexto:** depois da D-877, a maior parte do que sobrava em `get_purchase_analysis` estava na 1ª venda.
+- **Shopee:** a CTE lia a view `shopee_sales_items`, cujo filtro de organização é o do pedido. O índice `shopee_order_items_sku_idx (organization_id, sku_id)` ficava de fora. O plano percorria todos os pedidos válidos da loja e provava os itens de cada um: ~200 ms e ~100 mil páginas para 50 SKUs.
+- **ML:** o mínimo de `metric_date` lia todos os dias de cada SKU, ~45 ms.
+
+**Decisão:**
+- **`itens_shopee as materialized`.** Os itens dos SKUs pedidos saem de `shopee_order_items` pelo índice e só então cruzam com `shopee_sales_orders`, que continua dizendo o que é `live` e `VALIDA` e qual é o dia. O recorte é o mesmo, porque item, pedido e loja têm a mesma organização pelas chaves estrangeiras (conferido em produção: nenhum item com organização diferente da do pedido).
+- **ML por `lateral ... limit 1`.** O primeiro dia com `units_sold > 0` é a primeira linha do índice `(organization_id, sku_id, metric_date)`.
+- **Mais nada muda:** assinatura, retorno, a ruptura da D-877, a sugestão, o Full do dia, os pedidos sobrepostos, a última compra, as regras do fornecedor e os grants. O comentário é refeito igual.
+
+**Verificação:**
+- **Em produção, só leitura e como membro:** a função da D-877 e a nova lado a lado, comparadas pelo hash do JSON inteiro em oito recortes. Todos deram IGUAIS: os seis da D-877, mais 500 SKUs com venda na Shopee e os 500 SKUs mais antigos com `p_date_to` há 60 dias.
+- **Tempos:** rodei nas duas ordens, para não favorecer a segunda chamada pelo cache.
+
+  | Recorte | D-877 | D-878 |
+  |---|---|---|
+  | 50 SKUs, sem sugestão | 0,34 a 0,48 s | 0,21 a 0,23 s |
+  | 500 SKUs com venda na Shopee | 0,96 a 1,09 s | 0,76 a 0,79 s |
+  | 500 SKUs hoje | 0,78 a 0,82 s | 0,58 a 0,76 s |
+
+- **Só a 1ª venda:** a parte da Shopee passou de ~200 ms e ~100 mil páginas para ~64 ms e ~2,3 mil páginas. A do ML, de ~45 ms para ~1,4 ms.
+
+**Publicação:** merge e a migration `20261126150000` na VM, com autorização do dono. A web não muda.
