@@ -91,6 +91,24 @@ function makeDb(initial: FakeCredentialRow | null, options: { lockBusy?: boolean
         },
       };
     },
+    rpc: (name: string, args: Record<string, unknown>) => {
+      if (name === "tiktok_reject_token_refresh") {
+        if (
+          row === null ||
+          row.refresh_locked_until !== args.p_locked_until ||
+          row.refresh_token_ciphertext !== args.p_previous_refresh_ciphertext
+        ) {
+          return Promise.resolve({ data: false, error: null });
+        }
+
+        row = { ...row, refresh_locked_until: null };
+        shopUpdates.push({ status: "ERROR", last_error: args.p_error });
+
+        return Promise.resolve({ data: true, error: null });
+      }
+
+      return Promise.resolve({ data: null, error: { message: `rpc não simulada: ${name}` } });
+    },
   } as unknown as TikTokTokenStoreDeps["db"];
 
   return { db, getRow: () => row, shopUpdates };

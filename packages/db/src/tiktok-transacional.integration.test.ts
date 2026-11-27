@@ -190,4 +190,77 @@ describe("TikTok Shop transacional — Postgres real (D-838)", () => {
       ).rejects.toThrow(/permission denied/i);
     }
   });
+
+  it("tiktok_reject_token_refresh fecha corrida atômica com reconexão OAuth e aplica ERROR no caminho sem reconexão", async () => {
+    const oldAccess = "A".repeat(48);
+    const oldRefresh = "R".repeat(48);
+    const newAccess = "N".repeat(48);
+    const newRefresh = "S".repeat(48);
+    const lockUntil = "2026-11-27T12:05:00.000Z";
+
+    await client.query(
+      `insert into public.tiktok_credentials (
+         tiktok_shop_id, shop_cipher, access_token_ciphertext, refresh_token_ciphertext,
+         access_token_expires_at, refresh_token_expires_at, refresh_locked_until
+       ) values ($1, 'TTP_CIPHER_A', $2, $3, now() + interval '1 hour', now() + interval '30 days', $4)
+       on conflict (tiktok_shop_id) do update set
+         access_token_ciphertext = excluded.access_token_ciphertext,
+         refresh_token_ciphertext = excluded.refresh_token_ciphertext,
+         refresh_locked_until = excluded.refresh_locked_until`,
+      [SHOP_A, oldAccess, oldRefresh, lockUntil],
+    );
+
+    // 1. Caminho sem reconexão: trava + ciphertext conferem -> libera trava e marca ERROR.
+    const semReconexao = await client.query<{ applied: boolean }>(
+      "select public.tiktok_reject_token_refresh($1, $2::timestamptz, $3, 'refresh revogado') as applied",
+      [SHOP_A, lockUntil, oldRefresh],
+    );
+
+    expect(semReconexao.rows[0]?.applied).toBe(true);
+    const afterReject = await client.query<{ status: string; last_error: string | null }>(
+      "select status, last_error from public.tiktok_shops where id = $1",
+      [SHOP_A],
+    );
+
+    expect(afterReject.rows[0]).toEqual({ status: "ERROR", last_error: "refresh revogado" });
+
+    // 2. Reconexão OAuth concorrente via `tiktok_connect_shops` restaura CONNECTED e troca o ciphertext.
+    await client.query(
+      `select public.tiktok_connect_shops(
+         $1, $2, now(),
+         jsonb_build_array(jsonb_build_object(
+           'shop_id', '7000714532876278380',
+           'shop_name', 'Loja TikTok A',
+           'region', 'BR',
+           'seller_type', 'LOCAL',
+           'shop_code', 'BR1',
+           'shop_cipher', 'TTP_CIPHER_NEW'
+         )),
+         'open-1', 'Speed Bikers', array['seller.order.info'],
+         $3, $4, now() + interval '7 days', now() + interval '90 days'
+       )`,
+      [ORG_A, USER_A, newAccess, newRefresh],
+    );
+
+    // Refresh antigo tenta rejeitar após a reconexão -> devolve false e NÃO derruba a loja para ERROR.
+    const comReconexao = await client.query<{ applied: boolean }>(
+      "select public.tiktok_reject_token_refresh($1, $2::timestamptz, $3, 'refresh antigo expirado') as applied",
+      [SHOP_A, lockUntil, oldRefresh],
+    );
+
+    expect(comReconexao.rows[0]?.applied).toBe(false);
+    const afterReconnect = await client.query<{ status: string; last_error: string | null }>(
+      "select status, last_error from public.tiktok_shops where id = $1",
+      [SHOP_A],
+    );
+
+    expect(afterReconnect.rows[0]?.status).toBe("CONNECTED");
+
+    // 3. `authenticated` não pode executar `tiktok_reject_token_refresh`.
+    await expect(
+      asRole("authenticated", USER_A, () =>
+        client.query("select public.tiktok_reject_token_refresh($1, $2::timestamptz, $3, 'x')", [SHOP_A, lockUntil, newRefresh]),
+      ),
+    ).rejects.toThrow(/permission denied/i);
+  });
 });

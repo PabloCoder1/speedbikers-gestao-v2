@@ -152,3 +152,13 @@ D-807 continua reservado pelo Gemini nos doze módulos do checkpoint de origem. 
   - `packages/db/src/tiktok-transacional.integration.test.ts` (2/2 contra Postgres real: lock atômico, RLS negativo cross-org e bloqueio de escrita nas 6 tabelas, upsert idempotente).
 - **Próximo ID reservado ao Gemini:** `D-839` (faixa livre `D-839..D-849`).
 - **Pendências exclusivas de 01/12/2026 (retorno do Supabase Dev Pro):** aplicar/registrar `20261125170000_tiktok_shop_transacional.sql` no Dev (`nmgccyqquwxecqffsidr`), fechar `I05` e validar `M04` com uma loja real do TikTok Shop.
+
+
+## 12. Rodada 20 (27/11): Revisões do Codex atendidas (`#408`, `#401`/`#409`) e conferência de 48 h em produção
+
+- **Conferência de produção (`sb-db` via IAP, 27/11 11:52 UTC):**
+  - `sync.listing.item` (últimas 48 h): **7.412 `done` / 2 `failed`** (`99,97%` sucesso, último `2026-11-27 11:52:01 UTC`).
+  - `maintenance.reconcile-balances` (últimas 48 h): **2 `done`** (último `2026-11-27 09:00:04 UTC`); último lote UpSeller `APPLIED` em `2026-11-26 11:38:46 UTC`.
+  - Saldos negativos `LOCAL` (`M03`): caíram de **25 → 11** (restam 11 SKUs para conferência com o ERP).
+- **PR #408 (`698d1f48`, `D-836`):** prévia de `infra/artifact-retention.sh` agora é 100% somente leitura (`describe`, exige `--apply` explícito para gravar), lifecycle do bucket preserva regras existentes via merge JSON, coberto por `infra/artifact-retention.test.mjs` (2/2 PASS).
+- **PR #409 (`D-838` + revisão de `#401`):** migration renomeada para `20261127120000_tiktok_shop_transacional.sql` (posterior às reservas `20261127090000`/`20261127091000` da Central), adicionada RPC atômica `public.tiktok_reject_token_refresh` (lock `tiktok_shops -> tiktok_credentials`) consumida por `apps/api/src/tiktok-token-store.ts` e `apps/worker/src/handlers/tiktok-token.ts`, e validada contra PostgreSQL real (`tiktok-transacional.integration.test.ts` **3/3 PASS**, incluindo caminho sem reconexão e com reconexão concorrente via `tiktok_connect_shops`).

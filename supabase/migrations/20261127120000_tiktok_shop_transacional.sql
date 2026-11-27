@@ -296,3 +296,48 @@ grant select on public.tiktok_orders, public.tiktok_order_items, public.tiktok_c
 grant all on public.tiktok_orders, public.tiktok_order_items, public.tiktok_catalog_units,
   public.tiktok_returns, public.tiktok_order_financials, public.tiktok_statements
   to service_role;
+
+-- ------------------------------------------------------------
+-- Recusa atômica de refresh do TikTok Shop (`tiktok_reject_token_refresh`)
+-- Mesma ordem de lock de `tiktok_connect_shops` (`tiktok_shops` -> `tiktok_credentials`)
+-- para fechar a corrida entre liberação da trava, reconexão OAuth e gravação de ERROR.
+-- ------------------------------------------------------------
+create or replace function public.tiktok_reject_token_refresh(
+  p_tiktok_shop_id uuid,
+  p_locked_until timestamptz,
+  p_previous_refresh_ciphertext text,
+  p_error text
+)
+returns boolean
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  perform 1 from public.tiktok_shops where id = p_tiktok_shop_id for update;
+
+  update public.tiktok_credentials
+     set refresh_locked_until = null
+   where tiktok_shop_id = p_tiktok_shop_id
+     and refresh_locked_until = p_locked_until
+     and refresh_token_ciphertext = p_previous_refresh_ciphertext;
+
+  if not found then
+    return false;
+  end if;
+
+  update public.tiktok_shops
+     set status = 'ERROR', last_error = left(p_error, 2000)
+   where id = p_tiktok_shop_id;
+
+  return true;
+end;
+$$;
+
+comment on function public.tiktok_reject_token_refresh(uuid, timestamptz, text, text) is
+  'Recusa atômica de refresh TikTok Shop (D-838/M04): só marca ERROR se a trava e o refresh_token_ciphertext ainda forem os do chamador. Exclusiva de service_role.';
+
+revoke all on function public.tiktok_reject_token_refresh(uuid, timestamptz, text, text)
+  from public, anon, authenticated;
+grant execute on function public.tiktok_reject_token_refresh(uuid, timestamptz, text, text)
+  to service_role;

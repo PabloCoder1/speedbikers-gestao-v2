@@ -8148,6 +8148,15 @@ export type Database = {
         Args: { p_tiktok_shop_id: string; p_ttl_seconds?: number }
         Returns: boolean
       }
+      tiktok_reject_token_refresh: {
+        Args: {
+          p_error: string
+          p_locked_until: string
+          p_previous_refresh_ciphertext: string
+          p_tiktok_shop_id: string
+        }
+        Returns: boolean
+      }
       shopee_orders_financials_pending: {
         Args: { p_limit?: number; p_shopee_shop_id: string }
         Returns: {
