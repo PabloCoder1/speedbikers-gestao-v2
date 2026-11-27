@@ -986,3 +986,13 @@ Tudo lido pela VM em modo só leitura.
   1. CI do #427;
   2. com a autorização do dono, merge e migration `235500` pela VM, e depois conferir os grants e o tempo como membro;
   3. depois, a curva ABC (~0,3 s), quando houver número de decisão.
+
+### 27/11/2026 · Claude Sentinel: #427 em produção
+
+- **Autorização:** o dono autorizou ("Sim, publicar").
+- **Publicação:** o #427 entrou na `main` em `61d1d00b`. A CI da `main` passou nos 4 jobs obrigatórios; o do Dev falhou porque está pausado. A Vercel concluiu.
+- **Produção (VM `sb-db`):** `20261126235500` foi aplicada numa transação (sha `354502ff…`, conferido nos dois lados) e registrada no histórico, e o PostgREST recarregou o schema.
+- **Conferido:** INVOKER, `authenticated` executa e `anon` não. Como ADMIN, ~120 ms em 30 dias, com 4 contas do ML e 2 lojas da Shopee de receita positiva.
+- **Central Financeira:** sem pendências conhecidas.
+- **Inventário:** sem mudança no candidato `ec76c2e8`: 173/226 (76,55 %).
+- **Próxima etapa:** a curva ABC (~0,3 s), quando a faixa D-887–899 for confirmada no #351. Até lá, tarefas livres de banco e QA.
