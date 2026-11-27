@@ -44,14 +44,14 @@ describe("remoção de registros da Central Financeira", () => {
   it("informa quando nenhuma linha foi removida", async () => {
     select.mockResolvedValueOnce({ data: [], error: null });
 
-    expect(await removerDespesa(dados)).toContain("Nada foi removido");
+    expect(await removerDespesa(dados)).toContain("Nada foi alterado");
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it("informa falha quando o banco recusa a exclusão", async () => {
-    select.mockResolvedValueOnce({ data: null, error: { message: "permission denied" } });
+    select.mockResolvedValueOnce({ data: null, error: { code: "42501", message: "permission denied" } });
 
-    expect(await removerDespesa(dados)).toContain("Não foi possível confirmar a remoção");
+    expect(await removerDespesa(dados)).toContain("Sem permissão");
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 });

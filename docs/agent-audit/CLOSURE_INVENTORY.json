@@ -419,7 +419,7 @@
       "peso": 8,
       "status": "Bloqueado",
       "responsavel": "Dono/Infra",
-      "evidencia": "O preflight local passou de bloqueado a pendente após conciliar D04. A VM observada tem 344 versões, até a extensão de Compras. O plano combinado com #424 reconhece todas as versões aplicadas e deixa quatro pendências posteriores; a aplicação coordenada e sua validação seguem pendentes.",
+      "evidencia": "O preflight local passou de bloqueado a pendente após conciliar D04. A VM observada tem 348 versões, até o rateio multicanal do #427. O plano combinado reconhece todas as versões aplicadas e deixa duas pendências de Notificações; a aplicação coordenada e sua validação seguem pendentes.",
       "fase": 5
     },
     {

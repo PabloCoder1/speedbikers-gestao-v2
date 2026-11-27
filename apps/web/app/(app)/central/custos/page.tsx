@@ -19,6 +19,7 @@ import { KpiStrip, type KpiCellData } from "../../../../components/kpi-strip";
 import { Panel } from "../../../../components/panel";
 import { RemoverComConfirmacao } from "../../../../components/remover-com-confirmacao";
 import { StatePill } from "../../../../components/state-pill";
+import { mensagemDaFalha } from "../../../../lib/custos-falha";
 import { carregarFaturamentoPorConta, resumirRegimeCaixa } from "../../../../lib/custos-fiscal";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../../lib/format";
 import { formatarAliquota, rotuloDoMes } from "../../../../lib/metas-imposto";
@@ -134,6 +135,8 @@ export default function CustosEFiscalPage(props: { searchParams: Promise<Consult
 
 async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Consulta> }): Promise<ReactNode> {
   const consulta = await searchParams;
+  // A falha de uma ação de linha (marcar paga, cancelar, remover) volta pela URL.
+  const falhaDaAcao = mensagemDaFalha(consulta);
   const supabase = await createClient();
   const membership = await currentMembership();
   const podeEditar = membership.role === "ADMIN" || membership.role === "GESTOR";
@@ -282,8 +285,7 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
   );
   const caixa = resumirRegimeCaixa(despesas, hoje);
   const contasComPesoReal = contasDisponiveis.map((c) => {
-    const mlId = c.ref.startsWith("MERCADO_LIVRE:") ? c.ref.slice("MERCADO_LIVRE:".length) : null;
-    const peso = mlId !== null ? (faturamentoContasMap.get(mlId) ?? 0) : 0;
+    const peso = faturamentoContasMap.get(c.ref) ?? 0;
     return { destinoId: c.ref, rotulo: c.label, peso };
   });
   const temFaturamentoParaRateio = contasComPesoReal.some((c) => c.peso > 0);
@@ -367,6 +369,11 @@ async function CustosEFiscalContent({ searchParams }: { searchParams: Promise<Co
   return (
     <>
       {cabecalho}
+      {falhaDaAcao !== null && (
+        <p role="alert" className="sb-campo-erro sb-central-bloco">
+          {falhaDaAcao}
+        </p>
+      )}
 
       {!podeEditar && (
         <div className="sb-note">

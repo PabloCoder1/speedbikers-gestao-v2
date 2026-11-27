@@ -1,7 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
+import { destinoDepoisDaAcao, falhaDaAcao, mensagemDaFalha } from "../../../../lib/custos-falha";
 import {
   lerFormularioDespesa,
   lerFormularioEntidadeFiscal,
@@ -39,16 +42,30 @@ interface TabelaGenerica {
   };
   update: (payload: Record<string, unknown>) => {
     eq: (col: string, val: string) => {
-      eq: (col2: string, val2: string) => Promise<{ error: DbErro | null }>;
+      eq: (col2: string, val2: string) => ComLinhas;
     };
   };
   delete: () => {
     eq: (col: string, val: string) => {
-      eq: (col2: string, val2: string) => {
-        select: (cols: "id") => Promise<{ data: readonly { id: string }[] | null; error: DbErro | null }>;
-      };
+      eq: (col2: string, val2: string) => ComLinhas;
     };
   };
+}
+
+interface ComLinhas {
+  select: (cols: string) => Promise<{ data: readonly Record<string, unknown>[] | null; error: DbErro | null }>;
+}
+
+/**
+ * Fecha uma ação de linha: revalida e, se o banco recusou ou não alterou nada,
+ * volta para a tela com a falha na URL (ver `lib/custos-falha.ts`). O
+ * `redirect` fica fora de qualquer try, porque ele lança para o Next.
+ */
+async function concluirAcaoDeLinha(resultado: { data: readonly unknown[] | null; error: DbErro | null }): Promise<void> {
+  const falha = falhaDaAcao(resultado.error, resultado.data === null ? null : resultado.data.length);
+  revalidar();
+  const destino = destinoDepoisDaAcao((await headers()).get("referer"), falha);
+  if (destino !== null) redirect(destino);
 }
 
 function tabela(supabase: Awaited<ReturnType<typeof createClient>>, nome: string): TabelaGenerica {
@@ -163,12 +180,13 @@ export async function marcarDespesaPaga(formData: FormData): Promise<void> {
     ...(Number.isFinite(valor) && valor >= 0 ? { actual_amount: Math.round(valor * 100) / 100 } : {}),
   };
 
-  await tabela(supabase, "operational_expenses")
+  const resultado = await tabela(supabase, "operational_expenses")
     .update(patch)
     .eq("id", id)
-    .eq("organization_id", membership.organizationId);
+    .eq("organization_id", membership.organizationId)
+    .select("id");
 
-  revalidar();
+  await concluirAcaoDeLinha(resultado);
 }
 
 export async function cancelarDespesa(formData: FormData): Promise<void> {
@@ -183,12 +201,13 @@ export async function cancelarDespesa(formData: FormData): Promise<void> {
   const userId = usuario.user?.id ?? null;
   const patch = { status: "cancelada", updated_by: userId };
 
-  await tabela(supabase, "operational_expenses")
+  const resultado = await tabela(supabase, "operational_expenses")
     .update(patch)
     .eq("id", id)
-    .eq("organization_id", membership.organizationId);
+    .eq("organization_id", membership.organizationId)
+    .select("id");
 
-  revalidar();
+  await concluirAcaoDeLinha(resultado);
 }
 
 async function removerRegistro(
@@ -208,8 +227,10 @@ async function removerRegistro(
     .eq("organization_id", membership.organizationId)
     .select("id");
 
-  if (error !== null) return "Não foi possível confirmar a remoção. Confira os dados antes de tentar novamente.";
-  if (!data?.length) return "Nada foi removido. Atualize a página para conferir o registro e seu acesso.";
+  const falha = falhaDaAcao(error, data?.length ?? null);
+  if (falha !== null) {
+    return mensagemDaFalha({ falha: falha.tipo, mes: falha.tipo === "mes-fechado" ? falha.mes ?? undefined : undefined });
+  }
   revalidar();
   return null;
 }

@@ -986,6 +986,23 @@ Funções e gatilhos adicionados em `20261126234000_resumo_e_auditoria_de_despes
 
 Todas nascem com RLS habilitada: leitura por `organization_id in (select private.accessible_orgs())` e escrita restrita a `private.has_org_role(organization_id, array['ADMIN','GESTOR'])`. Valores monetários em `numeric(14,2)` e alíquotas em `numeric(7,5)`. Nenhuma linha semeada com zero falso.
 
+Integridade em `20261126235000_central_integridade.sql`, de uma revisão cruzada feita antes de a Central chegar à produção:
+
+- **Referência só da mesma organização.** A RLS confere só o `organization_id` da linha, e a chave estrangeira não passa pela RLS. Por isso toda referência das tabelas da Central é composta `(x_id, organization_id)`: CNPJ, conta do ML, loja da Shopee e despesa. É o padrão de `shopee_shops`. `ml_accounts`, `fiscal_entities` e `operational_expenses` ganharam `unique (id, organization_id)`. Na despesa, apagar o CNPJ, a conta ou a loja anula só aquela coluna (`on delete set null (coluna)`, PG15+).
+- **A trilha sobrevive.** `operational_expense_history` não tem mais FK para a despesa. O trigger também grava `deleted`, com a linha inteira em `before_data`.
+- **Mês fechado não muda.** O trigger `operational_expenses_mes_fechado` recusa criar, alterar ou apagar uma despesa cuja competência, antes ou depois da mudança, esteja num mês `fechado`. A mensagem diz o mês, e para mexer é preciso reabrir. A sessão não apaga mais o fechamento: as policies de `insert` e `update` continuam, e o `delete` sai de `authenticated`.
+
+O rateio por faturamento passou a pesar a Shopee em `20261126235500_rateio_por_faturamento_multicanal.sql`. A `get_faturamento_por_conta` só lê `daily_account_metrics` e por isso dava peso zero a toda loja da Shopee.
+
+`get_faturamento_por_conta_multicanal(org, de, até)` devolve `(marketplace, conta_id, receita_bruta)` na régua de `multicanal_receita_bruta` (METRICS §5):
+
+- Mercado Livre: `gross_revenue`.
+- Shopee: `receita_bruta` de `shopee_sales_orders`, no recorte do bloco `vendas` de `get_shopee_faturamento_pedidos`: pedido `VALIDA`, dia de São Paulo e loja live já lida.
+
+O pedido de receita desconhecida fica fora, sem virar zero. A função é SECURITY INVOKER. A web lê esta função e, enquanto ela não existe no banco, cai na antiga, que só tem o ML. Medida em produção como ADMIN, levou ~70 ms em 30 dias.
+
+As ações de linha de `/central/custos` (marcar paga, cancelar, remover despesa, remover CNPJ e remover vínculo) não descartam mais o erro do banco. Com a trava do mês fechado, sem permissão ou sem linha alterada, a tela volta com um código fixo na URL (`?falha=`) e mostra o motivo (`apps/web/lib/custos-falha.ts`).
+
 ---
 
 ## 9. Convenções

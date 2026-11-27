@@ -21606,7 +21606,7 @@ Em 25/11, a base local de `6a3471ff` tinha 330 versões. As quatro adições de 
 
 **Data:** 2026-11-25. **Origem:** D04, leitura do histórico da Central.
 
-A migration `20261126230000` guarda vínculos já lidos em `notification_archive`. O arquivo referencia o evento original. A leitura usa a RLS de destinatário e a permissão vigente de `domain_events`. Durante uma cópia, o vínculo ativo tem precedência. A view mantém os filtros e as contagens no PostgreSQL, e a RPC une lotes paginados dos dois ramos com desempate pelo identificador. As ações de leitura escrevem nos destinatários ativos.
+A migration `20261127090000` guarda vínculos já lidos em `notification_archive`. O arquivo referencia o evento original. A leitura usa a RLS de destinatário e a permissão vigente de `domain_events`. Durante uma cópia, o vínculo ativo tem precedência. A view mantém os filtros e as contagens no PostgreSQL, e a RPC une lotes paginados dos dois ramos com desempate pelo identificador. As ações de leitura escrevem nos destinatários ativos.
 
 O PostgreSQL pode escolher um plano genérico que lê todo o histórico antes de montar a primeira página. A RPC planeja a consulta com os valores vinculados de cada chamada. No ensaio de 54 mil vínculos, com arquivo vazio, a primeira versão da view levou entre 486 e 536 ms. A versão paginada levou entre 2,2 e 3,7 ms. A contagem total exata ficou entre 215 e 306 ms, frente a 184–195 ms na comparação com a consulta ativa.
 
@@ -21616,6 +21616,6 @@ A publicação da web depende da migration. O arquivo pode começar vazio. A pol
 
 **Data:** 2026-11-25. **Origem:** D04, leitura da Central com arquivo preenchido.
 
-A migration `20261126231000` acrescenta uma view `security_invoker` para o ramo arquivado. As consultas laterais usam vínculos únicos e preservam a ordem do índice temporal. A RPC usa esse caminho nas páginas sem filtros com deslocamento até 1.000. Os recortes por evento e as páginas mais profundas continuam usando o plano de D-885. Lista, contagens, ordenação e permissões mantêm o contrato existente.
+A migration `20261127091000` acrescenta uma view `security_invoker` para o ramo arquivado. As consultas laterais usam vínculos únicos e preservam a ordem do índice temporal. A RPC usa esse caminho nas páginas sem filtros com deslocamento até 1.000. Os recortes por evento e as páginas mais profundas continuam usando o plano de D-885. Lista, contagens, ordenação e permissões mantêm o contrato existente.
 
 O ensaio com 54 mil vínculos sintéticos verificou dez recortes, incluindo vínculos duplicados em cópia, deslocamentos de 1.000 e 1.001, filtros combinados e lista vazia. A publicação também depende da migration de D-885.
