@@ -2,19 +2,24 @@
 # ============================================================
 # Retenção de artefatos de build no GCP (I06 / L04 / D-836).
 #
-# Configura de forma idempotente:
-#   1. Política de limpeza no Artifact Registry (`speedbikers-v3`):
-#      mantém sempre as 10 versões mais recentes de cada imagem (`api`,
-#      `worker`) e remove versões mais antigas que 30 dias.
-#   2. Opcionalmente (`--cloudbuild-lifecycle`), aplica lifecycle de
-#      exclusão em 30 dias no bucket temporário `<PROJECT_ID>_cloudbuild`,
-#      sem tocar nos buckets de negócio (`db-backups`, `documents`,
-#      `erp-imports`, `raw-ml`).
+# Modo padrão (ou `--dry-run`): SOMENTE LEITURA — inspeciona as políticas
+# vigentes no Artifact Registry (`describe`) e no bucket temporário
+# `<PROJECT_ID>_cloudbuild` sem executar nenhum comando de escrita.
+#
+# Para gravar alterações, informe explicitamente `--apply`:
+#   1. Aplica `infra/artifact-retention-policy.json` no Artifact Registry
+#      (`keepCount: 10` + `DELETE > 30d`). Passe `--simulate` junto com
+#      `--apply` somente se desejar ativar o modo de simulação do próprio
+#      Artifact Registry (`--dry-run` no repositório).
+#   2. Com `--cloudbuild-lifecycle`, lê as regras de lifecycle atuais do
+#      bucket `<PROJECT_ID>_cloudbuild`, PRESERVA todas as regras já
+#      existentes e adiciona (sem duplicar) a regra `Delete` após 30 dias,
+#      sem tocar nos buckets de negócio.
 #
 # Uso:
-#   ./infra/artifact-retention.sh --project speedbikers-prod --dry-run
 #   ./infra/artifact-retention.sh --project speedbikers-prod
-#   ./infra/artifact-retention.sh --project speedbikers-prod --cloudbuild-lifecycle
+#   ./infra/artifact-retention.sh --project speedbikers-prod --apply
+#   ./infra/artifact-retention.sh --project speedbikers-prod --apply --cloudbuild-lifecycle
 # ============================================================
 set -euo pipefail
 
@@ -24,7 +29,8 @@ POLICY_FILE="${SCRIPT_DIR}/artifact-retention-policy.json"
 PROJECT_ID="${GCP_PROJECT_ID:-}"
 REGION="${GCP_REGION:-southamerica-east1}"
 REPOSITORY="${ARTIFACT_REPOSITORY:-speedbikers-v3}"
-DRY_RUN="false"
+APPLY="false"
+SIMULATE="false"
 APPLY_CLOUDBUILD_LIFECYCLE="false"
 
 while [[ $# -gt 0 ]]; do
@@ -42,7 +48,15 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --dry-run)
-      DRY_RUN="true"
+      APPLY="false"
+      shift
+      ;;
+    --apply)
+      APPLY="true"
+      shift
+      ;;
+    --simulate)
+      SIMULATE="true"
       shift
       ;;
     --cloudbuild-lifecycle)
@@ -50,7 +64,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      sed -n '2,22p' "$0"
+      sed -n '2,26p' "$0"
       exit 0
       ;;
     *)
@@ -70,7 +84,32 @@ if [[ ! -f "$POLICY_FILE" ]]; then
   exit 1
 fi
 
-echo "==> Artifact Registry: ${PROJECT_ID}/${REGION}/${REPOSITORY} (dry-run=${DRY_RUN})"
+if [[ "$SIMULATE" == "true" && "$APPLY" != "true" ]]; then
+  echo "--simulate exige --apply explícito (ativa simulação no próprio repositório Artifact Registry)." >&2
+  exit 2
+fi
+
+CLOUDBUILD_BUCKET="gs://${PROJECT_ID}_cloudbuild"
+
+if [[ "$APPLY" != "true" ]]; then
+  echo "==> [prévia somente leitura] Artifact Registry: ${PROJECT_ID}/${REGION}/${REPOSITORY}"
+  gcloud artifacts repositories describe "$REPOSITORY" \
+    --project="$PROJECT_ID" \
+    --location="$REGION" \
+    --format="yaml(cleanupPolicies,cleanupPolicyDryRun,sizeBytes)"
+
+  if [[ "$APPLY_CLOUDBUILD_LIFECYCLE" == "true" ]]; then
+    echo "==> [prévia somente leitura] Bucket: ${CLOUDBUILD_BUCKET}"
+    gcloud storage buckets describe "$CLOUDBUILD_BUCKET" \
+      --project="$PROJECT_ID" \
+      --format="yaml(lifecycle_config)"
+  fi
+
+  echo "==> Nenhuma alteração gravada. Passe --apply para gravar."
+  exit 0
+fi
+
+echo "==> Aplicando política no Artifact Registry: ${PROJECT_ID}/${REGION}/${REPOSITORY} (simulate=${SIMULATE})"
 AR_ARGS=(
   artifacts repositories set-cleanup-policies "$REPOSITORY"
   --project="$PROJECT_ID"
@@ -78,7 +117,7 @@ AR_ARGS=(
   --policy="$POLICY_FILE"
 )
 
-if [[ "$DRY_RUN" == "true" ]]; then
+if [[ "$SIMULATE" == "true" ]]; then
   AR_ARGS+=(--dry-run)
 else
   AR_ARGS+=(--no-dry-run)
@@ -87,31 +126,39 @@ fi
 gcloud "${AR_ARGS[@]}"
 
 if [[ "$APPLY_CLOUDBUILD_LIFECYCLE" == "true" ]]; then
-  CLOUDBUILD_BUCKET="gs://${PROJECT_ID}_cloudbuild"
-  TMP_LIFECYCLE="$(mktemp)"
-  trap 'rm -f "$TMP_LIFECYCLE"' EXIT
+  TMP_CURRENT="$(mktemp)"
+  TMP_MERGED="$(mktemp)"
+  trap 'rm -f "$TMP_CURRENT" "$TMP_MERGED"' EXIT
 
-  cat > "$TMP_LIFECYCLE" <<'EOF'
-{
-  "lifecycle": {
-    "rule": [
-      {
-        "action": { "type": "Delete" },
-        "condition": { "age": 30 }
-      }
-    ]
-  }
-}
-EOF
+  echo "==> Lendo lifecycle atual de ${CLOUDBUILD_BUCKET} para preservar regras existentes"
+  gcloud storage buckets describe "$CLOUDBUILD_BUCKET" \
+    --project="$PROJECT_ID" \
+    --format="json" > "$TMP_CURRENT"
 
-  if [[ "$DRY_RUN" == "true" ]]; then
-    echo "==> [dry-run] Lifecycle de 30 dias preparado para ${CLOUDBUILD_BUCKET} (não aplicado)."
-  else
-    echo "==> Aplicando lifecycle de 30 dias em ${CLOUDBUILD_BUCKET}"
-    gcloud storage buckets update "$CLOUDBUILD_BUCKET" \
-      --project="$PROJECT_ID" \
-      --lifecycle-file="$TMP_LIFECYCLE"
-  fi
+  node -e '
+    const fs = require("node:fs");
+    const raw = fs.readFileSync(process.argv[1], "utf8");
+    const parsed = JSON.parse(raw);
+    const existing = Array.isArray(parsed?.lifecycle_config?.rule)
+      ? parsed.lifecycle_config.rule
+      : Array.isArray(parsed?.lifecycle?.rule)
+        ? parsed.lifecycle.rule
+        : [];
+    const target = { action: { type: "Delete" }, condition: { age: 30 } };
+    const alreadyPresent = existing.some(
+      (r) =>
+        r?.action?.type === "Delete" &&
+        r?.condition?.age === 30 &&
+        Object.keys(r.condition ?? {}).length === 1,
+    );
+    const merged = alreadyPresent ? existing : [...existing, target];
+    fs.writeFileSync(process.argv[2], JSON.stringify({ lifecycle: { rule: merged } }, null, 2) + "\n", "utf8");
+  ' "$TMP_CURRENT" "$TMP_MERGED"
+
+  echo "==> Atualizando lifecycle de ${CLOUDBUILD_BUCKET} preservando regras existentes"
+  gcloud storage buckets update "$CLOUDBUILD_BUCKET" \
+    --project="$PROJECT_ID" \
+    --lifecycle-file="$TMP_MERGED"
 fi
 
 echo "==> Concluído."
