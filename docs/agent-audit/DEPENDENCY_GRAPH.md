@@ -20,6 +20,6 @@ Referência da topologia · `d6169205`. Os manifests, `Dockerfile`, `infra/` e `
 - **Sincronização.** Marketplace → webhook da API → `apps/api/src/enqueue.ts` → Cloud Tasks → handler do worker → tabelas e RPCs → projeções lidas pela web. Cloud Scheduler chama a API nos fluxos periódicos.
 - **OAuth.** `apps/web/app/(app)/contas` e `configuracoes` → rotas da API → consentimento do marketplace → callback → persistência privilegiada das contas e credenciais.
 - **NF-e.** Web → API → Cloud Storage + metadados no Supabase → tarefa de processamento → worker → aplicação de movimentos ao ledger no banco.
-- **Deploy.** `main` → Vercel para web. `infra/deploy-cloud-run.sh` e `infra/cloudbuild.yaml` montam API e worker. `ci.yml` valida e tenta aplicar migrations no Dev. `migrations-producao.yml` separa verificação de origem, plano e aplicação com aprovações.
+- **Deploy.** `main` → Vercel para web. `infra/deploy-cloud-run.sh` e `infra/cloudbuild.yaml` montam API e worker. `ci.yml` valida e aplica migrations no Dev quando ativo. `migrations-producao.yml` compara o catálogo exportado da VM com o commit candidato. A publicação segue o [procedimento da VM](../../infra/vm/README.md).
 
 [Mapa de rotas](ROUTES_AND_PAGES.md) · [Mapa da API e jobs](API_AND_JOBS_MAP.md) · [Arquitetura](../ARCHITECTURE.md) · [Deploy](../DEPLOYMENT.md)

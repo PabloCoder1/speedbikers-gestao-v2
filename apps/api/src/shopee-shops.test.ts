@@ -294,4 +294,49 @@ describe("completeShopeeConnect (D-425)", () => {
       auth_expires_at: null,
     }]);
   });
+
+  it("D-796: expire_in absurdo devolvido pela Shopee é recusado com segurança sem lançar RangeError", async () => {
+    const { deps, gravado } = montar({
+      respostas: {
+        "/api/v2/auth/token/get": { ...TOKEN, expire_in: 9_000_000_000_000 },
+        "/api/v2/shop/get_shop_info": LOJA,
+      },
+    });
+
+    await expect(
+      completeShopeeConnect(deps, { state: "s".repeat(43), code: "abc", shopId: 54804 }),
+    ).resolves.toEqual({
+      status: "rejected",
+      reason: "não foi possível concluir a autorização com a Shopee",
+    });
+    expect(gravado.rpc).toEqual([]);
+  });
+
+  it("D-800: recusa code em branco ou shopId/mainAccountId inválidos (zero, negativo, fracionário ou acima de MAX_SAFE_INTEGER)", async () => {
+    for (const params of [
+      { state: "s".repeat(43), code: "abc", shopId: 0 },
+      { state: "s".repeat(43), code: "abc", shopId: 1.5 },
+      { state: "s".repeat(43), code: "abc", shopId: Number.MAX_SAFE_INTEGER + 2 },
+      { state: "s".repeat(43), code: "abc", mainAccountId: -10 },
+      { state: "s".repeat(43), code: "   ", shopId: 54804 },
+    ]) {
+      const caso = montar();
+
+      expect(await completeShopeeConnect(caso.deps, params)).toEqual({
+        status: "rejected",
+        reason: "autorização não concluída na Shopee",
+      });
+      expect(caso.chamadas).toEqual([]);
+      expect(caso.gravado.rpc).toEqual([]);
+    }
+  });
+
+  it("D-821: state em branco devolve invalid_state sem consultar o banco", async () => {
+    const caso = montar();
+    const res = await completeShopeeConnect(caso.deps, { state: "   ", code: "abc", shopId: 54804 });
+
+    expect(res).toEqual({ status: "invalid_state" });
+    expect(caso.gravado.update).toEqual([]);
+    expect(caso.chamadas).toEqual([]);
+  });
 });

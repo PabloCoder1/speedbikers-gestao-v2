@@ -89,4 +89,28 @@ describe("triggerOrderLogisticsSweep (D-352, R2)", () => {
     expect(outcome).toEqual({ accountsScanned: 0, enqueued: 0, deduplicated: 0, failed: true });
     expect(requests).toHaveLength(0);
   });
+
+  it("D-794: falha ao enfileirar uma conta não impede as demais e sinaliza failed para 503", async () => {
+    const { enqueuer: base, requests } = fakeEnqueuer();
+    const deps: OrderLogisticsScheduleDeps = {
+      db: fakeDb([
+        { id: "acc-1", organization_id: "org-1", slug: "loja-1" },
+        { id: "acc-2", organization_id: "org-1", slug: "loja-2" },
+      ]),
+      enqueuer: {
+        enqueue: (request) =>
+          request.queue === "ml-sync-loja-1" ? Promise.reject(new Error("fila indisponível")) : base.enqueue(request),
+      },
+      logger: createLogger({}, { sink: () => undefined }),
+      now: () => NOW,
+    };
+
+    await expect(triggerOrderLogisticsSweep(deps)).resolves.toEqual({
+      accountsScanned: 2,
+      enqueued: 1,
+      deduplicated: 0,
+      failed: true,
+    });
+    expect(requests.map((r) => r.queue)).toEqual(["ml-sync-loja-2"]);
+  });
 });

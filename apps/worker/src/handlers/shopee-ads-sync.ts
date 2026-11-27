@@ -71,7 +71,7 @@ export function pedacos(de: string, ate: string): { startDate: string; endDate: 
 
 export function createShopeeAdsSyncHandler(deps: ShopeeAdsSyncDeps): JobHandler {
   return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
-    const aberta = await lerLojaConectada(deps, context, "shopee_ads_sync_skipped");
+    const aberta = await lerLojaConectada(deps, context, "shopee_ads_sync_skipped", envelope.organizationId);
 
     if ("outcome" in aberta) return aberta.outcome;
 
@@ -119,18 +119,28 @@ export function createShopeeAdsSyncHandler(deps: ShopeeAdsSyncDeps): JobHandler 
       }
     }
 
-    const linhas = dias.map((d) => ({
-      metric_date: fromShopeeAdsDate(d.date),
-      impressions: d.impression ?? null,
-      clicks: d.clicks ?? null,
-      direct_orders: d.direct_order ?? null,
-      broad_orders: d.broad_order ?? null,
-      direct_items: d.direct_item_sold ?? null,
-      broad_items: d.broad_item_sold ?? null,
-      direct_gmv: d.direct_gmv ?? null,
-      broad_gmv: d.broad_gmv ?? null,
-      expense: d.expense ?? null,
-    }));
+    let linhas;
+
+    try {
+      linhas = dias.map((d) => ({
+        metric_date: fromShopeeAdsDate(d.date),
+        impressions: d.impression ?? null,
+        clicks: d.clicks ?? null,
+        direct_orders: d.direct_order ?? null,
+        broad_orders: d.broad_order ?? null,
+        direct_items: d.direct_item_sold ?? null,
+        broad_items: d.broad_item_sold ?? null,
+        direct_gmv: d.direct_gmv ?? null,
+        broad_gmv: d.broad_gmv ?? null,
+        expense: d.expense ?? null,
+      }));
+    } catch (error) {
+      return proximoCiclo({
+        status: "failed",
+        retryable: false,
+        reason: error instanceof Error ? error.message : "data inválida no desempenho de Ads da Shopee",
+      });
+    }
 
     const gravado = await deps.db.rpc("shopee_upsert_ads_days", {
       p_shopee_shop_id: loja.id,

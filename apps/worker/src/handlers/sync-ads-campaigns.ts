@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
+import { resolveMlAccountRead } from "./ml-account-read.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
 
@@ -66,25 +67,32 @@ export function createSyncAdsCampaignsHandler(deps: SyncAdsCampaignsDeps): JobHa
     const now = deps.now?.() ?? new Date();
     const sleep = deps.sleep ?? dormir;
 
-    const account = await deps.db
+    const accountRead = await deps.db
       .from("ml_accounts")
       .select("id, organization_id, status")
       .eq("id", mlAccountId)
       .maybeSingle();
 
-    if (account.error !== null || account.data === null) {
-      context.logger.warn("sync_ads_campaigns_account_missing", { ml_account_id: mlAccountId });
+    const resolvedAccount = resolveMlAccountRead(accountRead, {
+      logger: context.logger,
+      missingEvent: "sync_ads_campaigns_account_missing",
+      mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
+    });
 
-      return { status: "done", processed: 0 };
+    if ("outcome" in resolvedAccount) {
+      return resolvedAccount.outcome;
     }
 
-    if (account.data.status !== "CONNECTED") {
+    const account = resolvedAccount.account;
+
+    if (account.status !== "CONNECTED") {
       context.logger.info("sync_ads_campaigns_account_not_connected", { ml_account_id: mlAccountId });
 
       return { status: "done", processed: 0 };
     }
 
-    const organizationId = account.data.organization_id;
+    const organizationId = account.organization_id;
     const base = { organizationId, mlAccountId, jobId: envelope.jobId, resource: "ads" as const, channel: "reconciliation" as const };
 
     const falhar = async (reason: string, errorClass: "retryable" | "retryable_eventual" | "not_retryable"): Promise<JobOutcome> => {
@@ -253,7 +261,12 @@ export function createSyncAdsCampaignsHandler(deps: SyncAdsCampaignsDeps): JobHa
         diasGravados += dias.length;
       }
     } catch (error) {
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+      const errorClass =
+        error instanceof MercadoLivreApiError
+          ? error.errorClass
+          : error instanceof ProductAdsFormatoInesperado || error instanceof z.ZodError
+            ? "not_retryable"
+            : "retryable";
       const reason = error instanceof Error ? error.message : "erro desconhecido ao sincronizar Mercado Ads";
 
       return await falhar(reason, errorClass);

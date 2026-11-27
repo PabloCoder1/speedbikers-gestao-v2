@@ -182,7 +182,7 @@ describe("runCopilotChat (D-114)", () => {
     expect(events.at(-1)?.type).toBe("done");
   });
 
-  it("o teto de rodadas corta loop infinito com aviso, nunca em silêncio", async () => {
+  it("o teto de rodadas corta loop infinito com aviso, nunca em silêncio e sem sobrescrever com done (D-743)", async () => {
     const round: PlanResult = {
       blocks: [
         { type: "tool_use", id: "tu-x", name: "sales_summary", input: { dateFrom: "2026-08-21", dateTo: "2026-08-28" } },
@@ -194,6 +194,8 @@ describe("runCopilotChat (D-114)", () => {
     const { events } = await run([round, round, round, round]);
 
     expect(events.some((event) => event.type === "error" && event.message.includes("limite de consultas"))).toBe(true);
+    expect(events.at(-1)?.type).toBe("error");
+    expect(events.some((event) => event.type === "done")).toBe(false);
   });
 
   it("o system prompt carrega hoje, as contas do usuário e a proibição de inventar", async () => {
@@ -223,6 +225,21 @@ describe("runCopilotChat (D-114)", () => {
     expect(run0.cost_usd).toBeCloseTo(0.003);
     expect(run0.tool_names).toEqual(["copilot_chat", "sales_summary"]);
     expect(run0.llm_used).toBe(true);
+  });
+
+  it("D-743: stream SSE desconectado no onText ou catch não gera rejeição não tratada e ainda grava ai_runs", async () => {
+    const { copilot, recorded } = deps([finalText("texto parcial")]);
+    const emit = vi.fn<(_event: CopilotChatEvent) => Promise<void>>(() =>
+      Promise.reject(new Error("stream closed")),
+    );
+
+    await expect(
+      runCopilotChat(copilot, CALLER, "token", { message: "como foram as vendas?" }, emit),
+    ).resolves.toBeUndefined();
+
+    expect(recorded).toHaveLength(1);
+    expect(emit).toHaveBeenCalledWith({ type: "text", delta: "texto parcial" });
+    expect(emit).toHaveBeenCalledWith({ type: "error", message: "Falha ao consultar o Copiloto. Tente de novo." });
   });
 });
 
@@ -374,5 +391,68 @@ describe("contexto de tela (D-293)", () => {
 
     expect(escopo.context_kind).toBe("sku");
     expect(JSON.stringify(escopo)).not.toContain("SB-001");
+  });
+
+  it("não resolve ferramenta herdada de Object.prototype como toString ou constructor (D-798)", async () => {
+    const { events, plan } = await run([
+      {
+        blocks: [{ type: "tool_use", id: "tu-proto", name: "toString", input: {} }],
+        stopReason: "tool_use",
+        costUsd: 0.001,
+      },
+      finalText("Desculpe, ferramenta desconhecida."),
+    ]);
+
+    expect(events).not.toContainEqual(expect.objectContaining({ type: "error" }));
+    expect(events).toContainEqual({ type: "done", toolsUsed: ["toString"] });
+    const segunda = plan.mock.calls[1]?.[0]?.messages ?? [];
+    const resultado = JSON.stringify(segunda[segunda.length - 1]);
+    expect(resultado).toContain("ferramenta desconhecida");
+  });
+
+  it("não vaza mensagem de erro interno (não-CopilotToolError) ao modelo no tool_result (D-829)", async () => {
+    const segredo = "relation public.secret_internal_table violates RLS policy";
+    const { copilot, plan } = deps([
+      {
+        blocks: [
+          {
+            type: "tool_use",
+            id: "tu-err",
+            name: "marketplace_sales_summary",
+            input: { dateFrom: "2026-08-21", dateTo: "2026-08-28" },
+          },
+        ],
+        stopReason: "tool_use",
+        costUsd: 0.001,
+      },
+      finalText("Não consegui consultar as vendas agora."),
+    ]);
+
+    copilot.createUserClient = () =>
+      ({
+        from: () => {
+          const chain = {
+            select: () => chain,
+            order: () => Promise.resolve({ data: ACCOUNTS, error: null }),
+          };
+
+          return chain;
+        },
+        rpc: () => Promise.reject(new Error(segredo)),
+      }) as unknown as UserClient;
+
+    const events: CopilotChatEvent[] = [];
+    await runCopilotChat(copilot, CALLER, "token", { message: "vendas?" }, (event) => {
+      events.push(event);
+
+      return Promise.resolve();
+    });
+
+    const segunda = plan.mock.calls[1]?.[0]?.messages ?? [];
+    const resultado = JSON.stringify(segunda[segunda.length - 1]);
+
+    expect(resultado).toContain("falha ao executar a ferramenta");
+    expect(resultado).not.toContain(segredo);
+    expect(resultado).not.toContain("RLS");
   });
 });

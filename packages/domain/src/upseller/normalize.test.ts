@@ -31,6 +31,10 @@ describe("cell", () => {
   it("data de planilha vira ISO, não string de locale", () => {
     expect(cell(new Date("2026-08-19T16:43:56Z"))).toBe("2026-08-19T16:43:56.000Z");
   });
+
+  it("data inválida vira null sem lançar RangeError", () => {
+    expect(cell(new Date("invalid"))).toBeNull();
+  });
 });
 
 describe("skuKey", () => {
@@ -130,6 +134,12 @@ describe("parseOriginCode", () => {
   it("recusa texto", () => {
     expect(parseOriginCode("nacional")).toBeNull();
   });
+
+  it("recusa código com sufixo ou decimal", () => {
+    expect(parseOriginCode("1abc")).toBeNull();
+    expect(parseOriginCode("2.9")).toBeNull();
+    expect(parseOriginCode("+1")).toBeNull();
+  });
 });
 
 describe("parseDecimal", () => {
@@ -153,6 +163,13 @@ describe("parseDecimal", () => {
     // Zero e "sem informação" são coisas diferentes: um custo ausente não é
     // um custo de R$ 0,00.
     expect(parseDecimal("-")).toBeNull();
+  });
+
+  it("recusa texto parcial, separadores malformados e literais não decimais", () => {
+    expect(parseDecimal("174abc")).toBeNull();
+    expect(parseDecimal("12.34.56")).toBeNull();
+    expect(parseDecimal("1..000,50")).toBeNull();
+    expect(parseDecimal("0x10")).toBeNull();
   });
 });
 

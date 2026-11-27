@@ -17,6 +17,7 @@ import type { PlanBlock, PlanMessage, PlanToolDefinition } from "./anthropic-cli
 import type { Caller } from "./auth.js";
 import type { CopilotDeps } from "./copilot.js";
 import {
+  CopilotToolError,
   runListingPerformance,
   runMarketplaceSalesSummary,
   runMarketplaceSkuSales,
@@ -395,6 +396,7 @@ export async function runCopilotChat(
     const system = buildSystemPrompt(toSalesMetricDate(new Date()), accounts, request.context);
     const messages: PlanMessage[] = [{ role: "user", content: request.message }];
     const forcedTool = forcedToolForMessage(request.message);
+    let limitReached = false;
 
     for (let round = 0; round < MAX_ROUNDS; round += 1) {
       const result = await deps.anthropic.plan({
@@ -404,7 +406,8 @@ export async function runCopilotChat(
         ...(round === 0 && forcedTool !== undefined ? { toolChoice: forcedTool } : {}),
         maxTokens: MAX_TOKENS,
         onText: (delta) => {
-          void emit({ type: "text", delta });
+          // D-743: cliente desconectado no SSE não pode gerar rejeição não tratada no processo.
+          void emit({ type: "text", delta }).catch(() => undefined);
         },
       });
 
@@ -426,7 +429,7 @@ export async function runCopilotChat(
         toolsUsed.push(toolUse.name);
         await emit({ type: "tool", name: toolUse.name });
 
-        const runner = RUNNERS[toolUse.name];
+        const runner = Object.hasOwn(RUNNERS, toolUse.name) ? RUNNERS[toolUse.name] : undefined;
 
         if (runner === undefined) {
           toolResults.push({
@@ -459,11 +462,22 @@ export async function runCopilotChat(
 
           toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: JSON.stringify(data) });
         } catch (error) {
-          // O erro volta para o MODELO decidir como explicar — nunca some.
+          // D-829: paridade com `copilot.ts` — só `CopilotToolError` carrega mensagem segura
+          // para o modelo; erro interno (Postgres/PostgREST/rede) vai apenas para o log.
+          const safeMessage =
+            error instanceof CopilotToolError ? error.message : "falha ao executar a ferramenta";
+
+          if (!(error instanceof CopilotToolError)) {
+            deps.logger.error("copilot_chat_tool_failed", {
+              tool: toolUse.name,
+              reason: error instanceof Error ? error.message : String(error),
+            });
+          }
+
           toolResults.push({
             type: "tool_result",
             tool_use_id: toolUse.id,
-            content: error instanceof Error ? error.message : "falha ao executar a ferramenta",
+            content: safeMessage,
             is_error: true,
           });
         }
@@ -472,6 +486,7 @@ export async function runCopilotChat(
       messages.push({ role: "user", content: toolResults });
 
       if (round === MAX_ROUNDS - 1) {
+        limitReached = true;
         await emit({
           type: "error",
           message: "A conversa passou do limite de consultas por pergunta — tente uma pergunta mais direta.",
@@ -479,10 +494,12 @@ export async function runCopilotChat(
       }
     }
 
-    await emit({ type: "done", toolsUsed });
+    if (!limitReached) {
+      await emit({ type: "done", toolsUsed });
+    }
   } catch (error) {
     deps.logger.error("copilot_chat_failed", { error });
-    await emit({ type: "error", message: "Falha ao consultar o Copiloto. Tente de novo." });
+    await emit({ type: "error", message: "Falha ao consultar o Copiloto. Tente de novo." }).catch(() => undefined);
   }
 
   // Best-effort, como em handleCopilotQuery: observabilidade nunca dita o

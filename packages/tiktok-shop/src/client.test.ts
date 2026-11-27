@@ -102,6 +102,36 @@ describe("o cliente", () => {
     expect(erro).toMatchObject({ errorClass: "retryable", code: null, status: 502 });
     expect((erro as Error).message).toBe("TikTok Shop respondeu 502 para GET /authorization/202309/shops.");
   });
+
+  it("D-773: HTTP 200 com HTML/não-JSON vira TikTokShopApiError passageiro, e requestToken protege app_key/app_secret", async () => {
+    const htmlClient = createTikTokShopClient({
+      appKey: "k",
+      appSecret: APP_SECRET,
+      fetchImpl: () => Promise.resolve(new Response("<html><body>proxy</body></html>", { status: 200 })),
+    });
+
+    const falha = await htmlClient
+      .request({ method: "GET", path: "/authorization/202309/shops", schema: z.unknown() })
+      .catch((e: unknown) => e);
+
+    expect(falha).toBeInstanceOf(TikTokShopApiError);
+    expect(falha).toMatchObject({ status: 200, code: null, errorClass: "retryable" });
+    expect((falha as Error).message).not.toContain(APP_SECRET);
+
+    const { client, chamadas } = clienteCom(200, { code: 0, data: { ok: true } });
+
+    await client.requestToken(
+      "/api/v2/token/get",
+      { app_key: "forjada", app_secret: "forjado", grant_type: "authorized_code" },
+      z.object({ ok: z.boolean() }),
+    );
+
+    expect(Object.fromEntries(chamadas[0]?.url.searchParams ?? [])).toEqual({
+      grant_type: "authorized_code",
+      app_key: "chave-de-teste",
+      app_secret: APP_SECRET,
+    });
+  });
 });
 
 describe("a autorização (P`authorization-overview-202407`)", () => {
@@ -156,6 +186,26 @@ describe("a autorização (P`authorization-overview-202407`)", () => {
     expect(chamadas[0]?.url.pathname).toBe("/api/v2/token/refresh");
     expect(chamadas[0]?.url.searchParams.get("grant_type")).toBe("refresh_token");
     expect(tiktokEpochToIso(1660556783)).toBe("2022-08-15T09:46:23.000Z");
+  });
+
+  it("D-793: recusa epoch fora da faixa segura de Date no schema de token e em tiktokEpochToIso", async () => {
+    const foraDaFaixa = clienteCom(200, {
+      code: 0,
+      data: {
+        access_token: "a",
+        access_token_expire_in: 9_000_000_000_000,
+        refresh_token: "r",
+        refresh_token_expire_in: 9_000_000_000_000,
+        open_id: "o",
+        user_type: 0,
+      },
+    });
+
+    await expect(getAccessToken(foraDaFaixa.client, "TTP_code")).rejects.toThrow();
+    expect(() => tiktokEpochToIso(0)).toThrow(RangeError);
+    expect(() => tiktokEpochToIso(-10)).toThrow(RangeError);
+    expect(() => tiktokEpochToIso(Number.NaN)).toThrow(RangeError);
+    expect(() => tiktokEpochToIso(9_000_000_000_000)).toThrow(RangeError);
   });
 });
 

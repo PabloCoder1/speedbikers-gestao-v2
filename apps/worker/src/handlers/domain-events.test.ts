@@ -24,7 +24,7 @@ function draft(entityId: string): DomainEventDraft {
   };
 }
 
-function fakeDb(errorForDedupKey?: { dedupKey: string; code: string; message: string }): {
+function fakeDb(errorForDedupKey?: { dedupKey: string; code: string; message: string; throwError?: Error }): {
   db: Parameters<typeof recordDomainEvents>[0];
   inserted: unknown[];
 } {
@@ -39,6 +39,10 @@ function fakeDb(errorForDedupKey?: { dedupKey: string; code: string; message: st
         inserted.push(row);
 
         if (row.dedup_key === errorForDedupKey?.dedupKey) {
+          if (errorForDedupKey.throwError !== undefined) {
+            return Promise.reject(errorForDedupKey.throwError);
+          }
+
           return Promise.resolve({
             data: null,
             error: { code: errorForDedupKey.code, message: errorForDedupKey.message },
@@ -99,5 +103,28 @@ describe("recordDomainEvents", () => {
     ).resolves.toBeUndefined();
 
     expect(lines.join()).toContain("domain_event_not_recorded");
+  });
+
+  it("erro de transporte num rascunho é logado sem lançar e não impede os demais (D-795)", async () => {
+    const { db, inserted } = fakeDb({
+      dedupKey: "order.cancelled:1:cancelled",
+      code: "",
+      message: "",
+      throwError: new TypeError("fetch failed"),
+    });
+    const lines: string[] = [];
+
+    await expect(
+      recordDomainEvents(
+        db,
+        CONTEXT,
+        [draft("1"), draft("2")],
+        createLogger({}, { sink: (line) => lines.push(line) }),
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(inserted).toHaveLength(2);
+    expect(lines.join()).toContain("domain_event_not_recorded");
+    expect(lines.join()).toContain("fetch failed");
   });
 });

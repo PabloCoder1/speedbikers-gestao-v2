@@ -119,6 +119,30 @@ describe("triggerOrderUserProductsBackfill (D-362, 3ª parte)", () => {
     expect(await triggerOrderUserProductsBackfill({ ...deps, db: fakeDb(null).db }, { dias: 90 })).toMatchObject({
       accountsScanned: 0,
       enqueued: 0,
+      failed: true,
     });
+  });
+
+  it("D-794: falha ao enfileirar uma conta não impede as demais e sinaliza failed para 503", async () => {
+    const { db } = fakeDb(CONTAS);
+    const { enqueuer: base, requests } = fakeEnqueuer();
+
+    const outcome = await triggerOrderUserProductsBackfill(
+      {
+        db,
+        enqueuer: {
+          enqueue: (request) =>
+            request.dedupeKey.includes(":loja-1:") ? Promise.reject(new Error("fila indisponível")) : base.enqueue(request),
+        },
+        logger: createLogger({}, { sink: () => undefined }),
+        now: () => NOW,
+      },
+      { dias: 90 },
+    );
+
+    expect(outcome).toMatchObject({ accountsScanned: 2, enqueued: 1, deduplicated: 0, failed: true });
+    expect(requests.map((r) => r.payload)).toEqual([
+      { mlAccountId: "acc-2", ate: "2026-09-16T15:00:00.000Z", limite: "2026-06-25T15:00:00.000Z" },
+    ]);
   });
 });

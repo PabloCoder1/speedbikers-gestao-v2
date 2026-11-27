@@ -239,6 +239,23 @@ describe("sync.webhook.received — Fast Path", () => {
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
   });
 
+  it("resource com id zero, só zeros ou acima de MAX_SAFE_INTEGER falha sem retry e sem chamar o Mercado Livre (D-795)", async () => {
+    for (const resource of ["/orders/0", "/orders/000", "/orders/9007199254740992"]) {
+      const { deps: d, requests, lines } = deps({});
+
+      const outcome = await run(d, lines, { ...PAYLOAD, resource });
+
+      expect(outcome).toMatchObject({ status: "failed", retryable: false });
+      expect(requests).toHaveLength(0);
+    }
+
+    const { deps: d, requests, lines } = deps({});
+    const normalized = await run(d, lines, { ...PAYLOAD, resource: "/orders/0002000003508426396" });
+
+    expect(normalized).toEqual({ status: "done", processed: 1 });
+    expect(requests).toEqual([expect.objectContaining({ method: "GET", path: "/orders/2000003508426396" })]);
+  });
+
   it("conta inexistente: done sem processar — corrida benigna, não erro", async () => {
     const { deps: d, requests, lines } = deps({ account: null });
 
@@ -352,6 +369,21 @@ describe("sync.webhook.received — Fast Path", () => {
       expect(outcome).toMatchObject({ status: "failed", retryable: false });
     });
 
+    it("claim com id zero ou acima de MAX_SAFE_INTEGER falha sem retry e sem chamar o Mercado Livre (D-795)", async () => {
+      for (const resource of [
+        "/post-purchase/v1/claims/0",
+        "/post-purchase/v1/claims/000/actions-history",
+        "/post-purchase/v1/claims/9007199254740992",
+      ]) {
+        const { deps: d, requests, lines } = deps({});
+
+        const outcome = await run(d, lines, { ...POST_PURCHASE_PAYLOAD, resource });
+
+        expect(outcome).toMatchObject({ status: "failed", retryable: false });
+        expect(requests).toHaveLength(0);
+      }
+    });
+
     it("busca o claim certo — claim sem devolução associada processa zero", async () => {
       const { deps: d, requests, lines } = deps(
         {},
@@ -384,5 +416,18 @@ describe("sync.webhook.received — Fast Path", () => {
         expect.objectContaining({ method: "GET", path: "/post-purchase/v1/claims/5563418198" }),
       ]);
     });
+  });
+
+  it("D-815: recusa conta ML pertencente a outra organização sem chamar o Mercado Livre", async () => {
+    const { deps: d, requests, lines } = deps({});
+    const outroEnvelope = { ...ENVELOPE, organizationId: "22222222-0000-4000-8000-000000000002" };
+
+    const outcome = await createWebhookReceivedHandler(d)(outroEnvelope, {
+      logger: createLogger({}, { sink: (line) => lines.push(line) }),
+      payload: { mlAccountId: ML_ACCOUNT_ID, resource: "/orders/2000003508426396", topic: "orders_v2" },
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(requests).toEqual([]);
   });
 });

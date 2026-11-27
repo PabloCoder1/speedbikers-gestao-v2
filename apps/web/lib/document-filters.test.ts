@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   PAGE_SIZE,
   buildDocumentHref,
+  documentTypeLabel,
   resolveDocumentFilters,
   resolveDocumentStatus,
   resolveDocumentType,
@@ -137,5 +138,12 @@ describe("janela declarada", () => {
   it("vazio diz por que está vazio", () => {
     expect(summarizeDocumentWindow(1, 0, 0).label).toBe("Nenhuma nota fiscal com estes filtros.");
     expect(summarizeDocumentWindow(1, 0, 0).totalPages).toBe(0);
+  });
+
+  it("D-804: documentTypeLabel ignora propriedades herdadas de Object.prototype", () => {
+    expect(documentTypeLabel("toString")).toBe("toString");
+    expect(documentTypeLabel("constructor")).toBe("constructor");
+    expect(documentTypeLabel(null)).toBe("Em leitura");
+    expect(documentTypeLabel("NFE")).toBe("NF-e (XML)");
   });
 });

@@ -22,9 +22,9 @@ import { LIMITES_PADRAO } from "./limites-central";
 /** Sem `roas_piso` na resposta (banco anterior a D-410), o padrão de sempre. */
 function pisoDoRoas(ref: Readonly<Record<string, unknown>>): number {
   const v = ref.roas_piso;
-  const n = typeof v === "string" ? Number(v) : v;
+  const n = typeof v === "string" ? (v.trim() === "" ? Number.NaN : Number(v)) : v;
 
-  return typeof n === "number" && Number.isFinite(n) ? n : LIMITES_PADRAO.roasPisoDaMeta;
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : LIMITES_PADRAO.roasPisoDaMeta;
 }
 import { formatCurrency, formatPercent } from "./format";
 
@@ -340,16 +340,21 @@ export interface Estimativa {
 }
 
 export function estimar(c: Pick<CampanhaSinal, "receita_ads" | "investimento" | "acos">, margem: number | null): Estimativa {
-  if (margem === null) return { lucro: null, margemAposAds: null };
+  if (margem === null || !Number.isFinite(margem)) return { lucro: null, margemAposAds: null };
+
+  const lucro =
+    Number.isFinite(c.receita_ads) && Number.isFinite(c.investimento)
+      ? c.receita_ads * margem - c.investimento
+      : null;
 
   return {
-    lucro: c.receita_ads * margem - c.investimento,
-    margemAposAds: c.acos === null ? null : margem - c.acos,
+    lucro,
+    margemAposAds: c.acos === null || !Number.isFinite(c.acos) ? null : margem - c.acos,
   };
 }
 
 export function roasDeEquilibrio(margem: number | null): number | null {
-  return margem === null || margem <= 0 ? null : 1 / margem;
+  return margem === null || !Number.isFinite(margem) || margem <= 0 ? null : 1 / margem;
 }
 
 /** ACOS máximo sustentável antes de a campanha gerar prejuízo (= margem antes do Ads). */
@@ -448,14 +453,33 @@ export function lerCampanhaSinal(
     );
   }
 
-  if (s.abaixo_da_meta && c.roas !== null && c.roas_alvo !== null) {
+  if (
+    s.abaixo_da_meta &&
+    c.roas !== null &&
+    c.roas_alvo !== null &&
+    Number.isFinite(c.roas) &&
+    Number.isFinite(c.roas_alvo) &&
+    c.roas_alvo > 0
+  ) {
     motivos.push(
       `ROAS ${formatRoas(c.roas)} contra a meta de ${formatRoas(c.roas_alvo)} da campanha ` +
         `(${relativo(c.roas, c.roas_alvo)} abaixo), com ${formatCurrency(c.investimento)} investidos.`,
     );
   }
 
-  if (s.cpc_sobe_conversao_cai && c.cpc !== null && c.cpc_anterior !== null && c.conversao !== null && c.conversao_anterior !== null) {
+  if (
+    s.cpc_sobe_conversao_cai &&
+    c.cpc !== null &&
+    c.cpc_anterior !== null &&
+    c.conversao !== null &&
+    c.conversao_anterior !== null &&
+    Number.isFinite(c.cpc) &&
+    Number.isFinite(c.cpc_anterior) &&
+    c.cpc_anterior > 0 &&
+    Number.isFinite(c.conversao) &&
+    Number.isFinite(c.conversao_anterior) &&
+    c.conversao_anterior > 0
+  ) {
     motivos.push(
       `O CPC subiu ${relativo(c.cpc, c.cpc_anterior)} (de ${formatCurrency(c.cpc_anterior)} para ${formatCurrency(c.cpc)}) ` +
         `enquanto a conversão caiu ${relativo(c.conversao, c.conversao_anterior)} ` +
@@ -463,7 +487,17 @@ export function lerCampanhaSinal(
     );
   }
 
-  if (s.gasto_sobe_roas_cai && c.roas !== null && c.roas_anterior !== null) {
+  if (
+    s.gasto_sobe_roas_cai &&
+    c.roas !== null &&
+    c.roas_anterior !== null &&
+    Number.isFinite(c.investimento) &&
+    Number.isFinite(c.investimento_anterior) &&
+    c.investimento_anterior > 0 &&
+    Number.isFinite(c.roas) &&
+    Number.isFinite(c.roas_anterior) &&
+    c.roas_anterior > 0
+  ) {
     motivos.push(
       `O gasto subiu ${relativo(c.investimento, c.investimento_anterior)} ` +
         `(de ${formatCurrency(c.investimento_anterior)} para ${formatCurrency(c.investimento)}) e o ROAS caiu ` +
@@ -473,7 +507,10 @@ export function lerCampanhaSinal(
 
   if (c.nivel === "escala" && c.roas !== null && c.roas_alvo !== null) {
     const vendas =
-      c.receita_ads_anterior > 0 && c.receita_ads > c.receita_ads_anterior
+      Number.isFinite(c.receita_ads) &&
+      Number.isFinite(c.receita_ads_anterior) &&
+      c.receita_ads_anterior > 0 &&
+      c.receita_ads > c.receita_ads_anterior
         ? `, com as vendas com Ads ${relativo(c.receita_ads, c.receita_ads_anterior)} acima da semana anterior`
         : "";
 

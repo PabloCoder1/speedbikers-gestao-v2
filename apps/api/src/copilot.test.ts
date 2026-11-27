@@ -532,6 +532,51 @@ describe("handleCopilotQuery", () => {
 
     expect(outcome.status).toBe(200);
   });
+
+  it("D-743: structure_feature_suggestion recusa papel fora de ADMIN/GESTOR antes de gastar LLM", async () => {
+    const narrate = vi.fn<AnthropicClient["narrate"]>(() => Promise.resolve({ text: "{}", costUsd: 0.01 }));
+    const from = vi.fn();
+    const deps = {
+      db: fakeDb(() => Promise.resolve({ error: null })),
+      logger: createLogger({}, { sink: () => undefined }),
+      createUserClient: () => ({ from }) as unknown as UserClient,
+      anthropic: { narrate, plan: vi.fn() },
+    };
+
+    const outcome = await handleCopilotQuery(deps, CALLER, "token", {
+      tool: "structure_feature_suggestion",
+      input: { suggestionId: "11111111-1111-4111-8111-111111111111" },
+    });
+
+    expect(outcome.status).toBe(502);
+    expect("error" in outcome.body ? outcome.body.error.message : "").toMatch(/ADMIN e GESTOR/i);
+    expect(narrate).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("D-800: recusa ferramenta desconhecida ou chave de Object.prototype com 400 sem lançar TypeError", async () => {
+    const createUserClient = vi.fn();
+    const deps = {
+      db: fakeDb(() => Promise.resolve({ error: null })),
+      logger: createLogger({}, { sink: () => undefined }),
+      createUserClient,
+      anthropic: fakeAnthropic,
+    };
+
+    for (const invalidTool of ["toString", "constructor", "ferramenta_inexistente"]) {
+      const outcome = await handleCopilotQuery(deps, CALLER, "token", {
+        tool: invalidTool as unknown as Parameters<typeof handleCopilotQuery>[3]["tool"],
+        input: {},
+      });
+
+      expect(outcome).toEqual({
+        status: 400,
+        body: { error: { code: "unknown_tool", message: "ferramenta desconhecida" } },
+      });
+    }
+
+    expect(createUserClient).not.toHaveBeenCalled();
+  });
 });
 
 
@@ -556,7 +601,13 @@ function fakeStockClient(input: {
 
       return Promise.resolve(input.suggestions);
     }),
-    from: vi.fn(() => ({ select: () => Promise.resolve(input.settings) })),
+    from: vi.fn(() => ({
+      select: () => ({
+        eq: () => ({
+          or: () => Promise.resolve(input.settings),
+        }),
+      }),
+    })),
   };
 
   return { userClient: client as unknown as UserClient, calls };
@@ -663,6 +714,80 @@ describe("runSkuReplenishment (D-293)", () => {
     expect(result.coverageDays).toBe(15);
     expect(result.policy).toBeNull();
   });
+
+  it("D-743: filtra replenishment_settings pelos até 3 escopos do SKU (não trunca acima de 1.000 regras) e não lê regras se SKU não existir", async () => {
+    const eqCalls: [string, unknown][] = [];
+    const orCalls: string[] = [];
+    const fromSpy = vi.fn(() => ({
+      select: () => ({
+        eq: (column: string, value: unknown) => {
+          eqCalls.push([column, value]);
+
+          return {
+            or: (expr: string) => {
+              orCalls.push(expr);
+
+              return Promise.resolve({ data: [CONFIG_PADRAO], error: null });
+            },
+          };
+        },
+      }),
+    }));
+
+    const client = {
+      rpc: vi.fn(() => Promise.resolve({ data: [LINHA_SKU], error: null })),
+      from: fromSpy,
+    } as unknown as UserClient;
+
+    await runSkuReplenishment(client, { sku: "SB-001" }, "org-1");
+
+    expect(eqCalls).toEqual([["organization_id", "org-1"]]);
+    expect(orCalls).toEqual([
+      `sku_id.eq."${LINHA_SKU.sku_id}",and(sku_id.is.null,supplier_brand.is.null),and(sku_id.is.null,supplier_brand.eq."VAZ")`,
+    ]);
+
+    const orSemMarca: string[] = [];
+    const semMarcaClient = {
+      rpc: vi.fn(() => Promise.resolve({ data: [{ ...LINHA_SKU, supplier_brand: null }], error: null })),
+      from: vi.fn(() => ({
+        select: () => ({
+          eq: () => ({
+            or: (expr: string) => {
+              orSemMarca.push(expr);
+
+              return Promise.resolve({ data: [CONFIG_PADRAO], error: null });
+            },
+          }),
+        }),
+      })),
+    } as unknown as UserClient;
+
+    await runSkuReplenishment(semMarcaClient, { sku: "SB-001" }, "org-1");
+    expect(orSemMarca).toEqual([`sku_id.eq."${LINHA_SKU.sku_id}",and(sku_id.is.null,supplier_brand.is.null)`]);
+
+    const fromMissing = vi.fn();
+    const missingClient = {
+      rpc: vi.fn(() => Promise.resolve({ data: [], error: null })),
+      from: fromMissing,
+    } as unknown as UserClient;
+
+    await expect(runSkuReplenishment(missingClient, { sku: "INEXISTENTE" }, "org-1")).rejects.toBeInstanceOf(
+      CopilotToolError,
+    );
+    expect(fromMissing).not.toHaveBeenCalled();
+  });
+
+  it("D-800: envia p_search aparado para get_purchase_suggestions quando o SKU chega com espaços laterais", async () => {
+    const { userClient, calls } = fakeStockClient({
+      suggestions: { data: [LINHA_SKU], error: null },
+      settings: { data: [CONFIG_PADRAO], error: null },
+    });
+
+    const result = await runSkuReplenishment(userClient, { sku: "  SB-001  " }, "org-1");
+
+    expect(calls[0]?.args.p_search).toBe("SB-001");
+    expect(result.sku).toBe("SB-001");
+  });
 });
 
 /** Fake para `listing_performance`: `.rpc(...).single()` mais um `.from(...)` encadeado. */
@@ -739,6 +864,31 @@ describe("runListingPerformance (D-293)", () => {
     // Anúncio fora do cadastro não inventa título nem preço.
     expect(result.title).toBeNull();
     expect(result.price).toBeNull();
+  });
+
+  it("D-800: recusa data inexistente ou intervalo invertido com CopilotToolError antes de consultar o banco", async () => {
+    const { userClient, calls } = fakeListingClient({
+      summary: { data: RESUMO, error: null },
+      listing: { data: null, error: null },
+    });
+
+    await expect(
+      runListingPerformance(
+        userClient,
+        { itemId: "MLB1", mlAccountId: "22222222-2222-4222-8222-222222222222", dateFrom: "2026-02-01", dateTo: "2026-02-31" },
+        "org-1",
+      ),
+    ).rejects.toBeInstanceOf(CopilotToolError);
+
+    await expect(
+      runListingPerformance(
+        userClient,
+        { itemId: "MLB1", mlAccountId: "22222222-2222-4222-8222-222222222222", dateFrom: "2026-08-30", dateTo: "2026-08-01" },
+        "org-1",
+      ),
+    ).rejects.toBeInstanceOf(CopilotToolError);
+
+    expect(calls).toEqual([]);
   });
 });
 

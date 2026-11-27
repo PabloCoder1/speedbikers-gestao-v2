@@ -60,6 +60,18 @@ function recusaDefinitiva(error: unknown): boolean {
  * `apps/api/src/ml-accounts.ts`. Cada aquisição recebe um ID próprio.
  * A reconexão invalida esse ID junto com a troca das credenciais (D-660).
  */
+/**
+ * Decifra uma credencial sem vazar stack/detalhe criptográfico nem derrubar o
+ * handler com erro não tratado (D-831).
+ */
+function tryDecryptToken(ciphertext: string, key: Buffer): string | null {
+  try {
+    return decryptToken(ciphertext, key);
+  } catch {
+    return null;
+  }
+}
+
 export async function ensureAccessToken(
   deps: TokenDeps,
   mlAccountId: string,
@@ -71,14 +83,32 @@ export async function ensureAccessToken(
     .eq("ml_account_id", mlAccountId)
     .maybeSingle();
 
-  if (credentials.error !== null || credentials.data === null) {
+  if (credentials.error !== null) {
+    return {
+      ok: false,
+      retryable: true,
+      reason: `falha ao ler credenciais Mercado Livre: ${credentials.error.message}`,
+    };
+  }
+
+  if (credentials.data === null) {
     return { ok: false, retryable: false, reason: "conta CONNECTED sem credenciais gravadas" };
   }
 
   const expiresAt = new Date(credentials.data.access_token_expires_at);
 
   if (expiresAt.getTime() - now.getTime() > REFRESH_BUFFER_MS) {
-    return { ok: true, accessToken: decryptToken(credentials.data.access_token_ciphertext, deps.encryptionKey) };
+    const accessToken = tryDecryptToken(credentials.data.access_token_ciphertext, deps.encryptionKey);
+
+    if (accessToken === null) {
+      return {
+        ok: false,
+        retryable: false,
+        reason: "credencial Mercado Livre cifrada inválida ou chave incompatível; reconecte a conta",
+      };
+    }
+
+    return { ok: true, accessToken };
   }
 
   // A credencial usada daqui em diante é a que a TRAVA devolve, não a lida
@@ -98,31 +128,64 @@ export async function ensureAccessToken(
     .select("access_token_ciphertext, refresh_token_ciphertext, access_token_expires_at")
     .maybeSingle();
 
-  if (claimed.error !== null || claimed.data === null) {
+  if (claimed.error !== null) {
+    return {
+      ok: false,
+      retryable: true,
+      reason: `falha ao reservar refresh do token: ${claimed.error.message}`,
+    };
+  }
+
+  if (claimed.data === null) {
     return { ok: false, retryable: true, reason: "refresh do token em andamento por outra execução" };
   }
 
   const release = async (): Promise<void> => {
-    await deps.db
-      .from("ml_credentials")
-      .update({ refresh_locked_until: null, refresh_lock_id: null })
-      .eq("ml_account_id", mlAccountId)
-      .eq("refresh_lock_id", lockId);
+    try {
+      await deps.db
+        .from("ml_credentials")
+        .update({ refresh_locked_until: null, refresh_lock_id: null })
+        .eq("ml_account_id", mlAccountId)
+        .eq("refresh_lock_id", lockId);
+    } catch {
+      // D-780: a trava expira em REFRESH_LOCK_MS (60s); falha de transporte ao
+      // soltá-la não deve descartar um token já renovado por outra execução
+      // nem mascarar o erro transitório original do Mercado Livre.
+    }
   };
 
   if (new Date(claimed.data.access_token_expires_at).getTime() - now.getTime() > REFRESH_BUFFER_MS) {
     await release();
 
-    return { ok: true, accessToken: decryptToken(claimed.data.access_token_ciphertext, deps.encryptionKey) };
+    const accessToken = tryDecryptToken(claimed.data.access_token_ciphertext, deps.encryptionKey);
+
+    if (accessToken === null) {
+      return {
+        ok: false,
+        retryable: false,
+        reason: "credencial Mercado Livre cifrada inválida ou chave incompatível; reconecte a conta",
+      };
+    }
+
+    return { ok: true, accessToken };
+  }
+
+  const refreshToken = tryDecryptToken(claimed.data.refresh_token_ciphertext, deps.encryptionKey);
+
+  if (refreshToken === null) {
+    await release();
+
+    return {
+      ok: false,
+      retryable: false,
+      reason: "refresh_token Mercado Livre cifrado inválido ou chave incompatível; reconecte a conta",
+    };
   }
 
   let token;
 
   try {
-    token = await refreshAccessToken(
-      deps.oauth,
-      decryptToken(claimed.data.refresh_token_ciphertext, deps.encryptionKey),
-    );
+    token = await refreshAccessToken(deps.oauth, refreshToken);
   } catch (error) {
     const reason = error instanceof Error ? error.message : "falha ao renovar o token";
 

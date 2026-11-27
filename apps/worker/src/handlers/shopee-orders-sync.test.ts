@@ -105,6 +105,10 @@ function fakeDb(loja: Loja | null, opcoes: Opcoes = {}) {
         eq: () => {
           if (table === "shopee_shops" && "orders_sync_locked_until" in valores && valores.orders_sync_locked_until === null) {
             gravado.eventos.push("solta");
+
+            if (opcoes.lancaAoSoltar === true) {
+              return Promise.reject(new Error("socket hang up ao soltar trava"));
+            }
           }
 
           return Promise.resolve({ error: null });
@@ -134,7 +138,7 @@ function pedido(sn: string) {
 }
 
 /** Shopee falsa: a lista em páginas pelo cursor, o detalhe do que foi pedido. */
-function fakeShopee(opcoes: { paginas: string[][]; erroNaLista?: string }) {
+function fakeShopee(opcoes: { paginas: string[][]; erroNaLista?: string; cursorAusenteNaPagina?: number }) {
   const listas: URLSearchParams[] = [];
   const detalhes: string[][] = [];
   const fetchImpl = (url: URL) => {
@@ -154,7 +158,7 @@ function fakeShopee(opcoes: { paginas: string[][]; erroNaLista?: string }) {
             error: "",
             response: {
               more: mais,
-              next_cursor: mais ? String(indice + 1) : "",
+              ...(indice === opcoes.cursorAusenteNaPagina ? {} : { next_cursor: mais ? String(indice + 1) : "" }),
               order_list: (opcoes.paginas[indice] ?? []).map((order_sn) => ({ order_sn })),
             },
           }),
@@ -192,6 +196,8 @@ interface Opcoes {
   travada?: boolean;
   /** D-481: o avanço do marco LANÇA (rede), em vez de devolver erro. */
   lancaNoMarco?: boolean;
+  /** D-775: soltar a trava no finally LANÇA (rede). */
+  lancaAoSoltar?: boolean;
 }
 
 function rodar(loja: Loja | null, shopee: ReturnType<typeof fakeShopee>, opcoes: Opcoes = {}, eventos?: string[]) {
@@ -325,6 +331,34 @@ describe("shopee.orders.sync (D-426)", () => {
     expect(shopee.detalhes.map((d) => d.length)).toEqual([50, 40]);
   });
 
+  it("cursor ausente preserva o marco e permite reler a janela inteira", async () => {
+    const loja = { ...LOJA, orders_synced_until: new Date(NOW.getTime() - 3_600_000).toISOString() };
+    const paginas = [["A1"], ["A2"], ["A3"]];
+    const incompleta = fakeShopee({ paginas, cursorAusenteNaPagina: 1 });
+
+    const falhou = await rodar(loja, incompleta);
+
+    expect(falhou.outcome).toEqual({
+      status: "failed",
+      retryable: true,
+      reason: "a lista de pedidos da Shopee retornou cursor de continuação ausente",
+    });
+    expect(incompleta.listas.map((lista) => lista.get("cursor"))).toEqual([null, "1"]);
+    expect(incompleta.detalhes).toEqual([]);
+    expect(falhou.gravado.lotes).toEqual([]);
+    expect(falhou.gravado.marcos).toEqual([]);
+    expect(falhou.gravado.eventos).toEqual(["trava", "solta"]);
+    expect(falhou.enfileirados).toEqual([]);
+
+    const completa = fakeShopee({ paginas });
+    const recuperou = await rodar(loja, completa);
+
+    expect(recuperou.outcome).toEqual({ status: "done", processed: 3 });
+    expect(completa.listas[0]?.toString()).toBe(incompleta.listas[0]?.toString());
+    expect(completa.detalhes).toEqual([["A1", "A2", "A3"]]);
+    expect(recuperou.gravado.marcos).toEqual([NOW.toISOString()]);
+  });
+
   it("erro da Shopee na lista: falha, e o marco não anda", async () => {
     const passageiro = await rodar(LOJA, fakeShopee({ paginas: [], erroNaLista: "error_server" }));
     const definitivo = await rodar(LOJA, fakeShopee({ paginas: [], erroNaLista: "error_param" }));
@@ -395,6 +429,20 @@ describe("shopee.orders.sync (D-426)", () => {
 
     await expect(rodar(LOJA, fakeShopee({ paginas: [["A1"]] }), { lancaNoMarco: true }, eventos)).rejects.toThrow("rede caiu");
     expect(eventos).toEqual(["trava", "solta"]);
+  });
+
+  it("D-775: falha de transporte ao soltar a trava no finally não mascara erro original nem impede enfileiramento", async () => {
+    const eventosErro: string[] = [];
+
+    await expect(
+      rodar(LOJA, fakeShopee({ paginas: [["A1"]] }), { lancaNoMarco: true, lancaAoSoltar: true }, eventosErro),
+    ).rejects.toThrow("rede caiu");
+    expect(eventosErro).toEqual(["trava", "solta"]);
+
+    const { outcome, enfileirados } = await rodar(LOJA, fakeShopee({ paginas: [["A1"]] }), { lancaAoSoltar: true });
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(enfileirados).toHaveLength(1);
   });
 
   it("loja em erro, de outro ambiente ou inexistente: pula, sem chamar a Shopee", async () => {

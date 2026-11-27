@@ -28,7 +28,7 @@ export interface OidcVerifier {
   verify: (authorizationHeader: string | undefined) => Promise<VerificationResult>;
 }
 
-const BEARER = /^Bearer (.+)$/i;
+const BEARER = /^Bearer\s+(\S+)\s*$/i;
 
 export function createOidcVerifier(
   config: OidcVerifierConfig,
@@ -49,6 +49,7 @@ export function createOidcVerifier(
       }
 
       let email: string | undefined;
+      let emailVerified: boolean | undefined;
 
       try {
         const ticket = await client.verifyIdToken({
@@ -56,7 +57,10 @@ export function createOidcVerifier(
           audience: config.audience,
         });
 
-        email = ticket.getPayload()?.email;
+        const payload = ticket.getPayload();
+
+        email = payload?.email;
+        emailVerified = payload?.email_verified;
       } catch {
         // A mensagem da biblioteca pode conter fragmento do token. Nunca
         // propagar: erro de autenticação não deve virar canal de vazamento.
@@ -65,6 +69,10 @@ export function createOidcVerifier(
 
       if (email === undefined) {
         return { ok: false, reason: "token sem e-mail" };
+      }
+
+      if (emailVerified !== true) {
+        return { ok: false, reason: "e-mail do token não verificado" };
       }
 
       if (!allowed.has(email)) {

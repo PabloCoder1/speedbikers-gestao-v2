@@ -205,6 +205,23 @@ describe("Central de Inteligência Financeira — SQL, RLS e Constraints", () =>
     expect(closing?.status).toBe("fechado");
   });
 
+  it("só confirma a remoção de meta financeira quando a RLS permite excluir o registro", async () => {
+    const [goal] = await asUser<{ id: string }>(
+      ADMIN_A,
+      `insert into public.financial_goals (organization_id, month, metric_kind, scope_kind, target_value)
+       values ($1, '2026-12-01', 'lucro_liquido', 'global', 100000)
+       returning id`,
+      [ORG_A],
+    );
+    if (!goal) throw new Error("A meta de teste precisa ser criada antes da tentativa de remoção.");
+
+    const remover = "delete from public.financial_goals where id = $1 returning id";
+    expect(await asUser(ANALISTA_A, remover, [goal.id])).toEqual([]);
+    expect(await asUser(ADMIN_B, remover, [goal.id])).toEqual([]);
+    expect(await asUser(ADMIN_A, remover, [goal.id])).toEqual([goal]);
+    expect(await asUser(ADMIN_A, remover, [goal.id])).toEqual([]);
+  });
+
   it("get_resumo_despesas agrega atual e anterior em SQL, preserva nulos e respeita RLS", async () => {
     await client.query("delete from public.operational_expenses where organization_id in ($1, $2)", [ORG_A, ORG_B]);
 

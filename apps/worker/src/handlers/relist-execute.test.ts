@@ -129,6 +129,8 @@ interface FakeDbOptions {
   lastFailedReason?: string | null;
   /** O histórico inteiro, no lugar de `lastFailedReason`. */
   eventHistory?: EventRow[];
+  /** D-796: simula erro de transporte ao gravar o evento de auditoria em listing_relist_events. */
+  eventInsertThrow?: Error;
 }
 
 interface RecordedUpdate {
@@ -238,6 +240,10 @@ function fakeDb(options: FakeDbOptions = {}): {
         }
 
         events.push(row);
+
+        if (options.eventInsertThrow !== undefined) {
+          return Promise.reject(options.eventInsertThrow);
+        }
 
         return Promise.resolve({ error: null });
       },
@@ -1540,5 +1546,52 @@ describe("relist.execute — o POST /relist sai com UMA tentativa no cliente rea
         isRelistRetryEligible({ status: "RELIST_FAILED", parentItemId: PARENT, failureReason, lastFailedEventReason: "POST_FALHOU" }),
       ).toBe(false);
     }
+  });
+
+  it("D-796: erro de transporte ao gravar listing_relist_events é logado sem abortar a transição já aplicada nem provocar falso RELIST_FAILED", async () => {
+    const { db, updates } = fakeDb({
+      operationStatus: "CLOSED",
+      eventInsertThrow: new TypeError("fetch failed"),
+    });
+    const { client } = fakeClient({
+      parentBody: healthyParent({ status: "closed" }),
+    });
+    const lines: string[] = [];
+
+    const outcome = await createRelistExecuteHandler({
+      db,
+      mercadoLivre: client,
+      oauth: { clientId: "APP", clientSecret: "secret", redirectUri: "" },
+      encryptionKey: ENCRYPTION_KEY,
+      now: () => NOW,
+    })(ENVELOPE, {
+      logger: createLogger({}, { sink: (line) => lines.push(line) }),
+      payload: { relistId: RELIST_ID },
+    });
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(updates.map((u) => u.patch.status)).toEqual(["RELISTING", "RELISTED"]);
+    expect(lines.join("\n")).toContain("relist_event_not_recorded");
+    expect(lines.join("\n")).toContain("fetch failed");
+  });
+
+  it("D-815: recusa operação de relist pertencente a outra organização sem tocar no ML nem alterar status", async () => {
+    const { db, updates } = fakeDb({ operationStatus: "CLOSED" });
+    const { client } = fakeClient({ parentBody: healthyParent({ status: "closed" }) });
+    const outroEnvelope = { ...ENVELOPE, organizationId: "22222222-0000-4000-8000-000000000002" };
+
+    const outcome = await createRelistExecuteHandler({
+      db,
+      mercadoLivre: client,
+      oauth: { clientId: "APP", clientSecret: "secret", redirectUri: "" },
+      encryptionKey: ENCRYPTION_KEY,
+      now: () => NOW,
+    })(outroEnvelope, {
+      logger: createLogger({}, { sink: () => undefined }),
+      payload: { relistId: RELIST_ID },
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(updates).toHaveLength(0);
   });
 });

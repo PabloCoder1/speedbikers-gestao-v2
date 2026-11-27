@@ -66,4 +66,12 @@ describe("CSV de /anuncios", () => {
 
     expect(linha).toContain(";'=HYPERLINK(1);");
   });
+
+  it("D-774: neutraliza fórmula precedida por espaço, tab ou CR", () => {
+    for (const malicioso of [" =HYPERLINK(1)", "\t=cmd|' /C calc'!A0", "\r+1+1"]) {
+      const linha = listingsToCsv([{ ...LINHA, title: malicioso }], 30).split("\r\n")[1] ?? "";
+
+      expect(linha).toContain(`'${malicioso}`);
+    }
+  });
 });

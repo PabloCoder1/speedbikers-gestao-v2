@@ -43,6 +43,20 @@ describe("referências e escape", () => {
     expect(rangeRef("D'Ávila", 3, 2, 9)).toBe("'D''Ávila'!$C$2:$C$9");
     expect(escapeXml(`a<b>&"c'`)).toBe("a&lt;b&gt;&amp;&quot;c&apos;");
   });
+
+  it("recusa coluna/linha inválida, remove caracteres de controle ilegais no XML 1.0 e escapa cor", () => {
+    expect(() => columnLetter(0)).toThrow(RangeError);
+    expect(() => columnLetter(-2)).toThrow(RangeError);
+    expect(() => columnLetter(1.5)).toThrow(RangeError);
+    expect(() => columnLetter(Number.NaN)).toThrow(RangeError);
+    expect(() => columnLetter(Number.POSITIVE_INFINITY)).toThrow(RangeError);
+    expect(() => rangeRef("Dados", 1, 0, 2)).toThrow(RangeError);
+    expect(() => rangeRef("Dados", 1, 5, 2)).toThrow(RangeError);
+    expect(escapeXml("a\u0000b\u001Fc\td\ne\uFFFE")).toBe("abc\td\ne");
+
+    const xml = chartXml({ ...coluna, series: [{ ...serie, color: '0E1259" /><x ' }] });
+    expect(xml).toContain('val="0E1259&quot; /&gt;&lt;x "');
+  });
 });
 
 describe("chartXml", () => {

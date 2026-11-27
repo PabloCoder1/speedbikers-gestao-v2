@@ -96,6 +96,10 @@ describe("lerVisaoVinculacoes", () => {
     delete faltando.por_variacao;
 
     expect(lerVisaoVinculacoes({ ...RESPOSTA, contagens: faltando })).toBeNull();
+
+    const herdado = Object.create({ por_variacao: 1422 }) as Record<string, unknown>;
+    Object.assign(herdado, faltando);
+    expect(lerVisaoVinculacoes({ ...RESPOSTA, contagens: herdado })).toBeNull();
   });
 
   it("recusa a resposta inteira quando uma linha vem com estado desconhecido", () => {
@@ -151,6 +155,13 @@ describe("tonsDasContas", () => {
 
   it("não conhece id que não está na lista da tela", () => {
     expect(tonsDasContas(["a"]).get("z")).toBeUndefined();
+  });
+
+  it("id repetido preserva o primeiro tom sem deslocar as contas seguintes", () => {
+    const tons = tonsDasContas(["a", "a", "b"]);
+
+    expect(tons.get("a")).toBe(0);
+    expect(tons.get("b")).toBe(1);
   });
 });
 

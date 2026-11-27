@@ -25,7 +25,10 @@ export const PUSH_RETURN_UPDATES = 29;
 export const PUSH_AUTHORIZATION_CANCELED = 2;
 
 /** Número, ou texto só com dígitos: o `return_updates_push` de teste (15/10) mandou `"code": "29"`. */
-const inteiro = z.union([z.number().int(), z.string().regex(/^\d+$/).transform(Number)]);
+const inteiro = z.union([
+  z.number().int(),
+  z.string().regex(/^\d+$/).transform(Number).refine(Number.isSafeInteger, "inteiro fora da faixa segura"),
+]);
 
 /** O envelope comum: `code` sempre; `shop_id` nos pushes de loja; o resto, por push. */
 export const shopeePushSchema = z.looseObject({
@@ -43,7 +46,7 @@ export function signPush(partnerKey: string, url: string, rawBody: string): stri
 
 /** O `Authorization` confere com o endereço cadastrado e o corpo cru? Comparação em tempo constante. */
 export function verifyPushSignature(partnerKey: string, url: string, rawBody: string, authorization: string | undefined): boolean {
-  if (authorization === undefined || !/^[0-9a-f]{64}$/i.test(authorization)) return false;
+  if (partnerKey.length === 0 || authorization === undefined || !/^[0-9a-f]{64}$/i.test(authorization)) return false;
 
   const esperado = Buffer.from(signPush(partnerKey, url, rawBody), "hex");
   const recebido = Buffer.from(authorization.toLowerCase(), "hex");

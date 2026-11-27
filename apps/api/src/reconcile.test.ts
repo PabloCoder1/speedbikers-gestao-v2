@@ -113,4 +113,23 @@ describe("triggerOrdersReconciliation", () => {
     expect(outcome).toEqual({ accountsScanned: 0, enqueued: 0, deduplicated: 0 });
     expect(enqueued).toHaveLength(0);
   });
+
+  it("D-793: falha ao enfileirar uma conta não bloqueia as demais e sinaliza failed para 503", async () => {
+    const { deps: d, enqueued } = deps();
+    const baseEnqueue = d.enqueuer.enqueue;
+    d.enqueuer = {
+      enqueue: (request) => {
+        if (request.queue.endsWith("speedbikers-loja-1")) {
+          return Promise.reject(new Error("fila indisponível"));
+        }
+
+        return baseEnqueue(request);
+      },
+    };
+
+    const outcome = await triggerOrdersReconciliation(d);
+
+    expect(outcome).toEqual({ accountsScanned: 2, enqueued: 1, deduplicated: 0, failed: true });
+    expect(enqueued.map((e) => e.queue)).toEqual(["ml-sync-sbmotos"]);
+  });
 });

@@ -21,6 +21,14 @@ export interface KnowledgeActionResult {
   message: string | null;
 }
 
+function describeKnowledgeWriteError(error: { message: string }, fallback: string): string {
+  if (/permission denied|row-level security/i.test(error.message)) {
+    return "Você não tem permissão para realizar esta ação.";
+  }
+
+  return fallback;
+}
+
 export async function createKnowledgeEntry(input: {
   kind: KnowledgeKind;
   source: KnowledgeSource;
@@ -45,10 +53,26 @@ export async function createKnowledgeEntry(input: {
     currentMembership(supabase),
   ]);
 
-  const userId = authResult.data.user?.id;
+  if (authResult.error !== null) {
+    return {
+      ok: false,
+      message:
+        authResult.error.status === 401 ||
+        authResult.error.status === 403 ||
+        authResult.error.name === "AuthSessionMissingError"
+          ? "Sessão expirada — atualize a página."
+          : "Não foi possível confirmar sua sessão — tente de novo.",
+    };
+  }
+
+  if (membershipResult.error !== null) {
+    return { ok: false, message: "Não foi possível confirmar sua organização — tente de novo." };
+  }
+
+  const userId = authResult.data.user.id;
   const organizationId = membershipResult.organizationId;
 
-  if (userId === undefined || organizationId === null) {
+  if (organizationId === null) {
     return { ok: false, message: "Sessão expirada — atualize a página." };
   }
 
@@ -61,7 +85,11 @@ export async function createKnowledgeEntry(input: {
   if (skuCode.length > 0) {
     const sku = await supabase.from("skus").select("id").eq("sku", skuCode).maybeSingle();
 
-    if (sku.error !== null || sku.data === null) {
+    if (sku.error !== null) {
+      return { ok: false, message: "Não foi possível consultar o SKU — tente de novo." };
+    }
+
+    if (sku.data === null) {
       return { ok: false, message: `SKU "${skuCode}" não encontrado.` };
     }
 
@@ -79,7 +107,7 @@ export async function createKnowledgeEntry(input: {
   });
 
   if (result.error !== null) {
-    return { ok: false, message: result.error.message };
+    return { ok: false, message: describeKnowledgeWriteError(result.error, "Não foi possível registrar o fato.") };
   }
 
   revalidatePath("/atendimento/conhecimento");
@@ -98,12 +126,19 @@ export async function setKnowledgeStatus(
 ): Promise<KnowledgeActionResult> {
   const supabase = await createClient();
 
-  const { data: auth } = await supabase.auth.getUser();
-  const userId = auth.user?.id;
+  const { data: auth, error: authError } = await supabase.auth.getUser();
 
-  if (userId === undefined) {
-    return { ok: false, message: "Sessão expirada — atualize a página." };
+  if (authError !== null) {
+    return {
+      ok: false,
+      message:
+        authError.status === 401 || authError.status === 403 || authError.name === "AuthSessionMissingError"
+          ? "Sessão expirada — atualize a página."
+          : "Não foi possível confirmar sua sessão — tente de novo.",
+    };
   }
+
+  const userId = auth.user.id;
 
   const patch =
     status === "VALIDADO"
@@ -118,7 +153,7 @@ export async function setKnowledgeStatus(
     .maybeSingle();
 
   if (result.error !== null) {
-    return { ok: false, message: result.error.message };
+    return { ok: false, message: describeKnowledgeWriteError(result.error, "Não foi possível atualizar o status.") };
   }
 
   if (result.data === null) {

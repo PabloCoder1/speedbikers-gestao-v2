@@ -4,11 +4,41 @@ import { descricaoValida } from "../../../lib/vitals-elemento";
 
 const NAMES = new Set(["TTFB", "LCP", "CLS", "INP"]);
 
+/**
+ * Rota relativa de App Router para log de Web Vitals (D-811):
+ * exige prefixo `/`, barra `//` (protocol-relative), query string (`?`),
+ * fragmento (`#`), contrabarra (`\\`), espaços e caracteres de controle
+ * (impede log injection e vazamento acidental de parâmetros na telemetria).
+ */
+function rotaVitalValida(valor: unknown): valor is string {
+  if (typeof valor !== "string" || !valor.startsWith("/") || valor.startsWith("//")) {
+    return false;
+  }
+
+  for (let i = 0; i < valor.length; i += 1) {
+    const code = valor.charCodeAt(i);
+    if (code <= 0x20 || code === 0x7f) return false;
+    const ch = valor[i];
+    if (ch === "?" || ch === "#" || ch === "\\") return false;
+  }
+
+  return true;
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
   const body: unknown = await request.json().catch(() => null);
-  if (typeof body !== "object" || body === null) return NextResponse.json({ ok: false }, { status: 400 });
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return NextResponse.json({ ok: false }, { status: 400 });
+  }
   const data = body as { name?: unknown; value?: unknown; path?: unknown; softNav?: unknown; el?: unknown };
-  if (typeof data.name !== "string" || !NAMES.has(data.name) || typeof data.value !== "number" || !Number.isFinite(data.value) || typeof data.path !== "string" || !data.path.startsWith("/")) {
+  if (
+    typeof data.name !== "string" ||
+    !NAMES.has(data.name) ||
+    typeof data.value !== "number" ||
+    !Number.isFinite(data.value) ||
+    data.value < 0 ||
+    !rotaVitalValida(data.path)
+  ) {
     return NextResponse.json({ ok: false }, { status: 400 });
   }
   if (data.softNav !== undefined && typeof data.softNav !== "boolean") return NextResponse.json({ ok: false }, { status: 400 });

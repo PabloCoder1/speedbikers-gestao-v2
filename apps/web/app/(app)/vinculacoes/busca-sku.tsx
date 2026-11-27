@@ -74,28 +74,37 @@ export function BuscaSku({
     pedido.current += 1;
     const este = pedido.current;
 
-    const { data, error } = await createClient()
-      .from("skus")
-      .select("id, sku, title")
-      .or(`sku_key.ilike.%${limpo.toUpperCase()}%,title.ilike.%${limpo}%`)
-      .order("sku")
-      .limit(8);
+    try {
+      const { data, error } = await createClient()
+        .from("skus")
+        .select("id, sku, title")
+        .or(`sku_key.ilike.%${limpo.toUpperCase()}%,title.ilike.%${limpo}%`)
+        .order("sku")
+        .limit(8);
 
-    if (este !== pedido.current) return;
+      if (este !== pedido.current) return;
 
-    setBuscando(false);
+      if (error !== null) {
+        // Falha de rede/RLS não pode parecer "nenhum SKU encontrado" (D-067).
+        setErro("Não foi possível buscar SKUs — tente de novo.");
+        setResultados(null);
 
-    if (error !== null) {
-      // Falha de rede/RLS não pode parecer "nenhum SKU encontrado" (D-067).
+        return;
+      }
+
+      setErro(null);
+      setAtivo(0);
+      setResultados(data.map((s) => ({ skuId: s.id, sku: s.sku, title: s.title })));
+    } catch {
+      if (este !== pedido.current) return;
+
       setErro("Não foi possível buscar SKUs — tente de novo.");
       setResultados(null);
-
-      return;
+    } finally {
+      if (este === pedido.current) {
+        setBuscando(false);
+      }
     }
-
-    setErro(null);
-    setAtivo(0);
-    setResultados(data.map((s) => ({ skuId: s.id, sku: s.sku, title: s.title })));
   }
 
   function escolher(opcao: OpcaoSku): void {

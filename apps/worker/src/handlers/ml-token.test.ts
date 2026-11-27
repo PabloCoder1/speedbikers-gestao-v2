@@ -28,8 +28,16 @@ const RENOVADA_POR_OUTRA = {
 interface Opcoes {
   /** A credencial que o UPDATE da trava devolve; por padrão, a mesma da leitura. */
   naTrava?: typeof VENCENDO;
+  /** Erro devolvido pela leitura inicial das credenciais. */
+  falhaAoLerCredenciais?: { message: string };
+  /** Credenciais ausentes no banco sem erro. */
+  credenciaisAusentes?: boolean;
+  /** Erro devolvido ao tentar reservar a trava do refresh. */
+  falhaNaTrava?: { message: string };
   /** Erro devolvido pela gravação do token novo. */
   falhaAoGravar?: { message: string };
+  /** Erro de transporte lançado ao tentar soltar a trava. */
+  lancaAoSoltar?: boolean;
   travaPerdida?: boolean;
 }
 
@@ -65,7 +73,17 @@ function fakeDb(opcoes: Opcoes = {}) {
 
   const db = {
     from: (table: string) => ({
-      select: () => cadeia({ data: table === "ml_credentials" ? VENCENDO : null, error: null }),
+      select: () => {
+        if (table === "ml_credentials" && opcoes.falhaAoLerCredenciais !== undefined) {
+          return cadeia({ data: null, error: opcoes.falhaAoLerCredenciais });
+        }
+
+        if (table === "ml_credentials" && opcoes.credenciaisAusentes === true) {
+          return cadeia({ data: null, error: null });
+        }
+
+        return cadeia({ data: table === "ml_credentials" ? VENCENDO : null, error: null });
+      },
       // A trava é reivindicada com sucesso e devolve a credencial; as outras
       // atualizações só são registradas.
       update: (row: Record<string, unknown>) => {
@@ -73,8 +91,26 @@ function fakeDb(opcoes: Opcoes = {}) {
         const filtros: Record<string, unknown> = {};
         filtrosAtualizacao.push(filtros);
 
+        if (table === "ml_credentials" && "refresh_locked_until" in row && opcoes.falhaNaTrava !== undefined) {
+          return cadeia({ data: null, error: opcoes.falhaNaTrava }, filtros);
+        }
+
         if (table === "ml_credentials" && "access_token_ciphertext" in row && opcoes.falhaAoGravar !== undefined) {
           return cadeia({ data: null, error: opcoes.falhaAoGravar }, filtros);
+        }
+
+        if (table === "ml_credentials" && row.refresh_locked_until === null && opcoes.lancaAoSoltar === true) {
+          const self = {
+            eq: (coluna: string, valor: unknown) => {
+              filtros[coluna] = valor;
+
+              return self;
+            },
+            then: (_resolve: unknown, reject: (err: Error) => unknown) =>
+              Promise.reject(new Error("socket hang up ao soltar trava")).then(undefined, reject),
+          };
+
+          return self;
         }
 
         return cadeia({ data: table === "ml_credentials" ? (opcoes.naTrava ?? VENCENDO) : null, error: null }, filtros);
@@ -224,5 +260,89 @@ describe("ensureAccessToken: a credencial vale a partir da trava (auditoria de 2
     await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toMatchObject({ ok: false, retryable: true });
     expect(atualizacoes).toHaveLength(1);
     expect(registrarRecusa).toHaveBeenCalledTimes(1);
+  });
+
+  it("falha transitória ao ler credenciais é retryable=true em vez de acusar ausência", async () => {
+    const { deps } = fakeDb({ falhaAoLerCredenciais: { message: "connection reset" } });
+
+    await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toEqual({
+      ok: false,
+      retryable: true,
+      reason: "falha ao ler credenciais Mercado Livre: connection reset",
+    });
+  });
+
+  it("credenciais ausentes sem erro seguem não retryable", async () => {
+    const { deps } = fakeDb({ credenciaisAusentes: true });
+
+    await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toEqual({
+      ok: false,
+      retryable: false,
+      reason: "conta CONNECTED sem credenciais gravadas",
+    });
+  });
+
+  it("falha do banco ao reservar a trava do refresh mantém retryable=true com motivo explícito", async () => {
+    const { deps } = fakeDb({ falhaNaTrava: { message: "statement timeout" } });
+
+    await expect(ensureAccessToken(deps, CONTA, AGORA)).resolves.toEqual({
+      ok: false,
+      retryable: true,
+      reason: "falha ao reservar refresh do token: statement timeout",
+    });
+  });
+
+  it("D-780: falha de transporte ao soltar a trava não descarta token já renovado nem mascara erro transitório do ML", async () => {
+    const { deps: depsJaRenovado } = fakeDb({ naTrava: RENOVADA_POR_OUTRA, lancaAoSoltar: true });
+    await expect(ensureAccessToken(depsJaRenovado, CONTA, AGORA)).resolves.toEqual({
+      ok: true,
+      accessToken: "APP_USR-novo",
+    });
+
+    respostaDoToken(503, { error: "service_unavailable" });
+    const { deps: depsErro } = fakeDb({ lancaAoSoltar: true });
+    await expect(ensureAccessToken(depsErro, CONTA, AGORA)).resolves.toMatchObject({
+      ok: false,
+      retryable: true,
+    });
+  });
+
+  it("D-831: ciphertext corrompido ou chave incompatível falha fechado (retryable=false) e solta a trava", async () => {
+    const { deps: depsLeitura } = fakeDb({
+      naTrava: {
+        ...RENOVADA_POR_OUTRA,
+        access_token_ciphertext: "ciphertext-corrompido",
+      },
+    });
+    // Caminho 1: access_token ainda válido mas corrompido na leitura inicial (chave errada)
+    const { deps: depsChaveErrada } = fakeDb({ naTrava: RENOVADA_POR_OUTRA });
+    await expect(
+      ensureAccessToken(
+        { ...depsChaveErrada, encryptionKey: randomBytes(32) },
+        CONTA,
+        new Date(AGORA.getTime() - 2 * 3600_000),
+      ),
+    ).resolves.toMatchObject({ ok: false, retryable: false });
+
+    // Caminho 2: access_token renovado por outra execução mas corrompido na trava
+    await expect(ensureAccessToken(depsLeitura, CONTA, AGORA)).resolves.toMatchObject({
+      ok: false,
+      retryable: false,
+    });
+
+    // Caminho 3: refresh_token corrompido na trava — solta trava e não chama OAuth
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const { deps: depsRefresh, atualizacoes } = fakeDb({
+      naTrava: {
+        ...VENCENDO,
+        refresh_token_ciphertext: "ciphertext-corrompido",
+      },
+    });
+    await expect(ensureAccessToken(depsRefresh, CONTA, AGORA)).resolves.toMatchObject({
+      ok: false,
+      retryable: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(atualizacoes.at(-1)?.row).toEqual({ refresh_locked_until: null, refresh_lock_id: null });
   });
 });

@@ -3,6 +3,8 @@ import type { Logger } from "@sb/observability";
 
 import type { Enqueuer } from "./enqueue.js";
 
+const ORGANIZATIONS_PAGE_SIZE = 1000;
+
 /**
  * Gatilho do alerta de venda abaixo da margem (D-858): um
  * `diagnostics.detect-low-margin-sales` por organização.
@@ -34,39 +36,64 @@ export async function triggerLowMarginSalesDetection(deps: LowMarginSalesSchedul
   const now = deps.now?.() ?? new Date();
   const hourBucket = now.toISOString().slice(0, 13);
 
-  // Só a organização com o alerta ligado: a desligada não tem o que julgar.
-  const organizations = await deps.db.from("margin_alert_settings").select("organization_id").eq("enabled", true);
+  const organizationIds: string[] = [];
+  let cursor: string | undefined;
+  // Termine a leitura antes de enfileirar, inclusive quando há mais de uma página.
+  for (;;) {
+    const query = deps.db
+      .from("margin_alert_settings")
+      .select("organization_id")
+      .eq("enabled", true)
+      .order("organization_id");
+    const page = await (cursor === undefined ? query : query.gt("organization_id", cursor))
+      .limit(ORGANIZATIONS_PAGE_SIZE);
+    if (page.error !== null) {
+      deps.logger.error("low_margin_sales_schedule_not_listed", { reason: page.error.message });
+      return { organizationsScanned: 0, enqueued: 0, deduplicated: 0, failed: true };
+    }
 
-  if (organizations.error !== null) {
-    deps.logger.error("low_margin_sales_schedule_not_listed", { reason: organizations.error.message });
-
-    return { organizationsScanned: 0, enqueued: 0, deduplicated: 0, failed: true };
+    for (const { organization_id } of page.data) organizationIds.push(organization_id);
+    if (page.data.length < ORGANIZATIONS_PAGE_SIZE) break;
+    cursor = organizationIds.at(-1);
   }
 
   let enqueued = 0;
   let deduplicated = 0;
 
-  for (const { organization_id: organizationId } of organizations.data) {
-    const result = await deps.enqueuer.enqueue({
-      jobType: "diagnostics.detect-low-margin-sales",
-      organizationId,
-      dedupeKey: `low-margin-sales:${organizationId}:${hourBucket}`,
-      queue: "maintenance",
-      payload: { organizationId },
-    });
+  let enqueueFailed = false;
 
-    if (result.deduplicated) {
-      deduplicated += 1;
-    } else {
-      enqueued += 1;
+  for (const organizationId of organizationIds) {
+    try {
+      const result = await deps.enqueuer.enqueue({
+        jobType: "diagnostics.detect-low-margin-sales",
+        organizationId,
+        dedupeKey: `low-margin-sales:${organizationId}:${hourBucket}`,
+        queue: "maintenance",
+        payload: { organizationId },
+      });
+
+      if (result.deduplicated) {
+        deduplicated += 1;
+      } else {
+        enqueued += 1;
+      }
+    } catch (error) {
+      enqueueFailed = true;
+      deps.logger.error("low_margin_sales_enqueue_failed", {
+        organization_id: organizationId,
+        reason: error instanceof Error ? error.message : "falha ao enfileirar alerta de margem",
+      });
     }
   }
 
+  const failure = enqueueFailed ? { failed: true } as const : {};
+
   deps.logger.info("low_margin_sales_schedule_triggered", {
-    organizations_scanned: organizations.data.length,
+    organizations_scanned: organizationIds.length,
     enqueued,
     deduplicated,
+    ...failure,
   });
 
-  return { organizationsScanned: organizations.data.length, enqueued, deduplicated };
+  return { organizationsScanned: organizationIds.length, enqueued, deduplicated, ...failure };
 }

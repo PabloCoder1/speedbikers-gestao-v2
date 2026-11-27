@@ -143,12 +143,12 @@ function fakeMercadoLivreClient(
         return Promise.resolve(options.schema.parse(page));
       }
 
-      if (options.path === "/items") {
+      if (options.path === "/items/bulk") {
         const ids = String(options.searchParams?.ids ?? "").split(",").filter(Boolean);
         const entries = ids.map((id) => {
           const body = itemsById[id];
 
-          return body === undefined ? { code: 404, body: {} } : { code: 200, body };
+          return { id, status_code: body === undefined ? 404 : 200, body: body ?? {} };
         });
 
         return Promise.resolve(options.schema.parse(entries));
@@ -276,6 +276,25 @@ describe("sync.listings.snapshot (D-058)", () => {
     expect(db.inserted.find((e) => e.table === "sync_errors")?.row).toMatchObject({ error_class: "retryable" });
   });
 
+  it("não hidrata quando o scan atinge o teto com cursor aberto", async () => {
+    const { deps: d, db, lines } = deps({});
+    const paths: string[] = [];
+    d.mercadoLivre.request = ((options: RequestOptions<unknown>) => {
+      paths.push(options.path);
+      const response = options.path.endsWith("/items/search")
+        ? { results: ["MLB1"], scroll_id: "aberto" }
+        : [{ code: 200, body: { ...ITEM_MLB1, status: "paused" } }];
+      return Promise.resolve(options.schema.parse(response));
+    }) as typeof d.mercadoLivre.request;
+
+    await expect(run(d, lines)).resolves.toMatchObject({ status: "failed", retryable: false });
+    expect(paths).toHaveLength(500);
+    expect(paths.every((path) => path.endsWith("/items/search"))).toBe(true);
+    expect(db.inserted.find((entry) => entry.table === "listings")).toBeUndefined();
+    expect(db.inserted.find((entry) => entry.table === "sync_runs")?.row).toMatchObject({ status: "failed" });
+    expect(db.inserted.find((entry) => entry.table === "sync_errors")?.row).toMatchObject({ error_class: "not_retryable" });
+  });
+
   it("falha num item específico: NÃO derruba o job — vira partial, itemsFailed no reason", async () => {
     // Desde a Fase 4B o 404 de um item chega como `code` DENTRO do envelope
     // verbose do multiget, não como exceção da chamada inteira — é o que
@@ -289,7 +308,7 @@ describe("sync.listings.snapshot (D-058)", () => {
 
       // D-631: o 404 virou "o anúncio não existe mais" (marca a exclusão);
       // a falha de item que vira `partial` é outro código.
-      return Promise.resolve(options.schema.parse([{ code: 500, body: { message: "erro" } }]));
+      return Promise.resolve(options.schema.parse([{ id: "MLB-removido", status_code: 500, body: { message: "erro" } }]));
     }) as typeof d.mercadoLivre.request;
 
     const outcome = await run(d, lines);

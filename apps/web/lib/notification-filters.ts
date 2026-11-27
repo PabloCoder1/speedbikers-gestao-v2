@@ -212,6 +212,20 @@ export function buildNotificationHref(
   );
 }
 
+/** Os cartões contam toda a Central e levam à primeira página desse recorte. */
+export function buildNotificationUnreadKpiHref(
+  current: NotificationFilters,
+  severity: NotificationSeverity | null = null,
+): string {
+  return buildNotificationHref(current, {
+    state: "nao-lidas",
+    severity,
+    family: null,
+    account: null,
+    loja: null,
+  });
+}
+
 /** Quantas dimensões estão recortando — o "Limpar N filtros" da toolbar. */
 export function countNotificationFilters(filters: NotificationFilters): number {
   return [

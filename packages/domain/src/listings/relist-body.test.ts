@@ -74,4 +74,32 @@ describe("buildRelistBody (D-364)", () => {
       expect(hasRelistStock(semEstoque)).toBe(false);
     }
   });
+
+  it("recusa preço zero/negativo/não-finito, listing_type_id vazio ou id de variação inválido (D-799)", () => {
+    expect(buildRelistBody({ price: 0, available_quantity: 5, listing_type_id: "gold_special", variations: [] })).toBeNull();
+    expect(buildRelistBody({ price: -10, available_quantity: 5, listing_type_id: "gold_special", variations: [] })).toBeNull();
+    expect(buildRelistBody({ price: Number.NaN, available_quantity: 5, listing_type_id: "gold_special", variations: [] })).toBeNull();
+    expect(buildRelistBody({ price: 100, available_quantity: 5, listing_type_id: "   ", variations: [] })).toBeNull();
+    expect(
+      buildRelistBody(
+        parentWithVariations({
+          variations: [{ id: 0, price: 100, available_quantity: 3 }],
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      buildRelistBody(
+        parentWithVariations({
+          variations: [{ id: "abc", price: 100, available_quantity: 3 }],
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      buildRelistBody(
+        parentWithVariations({
+          variations: [{ id: 1, price: 0, available_quantity: 3 }],
+        }),
+      ),
+    ).toBeNull();
+  });
 });

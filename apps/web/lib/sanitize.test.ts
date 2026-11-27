@@ -86,4 +86,10 @@ describe("sanitizeErrorText", () => {
     expect(longo?.length).toBe(50);
     expect(longo?.endsWith("…")).toBe(true);
   });
+
+  it("limite max não positivo ou não finito falha fechado em null sem vazar o texto inteiro", () => {
+    expect(sanitizeErrorText("erro interno sensível", 0)).toBeNull();
+    expect(sanitizeErrorText("erro interno sensível", -10)).toBeNull();
+    expect(sanitizeErrorText("erro interno sensível", Number.NaN)).toBeNull();
+  });
 });

@@ -203,4 +203,42 @@ describe("evaluateConversationRemoteTransition", () => {
 
     expect(primeira?.dedupKey).not.toBe(segunda?.dedupKey);
   });
+
+  it("D-788: compara instantes reais entre fusos distintos (cliente depois em -03:00 reabre mesmo se string for menor que +00:00)", () => {
+    // Vendedor respondeu 18:00 UTC; cliente respondeu 16:00-03:00 = 19:00 UTC (1h depois).
+    const transition = evaluateConversationRemoteTransition({
+      caseId: "case-tz-1",
+      lastInboundAt: "2026-08-27T16:00:00.000-03:00",
+      lastOutboundAt: "2026-08-27T18:00:00.000+00:00",
+    });
+
+    expect(transition).toEqual({
+      expectedStatuses: ["AGUARDANDO_CLIENTE", "RESOLVIDO"],
+      newStatus: "NOVO",
+      eventType: "support.case.auto_reopened",
+      dedupKey: "auto-reopen:case-tz-1:2026-08-27T16:00:00.000-03:00",
+      occurredAt: "2026-08-27T16:00:00.000-03:00",
+    });
+  });
+
+  it("D-788: empate de instante em fusos diferentes conta como vendedor respondeu (sem oscilar)", () => {
+    // 15:00-03:00 === 18:00Z (mesmo instante).
+    const transition = evaluateConversationRemoteTransition({
+      caseId: "case-tz-2",
+      lastInboundAt: "2026-08-27T18:00:00.000Z",
+      lastOutboundAt: "2026-08-27T15:00:00.000-03:00",
+    });
+
+    expect(transition?.newStatus).toBe("AGUARDANDO_CLIENTE");
+  });
+
+  it("D-788: ignora timestamps inválidos sem gerar transição corrompida", () => {
+    expect(
+      evaluateConversationRemoteTransition({
+        caseId: "case-bad",
+        lastInboundAt: "data-invalida",
+        lastOutboundAt: "outra-invalida",
+      }),
+    ).toBeNull();
+  });
 });

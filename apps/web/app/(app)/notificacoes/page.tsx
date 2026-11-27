@@ -16,6 +16,7 @@ import {
   NOTIFICATION_SEVERITIES,
   PAGE_SIZE,
   buildNotificationHref,
+  buildNotificationUnreadKpiHref,
   countNotificationFilters,
   describeNotificationRecorte,
   notificationFamilyLabel,
@@ -60,25 +61,6 @@ export const dynamic = "force-dynamic";
  * cinco mil problemas, são uma tela que ninguém abre" —, e o que faltava para
  * tratá-la era filtro, que §7 já listava como pendência desde 2026-08-24.
  *
- * ## A RAIZ DA CONSULTA MUDOU, e isso é performance medida
- *
- * Era `from("notifications")` com o destinatário embutido; passou a ser
- * `from("notification_recipients")` com a notificação embutida. Medido como
- * `authenticated`, com a RLS valendo (a lição de D-305→D-307: medir na forma
- * que a tela usa, nunca pelo `pg_stat_statements`):
- *
- * | | antes | depois |
- * |---|---:|---:|
- * | primeira página, sem recorte | **556 ms** | **63 ms** |
- * | linhas tocadas para montar 100 | 54.306 | 100 |
- *
- * O motivo é a ORDEM: com a lista de destinatários na raiz e o índice novo
- * `(user_id, created_at desc)` (migration `20260923200000`), o planejador anda
- * pela ordem e para na centésima linha, em vez de materializar tudo e ordenar
- * no fim. **E é a mesma ordem**: `private.fan_out_notification` grava a
- * notificação e os destinatários na mesma transação, e `now()` é o instante da
- * transação — conferido nas 66.932 linhas da base, zero diferença.
- *
  * ## O que continua fora
  *
  * O painel de detalhe do frame (D-269): ele repete os campos da linha e
@@ -86,25 +68,6 @@ export const dynamic = "force-dynamic";
  * tem QUATRO colunas. Período, busca por entidade e origem automática/manual
  * estão recusados com número em `lib/notification-filters.ts`.
  */
-
-interface NotificationQueryRow {
-  notification_id: string;
-  read_at: string | null;
-  created_at: string;
-  notifications: {
-    domain_events: {
-      event_type: string;
-      entity_type: string;
-      entity_id: string;
-      severity: string;
-      occurred_at: string;
-      before: unknown;
-      after: unknown;
-      shopee_shop_id: string | null;
-      ml_accounts: { label: string } | null;
-    } | null;
-  } | null;
-}
 
 /** Um dia civil de CHEGADA e as linhas que chegaram nele. */
 interface GrupoDoDia {
@@ -114,20 +77,8 @@ interface GrupoDoDia {
   rows: NotificationRowData[];
 }
 
-/**
- * O SELECT, escrito uma vez e reusado pela lista e pelas contagens.
- *
- * `!inner` nos dois níveis é o que permite FILTRAR por coluna de
- * `domain_events` a partir da raiz — sem ele o PostgREST devolveria a linha do
- * destinatário com o embed vazio em vez de descartá-la. Os dois embeds têm FK
- * que os sustenta (`check:embeds`): `notification_recipients.notification_id`
- * e `notifications.domain_event_id`.
- */
 const SELECT_LISTA =
-  "notification_id, read_at, created_at, notifications!inner(domain_events!inner(event_type, entity_type, entity_id, severity, occurred_at, before, after, shopee_shop_id, ml_accounts(label)))";
-
-/** O mesmo caminho, sem coluna nenhuma além do necessário para contar. */
-const SELECT_CONTAGEM = "notification_id, notifications!inner(domain_event_id, domain_events!inner(id))";
+  "notification_id, read_at, created_at, event_type, entity_type, entity_id, severity, occurred_at, before, after, shopee_shop_id, account_label";
 
 export default async function NotificacoesPage({
   searchParams,
@@ -142,68 +93,61 @@ export default async function NotificacoesPage({
   const temRecorte = filters.severity !== null || filters.family !== null || filters.account !== null || filters.loja !== null;
   const filtrosAtivos = countNotificationFilters(filters);
 
-  /*
-    O RECORTE NUM LUGAR SÓ, aplicado à lista E às duas contagens — é o que
-    impede o cabeçalho de discordar do corpo (D-236). Os filtros moram no
-    EMBED, nunca em `notification_recipients`: severidade, tipo e conta são
-    atributos do EVENTO; lida é estado POR PESSOA (`docs/NOTIFICATIONS.md` §7).
-
-    As condições são DADO, não código repetido: a lista de colunas e valores
-    existe uma vez, e cada consulta só a percorre. Três cópias do mesmo `if`
-    seriam três lugares para a quarta dimensão nascer torta.
-  */
+  // A lista e as duas contagens aplicam o mesmo recorte ao histórico.
   const condicoes: readonly { operador: "eq" | "like"; coluna: string; valor: string }[] = [
     ...(filters.severity === null
       ? []
-      : [{ operador: "eq" as const, coluna: "notifications.domain_events.severity", valor: filters.severity }]),
+      : [{ operador: "eq" as const, coluna: "severity", valor: filters.severity }]),
     ...(filters.family === null
       ? []
       : [
           {
             operador: "like" as const,
-            coluna: "notifications.domain_events.event_type",
+            coluna: "event_type",
             valor: notificationFamilyPattern(filters.family),
           },
         ]),
     ...(filters.account === null
       ? []
-      : [{ operador: "eq" as const, coluna: "notifications.domain_events.ml_account_id", valor: filters.account }]),
+      : [{ operador: "eq" as const, coluna: "ml_account_id", valor: filters.account }]),
     // D-604: o evento da loja Shopee guarda a loja na própria coluna (nunca junto da conta do ML).
     ...(filters.loja === null
       ? []
-      : [{ operador: "eq" as const, coluna: "notifications.domain_events.shopee_shop_id", valor: filters.loja }]),
+      : [{ operador: "eq" as const, coluna: "shopee_shop_id", valor: filters.loja }]),
   ];
 
-  let listQuery = supabase
-    .from("notification_recipients")
+  const listQuery = supabase
+    .rpc("list_notification_history", {
+      p_offset: desde,
+      p_limit: PAGE_SIZE,
+      p_unread: soNaoLidas,
+      ...(filters.severity === null ? {} : { p_severity: filters.severity }),
+      ...(filters.family === null ? {} : { p_event_type_pattern: notificationFamilyPattern(filters.family) }),
+      ...(filters.account === null ? {} : { p_ml_account_id: filters.account }),
+      ...(filters.loja === null ? {} : { p_shopee_shop_id: filters.loja }),
+    })
     .select(SELECT_LISTA)
     .order("created_at", { ascending: false })
-    .range(desde, desde + PAGE_SIZE - 1);
+    .order("notification_id", { ascending: false });
 
   let contagemDoRecorte = supabase
-    .from("notification_recipients")
-    .select(SELECT_CONTAGEM, { count: "exact", head: true });
+    .from("notification_history")
+    .select("notification_id", { count: "exact", head: true });
 
   let naoLidasDoRecorte = supabase
-    .from("notification_recipients")
-    .select(SELECT_CONTAGEM, { count: "exact", head: true })
+    .from("notification_history")
+    .select("notification_id", { count: "exact", head: true })
     .is("read_at", null);
 
   for (const condicao of condicoes) {
     if (condicao.operador === "eq") {
-      listQuery = listQuery.eq(condicao.coluna, condicao.valor);
       contagemDoRecorte = contagemDoRecorte.eq(condicao.coluna, condicao.valor);
       naoLidasDoRecorte = naoLidasDoRecorte.eq(condicao.coluna, condicao.valor);
       continue;
     }
 
-    listQuery = listQuery.like(condicao.coluna, condicao.valor);
     contagemDoRecorte = contagemDoRecorte.like(condicao.coluna, condicao.valor);
     naoLidasDoRecorte = naoLidasDoRecorte.like(condicao.coluna, condicao.valor);
-  }
-
-  if (soNaoLidas) {
-    listQuery = listQuery.is("read_at", null);
   }
 
   /*
@@ -212,10 +156,6 @@ export default async function NotificacoesPage({
     diferença está escrita nos rótulos e na ressalva de cada célula, não
     subentendida: "na Central" numa, "neste recorte" na outra.
 
-    As contagens da faixa custam pouco porque todas passam pelo índice parcial
-    de não lidas (`user_id, created_at where read_at is null`): medido como
-    `authenticated`, 24 ms cada.
-
     **Sem recorte, a primeira célula NÃO pede consulta própria**: "não lidas na
     Central" e "não lidas no recorte" são o mesmo conjunto, e mandar as duas
     seria pagar duas idas pelo mesmo número. `null` aqui quer dizer "reusa a do
@@ -223,22 +163,22 @@ export default async function NotificacoesPage({
   */
   const naoLidasGerais = temRecorte
     ? supabase
-        .from("notification_recipients")
+        .from("notification_history")
         .select("notification_id", { count: "exact", head: true })
         .is("read_at", null)
     : null;
 
   const naoLidasCriticas = supabase
-    .from("notification_recipients")
-    .select(SELECT_CONTAGEM, { count: "exact", head: true })
+    .from("notification_history")
+    .select("notification_id", { count: "exact", head: true })
     .is("read_at", null)
-    .eq("notifications.domain_events.severity", "critico");
+    .eq("severity", "critico");
 
   const naoLidasImportantes = supabase
-    .from("notification_recipients")
-    .select(SELECT_CONTAGEM, { count: "exact", head: true })
+    .from("notification_history")
+    .select("notification_id", { count: "exact", head: true })
     .is("read_at", null)
-    .eq("notifications.domain_events.severity", "importante");
+    .eq("severity", "importante");
 
   const contasQuery = supabase.from("ml_accounts").select("id, label").order("label");
   // D-604: as lojas que a pessoa alcança (a RLS de D-433), para o menu de conta ou loja.
@@ -284,27 +224,23 @@ export default async function NotificacoesPage({
     return loja === undefined ? "Loja Shopee" : nomeDaLoja(loja);
   };
 
-  const rows: NotificationRowData[] = ((data ?? []) as unknown as NotificationQueryRow[]).map((row) => {
-    const event = row.notifications?.domain_events ?? null;
-    const occurredAt = event?.occurred_at ?? row.created_at;
+  const rows: NotificationRowData[] = (data ?? []).map((row) => {
+    const after = row.after as Record<string, unknown> | null;
 
     return {
       id: row.notification_id,
       createdAt: row.created_at,
       readAt: row.read_at,
-      eventType: event?.event_type ?? "—",
-      entityType: event?.entity_type ?? "—",
-      entityId: event?.entity_id ?? "—",
-      severity: event?.severity ?? "informativo",
-      occurredAt,
-      before: (event?.before ?? null) as Record<string, unknown> | null,
-      after: (event?.after ?? null) as Record<string, unknown> | null,
-      // D-638: a loja da Shopee pelo `shop_name` do evento (C-81); a conta do ML pelo embed.
-      accountLabel:
-        eventOriginLabel(event?.ml_accounts?.label, (event?.after ?? null) as Record<string, unknown> | null) ??
-        nomeDaLojaDoEvento(event?.shopee_shop_id ?? null),
-      shopeeShopId: event?.shopee_shop_id ?? null,
-      idade: formatAge(occurredAt, agora),
+      eventType: row.event_type,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      severity: row.severity,
+      occurredAt: row.occurred_at,
+      before: row.before as Record<string, unknown> | null,
+      after,
+      accountLabel: eventOriginLabel(row.account_label, after) ?? nomeDaLojaDoEvento(row.shopee_shop_id),
+      shopeeShopId: row.shopee_shop_id,
+      idade: formatAge(row.occurred_at, agora),
     };
   });
 
@@ -415,7 +351,7 @@ export default async function NotificacoesPage({
       value: formatCount(unreadGeral),
       previous: null,
       ressalva: "em toda a Central, não no recorte",
-      href: buildNotificationHref({ ...filters, severity: null, family: null, account: null }, { state: "nao-lidas" }),
+      href: buildNotificationUnreadKpiHref(filters),
       tom: "info",
     },
     {
@@ -423,10 +359,7 @@ export default async function NotificacoesPage({
       formula: "Não lidas cujo domain_event tem severity = critico.",
       value: formatCount(criticasNaoLidas),
       previous: null,
-      href: buildNotificationHref(
-        { ...filters, family: null, account: null },
-        { state: "nao-lidas", severity: "critico" },
-      ),
+      href: buildNotificationUnreadKpiHref(filters, "critico"),
       tom: "perigo",
       // `exactOptionalPropertyTypes`: propriedade opcional não aceita
       // `undefined` explícito, então ela ENTRA ou não entra.
@@ -437,10 +370,7 @@ export default async function NotificacoesPage({
       formula: "Não lidas cujo domain_event tem severity = importante.",
       value: formatCount(importantesNaoLidas),
       previous: null,
-      href: buildNotificationHref(
-        { ...filters, family: null, account: null },
-        { state: "nao-lidas", severity: "importante" },
-      ),
+      href: buildNotificationUnreadKpiHref(filters, "importante"),
       tom: "atencao",
     },
   ];

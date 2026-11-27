@@ -105,6 +105,8 @@ function lerContagens<K extends string>(v: unknown, chaves: readonly K[]): Recor
   const saida = {} as Record<K, number>;
 
   for (const chave of chaves) {
+    if (!Object.hasOwn(v, chave)) return null;
+
     const valor = v[chave];
 
     if (!ehNum(valor)) return null;
@@ -137,13 +139,13 @@ function lerLinha(v: unknown): LinhaDocumento | null {
   if (!numOuNulo(v.total_items) || !numOuNulo(v.resolved_items)) return null;
 
   for (const campo of TEXTOS_ANULAVEIS) {
-    if (!textoOuNulo(v[campo])) return null;
+    if (!Object.hasOwn(v, campo) || !textoOuNulo(v[campo])) return null;
   }
 
   // D-612: as duas do fim só existem depois da migration -- ausente é `null`;
   // presente, tem de ser texto ou nulo, como as outras.
-  const codigo = "last_error_code" in v ? v.last_error_code : null;
-  const intermediario = "intermediary_cnpj" in v ? v.intermediary_cnpj : null;
+  const codigo = Object.hasOwn(v, "last_error_code") ? v.last_error_code : null;
+  const intermediario = Object.hasOwn(v, "intermediary_cnpj") ? v.intermediary_cnpj : null;
 
   if (!textoOuNulo(codigo) || !textoOuNulo(intermediario)) return null;
 
@@ -253,8 +255,12 @@ export function linhaDoLegado(row: LinhaDocumentoLegado): LinhaDocumento {
  * não repete o estado em palavras diferentes, ela diz o que falta fazer.
  */
 export function proximoPassoDoDocumento(linha: LinhaDocumento): { texto: string; tom: "ok" | "atencao" | "perigo" | "info" | "neutro" } {
-  const total = linha.total_items ?? 0;
-  const resolvidos = linha.resolved_items ?? 0;
+  const total =
+    linha.total_items !== null && Number.isFinite(linha.total_items) && linha.total_items >= 0 ? linha.total_items : 0;
+  const resolvidos =
+    linha.resolved_items !== null && Number.isFinite(linha.resolved_items) && linha.resolved_items >= 0
+      ? linha.resolved_items
+      : 0;
   const faltam = Math.max(total - resolvidos, 0);
 
   if (linha.status === "FAILED") {

@@ -27,7 +27,9 @@ import {
 } from "../../../lib/cancelamento-e-hoje-multicanal";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime } from "../../../lib/format";
 import { MARKETPLACE_ROTULO } from "../../../lib/marketplace";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange } from "../../../lib/period";
+import { resolverContasSolicitadas } from "../../../lib/postgrest-search";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import { TETO_DA_SERIE, lerSerieDiaria } from "../../../lib/serie-de-vendas";
@@ -118,9 +120,30 @@ export async function VendasMulticanal({
   // A página pode sair por falta de organização antes de consumir os filtros.
   void filtrosPromise.catch(() => undefined);
 
-  const { organizationId } = await membershipPromise;
+  const { organizationId, error: membershipError } = await membershipPromise;
+
+  if (membershipError !== null) {
+    await filtrosPromise;
+    return (
+      <>
+        <PageTitle eyebrow="COMERCIAL / RESULTADOS" title="Dashboard de vendas" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membershipError.message}
+          acao={{
+            href: mesmaUrl("/vendas", query),
+            rotulo: TENTAR_DE_NOVO,
+            mesmaTela: true,
+          }}
+        />
+      </>
+    );
+  }
 
   if (organizationId === null) {
+    await filtrosPromise;
     return (
       <>
         <PageTitle eyebrow="COMERCIAL / RESULTADOS" title="Dashboard de vendas" />
@@ -129,10 +152,34 @@ export async function VendasMulticanal({
     );
   }
 
-  const { selecionadas, descartadas } =
-    typeof query.contas === "string" && query.contas.trim() !== ""
-      ? resolverContas(query.contas, (await contasPromise).data ?? [], escopo)
-      : { selecionadas: null, descartadas: 0 };
+  const pediuContas = typeof query.contas === "string" && query.contas.trim() !== "";
+  const { resultado: contasResolvidas, erro: erroContas } = pediuContas
+    ? resolverContasSolicitadas(query.contas, await contasPromise, (raw, contas) =>
+        resolverContas(raw, contas, escopo),
+      )
+    : { resultado: null, erro: null };
+
+  if (erroContas !== null) {
+    await filtrosPromise;
+    return (
+      <>
+        <PageTitle eyebrow="COMERCIAL / RESULTADOS" title="Dashboard de vendas" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas do recorte"
+          descricao="A seleção de contas pedida na URL não pôde ser confirmada."
+          detalhe={erroContas.message}
+          acao={{
+            href: mesmaUrl("/vendas", query),
+            rotulo: TENTAR_DE_NOVO,
+            mesmaTela: true,
+          }}
+        />
+      </>
+    );
+  }
+
+  const { selecionadas, descartadas } = contasResolvidas ?? { selecionadas: null, descartadas: 0 };
   // D-622: a marca da URL, com os nomes da tela do ML (D-237); "sem marca" vence sobre `marca=`.
   const marca = resolverMarcaDaVenda(query);
   const comMarca = marca.kind !== "todas";

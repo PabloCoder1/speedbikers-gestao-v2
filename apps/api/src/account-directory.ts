@@ -93,6 +93,10 @@ export function createAccountDirectory(options: AccountDirectoryOptions): Accoun
 
   return {
     resolve: async (sellerId) => {
+      if (!Number.isSafeInteger(sellerId) || sellerId <= 0) {
+        return null;
+      }
+
       let mapa = contas;
       const idade = agora() - carregadoEm;
       const podeRecarregar = agora() - tentadoEm >= recargaMinMs;
@@ -137,7 +141,7 @@ export async function loadAccountsFromDb(db: AdminClient): Promise<Map<number, A
   const repetidos = new Set<number>();
 
   for (const linha of result.data) {
-    if (linha.seller_id === null) {
+    if (linha.seller_id === null || !Number.isSafeInteger(linha.seller_id) || linha.seller_id <= 0) {
       continue;
     }
 

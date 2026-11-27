@@ -8,13 +8,22 @@
 
 source "$(dirname "$0")/lib.sh"
 
+read_inventory() {
+  local label="$1" output
+  shift
+  if ! output="$(gc "$@" | tr -d '\r')"; then
+    fail "Não foi possível listar ${label} em ${PROJECT_ID}."
+  fi
+  printf '%s\n' "${output}"
+}
+
 step "Pré-condições"
 require_auth
 require_project
 
 step "Billing"
 # `billing projects describe` também recebe o projeto como posicional.
-if ! BILLING="$(gc_positional billing projects describe --format='value(billingEnabled)' 2>&1)"; then
+if ! BILLING="$(gc_positional billing projects describe --format='value(billingEnabled)' 2>&1 | tr -d '\r')"; then
   printf '%s\n' "${BILLING}" >&2
   fail "Não foi possível verificar o billing. Mensagem do gcloud acima."
 fi
@@ -37,10 +46,10 @@ REQUIRED_APIS=(
   logging.googleapis.com
 )
 
-ENABLED="$(gc services list --enabled --format='value(config.name)')"
+ENABLED="$(read_inventory 'APIs habilitadas' services list --enabled --format='value(config.name)')"
 
 for api in "${REQUIRED_APIS[@]}"; do
-  if grep -qx "${api}" <<< "${ENABLED}"; then
+  if grep -Fxq -- "${api}" <<< "${ENABLED}"; then
     ok "${api}"
   else
     info "habilitando ${api}"
@@ -48,6 +57,11 @@ for api in "${REQUIRED_APIS[@]}"; do
     ok "${api}"
   fi
 done
+
+step "Inventário do projeto"
+REPOSITORIES="$(read_inventory repositórios artifacts repositories list --location "${REGION}" --format='value(name.basename())')"
+SERVICE_ACCOUNTS="$(read_inventory 'contas de serviço' iam service-accounts list --format='value(email)')"
+SECRETS="$(read_inventory segredos secrets list --format='value(name.basename())')"
 
 step "Repositório de imagens (Artifact Registry)"
 # `deploy-cloud-run.sh` publica em
@@ -63,7 +77,7 @@ step "Repositório de imagens (Artifact Registry)"
 # mantém juntas é esta frase, como na tabela de segredos acima.
 REPO_IMAGENS="speedbikers-v3"
 
-if gc artifacts repositories describe "${REPO_IMAGENS}" --location "${REGION}" >/dev/null 2>&1; then
+if grep -Fxq -- "${REPO_IMAGENS}" <<< "${REPOSITORIES}"; then
   skip "${REPO_IMAGENS} (${REGION})"
 else
   gc artifacts repositories create "${REPO_IMAGENS}" \
@@ -78,7 +92,7 @@ step "Service accounts"
 create_sa() {
   local name="$1" description="$2"
 
-  if gc iam service-accounts describe "$(sa_email "${name}")" >/dev/null 2>&1; then
+  if grep -Fxq -- "$(sa_email "${name}")" <<< "${SERVICE_ACCOUNTS}"; then
     skip "${name}"
   else
     gc iam service-accounts create "${name}" \
@@ -176,7 +190,7 @@ for entrada in "${SEGREDOS_CONSUMIDORES[@]}"; do
   secret="${entrada%%:*}"
   consumidores="${entrada#*:}"
 
-  if gc secrets describe "${secret}" >/dev/null 2>&1; then
+  if grep -Fxq -- "${secret}" <<< "${SECRETS}"; then
     # Word splitting proposital: `consumidores` é lista separada por espaço.
     for sa in ${consumidores}; do
       grant_secret_access "${secret}" "${sa}"

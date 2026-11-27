@@ -62,12 +62,18 @@ export function lerMedidas(texto: string | null | undefined): Medidas | null {
   const lados = [Number(m[1]), Number(m[2]), Number(m[3])];
   const pesoG = Number(m[4]);
 
-  // Lado ou peso zero não é medida: é campo vazio escrito como número.
-  if (lados.some((lado) => !(lado > 0)) || !(pesoG > 0)) return null;
+  // Lado, peso ou volume zero/infinito não é medida: é campo vazio ou estouro numérico.
+  if (lados.some((lado) => !Number.isFinite(lado) || !(lado > 0)) || !Number.isFinite(pesoG) || !(pesoG > 0)) {
+    return null;
+  }
+
+  const volumeCm3 = Math.round(lados.reduce((produto, lado) => produto * lado, 1) * 100) / 100;
+
+  if (!Number.isFinite(volumeCm3)) return null;
 
   return {
     pesoG,
-    volumeCm3: Math.round(lados.reduce((produto, lado) => produto * lado, 1) * 100) / 100,
+    volumeCm3,
     maiorLadoCm: Math.max(...lados),
   };
 }

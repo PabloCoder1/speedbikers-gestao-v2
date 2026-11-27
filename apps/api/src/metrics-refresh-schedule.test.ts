@@ -144,4 +144,24 @@ describe("triggerMetricsRefresh (D-304)", () => {
     expect(outcome.enqueued).toBe(0);
     expect(enqueued).toEqual([]);
   });
+
+  it("D-794: falha ao enfileirar uma data/conta não impede as demais e sinaliza failed para 503", async () => {
+    const { deps: d, enqueued } = deps();
+    const base = d.enqueuer.enqueue;
+    d.enqueuer = {
+      enqueue: (request) =>
+        request.dedupeKey.startsWith("refresh:speedbikers-loja-1:2026-08-20:")
+          ? Promise.reject(new Error("fila indisponível"))
+          : base(request),
+    };
+
+    await expect(triggerMetricsRefresh(d)).resolves.toEqual({
+      accountsScanned: 2,
+      enqueued: 3,
+      deduplicated: 0,
+      dates: ["2026-08-20", "2026-08-21"],
+      failed: true,
+    });
+    expect(enqueued).toHaveLength(3);
+  });
 });

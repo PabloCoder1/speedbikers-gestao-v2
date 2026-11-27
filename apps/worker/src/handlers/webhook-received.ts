@@ -7,6 +7,7 @@ import { z, ZodError } from "zod";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { processClaimReturn } from "./claim-return.js";
+import { resolveMlAccountRead } from "./ml-account-read.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { orderSchema } from "./order-schema.js";
 import { persistOrder } from "./persist-order.js";
@@ -83,8 +84,22 @@ const ORDER_RESOURCE_PATTERN = /^\/orders\/(\d+)$/;
  */
 const CLAIM_RESOURCE_PATTERN = /^\/post-purchase\/v1\/claims\/(\d+)(?:\/[a-z0-9-]+)*$/;
 
+function parsePositiveSafeId(raw: string | undefined): string | null {
+  if (raw === undefined) {
+    return null;
+  }
+
+  const normalized = raw.replace(/^0+(?=\d)/, "");
+
+  if (!/^[1-9]\d*$/.test(normalized)) {
+    return null;
+  }
+
+  return Number.isSafeInteger(Number(normalized)) ? normalized : null;
+}
+
 export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -104,28 +119,34 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
 
     const resourcePattern = topic === "orders_v2" ? ORDER_RESOURCE_PATTERN : CLAIM_RESOURCE_PATTERN;
     const match = resourcePattern.exec(resource);
+    const resourceId = match === null ? null : parsePositiveSafeId(match[1]);
 
-    if (match === null) {
+    if (resourceId === null) {
       // Cada tópico tem um formato fixo de `resource` — um formato diferente
-      // é inesperado o bastante para não valer retry.
+      // ou ID fora do inteiro positivo seguro é inesperado o bastante para não valer retry.
       return { status: "failed", retryable: false, reason: `resource fora do formato esperado: ${resource}` };
     }
 
-    const resourceId = match[1] ?? "";
-
-    const account = await deps.db
+    const accountRead = await deps.db
       .from("ml_accounts")
       .select("organization_id, status")
       .eq("id", mlAccountId)
       .maybeSingle();
 
-    if (account.error !== null || account.data === null) {
-      context.logger.warn("webhook_fast_path_account_missing", { ml_account_id: mlAccountId });
+    const resolvedAccount = resolveMlAccountRead(accountRead, {
+      logger: context.logger,
+      missingEvent: "webhook_fast_path_account_missing",
+      mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
+    });
 
-      return { status: "done", processed: 0 };
+    if ("outcome" in resolvedAccount) {
+      return resolvedAccount.outcome;
     }
 
-    if (account.data.status !== "CONNECTED") {
+    const account = resolvedAccount.account;
+
+    if (account.status !== "CONNECTED") {
       // Desconectada entre o webhook e a execução — corrida benigna, mesmo
       // raciocínio de sync.orders.window.
       return { status: "done", processed: 0 };
@@ -144,7 +165,7 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
       try {
         processed = await processClaimReturn(
           deps,
-          { organizationId: account.data.organization_id, mlAccountId },
+          { organizationId: account.organization_id, mlAccountId },
           tokenResult.accessToken,
           resourceId,
           now,
@@ -172,13 +193,12 @@ export function createWebhookReceivedHandler(deps: WebhookReceivedDeps): JobHand
       return classifyFetchFailure(error, "erro desconhecido ao buscar o pedido");
     }
 
-    // Fora do gancho: dentro da função, o TypeScript perde o estreitamento de `account.data`.
-    const organizationId = account.data.organization_id;
+    const organizationId = account.organization_id;
 
     await persistOrder(
       deps.db,
       // D-351: pedido que chega pelo webhook e notícia de agora — `sync`, notifica.
-      { organizationId: account.data.organization_id, mlAccountId, eventSource: "sync" },
+      { organizationId: account.organization_id, mlAccountId, eventSource: "sync" },
       order,
       context.logger,
       undefined,

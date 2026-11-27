@@ -59,8 +59,27 @@ const REL_CHART = "http://schemas.openxmlformats.org/officeDocument/2006/relatio
 const CT_DRAWING = "application/vnd.openxmlformats-officedocument.drawing+xml";
 const CT_CHART = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml";
 
+function stripInvalidXmlChars(texto: string): string {
+  let limpo = "";
+
+  for (let i = 0; i < texto.length; i += 1) {
+    const code = texto.charCodeAt(i);
+    const ilegal =
+      code <= 0x08 ||
+      code === 0x0b ||
+      code === 0x0c ||
+      (code >= 0x0e && code <= 0x1f) ||
+      code === 0xfffe ||
+      code === 0xffff;
+
+    if (!ilegal) limpo += texto[i] ?? "";
+  }
+
+  return limpo;
+}
+
 export function escapeXml(texto: string): string {
-  return texto
+  return stripInvalidXmlChars(texto)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -70,12 +89,20 @@ export function escapeXml(texto: string): string {
 
 /** `'Nome da aba'!$A$1:$A$9` a partir de coluna (1-based) e linhas. */
 export function rangeRef(sheet: string, col: number, firstRow: number, lastRow: number): string {
+  if (!Number.isSafeInteger(firstRow) || firstRow < 1 || !Number.isSafeInteger(lastRow) || lastRow < firstRow) {
+    throw new RangeError(`intervalo de linhas inválido para referência Excel: ${String(firstRow)}..${String(lastRow)}`);
+  }
+
   const letra = columnLetter(col);
 
   return `'${sheet.replace(/'/g, "''")}'!$${letra}$${String(firstRow)}:$${letra}$${String(lastRow)}`;
 }
 
 export function columnLetter(col: number): string {
+  if (!Number.isSafeInteger(col) || col < 1) {
+    throw new RangeError(`coluna inválida para referência Excel: ${String(col)}`);
+  }
+
   let n = col;
   let letra = "";
 
@@ -104,11 +131,11 @@ function numRef(ref: string, valores: readonly (number | null)[]): string {
 }
 
 function preenchimento(cor: string): string {
-  return `<c:spPr><a:solidFill><a:srgbClr val="${cor}"/></a:solidFill></c:spPr>`;
+  return `<c:spPr><a:solidFill><a:srgbClr val="${escapeXml(cor)}"/></a:solidFill></c:spPr>`;
 }
 
 function linha(cor: string): string {
-  return `<c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:srgbClr val="${cor}"/></a:solidFill><a:round/></a:ln></c:spPr>`;
+  return `<c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:srgbClr val="${escapeXml(cor)}"/></a:solidFill><a:round/></a:ln></c:spPr>`;
 }
 
 const TEXTO_EIXO =

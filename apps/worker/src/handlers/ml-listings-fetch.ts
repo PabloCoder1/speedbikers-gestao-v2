@@ -25,6 +25,7 @@ import {
 } from "./listing-schema.js";
 import { lerMedidas } from "./shipment-package.js";
 import type { ParsedListingItem } from "./listing-schema.js";
+import { chunk, LOOKUP_CHUNK } from "../chunk.js";
 import { readAllPages } from "../read-all-pages.js";
 
 /**
@@ -55,32 +56,6 @@ import { readAllPages } from "../read-all-pages.js";
  * (log `listings_catalog_probe`) para a primeira execução real respondê-las —
  * é a lição de D-109, onde a evidência existia e era descartada.
  */
-
-/** Campos que `listings` usa hoje; projeção reduz payload no multiget. */
-const ITEM_ATTRIBUTES = [
-  "id",
-  "title",
-  "status",
-  // D-631: o subestado diz a exclusao (`closed` + `deleted`), e o vendedor
-  // confere o dono do item na leitura por notificacao.
-  "sub_status",
-  "seller_id",
-  "price",
-  "currency_id",
-  "available_quantity",
-  "category_id",
-  // Foto e link da tela `/anuncios` (20260918150000).
-  "secure_thumbnail",
-  "thumbnail",
-  "permalink",
-  // Identificadores estáveis para o diff de foto; não usar thumbnail, que o
-  // Mercado Livre pode regenerar sem alteração editorial.
-  "pictures",
-  // D-405: a sonda das medidas declaradas (`shipping.dimensions`). Os
-  // atributos `SELLER_PACKAGE_*` ficam de fora: `attributes` traz o bloco
-  // inteiro de dezenas de atributos por item, a cada 6 h.
-  "shipping",
-] as const;
 
 /** Linha de `listings` tal como o upsert em lote a envia. */
 interface ListingUpsertRow {
@@ -217,21 +192,28 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   // (D-131). Ainda não estava truncando; estava a um lote de anúncios de
   // começar, e o sintoma seria mudo: vínculo ausente do Map vira `sku_id`
   // nulo no anúncio, e o painel perde o SKU sem nada quebrar.
-  const links = await readAllPages<{ item_id: string | null; sku_id: string }>(
-    (from, to) => {
-      let consulta = params.db
-        .from("sku_listing_links")
-        .select("item_id, sku_id")
-        .eq("ml_account_id", params.mlAccountId)
-        .eq("ref_kind", "ITEM")
-        .is("variation_id", null);
+  const lotesSeletivos = soEstes === null ? [null] : chunk(soEstes, LOOKUP_CHUNK);
+  const links: { item_id: string | null; sku_id: string }[] = [];
 
-      if (soEstes !== null) consulta = consulta.in("item_id", soEstes);
+  for (const lote of lotesSeletivos) {
+    const pagina = await readAllPages<{ item_id: string | null; sku_id: string }>(
+      (from, to) => {
+        let consulta = params.db
+          .from("sku_listing_links")
+          .select("item_id, sku_id")
+          .eq("ml_account_id", params.mlAccountId)
+          .eq("ref_kind", "ITEM")
+          .is("variation_id", null);
 
-      return consulta.order("id").range(from, to);
-    },
-    { label: "falha ao ler sku_listing_links" },
-  );
+        if (lote !== null) consulta = consulta.in("item_id", lote);
+
+        return consulta.order("id").range(from, to);
+      },
+      { label: "falha ao ler sku_listing_links" },
+    );
+
+    links.push(...pagina);
+  }
 
   const skuByItem = new Map<string, string>();
 
@@ -252,7 +234,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   // execução: mudança de preço, de status e de quantidade neles **nunca**
   // virava evento. E, sem `.order()`, quais 1.000 entravam variava entre
   // execuções.
-  const previousRows = await readAllPages<{
+  interface PreviousListingRow {
     item_id: string;
     title: string;
     status: string;
@@ -266,23 +248,30 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
     promotion_checked_at: string | null;
     promotions: Json | null;
     deleted_at: string | null;
-  }>(
-    (from, to) => {
-      let consulta = params.db
-        .from("listings")
-        .select(
-          "item_id, title, status, price, available_quantity, picture_fingerprint, description_fingerprint, description_source_updated_at, promotional_price, in_promotion, promotion_checked_at, promotions, deleted_at",
-        )
-        .eq("ml_account_id", params.mlAccountId);
+  }
+  const previousRows: PreviousListingRow[] = [];
 
-      if (soEstes !== null) consulta = consulta.in("item_id", soEstes);
+  for (const lote of lotesSeletivos) {
+    const pagina = await readAllPages<PreviousListingRow>(
+      (from, to) => {
+        let consulta = params.db
+          .from("listings")
+          .select(
+            "item_id, title, status, price, available_quantity, picture_fingerprint, description_fingerprint, description_source_updated_at, promotional_price, in_promotion, promotion_checked_at, promotions, deleted_at",
+          )
+          .eq("ml_account_id", params.mlAccountId);
 
-      // `listings_account_item_unique (ml_account_id, item_id)` — com a
-      // conta já fixada no filtro, `item_id` é ordenação estável.
-      return consulta.order("item_id").range(from, to);
-    },
-    { label: "falha ao ler listings anteriores" },
-  );
+        if (lote !== null) consulta = consulta.in("item_id", lote);
+
+        // `listings_account_item_unique (ml_account_id, item_id)` — com a
+        // conta já fixada no filtro, `item_id` é ordenação estável.
+        return consulta.order("item_id").range(from, to);
+      },
+      { label: "falha ao ler listings anteriores" },
+    );
+
+    previousRows.push(...pagina);
+  }
 
   const previousByItem = new Map<string, ListingSnapshot>();
   const previousListingRowsByItem = new Map<string, (typeof previousRows)[number]>();
@@ -302,7 +291,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
 
   // Fase 1 — descoberta. Drenada INTEIRA antes de escrever: o scroll expira
   // em 5 min e a FAQ oficial diz que deixá-lo aberto gera 429.
-  const discovered: string[] = soEstes === null ? [] : [...soEstes];
+  const listados = new Set(soEstes ?? []);
   let scanPages = 0;
 
   if (soEstes === null) {
@@ -312,7 +301,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       accessToken: params.accessToken,
       limit: 100,
     })) {
-      discovered.push(...batch);
+      for (const id of batch) listados.add(id);
       scanPages += 1;
     }
   }
@@ -322,12 +311,11 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   // para sempre. Depois da varredura INTEIRA (ela drena ou lança), o que a V3
   // tem vivo e a varredura não listou é relido pelo multiget: excluído,
   // encerrado ou ainda vivo, a linha converge.
-  const listados = new Set(discovered);
   const foraDaVarredura =
     soEstes === null
       ? previousRows.filter((row) => (row.deleted_at ?? null) === null && !listados.has(row.item_id)).map((row) => row.item_id)
       : [];
-  const paraLer = [...discovered, ...foraDaVarredura];
+  const paraLer = [...listados, ...foraDaVarredura];
   // D-631: o que o Mercado Livre não devolve mais (404 na leitura do item
   // sozinho) — "depois de um tempo, os itens finalizados não serão mais
   // mostrados para sua consulta" (documentação oficial).
@@ -349,23 +337,21 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       client: params.mercadoLivre,
       ids: chunk,
       accessToken: params.accessToken,
-      attributes: ITEM_ATTRIBUTES,
     });
 
     const itensValidos: ParsedListingItem[] = [];
-    // D-631: o multiget não promete a ordem das entradas nem o corpo do 404.
-    // O item que voltou é reconhecido pelo `id` do corpo; o resto do lote é
-    // relido SOZINHO, e só o 404 dessa leitura diz que o item não existe.
+    // D-631: a ordem e o corpo do 404 não identificam o item. O bulk fornece
+    // o ID pelo envelope. Só o 404 de uma leitura isolada confirma a exclusão.
     const devolvidos = new Set<string>();
 
-    const classificar = (entry: ItemsMultigetEntry, idDaLeituraSozinha: string | null): void => {
+    const classificar = (entry: ItemsMultigetEntry, leituraSozinha: boolean): void => {
       // O envelope verbose carrega o código POR ITEM: um anúncio removido
       // entre a varredura e a hidratação não derruba o lote inteiro.
       if (entry.code !== 200) {
-        if (idDaLeituraSozinha === null) return;
+        if (!leituraSozinha) return;
 
         if (entry.code === 404) {
-          inexistentes.push(idDaLeituraSozinha);
+          inexistentes.push(entry.id);
 
           return;
         }
@@ -373,17 +359,14 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
         itemsFailed += 1;
         params.logger.warn("listing_item_fetch_failed", {
           ml_account_id: params.mlAccountId,
-          item_id: idDaLeituraSozinha,
+          item_id: entry.id,
           code: entry.code,
         });
 
         return;
       }
 
-      const idDoCorpo = (entry.body as { id?: unknown } | null)?.id;
-
-      if (typeof idDoCorpo === "string") devolvidos.add(idDoCorpo);
-
+      devolvidos.add(entry.id);
       const parsed = listingItemSchema.safeParse(entry.body);
 
       if (!parsed.success) {
@@ -391,6 +374,17 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
         params.logger.warn("listing_item_schema_rejected", {
           ml_account_id: params.mlAccountId,
           reason: parsed.error.message,
+        });
+
+        return;
+      }
+
+      if (parsed.data.id !== entry.id) {
+        itemsFailed += 1;
+        params.logger.warn("listing_item_id_mismatch", {
+          ml_account_id: params.mlAccountId,
+          item_id: entry.id,
+          body_item_id: parsed.data.id,
         });
 
         return;
@@ -411,15 +405,16 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
       itensValidos.push(parsed.data);
     };
 
-    for (const entry of entries) classificar(entry, chunk.length === 1 ? (chunk[0] ?? null) : null);
+    for (const entry of entries) classificar(entry, chunk.length === 1);
 
-    if (chunk.length > 1) {
+    if (chunk.length === 1 && entries.length === 0) {
+      itemsFailed += 1;
+    } else if (chunk.length > 1) {
       for (const id of chunk.filter((item) => !devolvidos.has(item))) {
         const [sozinho] = await getItemsBatch({
           client: params.mercadoLivre,
           ids: [id],
           accessToken: params.accessToken,
-          attributes: ITEM_ATTRIBUTES,
         });
 
         if (sozinho === undefined) {
@@ -427,7 +422,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
           continue;
         }
 
-        classificar(sozinho, id);
+        classificar(sozinho, true);
       }
     }
 
@@ -607,21 +602,21 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
 
   // D-631: o item que o Mercado Livre não devolve mais sai das telas. Só a
   // linha que existe e ainda não está marcada; um id que a V3 nunca gravou
-  // não cria nada.
-  if (inexistentes.length > 0) {
+  // não cria nada. Fatiado em lotes de `LOOKUP_CHUNK` para não estourar URL.
+  for (const lote of chunk(inexistentes, LOOKUP_CHUNK)) {
     const marcados = await params.db
       .from("listings")
       .update({ deleted_at: syncedAt.toISOString(), synced_at: syncedAt.toISOString() })
       .eq("ml_account_id", params.mlAccountId)
-      .in("item_id", inexistentes)
+      .in("item_id", lote)
       .is("deleted_at", null)
       .select("item_id");
 
     if (marcados.error !== null) {
-      itemsFailed += inexistentes.length;
+      itemsFailed += lote.length;
       params.logger.error("listing_not_marked_deleted", {
         ml_account_id: params.mlAccountId,
-        items: inexistentes.length,
+        items: lote.length,
         reason: marcados.error.message,
       });
     } else {
@@ -635,7 +630,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   params.logger.info("listings_catalog_probe", {
     ml_account_id: params.mlAccountId,
     scan_pages: scanPages,
-    items_discovered: discovered.length,
+    items_discovered: listados.size,
     items_without_link: itemsWithoutLink,
     links_known: skuByItem.size,
     status_seen: Object.fromEntries(statusSeen),
@@ -648,7 +643,7 @@ export async function fetchListings(params: FetchListingsParams): Promise<FetchL
   });
 
   return {
-    itemsDiscovered: discovered.length,
+    itemsDiscovered: listados.size,
     itemsProcessed,
     itemsFailed,
     itemsWithoutLink,

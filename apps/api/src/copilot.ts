@@ -1,6 +1,7 @@
 import type { AdminClient, UserClient } from "@sb/db";
 import { recordAiRun } from "@sb/db";
 import {
+  businessDateRangeLength,
   composeSkuReplenishment,
   describeActionEvidence,
   previousBusinessDateRange,
@@ -505,7 +506,13 @@ const TOOLS: Record<CopilotToolName, ToolDefinition> = {
   },
   structure_feature_suggestion: {
     inputSchema: structureFeatureSuggestionInputSchema,
-    run: async (userClient, input, deps) => {
+    run: async (userClient, input, deps, caller) => {
+      // D-743: recusa antes de gastar tokens de LLM quando o papel não alcança
+      // a policy de UPDATE; a RLS continua sendo verificada na escrita.
+      if (caller.role !== "ADMIN" && caller.role !== "GESTOR") {
+        throw new CopilotToolError("Só ADMIN e GESTOR estruturam sugestões.");
+      }
+
       const outcome = await runStructureFeatureSuggestion(userClient, input, deps.anthropic);
 
       return { data: outcome.data, llmUsed: true, costUsd: outcome.costUsd };
@@ -531,6 +538,13 @@ export async function handleCopilotQuery(
   accessToken: string,
   request: CopilotQueryRequest,
 ): Promise<CopilotQueryOutcome> {
+  if (!Object.hasOwn(TOOLS, request.tool)) {
+    return {
+      status: 400,
+      body: { error: { code: "unknown_tool", message: "ferramenta desconhecida" } },
+    };
+  }
+
   const definition = TOOLS[request.tool];
 
   const parsedInput = definition.inputSchema.safeParse(request.input);
@@ -645,41 +659,61 @@ export async function runResolveCatalogEntity(
   };
 }
 
+function valorLiteralParaOr(valor: string): string {
+  return `"${valor.replace(/["\\]/g, "\\$&")}"`;
+}
+
 export async function runSkuReplenishment(
   userClient: UserClient,
   input: SkuReplenishmentInput,
   organizationId: string,
 ): Promise<SkuReplenishmentOutput> {
   const hoje = toSalesMetricDate(new Date());
+  const sku = input.sku.trim();
 
-  const [linhas, configuracoes] = await Promise.all([
-    userClient.rpc("get_purchase_suggestions", {
-      p_organization_id: organizationId,
-      p_date_to: hoje,
-      p_search: input.sku,
-      p_limit: 20,
-    }),
-    userClient
-      .from("replenishment_settings")
-      .select("supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note"),
-  ]);
+  const linhas = await userClient.rpc("get_purchase_suggestions", {
+    p_organization_id: organizationId,
+    p_date_to: hoje,
+    p_search: sku,
+    p_limit: 20,
+  });
 
   if (linhas.error !== null) {
     throw new CopilotToolError(linhas.error.message);
   }
 
-  if (configuracoes.error !== null) {
-    throw new CopilotToolError(configuracoes.error.message);
-  }
-
   // `data` nao e anulavel depois da checagem de erro; o lint acusa a condicao
   // morta, e condicao morta esconde a leitura real.
-  const alvo = linhas.data.find((linha) => linha.sku.toUpperCase() === input.sku.trim().toUpperCase());
+  const alvo = linhas.data.find((linha) => linha.sku.toUpperCase() === sku.toUpperCase());
 
   if (alvo === undefined) {
     throw new CopilotToolError(
       `Nenhum SKU com o código "${input.sku}" foi encontrado nas contas que você acessa.`,
     );
+  }
+
+  // D-743 (mesma regra de D-680): os índices únicos garantem no máximo 3 regras
+  // aplicáveis (SKU, marca e padrão da organização), evitando truncamento em
+  // 1.000 linhas do PostgREST e leitura da tabela inteira a cada pergunta.
+  // O tipo gerado de RPC RETURNS TABLE marca colunas anuláveis como `string`;
+  // em tempo de execução `supplier_brand` pode vir `null`.
+  const marca = alvo.supplier_brand as string | null;
+  const escopos = [
+    `sku_id.eq.${valorLiteralParaOr(alvo.sku_id)}`,
+    "and(sku_id.is.null,supplier_brand.is.null)",
+    ...(marca !== null && marca !== ""
+      ? [`and(sku_id.is.null,supplier_brand.eq.${valorLiteralParaOr(marca)})`]
+      : []),
+  ];
+
+  const configuracoes = await userClient
+    .from("replenishment_settings")
+    .select("supplier_brand, sku_id, lead_time_days, target_coverage_days, safety_stock_days, max_coverage_days, policy_note")
+    .eq("organization_id", organizationId)
+    .or(escopos.join(","));
+
+  if (configuracoes.error !== null) {
+    throw new CopilotToolError(configuracoes.error.message);
   }
 
   const settings: ReplenishmentSetting[] = configuracoes.data.map((linha) => ({
@@ -744,6 +778,16 @@ export async function runListingPerformance(
   input: ListingPerformanceInput,
   organizationId: string,
 ): Promise<ListingPerformanceOutput> {
+  // Datas ISO civis validadas no calendário real antes de consultar o banco:
+  // evita rollover silencioso (ex.: `2026-02-31`) e intervalo invertido (D-800).
+  let daysRequested: number;
+
+  try {
+    daysRequested = businessDateRangeLength(input.dateFrom, input.dateTo);
+  } catch (error) {
+    throw new CopilotToolError(error instanceof Error ? error.message : "período inválido");
+  }
+
   const [resumo, cadastro] = await Promise.all([
     userClient
       .rpc("get_listing_dashboard_summary", {
@@ -770,12 +814,8 @@ export async function runListingPerformance(
     throw new CopilotToolError(cadastro.error.message);
   }
 
-  // Datas ISO civis: UTC impede que o fuso do processo transforme uma janela
-  // de 7 dias em 6/8 na virada de horário. `days_observed` é a prova de que
-  // `visits = 0` veio do ML, não do coalesce da RPC sobre conjunto vazio.
-  const daysRequested = Math.floor(
-    (Date.parse(`${input.dateTo}T00:00:00Z`) - Date.parse(`${input.dateFrom}T00:00:00Z`)) / 86_400_000,
-  ) + 1;
+  // `days_observed` é a prova de que `visits = 0` veio do ML, não do coalesce
+  // da RPC sobre conjunto vazio.
   const daysObserved = resumo.data.days_observed;
   const visitsCoverage =
     daysObserved === 0 ? "SEM_COBERTURA" : daysObserved < daysRequested ? "PARCIAL" : "COMPLETA";

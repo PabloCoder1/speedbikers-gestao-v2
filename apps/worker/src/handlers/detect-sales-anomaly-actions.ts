@@ -3,8 +3,12 @@ import { diagnoseSalesAnomaly, estimateImpactBrl, shiftBusinessDate, toSalesMetr
 import type { CorrelatedEvent, SalesAnomalyDiagnosis, SalesBaselineSignal } from "@sb/domain";
 import { z } from "zod";
 
+import { chunk, LOOKUP_CHUNK } from "../chunk.js";
 import type { JobOutcome } from "../job-outcome.js";
+import { readAllPages } from "../read-all-pages.js";
 import type { HandlerContext, JobHandler } from "../router.js";
+
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /**
  * `diagnostics.detect-sales-anomalies` — Central de Ações (Fase 6, D-064),
@@ -132,7 +136,7 @@ function toEvidence(diagnosis: SalesAnomalyDiagnosis, marketplace: string): Json
 }
 
 export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyActionsDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -140,20 +144,36 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     }
 
     const { organizationId } = parsed.data;
+
+    if (organizationId !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "organização do payload diverge do envelope" };
+    }
     const now = deps.now?.() ?? new Date();
     const asOf = shiftBusinessDate(toSalesMetricDate(now), -1);
 
-    const baseline = await deps.db.rpc("get_sku_sales_baseline", {
-      p_organization_id: organizationId,
-      p_as_of: asOf,
-      p_marketplaces: [...MARKETPLACES],
-    });
+    // D-738: a RPC devolve uma linha por SKU e canal e passa do `max_rows`
+    // (1.000) com o catálogo e os dois canais. Sem `.range()` o PostgREST
+    // cortava em silêncio e sem ordem — anomalias (e episódios abertos)
+    // sumiam daquele dia. (canal, SKU) é única no retorno: ordem estável.
+    let signals: BaselineRow[];
 
-    if (baseline.error !== null) {
-      return { status: "failed", retryable: true, reason: baseline.error.message };
+    try {
+      signals = await readAllPages(
+        (from, to) =>
+          deps.db
+            .rpc("get_sku_sales_baseline", {
+              p_organization_id: organizationId,
+              p_as_of: asOf,
+              p_marketplaces: [...MARKETPLACES],
+            })
+            .order("marketplace")
+            .order("sku_id")
+            .range(from, to),
+        { label: "get_sku_sales_baseline" },
+      );
+    } catch (error) {
+      return { status: "failed", retryable: true, reason: errorMessage(error) };
     }
-
-    const signals = baseline.data as BaselineRow[];
 
     // Primeira passada sem eventos: só para achar QUAIS SKUs são anomalia,
     // evitando buscar domain_events/preço de SKU nenhum sem necessidade —
@@ -184,25 +204,45 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     // D-152: correlação ampliada — a RPC mapeia também eventos de ANÚNCIO
     // (preço/título/status, via listings) e de PEDIDO (via order_items
     // congelados) ao SKU. Fonte única com /diagnostico e o painel do SKU.
-    const eventsResult = await deps.db.rpc("get_sku_correlated_events", {
-      p_organization_id: organizationId,
-      p_sku_ids: candidateSkuIds,
-      p_from: windowStart,
-      p_to: windowEnd,
-      p_marketplaces: [...MARKETPLACES],
-    });
+    // D-738: paginada; o retorno não tem chave única, então a ordem cobre
+    // todas as colunas (linhas idênticas são intercambiáveis).
+    const readCorrelatedEvents = () =>
+      readAllPages(
+        (from, to) =>
+          deps.db
+            .rpc("get_sku_correlated_events", {
+              p_organization_id: organizationId,
+              p_sku_ids: candidateSkuIds,
+              p_from: windowStart,
+              p_to: windowEnd,
+              p_marketplaces: [...MARKETPLACES],
+            })
+            .order("sku_id")
+            .order("occurred_at")
+            .order("event_type")
+            .order("marketplace", { nullsFirst: true })
+            .range(from, to),
+        { label: "get_sku_correlated_events" },
+      );
+    let correlatedEvents: Awaited<ReturnType<typeof readCorrelatedEvents>>;
 
-    if (eventsResult.error !== null) {
-      return { status: "failed", retryable: true, reason: eventsResult.error.message };
+    try {
+      correlatedEvents = await readCorrelatedEvents();
+    } catch (error) {
+      return { status: "failed", retryable: true, reason: errorMessage(error) };
     }
 
     // Por SKU E canal: o evento do SKU (marketplace nulo) vale para os dois.
     const eventsBySkuAndChannel = new Map<string, CorrelatedEvent[]>();
 
-    for (const event of eventsResult.data) {
+    for (const event of correlatedEvents) {
+      const occurredAt = new Date(event.occurred_at);
+
+      if (Number.isNaN(occurredAt.getTime())) continue;
+
       for (const marketplace of event.marketplace === null ? MARKETPLACES : [event.marketplace]) {
         const list = eventsBySkuAndChannel.get(chave(event.sku_id, marketplace)) ?? [];
-        list.push({ eventType: event.event_type, occurredAt: new Date(event.occurred_at) });
+        list.push({ eventType: event.event_type, occurredAt });
         eventsBySkuAndChannel.set(chave(event.sku_id, marketplace), list);
       }
     }
@@ -213,16 +253,31 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
     // diagnóstico: a evidência é adicional por definição.
     const openClaimsBySku = new Map<string, Set<string>>();
 
-    const claimLinks = await deps.db
-      .from("support_case_links")
-      .select("sku_id, support_case_id, support_cases!inner(internal_status, channel)")
-      .eq("organization_id", organizationId)
-      .in("sku_id", candidateSkuIds)
-      .eq("support_cases.channel", "CLAIM")
-      .neq("support_cases.internal_status", "RESOLVIDO");
+    // D-738: candidatos em lotes de `LOOKUP_CHUNK` no `.in` (a lista vira
+    // URL) e cada lote paginado por `id`. Falha em qualquer lote degrada o
+    // sinal inteiro — sinal parcial contaria menos reclamações sem avisar.
+    try {
+      const links: { sku_id: string | null; support_case_id: string }[] = [];
 
-    if (claimLinks.error === null) {
-      for (const link of claimLinks.data) {
+      for (const skuChunk of chunk(candidateSkuIds, LOOKUP_CHUNK)) {
+        links.push(
+          ...(await readAllPages(
+            (from, to) =>
+              deps.db
+                .from("support_case_links")
+                .select("sku_id, support_case_id, support_cases!inner(internal_status, channel)")
+                .eq("organization_id", organizationId)
+                .in("sku_id", skuChunk)
+                .eq("support_cases.channel", "CLAIM")
+                .neq("support_cases.internal_status", "RESOLVIDO")
+                .order("id")
+                .range(from, to),
+            { label: "support_case_links" },
+          )),
+        );
+      }
+
+      for (const link of links) {
         if (link.sku_id === null) continue;
 
         const set = openClaimsBySku.get(link.sku_id) ?? new Set<string>();
@@ -230,24 +285,34 @@ export function createDetectSalesAnomalyActionsHandler(deps: DetectSalesAnomalyA
         set.add(link.support_case_id);
         openClaimsBySku.set(link.sku_id, set);
       }
-    } else {
-      context.logger.warn("sales_anomaly_support_signal_failed", { reason: claimLinks.error.message });
+    } catch (error) {
+      context.logger.warn("sales_anomaly_support_signal_failed", { reason: errorMessage(error) });
     }
 
-    const pricesResult = await deps.db.rpc("get_sku_average_prices", {
-      p_organization_id: organizationId,
-      p_sku_ids: candidateSkuIds,
-      p_date_from: shiftBusinessDate(asOf, -AVERAGE_PRICE_WINDOW_DAYS),
-      p_date_to: asOf,
-      p_marketplaces: [...MARKETPLACES],
-    });
+    let averagePrices: AveragePriceRow[];
 
-    if (pricesResult.error !== null) {
-      return { status: "failed", retryable: true, reason: pricesResult.error.message };
+    try {
+      averagePrices = await readAllPages(
+        (from, to) =>
+          deps.db
+            .rpc("get_sku_average_prices", {
+              p_organization_id: organizationId,
+              p_sku_ids: candidateSkuIds,
+              p_date_from: shiftBusinessDate(asOf, -AVERAGE_PRICE_WINDOW_DAYS),
+              p_date_to: asOf,
+              p_marketplaces: [...MARKETPLACES],
+            })
+            .order("marketplace")
+            .order("sku_id")
+            .range(from, to),
+        { label: "get_sku_average_prices" },
+      );
+    } catch (error) {
+      return { status: "failed", retryable: true, reason: errorMessage(error) };
     }
 
     const averagePriceBySkuAndChannel = new Map(
-      (pricesResult.data as AveragePriceRow[]).map((row) => [chave(row.sku_id, row.marketplace), row.average_price]),
+      averagePrices.map((row) => [chave(row.sku_id, row.marketplace), row.average_price]),
     );
 
     const diagnoses: { diagnosis: SalesAnomalyDiagnosis; marketplace: string }[] = [];

@@ -1,0 +1,436 @@
+{
+  "corte": "26/11/2026, verificação atômica dos lotes de sync_runs",
+  "criterio": "Aceite técnico: Testado localmente, Publicado ou Validado em produção. Não é validação operacional após recuperação.",
+  "entregas": [
+    {
+      "id": "F01",
+      "area": "Frontend e telas",
+      "entrega": "Telas operacionais ML, estoque, pedidos, NF-e e fornecedores",
+      "peso": 8,
+      "status": "Publicado",
+      "responsavel": "A2/A3",
+      "evidencia": "ROADMAP fases 4–7; main d6169205",
+      "fase": 3
+    },
+    {
+      "id": "F02",
+      "area": "Frontend e telas",
+      "entrega": "Central, multicanal e navegação sem perder recorte",
+      "peso": 5,
+      "status": "Testado localmente",
+      "responsavel": "Sentinel/A3",
+      "evidencia": "D-517–632; D-685–717, specs e SESSION_LOG",
+      "fase": 3
+    },
+    {
+      "id": "F03",
+      "area": "Frontend e telas",
+      "entrega": "Recuperação de falhas nos formulários e transições",
+      "peso": 5,
+      "status": "Testado localmente",
+      "responsavel": "Sentinel",
+      "evidencia": "D-726–728, D-754–759, D-731/A89, D-732–733, D-740–741, D-745/A99, D-771/A111, D-774/A114, D-778/A118, D-781/A121, D-783/A123, D-784/A124; confirmação real, gavetas, OAuth/SAC/SSE/convite, Saída Manual/NF-e, 7 exportações+CSV, Server Actions/Components fail-closed, ILIKE, teto .in() e zero getSession direto em clientes web (1.575 unit + 401/401 E2E em f3ae0df6)",
+      "fase": 3
+    },
+    {
+      "id": "F04",
+      "area": "Frontend e telas",
+      "entrega": "Quatro operações da confirmação compartilhada",
+      "peso": 2,
+      "status": "Testado localmente",
+      "responsavel": "Sentinel",
+      "evidencia": "D-729/A87 e D-730/A88: transporte e recusa sem linhas nas quatro confirmações; banco e papéis conferidos; oito testes de contrato",
+      "fase": 3
+    },
+    {
+      "id": "F05",
+      "area": "Frontend e telas",
+      "entrega": "Nova experiência de compras e reposição aprovada",
+      "peso": 5,
+      "status": "Publicado",
+      "responsavel": "Agente Compras",
+      "evidencia": "#330 entrou pelo #332. CI 44381338715 com 1.197 SQL e 342 E2E. Alias de produção READY em f2eb787c em 19/11. Três planilhas reais seguem sem validação",
+      "fase": 3
+    },
+    {
+      "id": "B01",
+      "area": "Backend e APIs",
+      "entrega": "API autenticada, contratos e limites de organização",
+      "peso": 8,
+      "status": "Publicado",
+      "responsavel": "Backend",
+      "evidencia": "apps/api/src; main dc69d1fb na API; D-770, D-775, D-777 e D-782 endurecem edição NF-e, saída manual, auth multi-org/503, OIDC email_verified, backfills 503, erroInterno, callback Shopee, convites 23505, webhook ML 503, frete e SAC (574 testes)",
+      "fase": 3
+    },
+    {
+      "id": "B02",
+      "area": "Backend e APIs",
+      "entrega": "Worker idempotente, despacho e retentativas",
+      "peso": 8,
+      "status": "Publicado",
+      "responsavel": "Backend",
+      "evidencia": "Worker publicado. D-746 a D-752, D-772, D-773, D-775, D-776, D-779 e D-780 testados localmente com paginação, guardas por versão, lotes .in() Full/Shopee, visitas fail-closed, clientes HTTP resilientes, unlock protegido e logger blindado (1.102 worker + 38 observability)",
+      "fase": 3
+    },
+    {
+      "id": "B03",
+      "area": "Backend e APIs",
+      "entrega": "SAC: envio único, fencing e recuperação",
+      "peso": 5,
+      "status": "Testado localmente",
+      "responsavel": "Sentinel",
+      "evidencia": "D-658–684; migrations 11175814; SESSION_LOG",
+      "fase": 1
+    },
+    {
+      "id": "M01",
+      "area": "Integrações dos marketplaces",
+      "entrega": "ML: ingestão, pedidos, anúncios, SAC e reconciliação",
+      "peso": 8,
+      "status": "Publicado",
+      "responsavel": "Backend",
+      "evidencia": "main; apps/worker handlers; validação pós-corte pendente",
+      "fase": 3
+    },
+    {
+      "id": "M02",
+      "area": "Integrações dos marketplaces",
+      "entrega": "Shopee: pedidos, financeiro, catálogo, Ads e devoluções",
+      "peso": 8,
+      "status": "Publicado",
+      "responsavel": "Multicanal",
+      "evidencia": "D-425–632; main",
+      "fase": 3
+    },
+    {
+      "id": "M03",
+      "area": "Integrações dos marketplaces",
+      "entrega": "Estoque Shopee: corte e conferência com ERP",
+      "peso": 5,
+      "status": "Bloqueado",
+      "responsavel": "Dono/Backend",
+      "evidencia": "ROADMAP 750,757; requer loja real e conferência",
+      "fase": 1
+    },
+    {
+      "id": "M04",
+      "area": "Integrações dos marketplaces",
+      "entrega": "TikTok: OAuth preparado; integração transacional restante",
+      "peso": 8,
+      "status": "Em andamento",
+      "responsavel": "Multicanal/Dono",
+      "evidencia": "#378 incorpora D-807 a D-814 e telas D-822 a D-824. Faltam persistência, handlers, regressão de reconexão e teste de uma loja.",
+      "fase": 3
+    },
+    {
+      "id": "M05",
+      "area": "Integrações dos marketplaces",
+      "entrega": "Recuperação do atraso e diagnóstico ML 403",
+      "peso": 5,
+      "status": "Validado em produção",
+      "responsavel": "Backend",
+      "evidencia": "#377 cf6dae2d. CI aprovada e rollout do worker verificado. Reconciliação concluída nas lojas e exceções reprocessadas no fluxo normal. Listagens afetadas identificáveis conferidas em job_runs e listings.",
+      "fase": 1
+    },
+    {
+      "id": "D01",
+      "area": "Banco de dados",
+      "entrega": "Schema, ledger, RLS e agregação SQL do núcleo",
+      "peso": 8,
+      "status": "Publicado",
+      "responsavel": "Database",
+      "evidencia": "supabase/migrations até main; DATABASE",
+      "fase": 3
+    },
+    {
+      "id": "D02",
+      "area": "Banco de dados",
+      "entrega": "Migrations Sentinel transacionais, segurança e consultas",
+      "peso": 5,
+      "status": "Testado localmente",
+      "responsavel": "Sentinel/Database",
+      "evidencia": "12 migrations em diff origin/main; integração registrada",
+      "fase": 3
+    },
+    {
+      "id": "D03",
+      "area": "Banco de dados",
+      "entrega": "R3/R5: retenção de job_runs e índice Full",
+      "peso": 3,
+      "status": "Testado localmente",
+      "responsavel": "Database",
+      "evidencia": "D-769 confirmou os grants diretos na VM e validou sua revogação no upgrade local. Passaram 1.213 testes de banco, com preservação da telemetria e sem agendamento",
+      "fase": 3
+    },
+    {
+      "id": "D04",
+      "area": "Banco de dados",
+      "entrega": "R1/R2/R4: compactação e retenções com política aprovada",
+      "peso": 3,
+      "status": "Em andamento",
+      "responsavel": "Database/Dono",
+      "evidencia": "Histórico e ensaio de 60 dias no candidato. Lotes e concorrência passaram. A divergência entre cópia e remoção abortou o lote e a repetição foi validada. Recibo atômico e recuperação concorrente após commit passaram em laboratório. O piloto local arquivou 100 com escritores concorrentes, restaurou 99 após hidratação tardia, conferiu referências e autores e reverteu cópia e recibo quando o prazo venceu. Faltam homologação, autorização e publicação.",
+      "fase": 3
+    },
+    {
+      "id": "D05",
+      "area": "Banco de dados",
+      "entrega": "Inventário e medição física; comparação de provedores",
+      "peso": 2,
+      "status": "Testado localmente",
+      "responsavel": "Database/Sentinel",
+      "evidencia": "SIZE_REPORT: dump 22/10 restaurado 1092MB; preços oficiais",
+      "fase": 2
+    },
+    {
+      "id": "I01",
+      "area": "Google Cloud e infraestrutura",
+      "entrega": "Run, Tasks, Scheduler e rede de produção provisionados",
+      "peso": 8,
+      "status": "Publicado",
+      "responsavel": "Infra",
+      "evidencia": "19/11: 18 agendamentos habilitados, dois últimos com código 14. API e worker Ready com 100% nas revisões de 18/11",
+      "fase": 2
+    },
+    {
+      "id": "I02",
+      "area": "Google Cloud e infraestrutura",
+      "entrega": "Cutover VM self-hosted e HTTPS",
+      "peso": 5,
+      "status": "Publicado",
+      "responsavel": "Database/Infra",
+      "evidencia": "VM Running; CSP nova; API200; PR331 docs",
+      "fase": 2
+    },
+    {
+      "id": "I03",
+      "area": "Google Cloud e infraestrutura",
+      "entrega": "Backup/restore recorrente com prova e alerta",
+      "peso": 5,
+      "status": "Validado em produção",
+      "responsavel": "Infra/Database",
+      "evidencia": "Restores isolados de 19 e 22/11. O segundo restaurou em 91 s com 324 migrations. Retenção de 35 dias em diario/. Sondagem externa ativa e incidente/e-mail confirmados após falha controlada (#372, #374, infra/vm/README.md).",
+      "fase": 2
+    },
+    {
+      "id": "I04",
+      "area": "Google Cloud e infraestrutura",
+      "entrega": "Monitoramento externo, disco e falha de backup",
+      "peso": 3,
+      "status": "Publicado",
+      "responsavel": "Infra/Dono",
+      "evidencia": "#394/D-868. Checagem de 25/11 confirmou três políticas habilitadas (backup, disco e indisponibilidade) e três uptime checks. Incidente e e-mail de backup foram confirmados no ensaio #372.",
+      "fase": 2
+    },
+    {
+      "id": "I05",
+      "area": "Google Cloud e infraestrutura",
+      "entrega": "Pipeline de migrations para VM e rollback ensaiado",
+      "peso": 5,
+      "status": "Em andamento",
+      "responsavel": "Infra/Database",
+      "evidencia": "O candidato D-880/D-881 inclui preflight vinculado ao SHA e ao manifesto. #375 registra rollback isolado. Novo upgrade sintético de 334 a 339 versões preservou os registros anteriores. Faltam registro no Dev e exercício do fluxo com o catálogo real em ambiente autorizado.",
+      "fase": 2
+    },
+    {
+      "id": "I06",
+      "area": "Google Cloud e infraestrutura",
+      "entrega": "Custo real, retenção de artefatos e dimensionamento",
+      "peso": 3,
+      "status": "Validado em produção",
+      "responsavel": "Infra/Dono",
+      "evidencia": "Custo efetivo de outubro de 2026 para o projeto confirmado pelo dono a partir do Google Cloud Billing, consulta de 25/11/2026. Dimensionamento inventariado; retenção do Artifact Registry e do bucket de builds conferida em leitura.",
+      "fase": 2
+    },
+    {
+      "id": "S01",
+      "area": "Segurança e autenticação",
+      "entrega": "Auth/RLS e isolamento negativo implementados",
+      "peso": 8,
+      "status": "Publicado",
+      "responsavel": "Backend/Database",
+      "evidencia": "DATABASE; integration tests; revalidação VM separada S04",
+      "fase": 3
+    },
+    {
+      "id": "S02",
+      "area": "Segurança e autenticação",
+      "entrega": "Dependências Next/Zod/Hono/XML e webhook Shopee",
+      "peso": 5,
+      "status": "Testado localmente",
+      "responsavel": "Sentinel",
+      "evidencia": "lockfile, Next.js 16.4.6 (D-737, audit --prod high=0, 1 moderado uuid), testes, histórico Sentinel; não publicados",
+      "fase": 1
+    },
+    {
+      "id": "S03",
+      "area": "Segurança e autenticação",
+      "entrega": "OAuth ML/Shopee/TikTok concorrente e credenciais protegidas",
+      "peso": 5,
+      "status": "Testado localmente",
+      "responsavel": "Sentinel",
+      "evidencia": "migrations11175813,12120939,12122618,12124430",
+      "fase": 1
+    },
+    {
+      "id": "S04",
+      "area": "Segurança e autenticação",
+      "entrega": "Auth VM real: login, convites, recuperação, SMTP e política",
+      "peso": 5,
+      "status": "Validado em produção",
+      "responsavel": "Dono/Database",
+      "evidencia": "#394 relata login/convite e recuperação recebida e concluída pelo dono. /login retornou HTTP 200 e exibiu Esqueci a senha na checagem de 25/11.",
+      "fase": 1
+    },
+    {
+      "id": "S05",
+      "area": "Segurança e autenticação",
+      "entrega": "Revisão IAM e proteção efetiva de main",
+      "peso": 3,
+      "status": "Em andamento",
+      "responsavel": "Infra/Dono",
+      "evidencia": "Main protegida e Editor removido da conta padrão. Os vínculos de v3-builder usados no ensaio foram removidos. Faltam autorização para conceder os papéis mínimos e uso pela rotina regular.",
+      "fase": 2
+    },
+    {
+      "id": "P01",
+      "area": "Performance",
+      "entrega": "RPCs, paginação e consultas existentes otimizadas",
+      "peso": 8,
+      "status": "Testado localmente",
+      "responsavel": "Sentinel/Backend",
+      "evidencia": "PERFORMANCE: baseline, SQL health/coverage, parallelreads A26–36, D-736/D-738/D-739/D-743/D-746/D-770–D-772/D-776 paginam >1.000 no worker, Copiloto, estoque Shopee e /diagnostico + lotes .in 100/200 e leitura anterior do Full sem varredura histórica",
+      "fase": 3
+    },
+    {
+      "id": "P02",
+      "area": "Performance",
+      "entrega": "Benchmarks representativos após restauração",
+      "peso": 5,
+      "status": "Testado localmente",
+      "responsavel": "Performance",
+      "evidencia": "72 consultas sob concorrência de seis em backup restaurado com limites equivalentes à VM (2 vCPU e 8 GiB). Todas abaixo de 8 s (#381).",
+      "fase": 3
+    },
+    {
+      "id": "P03",
+      "area": "Performance",
+      "entrega": "Reduzir crescimento Full/telemetria sem perder auditoria",
+      "peso": 3,
+      "status": "Testado localmente",
+      "responsavel": "Database",
+      "evidencia": "Política Full aprovada (D-850). Cópia: -61,21%, 60 pares de RPCs sob RLS iguais, 234.481 linhas arquivadas e restauradas com SHA-256 igual, bloqueio concorrente e rollback ensaiados. Aplicação e telemetria complementar pendentes (PERFORMANCE.md / D04).",
+      "fase": 3
+    },
+    {
+      "id": "Q01",
+      "area": "Testes e qualidade",
+      "entrega": "Suíte unitária, contratos, RLS e idempotência",
+      "peso": 8,
+      "status": "Testado localmente",
+      "responsavel": "Todos/Sentinel",
+      "evidencia": "check 37/37 tarefas (4.271 unitários), build 10/10, 7 guardas web em 4d2a90e1; 1.213 integração (326 migrations) e 39 embeds em f3ae0df6 (sem nova migration)",
+      "fase": 5
+    },
+    {
+      "id": "Q02",
+      "area": "Testes e qualidade",
+      "entrega": "Regressões de navegação, transporte e escrita real local",
+      "peso": 5,
+      "status": "Testado localmente",
+      "responsavel": "Sentinel",
+      "evidencia": "Playwright E2E completo: 401/401 (chromium + loja-live) em f3ae0df6",
+      "fase": 5
+    },
+    {
+      "id": "Q03",
+      "area": "Testes e qualidade",
+      "entrega": "Carga e falhas representativas em stack equivalente",
+      "peso": 5,
+      "status": "Testado localmente",
+      "responsavel": "QA/Infra",
+      "evidencia": "Stack local com duas rodadas de 1.088 requisições, 80 tarefas únicas e 240 duplicatas (#382). Cloud Tasks gerenciado isolado: 48/48 entregues, 16/16 recuperadas após 503, duplicata 409 e fila vazia. Em operação, 24/24 heartbeats chegaram ao worker (TESTING.md).",
+      "fase": 5
+    },
+    {
+      "id": "Q04",
+      "area": "Testes e qualidade",
+      "entrega": "Ensaio completo negócio→dados após recuperação",
+      "peso": 5,
+      "status": "Bloqueado",
+      "responsavel": "Dono/QA",
+      "evidencia": "Pedidos/estoque/faturamento/SAC e importação; requer ambiente recuperado",
+      "fase": 5
+    },
+    {
+      "id": "L01",
+      "area": "Limpeza técnica",
+      "entrega": "Branches obsoletas verificadas e removidas",
+      "peso": 3,
+      "status": "Testado localmente",
+      "responsavel": "Sentinel",
+      "evidencia": "BRANCH_AUDIT:106exclusões;24refs atuais",
+      "fase": 4
+    },
+    {
+      "id": "L02",
+      "area": "Limpeza técnica",
+      "entrega": "Código sem consumidor e exports desnecessários",
+      "peso": 2,
+      "status": "Testado localmente",
+      "responsavel": "Sentinel",
+      "evidencia": "A24/A25;3helpers e32exports; consumidores indiretos preservados",
+      "fase": 4
+    },
+    {
+      "id": "L03",
+      "area": "Limpeza técnica",
+      "entrega": "PRs/worktrees remanescentes e colisões documentais",
+      "peso": 3,
+      "status": "Em andamento",
+      "responsavel": "Sentinel/Outros",
+      "evidencia": "26 PRs comparados com #378: 17 heads ancestrais, 6 mudanças equivalentes ou ampliadas e 3 evidências independentes. Preservar refs e worktrees até revisão (BRANCH_AUDIT.md).",
+      "fase": 4
+    },
+    {
+      "id": "L04",
+      "area": "Limpeza técnica",
+      "entrega": "Recursos de nuvem candidatos com dependência e rollback",
+      "peso": 2,
+      "status": "Validado em produção",
+      "responsavel": "Infra",
+      "evidencia": "Dependências e rollback inventariados em D-836 (#401). Leitura confirmou tags temporárias removidas, worker com 100% de tráfego em uma revisão e regras ativas restritas a artefatos e ao bucket de builds.",
+      "fase": 4
+    },
+    {
+      "id": "V01",
+      "area": "Publicação e validação",
+      "entrega": "CI do conjunto integrado de compras, Gemini/Codex Sentinel e banco",
+      "peso": 5,
+      "status": "Em andamento",
+      "responsavel": "Sentinel/QA",
+      "evidencia": "Candidato #364 conciliado até a main #421. O preflight reconhece a primeira versão de D-879 na VM e as pendências posteriores. Faltam a conferência do catálogo do Dev e a homologação do SHA integrado.",
+      "fase": 5
+    },
+    {
+      "id": "V02",
+      "area": "Publicação e validação",
+      "entrega": "Migrations, worker, API e web no SHA aprovado",
+      "peso": 8,
+      "status": "Bloqueado",
+      "responsavel": "Dono/Infra",
+      "evidencia": "O preflight local passou de bloqueado a pendente após conciliar D04. A VM observada tem 348 versões, até o rateio multicanal do #427. O plano combinado reconhece todas as versões aplicadas e deixa duas pendências de Notificações; a aplicação coordenada e sua validação seguem pendentes.",
+      "fase": 5
+    },
+    {
+      "id": "V03",
+      "area": "Publicação e validação",
+      "entrega": "Aceite operacional e observação de estabilidade pós-deploy",
+      "peso": 8,
+      "status": "Não iniciado",
+      "responsavel": "Dono/QA",
+      "evidencia": "Aceitantes definidos: dono ou gestor. Faltam execução das jornadas operacionais e observação da estabilidade após publicação.",
+      "fase": 5
+    }
+  ]
+}

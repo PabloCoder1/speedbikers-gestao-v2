@@ -36,21 +36,47 @@ export function toSalesMetricDate(value: string | Date): string {
 
 const BUSINESS_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
+function parseBusinessDateParts(date: string): Date | null {
+  const match = BUSINESS_DATE_PATTERN.exec(date);
+
+  if (match === null) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+/** Confere formato `YYYY-MM-DD` e existência real da data no calendário (ex.: recusa `2026-02-31`). */
+export function isValidBusinessDate(date: string): boolean {
+  return parseBusinessDateParts(date) !== null;
+}
+
 /**
  * Constrói uma data de negócio (`YYYY-MM-DD`) em UTC à meia-noite — só como
  * representação interna para aritmética de calendário, nunca como fuso. Ver
  * `shiftBusinessDate`.
  */
 function parseBusinessDate(date: string): Date {
-  const match = BUSINESS_DATE_PATTERN.exec(date);
+  const parsed = parseBusinessDateParts(date);
 
-  if (match === null) {
+  if (parsed === null) {
     throw new RangeError("data de negócio inválida, esperado YYYY-MM-DD");
   }
 
-  const [, year, month, day] = match as unknown as [string, string, string, string];
-
-  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  return parsed;
 }
 
 /**
@@ -63,9 +89,17 @@ function parseBusinessDate(date: string): Date {
  * `toSalesMetricDate`, que converte instante -> dia civil).
  */
 export function shiftBusinessDate(date: string, days: number): string {
+  if (!Number.isSafeInteger(days)) {
+    throw new RangeError("deslocamento de dias inválido, esperado inteiro seguro");
+  }
+
   const shifted = parseBusinessDate(date);
 
   shifted.setUTCDate(shifted.getUTCDate() + days);
+
+  if (Number.isNaN(shifted.getTime())) {
+    throw new RangeError("data resultante fora do intervalo suportado");
+  }
 
   return shifted.toISOString().slice(0, 10);
 }

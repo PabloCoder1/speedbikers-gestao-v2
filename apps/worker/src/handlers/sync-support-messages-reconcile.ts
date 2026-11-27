@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
+import { resolveMlAccountRead } from "./ml-account-read.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { persistSupportConversation } from "./persist-support-conversation.js";
 import { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
@@ -64,21 +65,26 @@ export function createSyncSupportMessagesReconcileHandler(
     const { mlAccountId } = parsed.data;
     const started = deps.now?.() ?? new Date();
 
-    const account = await deps.db
+    const accountRead = await deps.db
       .from("ml_accounts")
       .select("id, organization_id, seller_id, status")
       .eq("id", mlAccountId)
       .maybeSingle();
 
-    if (account.error !== null || account.data === null) {
-      context.logger.warn("sync_support_messages_reconcile_account_missing", {
-        ml_account_id: mlAccountId,
-      });
+    const resolvedAccount = resolveMlAccountRead(accountRead, {
+      logger: context.logger,
+      missingEvent: "sync_support_messages_reconcile_account_missing",
+      mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
+    });
 
-      return { status: "done", processed: 0 };
+    if ("outcome" in resolvedAccount) {
+      return resolvedAccount.outcome;
     }
 
-    if (account.data.organization_id !== envelope.organizationId) {
+    const account = resolvedAccount.account;
+
+    if (account.organization_id !== envelope.organizationId) {
       return {
         status: "failed",
         retryable: false,
@@ -86,7 +92,7 @@ export function createSyncSupportMessagesReconcileHandler(
       };
     }
 
-    if (account.data.status !== "CONNECTED" || account.data.seller_id === null) {
+    if (account.status !== "CONNECTED" || account.seller_id === null) {
       context.logger.info("sync_support_messages_reconcile_account_not_connected", {
         ml_account_id: mlAccountId,
       });
@@ -94,8 +100,8 @@ export function createSyncSupportMessagesReconcileHandler(
       return { status: "done", processed: 0 };
     }
 
-    const organizationId = account.data.organization_id;
-    const sellerId = account.data.seller_id;
+    const organizationId = account.organization_id;
+    const sellerId = account.seller_id;
     const tokenResult = await ensureAccessToken(deps, mlAccountId, started);
 
     if (!tokenResult.ok) {
@@ -126,7 +132,12 @@ export function createSyncSupportMessagesReconcileHandler(
         accessToken: tokenResult.accessToken,
       });
     } catch (error) {
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+      const errorClass =
+        error instanceof MercadoLivreApiError
+          ? error.errorClass
+          : error instanceof z.ZodError
+            ? "not_retryable"
+            : "retryable";
       const reason =
         error instanceof Error ? error.message : "erro desconhecido ao listar conversas não lidas";
 

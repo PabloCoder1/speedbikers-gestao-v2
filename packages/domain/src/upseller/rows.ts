@@ -310,6 +310,11 @@ export function mapStockRow(
   // a ser — o `em trânsito` da V3 vem dos pedidos de compra, não daqui.
   const transitPurchase = parseDecimal(at(row, index, "Em Trânsito(Compra)")) ?? 0;
   const transitTransfer = parseDecimal(at(row, index, "Em Trânsito(Transferência)")) ?? 0;
+  const inTransit = transitPurchase + transitTransfer;
+
+  if (!Number.isFinite(inTransit)) {
+    return { ok: false, reason: `SKU ${sku} com Em Trânsito inválido` };
+  }
 
   return {
     ok: true,
@@ -320,7 +325,7 @@ export function mapStockRow(
       available: parseDecimal(at(row, index, "Disponível")) ?? onHand,
       // "Ocupado" no ERP é o reservado da V3.
       reserved: parseDecimal(at(row, index, "Ocupado")) ?? 0,
-      inTransit: transitPurchase + transitTransfer,
+      inTransit,
       averageCost: parseDecimal(at(row, index, "Custo Médio")),
     },
   };

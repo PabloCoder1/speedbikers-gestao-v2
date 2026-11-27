@@ -2,7 +2,9 @@ import type { AdminClient, Json } from "@sb/db";
 import { computePendingOutcomeWindows, shiftBusinessDate, toSalesMetricDate } from "@sb/domain";
 import { z } from "zod";
 
+import { chunk, LOOKUP_CHUNK } from "../chunk.js";
 import type { JobOutcome } from "../job-outcome.js";
+import { readAllPages } from "../read-all-pages.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 
 /**
@@ -47,8 +49,10 @@ interface ActionRow {
   sku_id: string | null;
 }
 
+const OUTCOME_UPSERT_CHUNK = 500;
+
 export function createMeasureDecisionOutcomesHandler(deps: MeasureDecisionOutcomesDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -56,19 +60,31 @@ export function createMeasureDecisionOutcomesHandler(deps: MeasureDecisionOutcom
     }
 
     const { organizationId } = parsed.data;
+
+    if (organizationId !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "organização do payload diverge do envelope" };
+    }
     const now = deps.now?.() ?? new Date();
     const asOf = shiftBusinessDate(toSalesMetricDate(now), -1);
 
-    const decisionsResult = await deps.db
-      .from("action_decisions")
-      .select("id, action_id, created_at")
-      .eq("organization_id", organizationId);
+    let decisions: DecisionRow[];
 
-    if (decisionsResult.error !== null) {
-      return { status: "failed", retryable: true, reason: decisionsResult.error.message };
+    try {
+      decisions = await readAllPages<DecisionRow>((from, to) =>
+        deps.db
+          .from("action_decisions")
+          .select("id, action_id, created_at")
+          .eq("organization_id", organizationId)
+          .order("id")
+          .range(from, to),
+      );
+    } catch (error) {
+      return {
+        status: "failed",
+        retryable: true,
+        reason: error instanceof Error ? error.message : String(error),
+      };
     }
-
-    const decisions = decisionsResult.data as DecisionRow[];
 
     if (decisions.length === 0) {
       context.logger.info("measure_decision_outcomes_done", { organization_id: organizationId, measured: 0 });
@@ -79,30 +95,51 @@ export function createMeasureDecisionOutcomesHandler(deps: MeasureDecisionOutcom
     const decisionIds = decisions.map((d) => d.id);
     const actionIds = [...new Set(decisions.map((d) => d.action_id))];
 
-    const outcomesResult = await deps.db
-      .from("action_outcomes")
-      .select("action_decision_id, window_days")
-      .in("action_decision_id", decisionIds);
-
-    if (outcomesResult.error !== null) {
-      return { status: "failed", retryable: true, reason: outcomesResult.error.message };
-    }
-
     const measuredByDecision = new Map<string, number[]>();
 
-    for (const row of outcomesResult.data as OutcomeRow[]) {
-      const list = measuredByDecision.get(row.action_decision_id) ?? [];
-      list.push(row.window_days);
-      measuredByDecision.set(row.action_decision_id, list);
+    try {
+      for (const idChunk of chunk(decisionIds, LOOKUP_CHUNK)) {
+        const outcomeRows = await readAllPages<OutcomeRow>((from, to) =>
+          deps.db
+            .from("action_outcomes")
+            .select("action_decision_id, window_days")
+            .eq("organization_id", organizationId)
+            .in("action_decision_id", idChunk)
+            .order("id")
+            .range(from, to),
+        );
+
+        for (const row of outcomeRows) {
+          const list = measuredByDecision.get(row.action_decision_id) ?? [];
+          list.push(row.window_days);
+          measuredByDecision.set(row.action_decision_id, list);
+        }
+      }
+    } catch (error) {
+      return {
+        status: "failed",
+        retryable: true,
+        reason: error instanceof Error ? error.message : String(error),
+      };
     }
 
-    const actionsResult = await deps.db.from("actions").select("id, sku_id").in("id", actionIds);
+    const skuByAction = new Map<string, string | null>();
 
-    if (actionsResult.error !== null) {
-      return { status: "failed", retryable: true, reason: actionsResult.error.message };
+    for (const idChunk of chunk(actionIds, LOOKUP_CHUNK)) {
+      const actionsResult = await deps.db
+        .from("actions")
+        .select("id, sku_id")
+        .eq("organization_id", organizationId)
+        .in("id", idChunk);
+
+      if (actionsResult.error !== null) {
+        return { status: "failed", retryable: true, reason: actionsResult.error.message };
+      }
+
+      for (const action of actionsResult.data as ActionRow[]) {
+        skuByAction.set(action.id, action.sku_id);
+      }
     }
-
-    const skuByAction = new Map((actionsResult.data as ActionRow[]).map((a) => [a.id, a.sku_id]));
 
     const pendingWork: { decisionId: string; window: number; skuId: string | null }[] = [];
 
@@ -128,6 +165,7 @@ export function createMeasureDecisionOutcomesHandler(deps: MeasureDecisionOutcom
       return { status: "done", processed: 0 };
     }
 
+    const snapshotBySku = new Map<string, Json>();
     const rows: {
       organization_id: string;
       action_decision_id: string;
@@ -139,17 +177,24 @@ export function createMeasureDecisionOutcomesHandler(deps: MeasureDecisionOutcom
       let snapshot: Json = {};
 
       if (work.skuId !== null) {
-        const snapshotResult = await deps.db.rpc("get_sku_decision_snapshot", {
-          p_organization_id: organizationId,
-          p_sku_id: work.skuId,
-          p_as_of: asOf,
-        });
+        const cached = snapshotBySku.get(work.skuId);
 
-        if (snapshotResult.error !== null) {
-          return { status: "failed", retryable: true, reason: snapshotResult.error.message };
+        if (cached !== undefined) {
+          snapshot = cached;
+        } else {
+          const snapshotResult = await deps.db.rpc("get_sku_decision_snapshot", {
+            p_organization_id: organizationId,
+            p_sku_id: work.skuId,
+            p_as_of: asOf,
+          });
+
+          if (snapshotResult.error !== null) {
+            return { status: "failed", retryable: true, reason: snapshotResult.error.message };
+          }
+
+          snapshot = snapshotResult.data;
+          snapshotBySku.set(work.skuId, snapshot);
         }
-
-        snapshot = snapshotResult.data;
       }
 
       rows.push({
@@ -160,12 +205,14 @@ export function createMeasureDecisionOutcomesHandler(deps: MeasureDecisionOutcom
       });
     }
 
-    const insertResult = await deps.db
-      .from("action_outcomes")
-      .upsert(rows, { onConflict: "action_decision_id,window_days", ignoreDuplicates: true });
+    for (const batch of chunk(rows, OUTCOME_UPSERT_CHUNK)) {
+      const insertResult = await deps.db
+        .from("action_outcomes")
+        .upsert(batch, { onConflict: "action_decision_id,window_days", ignoreDuplicates: true });
 
-    if (insertResult.error !== null) {
-      return { status: "failed", retryable: true, reason: insertResult.error.message };
+      if (insertResult.error !== null) {
+        return { status: "failed", retryable: true, reason: insertResult.error.message };
+      }
     }
 
     context.logger.info("measure_decision_outcomes_done", {

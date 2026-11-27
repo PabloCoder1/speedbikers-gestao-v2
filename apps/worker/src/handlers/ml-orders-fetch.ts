@@ -211,10 +211,10 @@ export async function fetchOrdersWindow(params: FetchOrdersWindowParams): Promis
       // avançar o checkpoint é o conservador: um checkpoint adiantado por
       // fallback poderia pular janela e perder pedido; um parado só
       // reprocessa, que é idempotente.
-      const updatedAt = order.date_last_updated != null ? new Date(order.date_last_updated) : null;
+      const updatedAtMs = order.date_last_updated != null ? Date.parse(order.date_last_updated) : Number.NaN;
 
-      if (updatedAt !== null && (latestRecordAt === null || updatedAt > latestRecordAt)) {
-        latestRecordAt = updatedAt;
+      if (Number.isFinite(updatedAtMs) && (latestRecordAt === null || updatedAtMs > latestRecordAt.getTime())) {
+        latestRecordAt = new Date(updatedAtMs);
       }
     }
 

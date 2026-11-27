@@ -31,7 +31,7 @@ export interface ListingSalesDropDeps {
 }
 
 export function createListingSalesDropHandler(deps: ListingSalesDropDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -39,6 +39,10 @@ export function createListingSalesDropHandler(deps: ListingSalesDropDeps): JobHa
     }
 
     const { organizationId } = parsed.data;
+
+    if (organizationId !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "organização do payload diverge do envelope" };
+    }
     const result = await deps.db.rpc("recalcular_queda_anuncios", { p_organization_id: organizationId });
 
     if (result.error !== null) {

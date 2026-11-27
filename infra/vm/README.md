@@ -6,6 +6,25 @@ Estado verificado em 18/11/2026, por leitura via IAP/SSH: projeto
 O README upstream na VM descreve o Compose; este arquivo registra o estado
 específico do projeto sem copiar configurações ou credenciais.
 
+## Alerta de disco
+
+O Ops Agent da `sb-db` publicou séries de utilização para `/dev/sda1` e
+`/dev/sda15` na consulta de 20/11/2026. Confirme qual dispositivo contém
+`/opt/supabase` e o diretório de dados do Docker na VM (por exemplo, com
+`findmnt --target` para cada caminho). Use o dispositivo como aparece na
+métrica do Cloud Monitoring e o ID numérico da instância.
+
+```sh
+node infra/vm/disk-alert-policy.mjs --project "$PROJECT_ID" \
+  --instance-id "$INSTANCE_ID" --device "$DEVICE" --channel-id "$CHANNEL_ID" \
+  > disk-alert-policy.json
+```
+
+O comando só gera JSON para revisão. A proposta dispara acima de 85% de
+uso por 10 minutos. O canal precisa estar confirmado no projeto e a
+política deve ser criada e testada com aprovação. A condição mede ocupação;
+a perda da telemetria depende de monitoramento separado.
+
 ## Migrations de novembro
 
 O executor anterior relatou aplicação extraordinária por SSH em 18/11, após
@@ -36,6 +55,88 @@ não deve ser atribuída ao workflow `migrations-producao.yml`.
   Não copiar senhas de roles nem restaurar sobre produção. O snapshot cobre
   a instância; o ensaio do dump usou owners locais com `--no-owner`.
 
+## Verificação do backup diário
+
+O cron da VM começa às 06:15 UTC. A sondagem de leitura consulta os
+metadados de `diario/AAAA-MM-DD.dump` no Cloud Storage. Antes de 07:15 UTC
+(04:15 em Brasília), exige a cópia de ontem. A partir desse horário, exige a
+de hoje. Essa janela deixa uma hora para gerar, conferir e enviar o dump.
+
+```sh
+node infra/vm/check-daily-backup.mjs
+node --test infra/vm/check-daily-backup.test.mjs
+```
+
+A sondagem requer Node 24, Google Cloud CLI autenticado e permissão
+`storage.objects.get` no objeto. Saída em JSON com código 0 para objeto
+válido, 1 para nome, tamanho ou data inválidos, 2 quando a consulta falha
+(inclusive objeto ausente) ou não retorna JSON legível. A CLI consulta
+metadados; o ensaio de restore é a prova separada de legibilidade do dump.
+
+Em 19/11, o objeto diário de 183.547.863 bytes (geração
+`1795068954797517`) passou na sondagem. Um restore completo dessa geração
+em contêiner descartável isolado confirmou 322 migrations até
+`20261118211000` e zero índices inválidos. O SQL de invoice foi ensaiado
+em seguida e as cinco colunas apareceram no catálogo.
+O MD5 calculado em fluxo coincidiu com o Cloud Storage, e
+`pg_restore --list` leu 2.786 entradas. O restore integral terminou com
+código 0 usando `--no-owner --exit-on-error`; as cinco colunas estavam
+ausentes antes do SQL `20261119120000`. Esse SQL foi executado em uma
+transação na cópia, sem registrar sua versão no histórico. O contêiner
+isolado e o volume descartável foram removidos após o ensaio.
+
+Em 22/11, uma segunda geração diária (`1795328157907250`, 192.128.482
+bytes) passou por restore integral em PostgreSQL 17.6 isolado, com
+`pg_restore --no-owner --exit-on-error`. O MD5 e o tamanho coincidiram
+com o objeto do GCS, o TOC teve 2.814 entradas e o restore terminou em
+91,26 segundos. A cópia tinha 324 migrations até `20261119180000`, RLS
+nas 97 tabelas de `public`, zero índices inválidos e zero divergências
+entre ledger e projeção de estoque na organização restaurada. O ensaio
+usou roles locais e preservou as permissões do dump. O contêiner e o
+arquivo temporário foram removidos após a verificação.
+
+A consulta de 22/11 confirmou os três dumps de 20 a 22/11 e uma regra
+de ciclo de vida de 35 dias para `diario/`. O bucket tem versionamento e
+soft delete de sete dias.
+
+Para ativar o alerta, executar a sondagem fora da VM do banco, com uma
+identidade de leitura, depois da janela diária e encaminhar falhas ao
+canal aprovado. Uma execução saudável e uma falha controlada devem confirmar
+a entrega antes de fechar o item de monitoramento.
+
+Para uma sondagem executada como Cloud Run Job, gere a política para revisão:
+
+```sh
+node infra/vm/backup-alert-policy.mjs --project "$PROJECT_ID" --region "$REGION" \
+  --job "$JOB_NAME" --channel-id "$CHANNEL_ID" > backup-alert-policy.json
+```
+
+A política cobre os três estados de erro emitidos em JSON na saída de erro
+do job indicado. Uma execução que nunca iniciou ou morreu antes de emitir
+JSON exige monitoramento do agendamento e das execuções. São pré-requisitos
+para ativação o job externo, o agendamento e um canal confirmado.
+
+O contêiner da sondagem usa a identidade do Cloud Run para solicitar
+somente os campos de metadados do objeto diário. Construa a imagem com
+`docker build -f infra/vm/Dockerfile.backup-probe infra/vm`. Restrinja o
+acesso da identidade ao prefixo `diario/` do bucket de backups.
+Execute a verificação normal antes de testar o alerta. Para o ensaio de
+entrega, passe `--test-failure` somente como argumento de uma execução
+manual do job. O log indica `simulated: true` e a execução encerra com 2.
+
+Em 20/11/2026 (horário de Brasília), o job `sb-backup-check` foi
+ativado em `speedbikers-prod`, região `southamerica-east1`, com a imagem
+do commit `6def173a` e identidade `sb-backup-probe`. O Cloud Scheduler
+`sb-backup-check-diario` chama a API do Cloud Run com a identidade
+`sb-backup-scheduler` todos os dias às 07:25 UTC (04:25 em Brasília).
+A execução acionada pelo Scheduler `sb-backup-check-v8vjq` terminou
+com sucesso. A repetição da falha sintética (`sb-backup-check-x66xz`)
+abriu o incidente `0.of9jh2tr03e9` às 22:41 BRT. O e-mail do Google Cloud
+Alerting chegou ao canal autorizado. As sondagens automáticas de 21/11
+(`sb-backup-check-nqcw2`) e 22/11 (`sb-backup-check-8zv48`) registraram
+`ok` para os respectivos dumps. Evidências no
+[checkpoint Sentinel](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351).
+
 ## Fluxo oficial pendente de reconciliação
 
 O workflow versionado ainda usa o Supabase hosted, exige aplicação no Dev e
@@ -43,4 +144,125 @@ duas aprovações de `producao`. Ele não foi adaptado nem executado sobre a VM.
 Antes de nova migration: identificar o destino real, comparar histórico e
 objetos, produzir plano de diferenças e obter as aprovações do fluxo oficial.
 Não usar `db push`, `--include-all` nem repair para repetir ou encobrir a
-aplicação manual. Migração do workflow e mudanças na VM ficam em outra fatia.
+aplicação manual.
+
+### Comparar o histórico com o candidato
+
+Em uma sessão já autorizada na VM, extraia só as versões aplicadas:
+
+```sh
+sudo docker exec -e 'PGOPTIONS=-c default_transaction_read_only=on' supabase-db \
+  psql -XAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+  -c 'select version from supabase_migrations.schema_migrations order by version' \
+  > catalogo-migrations.txt
+```
+
+Transfira o arquivo de versões ao checkout do commit candidato e execute:
+
+```sh
+node infra/vm/check-migration-catalog.mjs < catalogo-migrations.txt
+```
+
+A saída JSON mostra as pendências posteriores à última versão aplicada. O
+código de saída é 0 para `match` ou `pending`, 1 para `blocked` e 2 para entrada
+inválida. `blocked` indica lacuna anterior à última versão ou versão do
+catálogo ausente no Git. A comparação cobre os identificadores das migrations.
+A conferência dos objetos e o teste de upgrade completam a validação antes da
+aplicação.
+
+Para registrar o plano revisado, gere o JSON com os hashes SHA-256 do catálogo
+e de cada migration pendente. Na segunda aprovação, extraia o catálogo
+novamente e verifique o mesmo plano no checkout do commit aprovado:
+
+```sh
+node infra/vm/check-migration-catalog.mjs --plan --bind-head < catalogo-migrations.txt
+node infra/vm/check-migration-catalog.mjs --expect-plan "$PLAN_ID" --bind-head < catalogo-atual.txt
+```
+
+`PLAN_ID` é o `plan.id` do JSON da primeira etapa. Uma mudança nas versões
+aplicadas ou no conteúdo ou nome de um SQL pendente reprova a verificação.
+Com `--bind-head` nas duas etapas, o ID também inclui o commit do
+checkout, registrado em `plan.revision`. O verificador recusa SQLs
+alterados ou sem rastreamento. Registre o ambiente de origem do
+catálogo na revisão.
+
+Para gerar o mesmo plano pelo GitHub Actions, dispare **Preflight de migrations
+da VM** pela CLI, na branch que contém o commit candidato. O envio em JSON
+preserva as quebras de linha do arquivo exportado. O formulário web tem um
+campo de linha única e pode alterar essa entrada:
+
+```sh
+jq -Rs '{catalogo: .}' catalogo-migrations.txt |
+  gh workflow run migrations-producao.yml --ref "$BRANCH_CANDIDATA" --json
+```
+
+Confira o SHA da execução antes de aceitar o artefato `plano-migrations-vm`.
+Se houver lacunas, a execução falha e o relatório fica no log da etapa. O
+workflow usa o catálogo informado. A extração novamente da VM e a conferência
+do ID continuam obrigatórias antes da aplicação aprovada.
+
+
+### Ensaio de upgrade sem Supabase hospedado
+
+Inicie uma stack Supabase descartável com os SQLs do commit-base e
+extraia o catálogo de versões desse PostgreSQL. Compare a base e o
+candidato com o planejador local.
+
+```bash
+node infra/vm/plan-local-upgrade.mjs <commit-base> <commit-candidato> < catalogo-local.txt
+```
+
+O comando lê o Git e o catálogo informado. Ele exige igualdade entre o
+catálogo aplicado e a base e recusa remoção, renomeação ou alteração
+de um SQL da base. O relatório identifica as adições, seus objetos Git
+e as versões anteriores à última aplicada.
+
+Para ensaiar as pendências antigas, copie os SQLs com versões temporárias
+posteriores à última aplicada somente na stack descartável. Confira o
+catálogo pós-upgrade e rode a suíte de integração contra essa stack.
+A numeração temporária vale apenas para o laboratório.
+
+### Publicação do candidato #364 e aceite
+
+Em 25/11, a leitura da VM encontrou as 334 versões originais do candidato,
+incluindo os quatro SQLs ensaiados no laboratório. Nove comparações de
+definições e permissões coincidiram. O agendamento de retenção estava desativado.
+
+1. Quando o Dev ficar saudável, conferir seu catálogo, comparar as versões
+   com as da VM e testar o upgrade de um backup recente em cópia descartável.
+   Preservar a identidade das migrações já registradas.
+2. Gerar e registrar um novo plano da VM com catálogo, SHA e ID. Antes
+   de qualquer escrita, conferir novamente os três, o backup
+   recuperável e a revisão anterior de cada serviço.
+3. Depois da publicação, registrar as revisões esperadas com o tráfego
+   efetivo de API e worker, o deploy web e o catálogo aplicado. Conferir
+   uma jornada autenticada de pedidos, estoque e faturamento, o fluxo
+   de convite ou recuperação Auth e os agendamentos no banco. Comparar
+   backlog e falhas com a leitura anterior ao deploy. O dono ou gestor
+   registra o aceite com as evidências dessa observação.
+
+### Conferência de lotes de `sync_runs` na preparação de D04
+
+A janela é de 60 dias e a seleção preserva as linhas que sustentam checkpoints e as execuções com erros vinculados. O procedimento abaixo descreve os critérios para a rotina operacional ainda pendente. O ensaio em `packages/db/scripts/rehearse-sync-run-archive.mjs` é executado somente em um Supabase local descartável.
+
+1. Identificar a revisão, a organização, a conta, a janela e o limite do lote. Registrar o catálogo atual e confirmar que o meio de restauração está disponível.
+2. Capturar a linha de base de saúde da sincronização, cartões da conta, checkpoints de pedidos e claims e o estado do vigia. Comparar com o resultado após o lote usando o mesmo instante de referência para os indicadores móveis.
+3. Em cada transação, conferir a janela e os vínculos após o bloqueio de linha. Confirmar a igualdade entre cópias no arquivo e remoções no ativo. Em caso de diferença, reverter o lote.
+4. Após o commit, conferir o estado das linhas movidas e das referências. Se um erro tardio já tiver restaurado a execução no ativo, verificar a identidade e a FK antes de classificar a ocorrência. Interromper a sequência em caso de referência inválida, mudança inexplicada em um checkpoint ou alerta histórico.
+5. Antes de repetir, consultar as linhas elegíveis e confirmar o resultado do lote anterior. A recuperação de um lote confirmado deve usar os IDs e o escopo registrados para o lote, conferir cada linha ativa com a cópia fria e verificar as referências antes de liberar novos lotes. No ensaio em transações separadas, um erro tardio restaurou o primeiro pai. A recomposição inseriu apenas a outra linha, e a repetição inseriu zero. A cópia fria permaneceu disponível e seu ID impediu novo arquivamento. O ensaio usa um recibo por UUID vinculado aos parâmetros, à organização, à conta e aos IDs retirados. A restauração registra horário e contagem inserida. Dois pedidos de restauração concorrentes do mesmo recibo são serializados. No piloto, cada ação tem um papel próprio e o recibo registra o login e o papel selecionado.
+
+A política e o procedimento precisam de aprovação para uso em produção. A preparação desta etapa usa dados sintéticos.
+
+#### Proposta de piloto reversível
+
+- Escolher uma organização e uma conta autorizadas. Propor um primeiro lote de até 100 execuções e registrar a data solicitada e a data efetiva de corte. Conferir a cópia restaurável e o catálogo antes de executar.
+- Vincular cada ação à identidade autenticada de quem a executa e usar papéis separados para arquivamento e recuperação. O ensaio registra o login PostgreSQL e o papel selecionado. Duas conexões locais autenticadas separadamente registraram autores distintos. Para uma conexão compartilhada, a atribuição individual ainda precisa ser comprovada na homologação. O ensaio local do primeiro lote confirmou as autorias registradas em conexões separadas.
+- Ao restaurar, preservar a cópia fria. Enquanto seu ID constar no arquivo, a execução restaurada fica no ativo e fora de novos lotes. Uma proposta de reingresso deve identificar o recibo, confirmar a igualdade das cópias e verificar checkpoints e erros vinculados. Reingresso fica fora do piloto.
+- Começar a homologação do piloto sem índice novo. Com o volume de erros observado na VM, o lote de 100 teve mediana de 224,5 ms sem índice e 237 ms com índice, e a mediana de WAL das inserções subiu 19,8%. O ensaio usa dados sintéticos. Reavaliar o índice antes de aumentar o lote ou se os primeiros lotes indicarem espera de FK ou latência acima do orçamento aprovado. O índice tem implantação própria. A criação concorrente foi recusada dentro de uma transação e passou em comando separado. Uma proposta versionada deve prever a leitura de indisready e indisvalid e a remoção de um índice inválido antes de nova tentativa, com a mesma aprovação do plano.
+- Comparar saúde, cartões, checkpoints, vigia e contagens do recibo. Qualquer divergência sem explicação encerra a rodada. Usar o procedimento de recuperação e conferir a igualdade entre as linhas ativas e frias antes de liberar outro lote.
+
+Antes da homologação, registrar a revisão, o escopo escolhido, o UUID e os logins de arquivamento e recuperação. Registrar separadamente o limite de espera por trava e o prazo total do comando. Conferir os valores efetivos na sessão do operador. O ensaio de falha usa 500 ms para forçar o cancelamento. A homologação registra o orçamento operacional à parte.
+
+Se a exclusão for cancelada ou a resposta se perder, interromper novos lotes e consultar o recibo pelo mesmo UUID. Com recibo confirmado, conferir o conteúdo do lote e recuperar se necessário. Sem recibo, verificar o estado das linhas e repetir com o mesmo UUID e os mesmos parâmetros. A regressão força o prazo a vencer depois de a exclusão começar. O PostgreSQL retorna 57014 e reverte cópias, remoções e recibo.
+
+Na leitura agregada de 26/11, quatro contas tinham pelo menos 100 execuções elegíveis no recorte de 60 dias, com 17.240 no total. A consulta preservou checkpoints e excluiu erros vinculados. Escolher a conta somente depois de confirmar o escopo de homologação.

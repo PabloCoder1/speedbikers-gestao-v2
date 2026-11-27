@@ -17,6 +17,7 @@ import {
   KNOWLEDGE_STATUSES,
   resolveKnowledgeFilters,
 } from "../../../../lib/knowledge-filters";
+import { escaparIlike } from "../../../../lib/postgrest-search";
 import { currentMembership } from "../../../../lib/request-membership";
 import { createClient } from "../../../../lib/supabase/server";
 import { KNOWLEDGE_KIND_LABEL, KNOWLEDGE_SOURCE_LABEL, KNOWLEDGE_STATUS_LABEL } from "./constants";
@@ -46,7 +47,7 @@ export default async function ConhecimentoPage({
   if (filters.status !== null) entriesQuery = entriesQuery.eq("status", filters.status);
   if (filters.kind !== null) entriesQuery = entriesQuery.eq("kind", filters.kind);
   if (filters.source !== null) entriesQuery = entriesQuery.eq("source", filters.source);
-  if (filters.search !== null) entriesQuery = entriesQuery.ilike("content", `%${filters.search}%`);
+  if (filters.search !== null) entriesQuery = entriesQuery.ilike("content", `%${escaparIlike(filters.search)}%`);
 
   const [entriesResult, membership, totalResult, validatedResult, suggestedResult, obsoleteResult] = await Promise.all([
     entriesQuery,
@@ -77,7 +78,9 @@ export default async function ConhecimentoPage({
   const obsolete = obsoleteResult.error === null ? (obsoleteResult.count ?? 0) : null;
   const validationRate = validated === null || total === null || total === 0 ? null : validated / total;
   const pageBeyondEnd = isPageBeyondEnd(entriesResult.error);
-  const listError = pageBeyondEnd ? null : (entriesResult.error?.message ?? profilesResult.error?.message ?? null);
+  const listError = pageBeyondEnd
+    ? null
+    : (entriesResult.error?.message ?? profilesResult.error?.message ?? membership.error?.message ?? null);
   const window = summarizePagedWindow({
     page: filters.page, totalCount: entriesResult.count ?? entries.length, rowsOnPage: rows.length, pageSize: KNOWLEDGE_PAGE_SIZE,
     noun: { singular: "conhecimento", plural: "conhecimentos" }, emptyLabel: "Nenhum conhecimento neste recorte.", trailing: ", por atualização mais recente",

@@ -164,7 +164,15 @@ function GavetaRegra({
   const [removendo, iniciarRemocao] = useTransition();
 
   const [resultado, enviar, salvando] = useActionState(async (anterior: ResultadoDaRegra, dados: FormData) => {
-    const r = await salvarRegra(anterior, dados);
+    let r: ResultadoDaRegra;
+    try {
+      r = await salvarRegra(anterior, dados);
+    } catch {
+      return {
+        ...RESULTADO_INICIAL,
+        mensagem: "Não foi possível confirmar o salvamento. Confira as regras antes de tentar novamente.",
+      };
+    }
 
     if (r.ok) onConcluir(r.mensagem ?? "Regra salva.");
 
@@ -335,7 +343,13 @@ function GavetaRegra({
                 onClick={() => {
                   setErroRemocao(null);
                   iniciarRemocao(async () => {
-                    const r = await removerRegra(regra?.id ?? "");
+                    let r: Awaited<ReturnType<typeof removerRegra>>;
+                    try {
+                      r = await removerRegra(regra?.id ?? "");
+                    } catch {
+                      setErroRemocao("Não foi possível confirmar a remoção. Confira as regras antes de tentar novamente.");
+                      return;
+                    }
 
                     if (r.ok) onConcluir(r.mensagem);
                     else setErroRemocao(r.mensagem);

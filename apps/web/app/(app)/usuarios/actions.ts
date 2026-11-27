@@ -45,14 +45,19 @@ export async function changeMemberRole(
 ): Promise<AccessResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("organization_members")
     .update({ role })
     .eq("organization_id", organizationId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .select("user_id");
 
   if (error !== null) {
     return { ok: false, message: traduzir(error) };
+  }
+
+  if (data.length === 0) {
+    return { ok: false, message: "O papel não foi alterado. O membro pode ter sido removido ou suas permissões mudaram. Atualize a página para conferir." };
   }
 
   revalidatePath("/usuarios");
@@ -79,14 +84,19 @@ export async function grantAccountAccess(userId: string, mlAccountId: string): P
 export async function revokeAccountAccess(userId: string, mlAccountId: string): Promise<AccessResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("user_account_permissions")
     .delete()
     .eq("user_id", userId)
-    .eq("ml_account_id", mlAccountId);
+    .eq("ml_account_id", mlAccountId)
+    .select("user_id");
 
   if (error !== null) {
     return { ok: false, message: traduzir(error) };
+  }
+
+  if (data.length === 0) {
+    return { ok: false, message: "O acesso não foi alterado. Ele já pode ter sido removido ou suas permissões mudaram. Atualize a página para conferir." };
   }
 
   revalidatePath("/usuarios");
@@ -118,14 +128,19 @@ export async function grantShopeeShopAccess(userId: string, shopeeShopId: string
 export async function revokeShopeeShopAccess(userId: string, shopeeShopId: string): Promise<AccessResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("user_shopee_shop_permissions")
     .delete()
     .eq("user_id", userId)
-    .eq("shopee_shop_id", shopeeShopId);
+    .eq("shopee_shop_id", shopeeShopId)
+    .select("user_id");
 
   if (error !== null) {
     return { ok: false, message: traduzir(error) };
+  }
+
+  if (data.length === 0) {
+    return { ok: false, message: "O acesso não foi alterado. Ele já pode ter sido removido ou suas permissões mudaram. Atualize a página para conferir." };
   }
 
   revalidatePath("/usuarios");
@@ -152,17 +167,26 @@ export async function revokeShopeeShopAccess(userId: string, shopeeShopId: strin
  * e apagá-la esbarraria no histórico (`actor_user_id` é `on delete restrict`).
  * Para só impedir a entrada sem apagar nada, a gaveta oferece "Suspender".
  */
+const ACCOUNTS_PAGE_SIZE = 500;
+const PERMISSION_DELETE_CHUNK = 100;
+
 export async function removeMember(organizationId: string, userId: string): Promise<AccessResult> {
   const supabase = await createClient();
 
   /*
     A PRÓPRIA CONTA não sai por aqui. O banco deixaria (se houver outro ADMIN),
     e o efeito seria a pessoa perder a tela no meio do clique. `getUser`, e não
-    `getSession`: numa escrita, o id vem do Auth, não do cookie.
+    `getSession`: numa escrita, o id vem do Auth, não do cookie. Se o Auth
+    falhar ou não retornar usuário, falhamos fechado antes de apagar o vínculo.
   */
-  const { data: auth } = await supabase.auth.getUser();
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  const actorUserId = auth.user?.id;
 
-  if (auth.user?.id === userId) {
+  if (authError !== null || actorUserId === undefined) {
+    return { ok: false, message: "Sessão expirada — atualize a página e tente de novo." };
+  }
+
+  if (actorUserId === userId) {
     return { ok: false, message: "Você não pode remover o próprio acesso. Peça a outro ADMIN." };
   }
 
@@ -185,26 +209,46 @@ export async function removeMember(organizationId: string, userId: string): Prom
     };
   }
 
-  const contas = await supabase.from("ml_accounts").select("id").eq("organization_id", organizationId);
+  const partialFailureMessage =
+    "A pessoa foi removida, mas as permissões por conta não foram apagadas. Elas não valem sem o vínculo.";
+  const accountIds: string[] = [];
 
-  if (contas.error === null && contas.data.length > 0) {
+  for (let offset = 0; ; offset += ACCOUNTS_PAGE_SIZE) {
+    const contas = await supabase
+      .from("ml_accounts")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .order("id", { ascending: true })
+      .range(offset, offset + ACCOUNTS_PAGE_SIZE - 1);
+
+    if (contas.error !== null) {
+      // O vínculo JÁ saiu, e sem ele nenhuma permissão vale. Dizer as duas coisas.
+      revalidatePath("/usuarios");
+
+      return { ok: false, message: partialFailureMessage };
+    }
+
+    for (const conta of contas.data) {
+      accountIds.push(conta.id);
+    }
+
+    if (contas.data.length < ACCOUNTS_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  for (let start = 0; start < accountIds.length; start += PERMISSION_DELETE_CHUNK) {
+    const chunk = accountIds.slice(start, start + PERMISSION_DELETE_CHUNK);
     const limpeza = await supabase
       .from("user_account_permissions")
       .delete()
       .eq("user_id", userId)
-      .in(
-        "ml_account_id",
-        contas.data.map((conta) => conta.id),
-      );
+      .in("ml_account_id", chunk);
 
     if (limpeza.error !== null) {
-      // O vínculo JÁ saiu, e sem ele nenhuma permissão vale. Dizer as duas coisas.
       revalidatePath("/usuarios");
 
-      return {
-        ok: false,
-        message: "A pessoa foi removida, mas as permissões por conta não foram apagadas. Elas não valem sem o vínculo.",
-      };
+      return { ok: false, message: partialFailureMessage };
     }
   }
 

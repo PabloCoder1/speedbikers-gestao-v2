@@ -179,4 +179,25 @@ describe("excessReversalShares — o excesso é das reversões mais recentes (D-
       [DEVOLUCAO_1, 1],
     ]);
   });
+
+  it("rejeita quantidade não finita/negativa ou data inválida em reversões para nunca contaminar o cálculo com NaN", () => {
+    expect(() =>
+      reversedQuantity(VENDA, [{ idempotencyKey: CANCELAMENTO, quantity: Number.NaN }]),
+    ).toThrow(RangeError);
+    expect(() =>
+      reversedQuantity(VENDA, [{ idempotencyKey: CANCELAMENTO, quantity: -1 }]),
+    ).toThrow(RangeError);
+    expect(() =>
+      remainingToReverse({ idempotencyKey: VENDA, qtyDelta: Number.NaN }, [], CANCELAMENTO),
+    ).toThrow(RangeError);
+    expect(() =>
+      excessReversalShares(
+        { idempotencyKey: VENDA, qtyDelta: -1 },
+        [
+          { idempotencyKey: CANCELAMENTO, quantity: 1, occurredAt: new Date("invalid") },
+          { idempotencyKey: DEVOLUCAO_1, quantity: 1, occurredAt: em("10:00") },
+        ],
+      ),
+    ).toThrow(RangeError);
+  });
 });

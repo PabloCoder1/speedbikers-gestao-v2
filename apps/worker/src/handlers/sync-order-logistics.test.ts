@@ -1302,4 +1302,53 @@ describe("sync.order-logistics — a política de erro da leitura do envio (revi
     expect(outcome).toEqual({ status: "done", processed: 1 });
     expect(resumo(lines)).toMatchObject({ falhas: 1, restantes: 1 });
   });
+
+  it("D-800: ignora source_id zero e normaliza zeros à esquerda para casar com orders.id", async () => {
+    const { db, movimentos, consultasDeOrders } = fakeDb({
+      ledger: [
+        { ...venda(1, "SKU-ZERO", 1, "2026-09-11T12:00:00.000Z"), source_id: "0", idempotency_key: "venda:0:1" },
+        { ...venda(9001, "SKU-PAD", 2, "2026-09-12T18:00:00.000Z"), source_id: "0009001" },
+      ],
+      orders: [{ id: 9001, shipping_id: 5001, logistic_type: null, logistic_captured_at: null }],
+    });
+    const { client, calls } = fakeClient({ "5001": "fulfillment" });
+
+    const { outcome } = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    expect(consultasDeOrders.flatMap((consulta) => consulta.ids)).toEqual([9001]);
+    expect(calls).toEqual(["/shipments/5001"]);
+    expect(movimentos).toEqual([
+      expect.objectContaining({
+        movement_type: "ESTORNO_FULL",
+        qty_delta: 2,
+        idempotency_key: "estorno:venda:9001:1",
+      }),
+    ]);
+  });
+
+  it("D-815: recusa conta ML pertencente a outra organização sem ler ledger nem chamar ML", async () => {
+    const { db, movimentos } = fakeDb({
+      ledger: [venda(9001, "SKU-1", 1, "2026-09-12T18:00:00.000Z")],
+      orders: [{ id: 9001, shipping_id: 5001, logistic_type: null, logistic_captured_at: null }],
+    });
+    const { client, calls } = fakeClient({ "5001": "fulfillment" });
+    const outroEnvelope = { ...ENVELOPE, organizationId: "22222222-0000-4000-8000-000000000002" };
+
+    const outcome = await createSyncOrderLogisticsHandler({
+      db,
+      mercadoLivre: client,
+      oauth: { clientId: "APP", clientSecret: "SECRET", redirectUri: "" },
+      encryptionKey: ENCRYPTION_KEY,
+      now: () => NOW,
+      sleep: () => Promise.resolve(),
+    })(outroEnvelope, {
+      logger: createLogger({}, { sink: () => undefined }),
+      payload: { mlAccountId: ML_ACCOUNT_ID },
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(calls).toEqual([]);
+    expect(movimentos).toHaveLength(0);
+  });
 });

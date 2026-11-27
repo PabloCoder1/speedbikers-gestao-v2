@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildNotificationHref,
+  buildNotificationUnreadKpiHref,
   countNotificationFilters,
   describeNotificationRecorte,
   notificationFamilyPattern,
@@ -131,6 +132,24 @@ describe("buildNotificationHref", () => {
     expect(buildNotificationHref(atual, { page: 4 })).toBe("/notificacoes?estado=nao-lidas&pagina=4");
     expect(buildNotificationHref(atual, { page: 1 })).toBe("/notificacoes?estado=nao-lidas");
     expect(buildNotificationHref(atual, {})).toBe("/notificacoes?estado=nao-lidas");
+  });
+});
+
+describe("buildNotificationUnreadKpiHref", () => {
+  it.each([
+    [null, "/notificacoes?estado=nao-lidas"],
+    ["critico", "/notificacoes?estado=nao-lidas&severidade=critico"],
+    ["importante", "/notificacoes?estado=nao-lidas&severidade=importante"],
+  ] as const)("o cartão %s ignora a loja, a família e a página atuais", (severity, href) => {
+    const current = resolveNotificationFilters({
+      loja: LOJA,
+      tipo: "stock",
+      severidade: "informativo",
+      pagina: "4",
+    });
+
+    expect(buildNotificationUnreadKpiHref(current, severity)).toBe(href);
+    expect(buildNotificationUnreadKpiHref({ ...current, loja: null, account: CONTA }, severity)).toBe(href);
   });
 });
 

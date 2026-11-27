@@ -35,7 +35,7 @@ type RpcResult = { data: unknown; error: null } | { data: null; error: { message
 
 function createFakeDb(
   seed: Record<string, FakeRow[]> = {},
-  rpcResult: (call: RpcCall) => RpcResult = () => ({ data: { marked: 0, cleared: 0 }, error: null }),
+  options: { failUpdateTable?: string; rpcResult?: (call: RpcCall) => RpcResult } = {},
 ): {
   db: ApplyDeps["db"];
   tables: Record<string, FakeRow[]>;
@@ -154,7 +154,13 @@ function createFakeDb(
 
                 return chain;
               },
-              then(resolve: (v: { error: null }) => void) {
+              then(resolve: (v: { error: { message: string } | null }) => void) {
+                if (options.failUpdateTable === table) {
+                  resolve({ error: { message: `erro ao atualizar ${table}` } });
+
+                  return;
+                }
+
                 for (const row of currentSelection()) Object.assign(row, values);
                 resolve({ error: null });
               },
@@ -181,7 +187,7 @@ function createFakeDb(
         return Promise.resolve({ error: null });
       },
       then(resolve: (v: { data: FakeRow[]; error: null }) => void) {
-        resolve({ data: project(currentSelection(), cols), error: null });
+        resolve({ data: project(currentSelection().slice(0, 1000), cols), error: null });
       },
     };
 
@@ -193,7 +199,7 @@ function createFakeDb(
 
     rpcCalls.push(call);
 
-    return Promise.resolve(rpcResult(call));
+    return Promise.resolve(options.rpcResult?.(call) ?? { data: { marked: 0, cleared: 0 }, error: null });
   }
 
   return {
@@ -308,10 +314,11 @@ describe("aplicação — produtos fora do catálogo (D-860)", () => {
         erp_import_batches: [batch()],
         erp_import_rows: [okRow(1, { sku: "PI150", title: "Painel" })],
       },
-      () => {
-        skusNaHora = fake.tables.skus?.length ?? 0;
-
-        return { data: { marked: 3, cleared: 0 }, error: null };
+      {
+        rpcResult: () => {
+          skusNaHora = fake.tables.skus?.length ?? 0;
+          return { data: { marked: 3, cleared: 0 }, error: null };
+        },
       },
     );
 
@@ -332,7 +339,7 @@ describe("aplicação — produtos fora do catálogo (D-860)", () => {
         erp_import_batches: [batch()],
         erp_import_rows: [okRow(1, { sku: "PI150", title: "Painel" })],
       },
-      () => ({ data: null, error: { message: "statement timeout" } }),
+      { rpcResult: () => ({ data: null, error: { message: "statement timeout" } }) },
     );
 
     const outcome = await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH, markAbsent: true }));
@@ -348,7 +355,7 @@ describe("aplicação — produtos fora do catálogo (D-860)", () => {
         erp_import_batches: [batch()],
         erp_import_rows: [okRow(1, { sku: "PI150", title: "Painel" })],
       },
-      () => ({ data: null, error: { message: "function does not exist" } }),
+      { rpcResult: () => ({ data: null, error: { message: "function does not exist" } }) },
     );
 
     const outcome = await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
@@ -709,6 +716,58 @@ describe("aplicação — vínculos", () => {
     });
   });
 
+  it("respeita supressão humana mesmo além de 1.000 remoções históricas (paginado)", async () => {
+    const extraEvents = Array.from({ length: 1005 }, (_, i) => ({
+      id: `evt-old-${String(i).padStart(4, "0")}`,
+      organization_id: ORG,
+      ml_account_id: "acc-1",
+      link_id: `link-old-${String(i)}`,
+      event_type: "REMOVED",
+      actor_source: "HUMAN",
+      ref_kind: "ITEM",
+      item_id: `MLB${String(9000000000 + i)}`,
+      variation_id: null,
+      user_product_id: null,
+      sku_id: "sku-pi150",
+      link_source: "IMPORT_UPSELLER",
+      reason: "antigo",
+    }));
+
+    const { db, tables } = createFakeDb({
+      erp_import_batches: [batch({ kind: "LINKS" })],
+      erp_import_rows: [okRow(1, LINK_PAYLOAD)],
+      skus: [{ id: "sku-pi150", organization_id: ORG, sku: "PI150", sku_key: "PI150", kind: "PRODUTO" }],
+      ml_accounts: [{ id: "acc-1", organization_id: ORG, slug: "speedbikers-loja-1", label: "Speedbikers (loja 1)", status: "CONNECTED" }],
+      sku_listing_link_events: [
+        ...extraEvents,
+        {
+          id: "evt-z-1006",
+          organization_id: ORG,
+          ml_account_id: "acc-1",
+          link_id: "link-antigo",
+          event_type: "REMOVED",
+          actor_source: "HUMAN",
+          ref_kind: "ITEM",
+          item_id: "MLB1722724235",
+          variation_id: "205704879161",
+          user_product_id: null,
+          sku_id: "sku-pi150",
+          link_source: "IMPORT_UPSELLER",
+          reason: "anuncio nao e nosso",
+        },
+      ],
+    });
+
+    await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(tables.sku_listing_links ?? []).toHaveLength(0);
+    expect(tables.link_candidates ?? []).toHaveLength(0);
+    expect(tables.erp_import_rows?.[0]).toMatchObject({
+      apply_status: "UNRESOLVED",
+      apply_reason: "vínculo removido por decisão humana",
+    });
+  });
+
   it("a reescrita in-place do importador passa a deixar rastro (RETARGETED)", async () => {
     const { db, tables } = createFakeDb({
       erp_import_batches: [batch({ kind: "LINKS" })],
@@ -771,5 +830,79 @@ describe("guardas do lote", () => {
     const outcome = await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
+  });
+
+  it("D-746: falha ao gravar apply_status nas linhas retorna retryable sem marcar lote como APPLIED", async () => {
+    const { db, tables } = createFakeDb(
+      {
+        erp_import_batches: [batch({ kind: "PRODUCTS", status: "APPLYING" })],
+        erp_import_rows: [
+          okRow(1, {
+            sku: "PI150",
+            skuKey: "PI150",
+            title: "Painel",
+            kind: "SIMPLE",
+            brand: null,
+            supplierBrand: null,
+            ean: null,
+            ncm: null,
+            originCode: null,
+            categoryRaw: null,
+            purchaseCost: null,
+            retailPrice: null,
+            wholesalePrice: null,
+            minWholesaleQty: null,
+            weightGrams: null,
+            lengthCm: null,
+            widthCm: null,
+            heightCm: null,
+            isActive: true,
+          }),
+        ],
+      },
+      { failUpdateTable: "erp_import_rows" },
+    );
+
+    const outcome = await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "erro ao atualizar erp_import_rows" });
+    expect(tables.erp_import_batches?.[0]?.status).toBe("APPLYING");
+  });
+
+  it("D-746: falha ao marcar lote como APPLIED retorna retryable em vez de done", async () => {
+    const { db, tables } = createFakeDb(
+      {
+        erp_import_batches: [batch({ kind: "PRODUCTS", status: "APPLYING" })],
+        erp_import_rows: [
+          okRow(1, {
+            sku: "PI150",
+            skuKey: "PI150",
+            title: "Painel",
+            kind: "SIMPLE",
+            brand: null,
+            supplierBrand: null,
+            ean: null,
+            ncm: null,
+            originCode: null,
+            categoryRaw: null,
+            purchaseCost: null,
+            retailPrice: null,
+            wholesalePrice: null,
+            minWholesaleQty: null,
+            weightGrams: null,
+            lengthCm: null,
+            widthCm: null,
+            heightCm: null,
+            isActive: true,
+          }),
+        ],
+      },
+      { failUpdateTable: "erp_import_batches" },
+    );
+
+    const outcome = await createErpImportApplyHandler({ db })(ENVELOPE, ctx({ batchId: BATCH }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "erro ao atualizar erp_import_batches" });
+    expect(tables.erp_import_batches?.[0]?.status).toBe("APPLYING");
   });
 });

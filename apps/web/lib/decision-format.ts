@@ -32,9 +32,11 @@ export function formatDecisionSnapshot(snapshot: unknown): string {
   const avgPrice = registro.avg_price_7d;
   const stockLocal = registro.stock_local;
 
-  const priceText = typeof avgPrice === "number" ? formatCurrency(avgPrice) : "—";
+  const unitsText = typeof unitsSold === "number" && Number.isFinite(unitsSold) ? String(unitsSold) : "—";
+  const priceText = typeof avgPrice === "number" && Number.isFinite(avgPrice) ? formatCurrency(avgPrice) : "—";
+  const stockText = typeof stockLocal === "number" && Number.isFinite(stockLocal) ? String(stockLocal) : "—";
 
-  return `Vendido (7d): ${String(unitsSold)} · Preço médio: ${priceText} · Estoque local: ${String(stockLocal)}`;
+  return `Vendido (7d): ${unitsText} · Preço médio: ${priceText} · Estoque local: ${stockText}`;
 }
 
 /** As três janelas que `diagnostics.measure-decision-outcomes` mede (D-065). */

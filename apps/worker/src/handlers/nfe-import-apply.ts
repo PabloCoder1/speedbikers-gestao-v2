@@ -3,6 +3,7 @@ import { computeNfeApplicationMovements, recusaDoDocumentoGravado } from "@sb/do
 import { z } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
+import { readAllPages } from "../read-all-pages.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { recordStockMovements } from "./stock-movements.js";
 
@@ -16,9 +17,8 @@ import { recordStockMovements } from "./stock-movements.js";
  *
  * `confirmNfeApply` (`apps/api/src/nfe-import.ts`) já exigiu 100% dos itens
  * vinculados antes de mover o documento para `APPLYING` — a checagem é
- * repetida aqui (`resolved_items === total_items`) pelo mesmo motivo de
- * dupla checagem já usado nas RPCs `security definer`: cada camada se
- * defende sozinha, não confia cegamente na anterior.
+ * repetida aqui nos contadores e nos itens lidos. Uma leitura divergente
+ * não pode gerar só parte dos movimentos de uma nota.
  *
  * Idempotente por construção: reentrega encontra o documento `APPLIED` e sai
  * cedo, sem gerar novo movimento (regra 1 de `docs/TESTING.md`) — e mesmo
@@ -34,7 +34,7 @@ export interface NfeApplyDeps {
 }
 
 export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -57,6 +57,10 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
 
     if (document.data === null) {
       return { status: "failed", retryable: false, reason: `documento ${documentId} não existe` };
+    }
+
+    if (document.data.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "documento não pertence à organização do job" };
     }
 
     if (document.data.status === "APPLIED") {
@@ -97,7 +101,7 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
     const total = data.total_items ?? 0;
     const resolved = data.resolved_items ?? 0;
 
-    if (total === 0 || resolved < total) {
+    if (total === 0 || resolved !== total) {
       return {
         status: "failed",
         retryable: false,
@@ -105,14 +109,34 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
       };
     }
 
-    const items = await deps.db
-      .from("document_items")
-      .select("position, sku_id, quantity, cfop")
-      .eq("document_id", documentId)
-      .order("position");
+    let items: { position: number; sku_id: string | null; quantity: number; cfop: string | null }[];
 
-    if (items.error !== null) {
-      return { status: "failed", retryable: true, reason: items.error.message };
+    try {
+      items = await readAllPages((from, to) =>
+        deps.db
+          .from("document_items")
+          .select("position, sku_id, quantity, cfop")
+          .eq("document_id", documentId)
+          .order("position")
+          .range(from, to),
+      );
+    } catch (error) {
+      return {
+        status: "failed",
+        retryable: true,
+        reason: error instanceof Error ? error.message : "falha ao ler itens do documento",
+      };
+    }
+
+    if (items.length !== total || items.some((item) => item.sku_id === null)) {
+      // Uma nova entrega relê o documento e os itens antes de tocar no ledger.
+      return {
+        status: "failed",
+        retryable: true,
+        reason: items.length !== total
+          ? `itens da nota divergem da conferência: esperados ${String(total)}, lidos ${String(items.length)}`
+          : "item da nota sem vínculo com SKU após a conferência",
+      };
     }
 
     /*
@@ -124,14 +148,20 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
       documentType: data.document_type,
       operationType: data.operation_type,
       intermediaryCnpj: data.intermediary_cnpj,
-      cfops: items.data.map((item) => item.cfop),
+      cfops: items.map((item) => item.cfop),
     });
 
     if (recusa !== null) {
-      await deps.db
+      const failed = await deps.db
         .from("documents")
         .update({ status: "FAILED", last_error: recusa.motivo, last_error_code: recusa.codigo })
         .eq("id", documentId);
+
+      // D-787: falha transitória ao marcar o documento como FAILED não pode
+      // retornar `retryable: false`, senão o documento ficaria preso em APPLYING.
+      if (failed.error !== null) {
+        return { status: "failed", retryable: true, reason: failed.error.message };
+      }
 
       return { status: "failed", retryable: false, reason: recusa.motivo };
     }
@@ -140,7 +170,7 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
       id: documentId,
       operationType: data.operation_type as "ENTRADA" | "SAIDA",
       occurredAt: ocorridoEm,
-      items: items.data.map((item) => ({ position: item.position, skuId: item.sku_id, quantity: item.quantity })),
+      items: items.map((item) => ({ position: item.position, skuId: item.sku_id, quantity: item.quantity })),
     });
 
     await recordStockMovements(
@@ -151,10 +181,14 @@ export function createNfeImportApplyHandler(deps: NfeApplyDeps): JobHandler {
       { type: "DOCUMENT", id: documentId },
     );
 
-    await deps.db
+    const applied = await deps.db
       .from("documents")
       .update({ status: "APPLIED", applied_at: (deps.now?.() ?? new Date()).toISOString() })
       .eq("id", documentId);
+
+    if (applied.error !== null) {
+      return { status: "failed", retryable: true, reason: applied.error.message };
+    }
 
     context.logger.info("nfe_apply_finished", {
       document_id: documentId,

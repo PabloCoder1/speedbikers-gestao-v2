@@ -1,4 +1,4 @@
-import { shiftBusinessDate } from "@sb/domain";
+import { isValidBusinessDate, shiftBusinessDate } from "@sb/domain";
 
 /**
  * O VOCABULÁRIO DE PERÍODO DO APP, num lugar só (D-311).
@@ -53,7 +53,7 @@ const PERIOD_VALUES = new Set<number>(PERIOD_PRESETS);
  * contém.
  */
 export function resolvePeriodDays(raw: unknown, fallback: PeriodPreset = DEFAULT_PERIOD_DAYS): number {
-  const dias = typeof raw === "string" ? Number.parseInt(raw, 10) : Number.NaN;
+  const dias = typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
 
   return PERIOD_VALUES.has(dias) ? dias : fallback;
 }
@@ -62,8 +62,6 @@ export interface PeriodRange {
   readonly from: string;
   readonly to: string;
 }
-
-const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * A JANELA PEDIDA PELA URL, a mesma em `/vendas` e `/faturamento` (D-356).
@@ -84,7 +82,7 @@ export function resolvePeriodRange(
   const rawTo = typeof query.to === "string" ? query.to : null;
 
   if (rawFrom !== null && rawTo !== null) {
-    if (DATA_ISO.test(rawFrom) && DATA_ISO.test(rawTo) && rawFrom <= rawTo) {
+    if (isValidBusinessDate(rawFrom) && isValidBusinessDate(rawTo) && rawFrom <= rawTo) {
       return { range: { from: rawFrom, to: rawTo }, days: null, invalidCustom: false };
     }
 

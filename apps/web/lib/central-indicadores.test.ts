@@ -5,6 +5,7 @@ import {
   coberturaDoAds,
   decomporMargem,
   entradaDaCentral,
+  formatRoas,
   lucroDoMercadoLivre,
   montarIndicadores,
   montarResumo,
@@ -482,5 +483,28 @@ describe("lucroDoMercadoLivre (D-498): o lado do ML na comparação com a Shopee
 
     expect(lucroDoMercadoLivre(f, semProductAds, periodo)).toBe(1_900);
     expect(lucroDoMercadoLivre(f, semProductAds, periodo)).toBe(daCentral(f, semProductAds));
+  });
+
+  it("valores não finitos não contaminam contribuição, formatRoas ou decomporMargem, e preset herdado não vaza do protótipo", () => {
+    expect(formatRoas(Number.NaN)).toBe("—");
+    expect(formatRoas(Number.POSITIVE_INFINITY)).toBe("—");
+    expect(
+      decomporMargem(resumo({ receita_coberta: Number.POSITIVE_INFINITY, margem_venda: 1 }), resumo()),
+    ).toBeNull();
+
+    const lista = montarIndicadores(
+      entrada({
+        atual: resumo({ receita_coberta: Number.NaN }),
+        impostoAtual: imposto(),
+      }),
+    );
+
+    expect(indicador(lista, "lucro").valor).toBeNull();
+    expect(indicador(lista, "contribuicao").valor).toBeNull();
+
+    const e = entrada();
+    const resumoProto = montarResumo(montarIndicadores(e), e, "toString");
+
+    expect(resumoProto.frases[0]).toMatch(/^No período,/);
   });
 });

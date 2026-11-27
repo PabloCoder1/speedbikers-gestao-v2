@@ -134,7 +134,7 @@ function lerConta(v: unknown): ContaNaComparacao | null {
   if (!ehObj(v)) return null;
   if (typeof v.ml_account_id !== "string" || typeof v.account_label !== "string") return null;
   if (!textoOuNulo(v.account_slug) || !numOuNulo(v.pct_vinculado)) return null;
-  if (NUMEROS_DA_CONTA.some((campo) => !ehNum(v[campo]))) return null;
+  if (NUMEROS_DA_CONTA.some((campo) => !Object.hasOwn(v, campo) || !ehNum(v[campo]))) return null;
 
   const numero = (campo: (typeof NUMEROS_DA_CONTA)[number]): number => v[campo] as number;
 
@@ -159,7 +159,7 @@ export function lerVisaoVinculacoes(bruto: unknown): VisaoVinculacoes | null {
 
   const cru = bruto.contagens;
 
-  if (CONTAGENS.some((campo) => !ehNum(cru[campo]))) return null;
+  if (CONTAGENS.some((campo) => !Object.hasOwn(cru, campo) || !ehNum(cru[campo]))) return null;
 
   const contagem = (campo: (typeof CONTAGENS)[number]): number => cru[campo] as number;
 
@@ -223,9 +223,11 @@ export const TONS_DE_CONTA = 6;
 export function tonsDasContas(idsNaOrdemDaTela: readonly string[]): ReadonlyMap<string, number> {
   const tons = new Map<string, number>();
 
-  idsNaOrdemDaTela.forEach((id, posicao) => {
-    tons.set(id, posicao % TONS_DE_CONTA);
-  });
+  for (const id of idsNaOrdemDaTela) {
+    if (!tons.has(id)) {
+      tons.set(id, tons.size % TONS_DE_CONTA);
+    }
+  }
 
   return tons;
 }

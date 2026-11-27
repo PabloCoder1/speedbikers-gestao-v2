@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useId, type ReactNode } from "react";
+import { useActionState, useId, useState, type ChangeEvent, type ReactNode, type SyntheticEvent } from "react";
 
 import { Ajuda } from "../../../../components/ajuda";
 
@@ -14,6 +14,45 @@ import {
 } from "./actions";
 
 const INICIAL: ResultadoDoCadastro = { ok: false, mensagem: null, erros: {} };
+
+/** Preserva o preenchimento na recusa e na falha de transporte, sem repetir a ação. */
+export function useCadastro(
+  acao: (anterior: ResultadoDoCadastro, dados: FormData) => Promise<ResultadoDoCadastro>,
+  iniciais: Readonly<Record<string, string>>,
+) {
+  // Após salvar, as props revalidadas voltam a ser a fonte dos campos.
+  const [editados, setEditados] = useState<Readonly<Record<string, string>>>({});
+  const [resultado, enviar, salvando] = useActionState(async (anterior: ResultadoDoCadastro, dados: FormData) => {
+    let proximo: ResultadoDoCadastro;
+    try {
+      proximo = await acao(anterior, dados);
+    } catch {
+      return {
+        ...INICIAL,
+        mensagem: "Não foi possível confirmar o salvamento. Confira os valores salvos antes de tentar novamente.",
+      };
+    }
+    if (proximo.ok) setEditados({});
+    return proximo;
+  }, INICIAL);
+
+  function entrada(nome: string) {
+    return {
+      value: editados[nome] ?? iniciais[nome] ?? "",
+      onChange: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const valor = event.currentTarget.value;
+        setEditados((anteriores) => ({ ...anteriores, [nome]: valor }));
+      },
+    };
+  }
+
+  // A limpeza é do estado acima; o reset nativo trocaria o select mesmo na falha.
+  function aoResetar(event: SyntheticEvent<HTMLFormElement>): void {
+    event.preventDefault();
+  }
+
+  return { resultado, enviar, salvando, entrada, aoResetar };
+}
 
 /**
  * Um campo do cadastro: rótulo, entrada, dica e erro SEPARADOS — a dica chega
@@ -72,13 +111,13 @@ export function Mensagem({ resultado }: { resultado: ResultadoDoCadastro }): Rea
 }
 
 export function FormularioMeta({ mesPadrao }: { mesPadrao: string }): ReactNode {
-  const [resultado, enviar, salvando] = useActionState(salvarMeta, INICIAL);
+  const { resultado, enviar, salvando, entrada, aoResetar } = useCadastro(salvarMeta, { month: mesPadrao, revenue_goal: "", note: "" });
 
   return (
-    <form action={enviar} className="sb-cadastro-form" aria-label="Cadastrar meta do mês">
+    <form action={enviar} onReset={aoResetar} className="sb-cadastro-form" aria-label="Cadastrar meta do mês">
       <p className="sb-form-legenda">Todos os campos são obrigatórios, menos os marcados como opcionais.</p>
       <Campo nome="month" rotulo="Mês" dica="A meta vale para o mês inteiro." erro={resultado.erros.month}>
-        {(props) => <input {...props} className="sb-input" type="month" name="month" defaultValue={mesPadrao} required />}
+        {(props) => <input {...props} {...entrada("month")} className="sb-input" type="month" name="month" required />}
       </Campo>
 
       <Campo
@@ -103,7 +142,7 @@ export function FormularioMeta({ mesPadrao }: { mesPadrao: string }): ReactNode 
           ),
         }}
       >
-        {(props) => <input {...props} className="sb-input" name="revenue_goal" inputMode="decimal" required />}
+        {(props) => <input {...props} {...entrada("revenue_goal")} className="sb-input" name="revenue_goal" inputMode="decimal" required />}
       </Campo>
 
       <Campo
@@ -113,7 +152,7 @@ export function FormularioMeta({ mesPadrao }: { mesPadrao: string }): ReactNode 
         erro={resultado.erros.note}
       >
         {(props) => (
-          <input {...props} className="sb-input" name="note" maxLength={300} placeholder="Ex.: meta com a campanha de aniversário" />
+          <input {...props} {...entrada("note")} className="sb-input" name="note" maxLength={300} placeholder="Ex.: meta com a campanha de aniversário" />
         )}
       </Campo>
 
@@ -129,10 +168,10 @@ export function FormularioMeta({ mesPadrao }: { mesPadrao: string }): ReactNode 
 
 /** A meta de um marketplace (D-473, C-66), ao lado da geral. */
 export function FormularioMetaDoMarketplace({ mesPadrao }: { mesPadrao: string }): ReactNode {
-  const [resultado, enviar, salvando] = useActionState(salvarMetaDoMarketplace, INICIAL);
+  const { resultado, enviar, salvando, entrada, aoResetar } = useCadastro(salvarMetaDoMarketplace, { marketplace: "ML", month: mesPadrao, revenue_goal: "", note: "" });
 
   return (
-    <form action={enviar} className="sb-cadastro-form" aria-label="Cadastrar meta por marketplace">
+    <form action={enviar} onReset={aoResetar} className="sb-cadastro-form" aria-label="Cadastrar meta por marketplace">
       <p className="sb-form-legenda">Todos os campos são obrigatórios, menos os marcados como opcionais.</p>
       <Campo
         nome="marketplace"
@@ -141,7 +180,7 @@ export function FormularioMetaDoMarketplace({ mesPadrao }: { mesPadrao: string }
         erro={resultado.erros.marketplace}
       >
         {(props) => (
-          <select {...props} className="sb-input" name="marketplace" defaultValue="ML" required>
+          <select {...props} {...entrada("marketplace")} className="sb-input" name="marketplace" required>
             <option value="ML">Mercado Livre</option>
             <option value="SHOPEE">Shopee</option>
           </select>
@@ -149,7 +188,7 @@ export function FormularioMetaDoMarketplace({ mesPadrao }: { mesPadrao: string }
       </Campo>
 
       <Campo nome="month" rotulo="Mês" dica="A meta vale para o mês inteiro." erro={resultado.erros.month}>
-        {(props) => <input {...props} className="sb-input" type="month" name="month" defaultValue={mesPadrao} required />}
+        {(props) => <input {...props} {...entrada("month")} className="sb-input" type="month" name="month" required />}
       </Campo>
 
       <Campo
@@ -168,7 +207,7 @@ export function FormularioMetaDoMarketplace({ mesPadrao }: { mesPadrao: string }
           ),
         }}
       >
-        {(props) => <input {...props} className="sb-input" name="revenue_goal" inputMode="decimal" required />}
+        {(props) => <input {...props} {...entrada("revenue_goal")} className="sb-input" name="revenue_goal" inputMode="decimal" required />}
       </Campo>
 
       <Campo
@@ -178,7 +217,7 @@ export function FormularioMetaDoMarketplace({ mesPadrao }: { mesPadrao: string }
         erro={resultado.erros.note}
       >
         {(props) => (
-          <input {...props} className="sb-input" name="note" maxLength={300} placeholder="Ex.: meta com a campanha de aniversário" />
+          <input {...props} {...entrada("note")} className="sb-input" name="note" maxLength={300} placeholder="Ex.: meta com a campanha de aniversário" />
         )}
       </Campo>
 
@@ -193,10 +232,10 @@ export function FormularioMetaDoMarketplace({ mesPadrao }: { mesPadrao: string }
 }
 
 export function FormularioAliquota({ dataPadrao }: { dataPadrao: string }): ReactNode {
-  const [resultado, enviar, salvando] = useActionState(salvarAliquota, INICIAL);
+  const { resultado, enviar, salvando, entrada, aoResetar } = useCadastro(salvarAliquota, { valid_from: dataPadrao, rate: "", note: "" });
 
   return (
-    <form action={enviar} className="sb-cadastro-form" aria-label="Cadastrar alíquota de imposto">
+    <form action={enviar} onReset={aoResetar} className="sb-cadastro-form" aria-label="Cadastrar alíquota de imposto">
       <p className="sb-form-legenda">Todos os campos são obrigatórios, menos os marcados como opcionais.</p>
       <Campo
         nome="valid_from"
@@ -221,7 +260,7 @@ export function FormularioAliquota({ dataPadrao }: { dataPadrao: string }): Reac
         }}
       >
         {(props) => (
-          <input {...props} className="sb-input" type="date" name="valid_from" defaultValue={dataPadrao} required />
+          <input {...props} {...entrada("valid_from")} className="sb-input" type="date" name="valid_from" required />
         )}
       </Campo>
 
@@ -247,7 +286,7 @@ export function FormularioAliquota({ dataPadrao }: { dataPadrao: string }): Reac
           ),
         }}
       >
-        {(props) => <input {...props} className="sb-input" name="rate" inputMode="decimal" required />}
+        {(props) => <input {...props} {...entrada("rate")} className="sb-input" name="rate" inputMode="decimal" required />}
       </Campo>
 
       <Campo
@@ -257,7 +296,7 @@ export function FormularioAliquota({ dataPadrao }: { dataPadrao: string }): Reac
         erro={resultado.erros.note}
       >
         {(props) => (
-          <input {...props} className="sb-input" name="note" maxLength={300} placeholder="Ex.: Simples Nacional, anexo I" />
+          <input {...props} {...entrada("note")} className="sb-input" name="note" maxLength={300} placeholder="Ex.: Simples Nacional, anexo I" />
         )}
       </Campo>
 

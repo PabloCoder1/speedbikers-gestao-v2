@@ -98,6 +98,53 @@ describe("cliente", () => {
 
     await expect(getAccessToken(outro.client, { code: "c", shopId: 1 })).rejects.toThrow();
   });
+
+  it("D-773: HTTP 200 com HTML ou corpo não-JSON vira ShopeeApiError repetível, sem vazar credenciais", async () => {
+    const client = createShopeeClient({
+      environment: "sandbox",
+      partnerId: 1248019,
+      partnerKey: PARTNER_KEY,
+      fetchImpl: vi.fn(() => Promise.resolve(new Response("<html><body>502 proxy</body></html>", { status: 200 }))),
+      now: () => NOW,
+    });
+
+    const falha = await getShopInfo(client, { accessToken: "tok-secreto", shopId: 54804 }).catch((e: unknown) => e);
+
+    expect(falha).toBeInstanceOf(ShopeeApiError);
+    expect(falha).toMatchObject({ status: 200, code: null, errorClass: "retryable" });
+    expect((falha as Error).message).not.toContain("tok-secreto");
+    expect((falha as Error).message).not.toContain("sign");
+  });
+
+  it("D-773: parâmetros em query nunca sobrescrevem partner_id, timestamp, access_token, shop_id ou sign", async () => {
+    const { client, chamadas } = clienteCom(200, { error: "", ok: true });
+
+    await client.request({
+      method: "GET",
+      path: "/api/v2/shop/get_shop_info",
+      shop: { accessToken: "tok-real", shopId: 54804 },
+      query: {
+        partner_id: "999999",
+        timestamp: "1",
+        access_token: "forjado",
+        shop_id: "1",
+        sign: "assinatura-forjada",
+        extra: "ok",
+      },
+      schema: z.object({ ok: z.boolean() }),
+    });
+
+    const params = Object.fromEntries(chamadas[0]?.url.searchParams.entries() ?? []);
+
+    expect(params).toEqual({
+      extra: "ok",
+      partner_id: "1248019",
+      timestamp: String(TIMESTAMP),
+      access_token: "tok-real",
+      shop_id: "54804",
+      sign: sign(PARTNER_KEY, `1248019/api/v2/shop/get_shop_info${String(TIMESTAMP)}tok-real54804`),
+    });
+  });
 });
 
 describe("autorização (open.shopee.com/developer-guide/20)", () => {
@@ -159,6 +206,18 @@ describe("autorização (open.shopee.com/developer-guide/20)", () => {
     expect(corpoDe(chamadas[0]?.init)).toEqual({ refresh_token: "r1", partner_id: 1248019, shop_id: 54804 });
     expect(token.refresh_token).toBe("r2");
   });
+
+  it("D-796: recusa expire_in absurdo que estouraria Date no cálculo de expiração", async () => {
+    const { client } = clienteCom(200, {
+      error: "",
+      request_id: "r3",
+      access_token: "a2",
+      refresh_token: "r2",
+      expire_in: 9_000_000_000_000,
+    });
+
+    await expect(getAccessToken(client, { code: "abc", shopId: 54804 })).rejects.toThrow();
+  });
 });
 
 describe("datas da Shopee", () => {
@@ -166,6 +225,12 @@ describe("datas da Shopee", () => {
     expect(shopeeEpochToIso(1642069441)).toBe("2022-01-13T10:24:01.000Z");
     expect(shopeeEpochToIso(0)).toBeNull();
     expect(shopeeEpochToIso(null)).toBeNull();
+  });
+
+  it("D-789: epoch não finito ou fora da faixa de Date devolve nulo sem lançar RangeError", () => {
+    expect(shopeeEpochToIso(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(shopeeEpochToIso(Number.NaN)).toBeNull();
+    expect(shopeeEpochToIso(1e20)).toBeNull();
   });
 });
 

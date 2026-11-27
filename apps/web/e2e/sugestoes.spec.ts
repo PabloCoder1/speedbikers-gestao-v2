@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 import { E2E_SUGESTOES } from "./constants.js";
-import { login } from "./helpers.js";
+import { derrubarPrimeiraAcao, login } from "./helpers.js";
+import { clienteDeServico } from "./loja-shopee-live.js";
+import { readSeedOutput } from "./seed-output.js";
 
 /**
  * Central de Sugestões (`/sugestoes`) pelo frame `CentralScreen` na variação de
@@ -21,6 +23,43 @@ import { login } from "./helpers.js";
  *  4. **a janela declarada**, que a tela não tinha: ela lia SEM LIMITE e
  *     imprimia `rows.length` como total (a forma do defeito de D-263).
  */
+
+test("/sugestoes: falha de conexão conserva o texto e permite nova tentativa", async ({ page }) => {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321");
+  if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const texto = "E2E: conservar esta sugestão após a falha de conexão.";
+  const lista = () => db.from("feature_suggestions").select("original_text,status")
+    .eq("organization_id", seed.organizationId).eq("created_by", seed.userId).eq("original_text", texto);
+
+  try {
+    await login(page, "/sugestoes");
+    const campo = page.getByRole("textbox", { name: "Sugerir uma melhoria" });
+    await campo.fill(texto);
+    const enviar = page.getByRole("button", { name: "Enviar sugestão", exact: true });
+    const caiu = await derrubarPrimeiraAcao(page);
+    await enviar.click();
+    await expect(page.getByRole("alert").filter({ hasText: "Não foi possível confirmar o envio" })).toBeVisible();
+    await expect(enviar).toBeEnabled();
+    await expect(campo).toHaveValue(texto);
+    expect(caiu()).toBe(true);
+    const antes = await lista();
+    expect(antes.error).toBeNull();
+    expect(antes.data).toEqual([]);
+
+    await enviar.click();
+    await expect(page.getByText("Enviada.", { exact: true })).toBeVisible();
+    await expect(campo).toHaveValue("");
+    const depois = await lista();
+    expect(depois.error).toBeNull();
+    expect(depois.data).toEqual([{ original_text: texto, status: "nova" }]);
+  } finally {
+    const limpeza = await db.from("feature_suggestions").delete().eq("organization_id", seed.organizationId)
+      .eq("created_by", seed.userId).eq("original_text", texto);
+    expect.soft(limpeza.error).toBeNull();
+  }
+});
 
 test("/sugestoes: o detalhe abre na mais recente e diz que ela não foi estruturada", async ({ page }) => {
   await login(page, "/sugestoes");
@@ -99,4 +138,142 @@ test("/sugestoes: enviar e alterar o status persiste após recarregar", async ({
   await page.reload();
   await expect(detalhe).toContainText(texto);
   await expect(status).toHaveValue("em_analise");
+});
+
+async function reservaDeAdmin(db: ReturnType<typeof clienteDeServico>, organizationId: string): Promise<string> {
+  const criado = await db.auth.admin.createUser({
+    email: `e2e-reserva-admin-${crypto.randomUUID()}@speedbikers.test`,
+    password: `Reserva-${crypto.randomUUID()}`,
+    email_confirm: true,
+  });
+  if (criado.error !== null) throw new Error(criado.error.message);
+  const id = criado.data.user.id;
+  const membro = await db.from("organization_members").insert({ organization_id: organizationId, user_id: id, role: "ADMIN" });
+  if (membro.error !== null) {
+    await db.auth.admin.deleteUser(id);
+    throw new Error(membro.error.message);
+  }
+  return id;
+}
+
+test("/sugestoes: falha de conexão ao alterar status libera seletor e preserva valor anterior", async ({ page }) => {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const texto = `E2E: transporte de status ${crypto.randomUUID()}`;
+  const criada = await db
+    .from("feature_suggestions")
+    .insert({ organization_id: seed.organizationId, created_by: seed.userId, original_text: texto, status: "nova" })
+    .select("id")
+    .single();
+  if (criada.error !== null) throw new Error(criada.error.message);
+  const sugestaoId = criada.data.id;
+
+  try {
+    await login(page, `/sugestoes?sugestao=${sugestaoId}`);
+    const detalhe = page.getByRole("region", { name: "Detalhe da sugestão" });
+    const seletor = detalhe.getByLabel("Status da sugestão");
+    await expect(seletor).toHaveValue("nova");
+
+    const caiu = await derrubarPrimeiraAcao(page);
+    await seletor.selectOption("em_analise");
+
+    await expect(detalhe.getByRole("alert").filter({ hasText: "Não foi possível confirmar a alteração de status" })).toBeVisible();
+    expect(caiu()).toBe(true);
+    await expect(seletor).toBeEnabled();
+    await expect(seletor).toHaveValue("nova");
+
+    const bancoAntes = await db.from("feature_suggestions").select("status").eq("id", sugestaoId).single();
+    expect(bancoAntes.error).toBeNull();
+    expect(bancoAntes.data?.status).toBe("nova");
+
+    await seletor.selectOption("em_analise");
+    await expect(seletor).toHaveValue("em_analise");
+    const bancoDepois = await db.from("feature_suggestions").select("status").eq("id", sugestaoId).single();
+    expect(bancoDepois.error).toBeNull();
+    expect(bancoDepois.data?.status).toBe("em_analise");
+  } finally {
+    const limpeza = await db.from("feature_suggestions").delete().eq("id", sugestaoId);
+    expect.soft(limpeza.error).toBeNull();
+  }
+});
+
+test("/sugestoes: perda de permissão antes de alterar status informa recusa sem confirmar em falso", async ({ page }) => {
+  const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+  if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("Este teste exige Supabase local.");
+  const db = clienteDeServico();
+  const seed = await readSeedOutput();
+  const membroAntes = await db.from("organization_members").select("role").eq("organization_id", seed.organizationId).eq("user_id", seed.userId).single();
+  if (membroAntes.error !== null) throw new Error(membroAntes.error.message);
+  const papelOriginal = membroAntes.data.role;
+  const texto = `E2E: RLS de status ${crypto.randomUUID()}`;
+  const criada = await db
+    .from("feature_suggestions")
+    .insert({ organization_id: seed.organizationId, created_by: seed.userId, original_text: texto, status: "nova" })
+    .select("id")
+    .single();
+  if (criada.error !== null) throw new Error(criada.error.message);
+  const sugestaoId = criada.data.id;
+  let reserva: string | null = null;
+
+  async function restaurarPapel(): Promise<void> {
+    const volta = await db
+      .from("organization_members")
+      .update({ role: papelOriginal })
+      .eq("organization_id", seed.organizationId)
+      .eq("user_id", seed.userId)
+      .select("role")
+      .single();
+    expect.soft(volta.error).toBeNull();
+    expect.soft(volta.data?.role).toBe(papelOriginal);
+  }
+
+  try {
+    reserva = await reservaDeAdmin(db, seed.organizationId);
+    await login(page, `/sugestoes?sugestao=${sugestaoId}`);
+
+    const detalhe = page.getByRole("region", { name: "Detalhe da sugestão" });
+    const seletor = detalhe.getByLabel("Status da sugestão");
+    await expect(seletor).toHaveValue("nova");
+
+    const rebaixado = await db
+      .from("organization_members")
+      .update({ role: "OPERADOR" })
+      .eq("organization_id", seed.organizationId)
+      .eq("user_id", seed.userId)
+      .select("role")
+      .single();
+    expect(rebaixado.error).toBeNull();
+    expect(rebaixado.data?.role).toBe("OPERADOR");
+
+    const resposta = page.waitForResponse((r) => r.request().method() === "POST" && r.request().headers()["next-action"] !== undefined);
+    await seletor.selectOption("aprovada");
+    expect((await resposta).status()).toBe(200);
+
+    await expect(detalhe.getByRole("alert").filter({ hasText: "Atualize a página para conferir" })).toBeVisible();
+    await expect(seletor).toBeEnabled();
+    await expect(seletor).toHaveValue("nova");
+
+    const banco = await db.from("feature_suggestions").select("status").eq("id", sugestaoId).single();
+    expect(banco.error).toBeNull();
+    expect(banco.data?.status).toBe("nova");
+
+    await restaurarPapel();
+    await seletor.selectOption("aprovada");
+    await expect(seletor).toHaveValue("aprovada");
+    const bancoDepois = await db.from("feature_suggestions").select("status").eq("id", sugestaoId).single();
+    expect(bancoDepois.error).toBeNull();
+    expect(bancoDepois.data?.status).toBe("aprovada");
+  } finally {
+    await restaurarPapel();
+    const limpeza = await db.from("feature_suggestions").delete().eq("id", sugestaoId);
+    expect.soft(limpeza.error).toBeNull();
+    if (reserva !== null) {
+      const m = await db.from("organization_members").delete().eq("organization_id", seed.organizationId).eq("user_id", reserva);
+      expect.soft(m.error).toBeNull();
+      const u = await db.auth.admin.deleteUser(reserva);
+      expect.soft(u.error).toBeNull();
+    }
+  }
 });

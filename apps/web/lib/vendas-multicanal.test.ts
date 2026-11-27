@@ -15,6 +15,7 @@ import {
   resolverEscopoDaTelaDeVendas,
   resolverEscopoVendas,
   resolverMetricaMulticanal,
+  valorOuTraco,
   type ContaDoSeletor,
   type DiaDeVendas,
   type LinhaDeVendas,
@@ -283,5 +284,23 @@ describe("a marca no recorte (D-622, C-72)", () => {
     expect(compras?.ressalva).toBe(NAO_SE_APLICA_SOB_MARCA);
     expect(ticket?.ressalva).toBe(NAO_SE_APLICA_SOB_MARCA);
     expect(celulas[0]?.ressalva).toBeUndefined();
+  });
+
+  it("valores não finitos viram '—'/fora da linha e datas inválidas não quebram antesDoHistoricoShopee", () => {
+    expect(valorOuTraco(Number.NaN, (n) => String(n))).toBe("—");
+    expect(valorOuTraco(Number.POSITIVE_INFINITY, (n) => String(n))).toBe("—");
+    expect(antesDoHistoricoShopee("2026-07-01", "2026-02-31")).toBe(false);
+    expect(antesDoHistoricoShopee("invalida", "2026-10-14")).toBe(false);
+
+    const { pontos, diasSemReceita } = pontosDoTotal(
+      [
+        { dia: "2026-10-10", marketplace: null, compras: 2, unidades: 3, receita_bruta: Number.NaN, pedidos_sem_receita: 0 },
+        { dia: "2026-10-11", marketplace: null, compras: 1, unidades: 1, receita_bruta: 100, pedidos_sem_receita: 0 },
+      ],
+      resolverMetricaMulticanal("faturamento"),
+    );
+
+    expect(pontos.map((p) => p.metric_date)).toEqual(["2026-10-11"]);
+    expect(diasSemReceita).toBe(1);
   });
 });

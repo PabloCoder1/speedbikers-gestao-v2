@@ -1,7 +1,7 @@
 import type { AdminClient } from "@sb/db";
 import type { MercadoLivreClient, MercadoLivreOAuthConfig } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
-import { z } from "zod";
+import { z, ZodError } from "zod";
 
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
@@ -95,7 +95,12 @@ export function createSyncListingItemHandler(deps: SyncListingItemDeps): JobHand
         ...(deps.now !== undefined ? { now: deps.now } : {}),
       });
     } catch (error) {
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+      const errorClass =
+        error instanceof MercadoLivreApiError
+          ? error.errorClass
+          : error instanceof ZodError
+            ? "not_retryable"
+            : "retryable";
 
       return {
         status: "failed",

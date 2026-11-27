@@ -337,6 +337,64 @@ describe("mapPackMessagesToSupportProjection", () => {
     expect(projection.case.lastActivityAt).toBe(OBSERVED_AT.toISOString());
     expect(projection.case.remoteReplyState).toBe("UNKNOWN");
   });
+
+  it("D-789: ignora datas inválidas sem lançar RangeError e não converte packId inválido ou inseguro", () => {
+    const page: PackMessagesPage = {
+      conversation_status: {
+        path: null,
+        status: "active",
+        substatus: null,
+        status_date: "nao-e-data",
+        status_update_allowed: null,
+        claim_id: null,
+        shipping_id: null,
+      },
+      seller_max_message_length: null,
+      paging: null,
+      messages: [
+        {
+          id: "m1",
+          site_id: "MLB",
+          from: { user_id: 777 },
+          to: { user_id: SELLER_ID },
+          status: "available",
+          text: "oi",
+          message_date: {
+            received: null,
+            available: null,
+            notified: null,
+            created: "data-invalida",
+            read: null,
+          },
+          message_moderation: null,
+          message_attachments: null,
+          message_resources: [],
+        },
+      ],
+    };
+
+    const projection = mapPackMessagesToSupportProjection(
+      { kind: "PACK", id: "99999999999999999999", sellerId: SELLER_ID },
+      page,
+      OBSERVED_AT,
+    );
+
+    expect(projection.case.packId).toBeNull();
+    expect(projection.messages[0]?.occurredAt).toBe(OBSERVED_AT.toISOString());
+    expect(projection.case.lastActivityAt).toBe(OBSERVED_AT.toISOString());
+    expect(projection.case.lastInboundAt).toBe(OBSERVED_AT.toISOString());
+    expect(projection.case.lastOutboundAt).toBeNull();
+
+    const emptyInvalidStatus = mapPackMessagesToSupportProjection(
+      { kind: "PACK", id: "0", sellerId: SELLER_ID },
+      { ...page, messages: [] },
+      OBSERVED_AT,
+    );
+
+    expect(emptyInvalidStatus.case.packId).toBeNull();
+    expect(emptyInvalidStatus.case.lastActivityAt).toBe(OBSERVED_AT.toISOString());
+    expect(emptyInvalidStatus.case.lastInboundAt).toBeNull();
+  });
 });
 
 describe("descoberta da conversa", () => {
@@ -358,6 +416,15 @@ describe("descoberta da conversa", () => {
   it("devolve null em resource ilegível, para não derrubar as outras conversas", () => {
     expect(parseConversationResource("/claims/123")).toBeNull();
     expect(parseConversationResource("")).toBeNull();
+  });
+
+  it("D-789: normaliza zeros à esquerda e recusa pack zero no resource de /messages/unread", () => {
+    expect(parseConversationResource("/packs/000011122344/sellers/378136913")).toEqual({
+      packOrOrderId: "11122344",
+      sellerId: 378136913,
+    });
+    expect(parseConversationResource("/packs/0/sellers/378136913")).toBeNull();
+    expect(parseConversationResource("/packs/000/sellers/378136913")).toBeNull();
   });
 });
 

@@ -38,6 +38,8 @@ export interface OrderUserProductsBackfillOutcome {
   deduplicated: number;
   ate: string;
   limite: string;
+  /** Verdadeiro quando nem foi possível listar as contas (HTTP 503 em app.ts, D-777). */
+  failed?: true;
 }
 
 /** O pedido mais novo que isso ainda volta ao worker (ver o cabeçalho). */
@@ -63,25 +65,35 @@ export async function triggerOrderUserProductsBackfill(
   if (accounts.error !== null) {
     deps.logger.error("order_user_products_backfill_accounts_not_listed", { reason: accounts.error.message });
 
-    return { accountsScanned: 0, enqueued: 0, deduplicated: 0, ...base };
+    return { accountsScanned: 0, enqueued: 0, deduplicated: 0, ...base, failed: true };
   }
 
   let enqueued = 0;
   let deduplicated = 0;
+  let enqueueFailed = false;
 
   for (const account of accounts.data) {
-    const result = await deps.enqueuer.enqueue({
-      jobType: "backfill.order-user-products",
-      organizationId: account.organization_id,
-      dedupeKey: `backfill-order-user-products:${account.slug}:inicio:${base.ate.slice(0, 10)}:${String(opcoes.dias)}`,
-      queue: "backfill",
-      payload: { mlAccountId: account.id, ...base },
-    });
+    try {
+      const result = await deps.enqueuer.enqueue({
+        jobType: "backfill.order-user-products",
+        organizationId: account.organization_id,
+        dedupeKey: `backfill-order-user-products:${account.slug}:inicio:${base.ate.slice(0, 10)}:${String(opcoes.dias)}`,
+        queue: "backfill",
+        payload: { mlAccountId: account.id, ...base },
+      });
 
-    if (result.deduplicated) {
-      deduplicated += 1;
-    } else {
-      enqueued += 1;
+      if (result.deduplicated) {
+        deduplicated += 1;
+      } else {
+        enqueued += 1;
+      }
+    } catch (error) {
+      enqueueFailed = true;
+      deps.logger.error("order_user_products_backfill_enqueue_failed", {
+        ml_account_id: account.id,
+        slug: account.slug,
+        reason: error instanceof Error ? error.message : "falha ao enfileirar backfill user-products",
+      });
     }
   }
 
@@ -92,7 +104,14 @@ export async function triggerOrderUserProductsBackfill(
     dias: opcoes.dias,
     conta: opcoes.conta ?? null,
     ...base,
+    ...(enqueueFailed ? { failed: true } : {}),
   });
 
-  return { accountsScanned: accounts.data.length, enqueued, deduplicated, ...base };
+  return {
+    accountsScanned: accounts.data.length,
+    enqueued,
+    deduplicated,
+    ...base,
+    ...(enqueueFailed ? { failed: true as const } : {}),
+  };
 }

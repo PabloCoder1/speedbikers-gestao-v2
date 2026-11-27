@@ -110,6 +110,31 @@ describe("triggerShopeeOrdersSync (D-426, D-428)", () => {
     expect(await triggerShopeeOrdersSync(d)).toEqual({ shopsScanned: 0, enqueued: 0, deduplicated: 0, failed: true });
     expect(enqueued).toEqual([]);
   });
+
+  it("D-793: falha ao enfileirar uma tarefa não impede a outra loja e sinaliza failed para 503", async () => {
+    const { deps: d, enqueued } = deps();
+    const baseEnqueue = d.enqueuer.enqueue;
+    d.enqueuer = {
+      enqueue: (request) => {
+        if (
+          request.jobType === "shopee.orders.sync" &&
+          (request.payload as { shopeeShopId: string }).shopeeShopId === LOJAS[0]?.id
+        ) {
+          return Promise.reject(new Error("Cloud Tasks indisponível"));
+        }
+
+        return baseEnqueue(request);
+      },
+    };
+
+    expect(await triggerShopeeOrdersSync(d)).toEqual({
+      shopsScanned: 2,
+      enqueued: 3,
+      deduplicated: 0,
+      failed: true,
+    });
+    expect(enqueued).toHaveLength(3);
+  });
 });
 
 describe("POST /internal/schedule/shopee-orders (D-426)", () => {

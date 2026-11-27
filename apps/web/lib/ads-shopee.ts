@@ -46,9 +46,12 @@ export type EstadoAdsLoja = "nao_lido" | "sem_anuncio" | "com_anuncio";
  * período" (dentro da leitura, dia sem linha é dia sem anúncio).
  */
 export function estadoAdsLoja(linha: LinhaAdsShopee): EstadoAdsLoja {
-  if (linha.investimento === null) return "nao_lido";
+  if (linha.investimento === null || !Number.isFinite(linha.investimento)) return "nao_lido";
 
-  return linha.investimento > 0 || (linha.receita_ads ?? 0) > 0 || (linha.cliques ?? 0) > 0
+  const receitaAds = linha.receita_ads !== null && Number.isFinite(linha.receita_ads) ? linha.receita_ads : 0;
+  const cliques = linha.cliques !== null && Number.isFinite(linha.cliques) ? linha.cliques : 0;
+
+  return linha.investimento > 0 || receitaAds > 0 || cliques > 0
     ? "com_anuncio"
     : "sem_anuncio";
 }
@@ -85,8 +88,8 @@ export function diasForaDaRazao(linha: Pick<LinhaAdsShopee, "dias_sem_gasto" | "
   const dias = (n: number): string => `${String(n)} ${n === 1 ? "dia" : "dias"}`;
   const partes: string[] = [];
 
-  if (semGasto !== null && semGasto > 0) partes.push(`${dias(semGasto)} sem o gasto`);
-  if (semVenda !== null && semVenda > 0) partes.push(`${dias(semVenda)} sem as vendas`);
+  if (semGasto !== null && Number.isFinite(semGasto) && semGasto > 0) partes.push(`${dias(semGasto)} sem o gasto`);
+  if (semVenda !== null && Number.isFinite(semVenda) && semVenda > 0) partes.push(`${dias(semVenda)} sem as vendas`);
 
   return partes.length === 0 ? null : `fora da razão: ${partes.join(" e ")}`;
 }
@@ -101,9 +104,12 @@ export function diasDasBarras(dias: readonly DiaAdsShopee[] | null): {
   let semVenda = 0;
 
   for (const dia of dias ?? []) {
-    if (dia.investimento === null) semGasto += 1;
-    if (dia.receita_ads === null) semVenda += 1;
-    if (dia.investimento !== null && dia.receita_ads !== null) {
+    const temInvestimento = dia.investimento !== null && Number.isFinite(dia.investimento);
+    const temReceita = dia.receita_ads !== null && Number.isFinite(dia.receita_ads);
+
+    if (!temInvestimento) semGasto += 1;
+    if (!temReceita) semVenda += 1;
+    if (temInvestimento && temReceita && dia.investimento !== null && dia.receita_ads !== null) {
       barras.push({ dia: dia.dia, investimento: dia.investimento, receita_ads: dia.receita_ads });
     }
   }

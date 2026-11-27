@@ -79,4 +79,23 @@ describe("computeNfeApplicationMovements", () => {
 
     expect(computeNfeApplicationMovements(baseDocument({ items }))).toEqual([]);
   });
+
+  it("rejeita data de emissão inválida ou quantidade não positiva/não finita em item vinculado", () => {
+    expect(() =>
+      computeNfeApplicationMovements(
+        baseDocument({
+          occurredAt: new Date("invalid"),
+          items: [{ position: 0, skuId: "sku-parafuso", quantity: 1 }],
+        }),
+      ),
+    ).toThrow(RangeError);
+
+    for (const quantity of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() =>
+        computeNfeApplicationMovements(
+          baseDocument({ items: [{ position: 0, skuId: "sku-parafuso", quantity }] }),
+        ),
+      ).toThrow(RangeError);
+    }
+  });
 });

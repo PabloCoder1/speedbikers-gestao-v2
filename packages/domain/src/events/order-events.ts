@@ -74,6 +74,14 @@ export function detectOrderStatusEvents(
     return [];
   }
 
+  if (!Number.isFinite(occurredAt.getTime())) {
+    throw new RangeError("occurredAt precisa ser uma data válida.");
+  }
+
+  if (!Number.isSafeInteger(order.id) || order.id <= 0) {
+    throw new RangeError("order.id precisa ser um inteiro positivo seguro.");
+  }
+
   const eventType = "order.cancelled";
 
   return [

@@ -299,4 +299,15 @@ describe("reconciliação de estoque contra o UpSeller", () => {
     expect(outcome).toEqual({ status: "done", processed: 1 });
     expect(captured.movements[0]).toMatchObject({ sku_id: "sku-inflado", qty_delta: -29997 });
   });
+
+  it("D-814: recusa divergência entre organizationId do payload e do envelope sem gravar movimentos", async () => {
+    const { deps, captured, lines } = fakeDeps({});
+    const outraOrg = "22222222-0000-4000-8000-000000000002";
+
+    const outcome = await createReconcileBalancesHandler(deps)(ENVELOPE, ctx(lines, { organizationId: outraOrg }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(captured.movements).toHaveLength(0);
+    expect(captured.events).toHaveLength(0);
+  });
 });

@@ -89,13 +89,18 @@ export async function completeTikTokConnect(
   params: TikTokCallbackParams,
 ): Promise<TikTokCallbackOutcome> {
   const now = deps.now?.() ?? new Date();
+  const state = params.state.trim();
+
+  if (state === "") {
+    return { status: "invalid_state" };
+  }
 
   // Consumo ATÔMICO, como na Shopee: duas chamadas com o mesmo `state` (aba
   // duplicada, retry do navegador) só deixam uma passar.
   const claimed = await deps.db
     .from("tiktok_oauth_states")
     .update({ consumed_at: now.toISOString() })
-    .eq("state", params.state)
+    .eq("state", state)
     .is("consumed_at", null)
     .gt("expires_at", now.toISOString())
     .select("organization_id, created_by")
@@ -106,8 +111,9 @@ export async function completeTikTokConnect(
   }
 
   const { organization_id: organizationId, created_by: createdBy } = claimed.data;
+  const code = params.code?.trim() ?? "";
 
-  if (params.error !== undefined || params.code === undefined) {
+  if (params.error !== undefined || code === "") {
     deps.logger.info("tiktok_oauth_not_authorized", { error: params.error ?? null });
 
     return { status: "rejected", reason: "a autorização não foi concluída no TikTok Shop" };
@@ -116,7 +122,7 @@ export async function completeTikTokConnect(
   let token;
 
   try {
-    token = await getAccessToken(deps.client, params.code);
+    token = await getAccessToken(deps.client, code);
   } catch (error) {
     deps.logger.error("tiktok_oauth_exchange_failed", {
       reason: error instanceof Error ? error.message : "erro desconhecido",

@@ -314,7 +314,7 @@ async function AtencaoNecessaria({
   acoesOutras,
   openCases,
   mediations,
-  unread,
+  unreadPromise,
   pausados,
 }: {
   // Nula só sem organização — e aí a página já voltou antes de chegar aqui.
@@ -323,10 +323,10 @@ async function AtencaoNecessaria({
   acoesOutras: Contagem;
   openCases: Contagem;
   mediations: Contagem;
-  unread: Contagem;
+  unreadPromise: Promise<Contagem>;
   pausados: Contagem;
 }): Promise<ReactNode> {
-  const coverage = await segundaRodada;
+  const [coverage, unread] = await Promise.all([segundaRodada, unreadPromise]);
 
   if (coverage === null) return null;
 
@@ -399,7 +399,7 @@ async function AtencaoNecessaria({
     {
       label: "Notificações não lidas",
       caption: "eventos que ainda não foram vistos",
-      href: "/notificacoes",
+      href: "/notificacoes?estado=nao-lidas",
       cta: "Ver notificações",
       impacto: (n) => `${formatCount(n)} ${n === 1 ? "evento ainda não visto" : "eventos ainda não vistos"}`,
       count: unread.count,
@@ -598,7 +598,20 @@ export default async function HomePage({
     ]);
   });
 
-  const [membership, acoesAltas, acoesOutras, openCases, mediations, unread, pausados, vendasMulticanal, atividade, perfil] =
+  // A contagem exata usa a visibilidade da Central e só a seção de atenção a aguarda.
+  const unreadPromise: Promise<Contagem> = Promise.resolve(
+    supabase
+      .from("notification_recipients")
+      .select("notification_id, notifications!inner(domain_event_id, domain_events!inner(id))", {
+        count: "exact",
+        head: true,
+      })
+      .is("read_at", null),
+  ).catch((error: unknown) => ({ count: null, error: error ?? new Error("contagem de não lidas falhou") }));
+
+  const atividadePromise = lerAtividadeRecente(supabase);
+
+  const [membership, acoesAltas, acoesOutras, openCases, mediations, pausados, vendasMulticanal, perfil] =
     await Promise.all([
       membershipPromise,
       supabase
@@ -620,14 +633,6 @@ export default async function HomePage({
         .select("id", { count: "exact", head: true })
         .eq("is_mediation", true)
         .neq("internal_status", "RESOLVIDO"),
-      supabase
-        .from("notification_recipients")
-        // `notification_id`, e NÃO `id`: esta tabela não tem coluna `id` — a
-        // chave é composta `(notification_id, user_id)`. Pedir `id` fazia o
-        // PostgREST recusar, e este card dizia "Não foi possível carregar"
-        // desde que existe (D-241).
-        .select("notification_id", { count: "exact", head: true })
-        .is("read_at", null),
       // "Anúncios pausados" com estoque: o MESMO predicado de `/anuncios` com
       // pausados e com estoque (`status = 'paused'` e `available_quantity > 0`),
       // contado direto. Era `get_listings_dashboard` com `p_limit 1`, que monta a
@@ -644,35 +649,6 @@ export default async function HomePage({
         .gt("available_quantity", 0)
         .is("deleted_at", null),
       vendasPromise,
-      // Atividade recente — as MESMAS `notifications` de `/notificacoes`, com
-      // os mesmos rótulos canônicos, e pela MESMA RAIZ: a lista de
-      // destinatários do próprio usuário (policy
-      // `notification_recipients_select_own`), com a notificação embutida.
-      // Pela raiz `notifications`, a ordem não tinha índice que servisse e o
-      // banco filtrava e ordenava as ~66 mil linhas a cada visita: média de
-      // 1,7 s e máximo de 4,6 s no `pg_stat_statements` de produção (auditoria
-      // de 2026-09-28). Com `(user_id, created_at desc)` ele para na quinta
-      // linha: no Dev, como `authenticated` e com o usuário de 54 mil avisos,
-      // 826 ms e 17 mil páginas lidas viraram 16 ms e 43 — a mesma troca que `/notificacoes` fez em D-393, e a mesma
-      // ordem, porque o fan-out grava as duas linhas na mesma transação.
-      supabase
-        .from("notification_recipients")
-        /*
-          `occurred_at` ENTRA NO EMBED (D-311), e a coluna importa: ela é
-          QUANDO A MUDANÇA ACONTECEU, enquanto `notifications.created_at` é o
-          instante em que o fan-out gravou o aviso. Os dois costumam ser
-          próximos e não são a mesma coisa — o desvio máximo medido nesta base
-          foi de 278 dias (D-060), num backfill. Uma linha dizendo "há 12 min"
-          sobre um fato de março seria número inventado.
-
-          É a mesma expressão que `/notificacoes` já usa, e depois desta fatia
-          as duas telas passam a mostrar o mesmo instante para o mesmo evento.
-        */
-        .select(
-          "notification_id, created_at, notifications(domain_events(event_type, entity_type, severity, occurred_at, after, shopee_shop_id, ml_accounts(label)))",
-        )
-        .order("created_at", { ascending: false })
-        .limit(ATIVIDADE_LIMITE),
       userId === null
         ? Promise.resolve({ data: null, error: null })
         : supabase.from("profiles").select("full_name").eq("id", userId).maybeSingle(),
@@ -706,15 +682,6 @@ export default async function HomePage({
   const serieFalhou = serieDiaria?.error !== null;
   const pontos = serieDiaria?.error === null ? pontosDoTotal(serieDiaria.data, METRICA_DA_HOME).pontos : [];
 
-  const eventos: AtividadeLinha[] =
-    atividade.error === null && Array.isArray(atividade.data)
-      ? atividade.data.map((linha) => ({
-          id: linha.notification_id,
-          created_at: linha.created_at,
-          domain_events: linha.notifications.domain_events,
-        }))
-      : [];
-
   const nome = perfil.error === null ? (perfil.data?.full_name ?? null) : null;
 
   return (
@@ -733,7 +700,7 @@ export default async function HomePage({
           acoesOutras={acoesOutras}
           openCases={openCases}
           mediations={mediations}
-          unread={unread}
+          unreadPromise={unreadPromise}
           pausados={pausados}
         />
       </Suspense>
@@ -836,66 +803,86 @@ export default async function HomePage({
         </Panel>
 
         <Panel title="Atividade recente" subtitle="Eventos que impactam sua operação">
-          {atividade.error !== null ? (
-            <p style={{ margin: 0, padding: "var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}>
-              Não foi possível carregar a atividade.
-            </p>
-          ) : eventos.length === 0 ? (
-            <p style={{ margin: 0, padding: "var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}>
-              Nenhum evento registrado ainda.
-            </p>
-          ) : (
-            eventos.map((evento) => {
-              /*
-                O INSTANTE DO FATO, com o carimbo do aviso como reserva — a
-                mesma expressão de `/notificacoes`. O embed só vem nulo quando
-                o evento sumiu debaixo da notificação, e aí a linha continua
-                povoada em vez de ficar sem data.
-              */
-              const instante = evento.domain_events?.occurred_at ?? evento.created_at;
-              const origem = origemDoEvento(evento);
-
-              return (
-              <Link key={evento.id} href="/notificacoes" className="sb-feed-row">
-                <span
-                  aria-hidden="true"
-                  className="sb-feed-dot"
-                  style={{
-                    ["--sb-tone" as string]:
-                      COR_SEVERIDADE[evento.domain_events?.severity ?? ""] ?? "var(--sb-muted-ink)",
-                  }}
-                />
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <b>{eventTypeLabel(evento.domain_events?.event_type ?? "—")}</b>
-                  {/*
-                    A IDADE, como no frame ("4 min atrás"), com a data exata no
-                    `title` — o padrão de `/acoes` e `/contas`.
-
-                    `formatAge` recebe o `agora` desta renderização de
-                    propósito: um relógio por render, o mesmo que a saudação e a
-                    sobrancelha de data já usam. A duração CONGELA na tela de
-                    quem deixa a aba aberta — exposição que esta página já
-                    aceita duas vezes (o "Bom dia" também envelhece), e a janela
-                    útil de `formatAge` é de sete dias: acima disso ela devolve
-                    `null` e a linha volta a mostrar a data absoluta, que é o
-                    que informa.
-                  */}
-                  <small title={formatDateTime(instante)}>
-                    {formatAge(instante, agora) ?? formatDateTime(instante)}
-                    {evento.domain_events !== null && ` · ${severityLabel(evento.domain_events.severity)}`}
-                    {/* D-638: a conta do ML ou a loja da Shopee (o `shop_name` do evento). */}
-                    {origem !== null && ` · ${origem}`}
-                  </small>
-                </span>
-                <span aria-hidden="true" style={{ color: "var(--sb-text-soft)" }}>
-                  ›
-                </span>
-              </Link>
-              );
-            })
-          )}
+          <Suspense
+            fallback={
+              <p role="status" style={{ margin: 0, padding: "var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}>
+                Carregando atividade…
+              </p>
+            }
+          >
+            <AtividadeRecente leitura={atividadePromise} agora={agora} />
+          </Suspense>
         </Panel>
       </div>
     </>
   );
+}
+
+async function lerAtividadeRecente(supabase: Awaited<ReturnType<typeof createClient>>) {
+  try {
+    // Aplica visibilidade antes do limite na raiz indexada de destinatários.
+    // A chegada ordena a lista e occurred_at informa a idade do fato (D-311).
+    const { data, error } = await supabase
+      .from("notification_recipients")
+      .select(
+        "notification_id, created_at, notifications!inner(domain_events!inner(event_type, entity_type, severity, occurred_at, after, shopee_shop_id, ml_accounts(label)))",
+      )
+      .order("created_at", { ascending: false })
+      .order("notification_id", { ascending: false })
+      .limit(ATIVIDADE_LIMITE);
+    return { data, error };
+  } catch (error: unknown) {
+    return { data: null, error: error ?? new Error("leitura de atividade falhou") };
+  }
+}
+
+async function AtividadeRecente({
+  leitura,
+  agora,
+}: {
+  leitura: ReturnType<typeof lerAtividadeRecente>;
+  agora: Date;
+}): Promise<ReactNode> {
+  const atividade = await leitura;
+  if (atividade.error !== null || !atividade.data?.length) {
+    return (
+      <p style={{ margin: 0, padding: "var(--sb-space-3)", color: "var(--sb-text-soft)", fontSize: "0.6875rem" }}>
+        {atividade.error !== null ? "Não foi possível carregar a atividade." : "Nenhum evento registrado ainda."}
+      </p>
+    );
+  }
+
+  return atividade.data.map((linha) => {
+    const evento: AtividadeLinha = {
+      id: linha.notification_id,
+      created_at: linha.created_at,
+      domain_events: linha.notifications.domain_events,
+    };
+    const instante = evento.domain_events?.occurred_at ?? evento.created_at;
+    const origem = origemDoEvento(evento);
+
+    return (
+      <Link key={evento.id} href="/notificacoes" className="sb-feed-row">
+        <span
+          aria-hidden="true"
+          className="sb-feed-dot"
+          style={{
+            ["--sb-tone" as string]:
+              COR_SEVERIDADE[evento.domain_events?.severity ?? ""] ?? "var(--sb-muted-ink)",
+          }}
+        />
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <b>{eventTypeLabel(evento.domain_events?.event_type ?? "—")}</b>
+          <small title={formatDateTime(instante)}>
+            {formatAge(instante, agora) ?? formatDateTime(instante)}
+            {evento.domain_events !== null && (" · " + severityLabel(evento.domain_events.severity))}
+            {origem !== null && (" · " + origem)}
+          </small>
+        </span>
+        <span aria-hidden="true" style={{ color: "var(--sb-text-soft)" }}>
+          ›
+        </span>
+      </Link>
+    );
+  });
 }

@@ -508,4 +508,57 @@ describe("completeConnect", () => {
     expect(joined).not.toContain(TOKEN_RESPONSE_BODY.refresh_token);
     expect(joined).not.toContain(OAUTH_CONFIG.clientSecret);
   });
+
+  it("D-793: normaliza scope vazio/com espaços extras e registra erro ao falhar markError", async () => {
+    const vazio = deps({
+      requestOptions: {
+        fetchImpl: () => Promise.resolve(jsonResponse(200, { ...TOKEN_RESPONSE_BODY, scope: "   " })),
+        sleep: () => Promise.resolve(),
+      },
+    });
+
+    expect((await completeConnect(vazio.deps, { state: "s", code: "c" })).status).toBe("connected");
+    expect(vazio.db.connections[0]?.args.p_scopes).toEqual([]);
+
+    const espacos = deps({
+      requestOptions: {
+        fetchImpl: () => Promise.resolve(jsonResponse(200, { ...TOKEN_RESPONSE_BODY, scope: "  read   write  " })),
+        sleep: () => Promise.resolve(),
+      },
+    });
+
+    expect((await completeConnect(espacos.deps, { state: "s", code: "c" })).status).toBe("connected");
+    expect(espacos.db.connections[0]?.args.p_scopes).toEqual(["read", "write"]);
+
+    const falhaMark = deps();
+    falhaMark.db.accountUpdate.neq.mockResolvedValueOnce({ data: null, error: { message: "db down" } });
+
+    const recusado = await completeConnect(falhaMark.deps, { state: "s", error: "access_denied" });
+    expect(recusado.status).toBe("rejected");
+    expect(falhaMark.lines.join("\n")).toContain("ml_account_mark_error_failed");
+  });
+
+  it("D-821: state em branco devolve invalid_state sem consultar banco e code em branco recusa sem chamar o Mercado Livre", async () => {
+    const semState = deps();
+    const resState = await completeConnect(semState.deps, { state: "   ", code: "c" });
+
+    expect(resState).toEqual({ status: "invalid_state" });
+    expect(semState.db.connections).toEqual([]);
+
+    let fetchChamado = false;
+    const semCode = deps({
+      requestOptions: {
+        fetchImpl: () => {
+          fetchChamado = true;
+
+          return Promise.resolve(jsonResponse(200, TOKEN_RESPONSE_BODY));
+        },
+        sleep: () => Promise.resolve(),
+      },
+    });
+    const resCode = await completeConnect(semCode.deps, { state: "s", code: "   " });
+
+    expect(resCode).toMatchObject({ status: "rejected" });
+    expect(fetchChamado).toBe(false);
+  });
 });

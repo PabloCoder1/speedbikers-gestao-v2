@@ -67,7 +67,7 @@ export function fullSortLabel(value: FullSort): string {
  * abaixo do crítico é perigo; abaixo do limiar é atenção.
  */
 export function coverageTom(days: number | null): Tom {
-  if (days === null) return "neutro";
+  if (days === null || !Number.isFinite(days)) return "neutro";
   if (days < CRITICAL_COVERAGE_DAYS) return "perigo";
   if (days < LOW_COVERAGE_DAYS) return "atencao";
 
@@ -76,7 +76,7 @@ export function coverageTom(days: number | null): Tom {
 
 /** "0 dias", "3,5 dias", "+90 dias" — acima de 90 a precisão não diz nada. */
 export function formatCoverage(days: number | null): string {
-  if (days === null) return "sem venda";
+  if (days === null || !Number.isFinite(days)) return "sem venda";
   if (days > 90) return "+90 dias";
 
   const texto = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: days < 10 ? 1 : 0 }).format(days);
@@ -243,10 +243,25 @@ export function coverageOf(
   unitsSold: number,
   windowDays: number,
 ): { daily_rate: number | null; coverage_days: number | null } {
-  if (unitsSold <= 0 || windowDays <= 0) return { daily_rate: null, coverage_days: null };
+  if (
+    !Number.isFinite(fullQuantity) ||
+    !Number.isFinite(unitsSold) ||
+    !Number.isFinite(windowDays) ||
+    unitsSold <= 0 ||
+    windowDays <= 0
+  ) {
+    return { daily_rate: null, coverage_days: null };
+  }
+
+  const dailyRate = Math.round((unitsSold / windowDays) * 100) / 100;
+  const coverageDays = Math.round(((Math.max(fullQuantity, 0) * windowDays) / unitsSold) * 10) / 10;
+
+  if (!Number.isFinite(dailyRate) || !Number.isFinite(coverageDays)) {
+    return { daily_rate: null, coverage_days: null };
+  }
 
   return {
-    daily_rate: Math.round((unitsSold / windowDays) * 100) / 100,
-    coverage_days: Math.round(((Math.max(fullQuantity, 0) * windowDays) / unitsSold) * 10) / 10,
+    daily_rate: dailyRate,
+    coverage_days: coverageDays,
   };
 }

@@ -64,8 +64,10 @@ export function DocumentItemRow({
 
   useEffect(() => {
     const termo = query.trim();
+    const seguro = termoSeguroParaOr(termo);
 
-    if (selected !== null || termo.length < 2) {
+    if (selected !== null || seguro.length < 2) {
+      ultimaBusca.current += 1;
       setResults([]);
       setSearching(false);
 
@@ -79,31 +81,37 @@ export function DocumentItemRow({
 
     const espera = setTimeout(() => {
       void (async () => {
-        // Código OU título (lote 3 do pente fino, 18/09): a linha da nota traz a
-        // descrição do fornecedor, quase nunca o código do SKU da loja. O texto
-        // passa por `termoSeguroParaOr` antes de entrar no `or=`.
-        const seguro = termoSeguroParaOr(termo);
-        const { data, error: searchError } = await createClient()
-          .from("skus")
-          .select("id, sku, title")
-          .or(`sku_key.ilike.%${seguro.toUpperCase()}%,title.ilike.%${seguro}%`)
-          .order("sku")
-          .limit(8);
+        try {
+          // Código OU título (lote 3 do pente fino, 18/09): a linha da nota traz a
+          // descrição do fornecedor, quase nunca o código do SKU da loja. O texto
+          // já passou por `termoSeguroParaOr` antes de entrar no `or=`.
+          const { data, error: searchError } = await createClient()
+            .from("skus")
+            .select("id, sku, title")
+            .or(`sku_key.ilike.%${seguro.toUpperCase()}%,title.ilike.%${seguro}%`)
+            .order("sku")
+            .limit(8);
 
-        if (numero !== ultimaBusca.current) return;
+          if (numero !== ultimaBusca.current) return;
 
-        setSearching(false);
+          setSearching(false);
 
-        if (searchError !== null) {
-          // Sem isto, falha de rede/RLS virava "nenhum SKU encontrado" — igual
-          // a uma busca genuinamente vazia (D-067, Nível 3).
+          if (searchError !== null) {
+            // Sem isto, falha de rede/RLS virava "nenhum SKU encontrado" — igual
+            // a uma busca genuinamente vazia (D-067, Nível 3).
+            setError("Não foi possível buscar SKUs — tente de novo.");
+
+            return;
+          }
+
+          setError(null);
+          setResults(data);
+        } catch {
+          if (numero !== ultimaBusca.current) return;
+
+          setSearching(false);
           setError("Não foi possível buscar SKUs — tente de novo.");
-
-          return;
         }
-
-        setError(null);
-        setResults(data);
       })();
     }, ESPERA_MS);
 
@@ -118,38 +126,44 @@ export function DocumentItemRow({
     setAcao("vinculando");
     setError(null);
 
-    const result = await linkDocumentItem(itemId, selected.id, documentId);
+    try {
+      const result = await linkDocumentItem(itemId, selected.id, documentId);
 
-    if (!result.ok) {
-      setError(result.message);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+
+      setCurrent(selected);
+      setEditing(false);
+      setSelected(null);
+      setQuery("");
+    } catch {
+      setError("Não foi possível confirmar o vínculo. Confira o item.");
+    } finally {
       setAcao(null);
-
-      return;
     }
-
-    setCurrent(selected);
-    setEditing(false);
-    setSelected(null);
-    setQuery("");
-    setAcao(null);
   }
 
   async function unlink(): Promise<void> {
     setAcao("desvinculando");
     setError(null);
 
-    const result = await linkDocumentItem(itemId, null, documentId);
+    try {
+      const result = await linkDocumentItem(itemId, null, documentId);
 
-    if (!result.ok) {
-      setError(result.message);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+
+      setCurrent(null);
+      setEditing(false);
+    } catch {
+      setError("Não foi possível confirmar a remoção. Confira o item.");
+    } finally {
       setAcao(null);
-
-      return;
     }
-
-    setCurrent(null);
-    setEditing(false);
-    setAcao(null);
   }
 
   if (!editable) {

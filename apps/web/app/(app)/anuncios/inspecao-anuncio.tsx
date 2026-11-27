@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import { DetailRow, Drawer } from "../../../components/drawer";
+import { DetailRow, Drawer, useLeituraDeGaveta } from "../../../components/drawer";
 import { Icone } from "../../../components/icons";
 import { TOM, tomDeRelist } from "../../../components/tone";
 import { formatEventDiff } from "../../../lib/event-format";
@@ -63,20 +63,9 @@ export function InspecaoAnuncio({
   /** Só o ícone, para a coluna de ações da tabela; o texto vai para o leitor de tela. */
   compacto?: boolean;
 }): ReactNode {
-  const [aberta, setAberta] = useState(false);
-  const [retrato, setRetrato] = useState<ListingInspection | null>(null);
-  const [lendo, startTransition] = useTransition();
-
-  function abrir(): void {
-    setAberta(true);
-    setRetrato(null);
-
-    startTransition(() => {
-      void (async () => {
-        setRetrato(await inspecionarAnuncio(mlAccountId, itemId));
-      })();
-    });
-  }
+  const { aberta, retrato, erro, lendo, abrir, fechar } = useLeituraDeGaveta(() =>
+    inspecionarAnuncio(mlAccountId, itemId),
+  );
 
   return (
     <>
@@ -100,9 +89,7 @@ export function InspecaoAnuncio({
         <Drawer
           eyebrow="Detalhe de anúncio"
           label={`Detalhe do anúncio ${itemId}`}
-          onClose={() => {
-            setAberta(false);
-          }}
+          onClose={fechar}
           footer={
             <Link className="sb-button sb-button-primary" href={`/anuncios/${itemId}`}>
               Abrir dashboard do anúncio →
@@ -147,12 +134,12 @@ export function InspecaoAnuncio({
               note={skuId === null ? "sem vínculo — a venda não baixa estoque" : undefined}
             />
 
-            {retrato === null || lendo ? (
-              <p style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>Lendo o histórico…</p>
-            ) : retrato.error !== null ? (
+            {erro !== null ? (
               <p role="alert" className="sb-note sb-note-perigo" style={{ fontSize: "0.6875rem" }}>
-                {retrato.error}
+                {erro}
               </p>
+            ) : retrato === null || lendo ? (
+              <p style={{ fontSize: "0.6875rem", color: "var(--sb-text-soft)" }}>Lendo o histórico…</p>
             ) : (
               <Retrato retrato={retrato} />
             )}

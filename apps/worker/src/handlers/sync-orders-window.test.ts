@@ -5,6 +5,7 @@ import type { MercadoLivreClient, RequestOptions } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
 import type { SyncOrdersWindowDeps } from "./sync-orders-window.js";
 import { createSyncOrdersWindowHandler } from "./sync-orders-window.js";
@@ -644,5 +645,62 @@ describe("sync.orders.window", () => {
     expect(joined).not.toContain("APP_USR-valido");
     expect(joined).not.toContain("TG-valido");
     expect(joined).not.toContain(OAUTH_CONFIG.clientSecret);
+  });
+
+  it("D-796: order com date_created inválida é ignorada como partial sem derrubar a página, e date_last_updated inválida não corrompe latest_record_at", async () => {
+    const orderDataCriacaoRuim = {
+      ...(fakeOrder(1, "2026-08-21T15:10:00.000-03:00") as Record<string, unknown>),
+      date_created: "nao-e-data",
+    };
+    const orderUpdateRuim = {
+      ...(fakeOrder(2, "2026-08-21T15:10:00.000-03:00") as Record<string, unknown>),
+      date_last_updated: "invalida",
+    };
+    const { deps: d, db, lines } = deps({}, [
+      { paging: { total: 2, offset: 0, limit: 50 }, results: [orderDataCriacaoRuim, orderUpdateRuim] },
+    ]);
+
+    const outcome = await run(d, lines);
+
+    expect(outcome).toEqual({ status: "done", processed: 1 });
+    const syncRun = db.inserted.find((e) => e.table === "sync_runs")?.row as {
+      status: string;
+      latest_record_at: string | null;
+    };
+    expect(syncRun.status).toBe("partial");
+    expect(syncRun.latest_record_at).toBeNull();
+  });
+
+  it("D-796: checkpoint no futuro ou inválido nunca gera janela invertida nem RangeError", async () => {
+    const futuro = deps(
+      { lastRun: { latest_record_at: "2026-08-21T19:45:00.000Z", started_at: "2026-08-21T14:00:00.000Z" } },
+      [],
+    );
+
+    await expect(run(futuro.deps, futuro.lines)).resolves.toEqual({ status: "done", processed: 0 });
+    const paramsFuturo = futuro.requests[0]?.searchParams as Record<string, string>;
+    // NOW = 15:37 -> from limitado a floorToHour(NOW) = 15:00, to = 16:00 (from <= to).
+    expect(paramsFuturo["order.date_last_updated.from"]).toBe("2026-08-21T15:00:00.000+00:00");
+    expect(paramsFuturo["order.date_last_updated.to"]).toBe("2026-08-21T16:00:00.000+00:00");
+
+    const invalido = deps(
+      { lastRun: { latest_record_at: "data-invalida", started_at: "2026-08-21T13:15:00.000Z" } },
+      [],
+    );
+
+    await expect(run(invalido.deps, invalido.lines)).resolves.toEqual({ status: "done", processed: 0 });
+    const paramsInvalido = invalido.requests[0]?.searchParams as Record<string, string>;
+    expect(paramsInvalido["order.date_last_updated.from"]).toBe("2026-08-21T13:00:00.000+00:00");
+  });
+
+  it("D-796: ZodError no envelope de /orders/search falha como not_retryable", async () => {
+    const { deps: d, db, lines } = deps({}, () =>
+      Promise.reject(new ZodError([{ code: "invalid_type", expected: "object", path: ["paging"], message: "x" }])),
+    );
+
+    const outcome = await run(d, lines);
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(db.inserted.find((e) => e.table === "sync_errors")?.row).toMatchObject({ error_class: "not_retryable" });
   });
 });

@@ -12,7 +12,7 @@ const ENV = {
 } as unknown as Env;
 
 interface CreateTaskRequest {
-  task: { dispatchDeadline?: { seconds: number } };
+  task: { dispatchDeadline?: { seconds: number }; scheduleTime?: { seconds: number } };
 }
 
 function fakeClient() {
@@ -38,5 +38,36 @@ describe("createEnqueuer", () => {
 
     expect(DISPATCH_DEADLINE_SECONDS).toBe(900);
     expect(createTask.mock.calls[0]?.[0].task.dispatchDeadline).toEqual({ seconds: 900 });
+  });
+
+  it("rejeita delaySeconds negativo ou não finito e envia scheduleTime.seconds sempre inteiro", async () => {
+    const { client, createTask } = fakeClient();
+    const enqueuer = createEnqueuer(ENV, client);
+
+    for (const invalido of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(
+        enqueuer.enqueue({
+          jobType: "sync.orders.window",
+          organizationId: "aaaaaaaa-0000-4000-8000-000000000001",
+          dedupeKey: `sync.orders.window:invalid:${String(invalido)}`,
+          queue: "ml-orders",
+          delaySeconds: invalido,
+        }),
+      ).rejects.toThrow(RangeError);
+    }
+
+    expect(createTask).not.toHaveBeenCalled();
+
+    await enqueuer.enqueue({
+      jobType: "sync.orders.window",
+      organizationId: "aaaaaaaa-0000-4000-8000-000000000001",
+      dedupeKey: "sync.orders.window:frac:1",
+      queue: "ml-orders",
+      delaySeconds: 12.7,
+    });
+
+    const seconds = createTask.mock.calls[0]?.[0].task.scheduleTime?.seconds;
+
+    expect(Number.isInteger(seconds)).toBe(true);
   });
 });

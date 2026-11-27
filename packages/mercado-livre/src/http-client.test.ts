@@ -249,4 +249,48 @@ describe("createMercadoLivreClient - request", () => {
       schema: orderSchema,
     });
   });
+
+  it("D-773: cancela o body de respostas 429/5xx antes de retentar para não vazar socket keep-alive", async () => {
+    const cancel429 = vi.fn(() => Promise.resolve());
+    const cancel503 = vi.fn(() => Promise.resolve());
+    const resp429 = jsonResponse(429, { message: "rate limited" });
+    const resp503 = jsonResponse(503, { message: "unavailable" });
+
+    Object.defineProperty(resp429, "body", { value: { cancel: cancel429 } });
+    Object.defineProperty(resp503, "body", { value: { cancel: cancel503 } });
+
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(resp429)
+      .mockResolvedValueOnce(resp503)
+      .mockResolvedValueOnce(jsonResponse(200, { id: 1, status: "paid" }));
+
+    const client = createMercadoLivreClient({ fetchImpl, sleep: NOOP_SLEEP });
+    const order = await client.request({ method: "GET", path: "/orders/1", schema: orderSchema });
+
+    expect(order.status).toBe("paid");
+    expect(cancel429).toHaveBeenCalledTimes(1);
+    expect(cancel503).toHaveBeenCalledTimes(1);
+  });
+
+  it("D-789: HTTP 200 com corpo não-JSON vira MercadoLivreApiError retryable, chama onFailure e não vaza token", async () => {
+    const falhas: unknown[] = [];
+    const segredo = "APP_USR-SEGREDO-HTML-200";
+    const client = createMercadoLivreClient({
+      fetchImpl: vi.fn(() => Promise.resolve(new Response("<html><body>proxy</body></html>", { status: 200 }))),
+      sleep: NOOP_SLEEP,
+      onFailure: (f) => falhas.push(f),
+    });
+
+    const erro = await client
+      .request({ method: "GET", path: "/orders/1", accessToken: segredo, schema: orderSchema })
+      .catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(MercadoLivreApiError);
+    expect(erro).toMatchObject({ status: 200, errorClass: "retryable" });
+    expect(JSON.stringify(erro, Object.getOwnPropertyNames(erro))).not.toContain(segredo);
+    expect(falhas).toEqual([
+      { status: 200, method: "GET", path: "/orders/1", errorClass: "retryable", body: undefined },
+    ]);
+  });
 });

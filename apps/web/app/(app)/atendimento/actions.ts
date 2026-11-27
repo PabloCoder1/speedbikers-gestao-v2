@@ -27,15 +27,14 @@ export interface TriageResult {
 function describeError(error: { message: string } | null): string | null {
   if (error === null) return null;
 
-  // A RPC levanta exceção com mensagem em português para os casos previstos
-  // (sem permissão, papel errado, responsável de outra organização). Repassar
-  // o texto dela é mais útil que um genérico — nenhuma delas vaza dado.
-  if (
-    error.message.includes("sem permissao") ||
-    error.message.includes("papel sem permissao") ||
-    error.message.includes("nao pertence")
-  ) {
-    return error.message;
+  // Mapeia os casos previstos da RPC para mensagens fixas em português,
+  // evitando devolver texto bruto do Postgres com UUIDs ou nomes internos.
+  if (error.message.includes("nao pertence")) {
+    return "O responsável selecionado não pertence a esta organização.";
+  }
+
+  if (error.message.includes("sem permissao") || error.message.includes("papel sem permissao")) {
+    return "Você não tem permissão para realizar esta triagem.";
   }
 
   return "Não foi possível salvar a triagem.";
@@ -91,12 +90,19 @@ export async function changePriority(caseId: string, priority: string): Promise<
  */
 export async function assignToMe(caseId: string): Promise<TriageResult> {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  const userId = auth.user?.id;
+  const { data: auth, error: authError } = await supabase.auth.getUser();
 
-  if (userId === undefined) {
-    return { ok: false, message: "Sessão expirada — atualize a página e tente de novo." };
+  if (authError !== null) {
+    return {
+      ok: false,
+      message:
+        authError.status === 401 || authError.status === 403 || authError.name === "AuthSessionMissingError"
+          ? "Sessão expirada — atualize a página e tente de novo."
+          : "Não foi possível confirmar sua sessão — tente de novo.",
+    };
   }
+
+  const userId = auth.user.id;
 
   // Assumir implica começar a atender: deixar em NOVO seria mentira na lista
   // de quem procura o que ainda não tem dono. Só promove a partir de NOVO —
@@ -106,6 +112,10 @@ export async function assignToMe(caseId: string): Promise<TriageResult> {
     .select("internal_status")
     .eq("id", caseId)
     .maybeSingle();
+
+  if (current.error !== null) {
+    return { ok: false, message: "Não foi possível verificar o estado do atendimento. Tente novamente." };
+  }
 
   const promote = current.data?.internal_status === "NOVO";
 

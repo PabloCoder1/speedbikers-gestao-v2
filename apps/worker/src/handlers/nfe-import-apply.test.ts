@@ -31,6 +31,8 @@ function fakeDeps(options: {
   documentMissing?: boolean;
   items?: { position: number; sku_id: string | null; quantity: number; cfop?: string | null }[];
   movementInsertFails?: boolean;
+  finalUpdateFails?: boolean;
+  failedUpdateFails?: boolean;
   intermediaryCnpj?: string | null;
 }): { deps: NfeApplyDeps; captured: Captured; lines: string[] } {
   const captured: Captured = { documentUpdates: [], movements: [] };
@@ -71,7 +73,16 @@ function fakeDeps(options: {
           update: (values: Record<string, unknown>) => {
             captured.documentUpdates.push(values);
 
-            return { eq: () => Promise.resolve({ error: null }) };
+            return {
+              eq: () =>
+                Promise.resolve({
+                  error:
+                    (options.finalUpdateFails === true && values.status === "APPLIED") ||
+                    (options.failedUpdateFails === true && values.status === "FAILED")
+                      ? { message: "connection reset" }
+                      : null,
+                }),
+            };
           },
         };
       }
@@ -80,7 +91,16 @@ function fakeDeps(options: {
         return {
           select: () => ({
             eq: () => ({
-              order: () => Promise.resolve({ data: items, error: null }),
+              order: () => {
+                // Simula o teto max_rows = 1000 do PostgREST quando não há `.range()`.
+                const defaultPromise = Promise.resolve({ data: items.slice(0, 1000), error: null });
+
+                return {
+                  range: (from: number, to: number) =>
+                    Promise.resolve({ data: items.slice(from, to + 1), error: null }),
+                  then: defaultPromise.then.bind(defaultPromise),
+                };
+              },
             }),
           }),
         };
@@ -199,6 +219,44 @@ describe("aplicação da NF-e conferida", () => {
 
     expect(outcome).toEqual({ status: "done", processed: 0 });
     expect(captured.movements).toHaveLength(0);
+  });
+
+  it.each([
+    { nome: "faltam itens na leitura", totalItems: 2, items: [{ position: 0, sku_id: "sku-a", quantity: 19 }] },
+    { nome: "há itens além do total conferido", totalItems: 1, items: [{ position: 0, sku_id: "sku-a", quantity: 19 }, { position: 1, sku_id: "sku-b", quantity: 3 }] },
+    { nome: "um item perdeu o vínculo", totalItems: 2, items: [{ position: 0, sku_id: "sku-a", quantity: 19 }, { position: 1, sku_id: null, quantity: 3 }] },
+  ])("não aplica parcialmente quando $nome e o cabeçalho diz que tudo está vinculado", async ({ totalItems, items }) => {
+    const { deps, captured, lines } = fakeDeps({ totalItems, resolvedItems: totalItems, items });
+    const outcome = await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(captured.movements).toEqual([]);
+    expect(captured.documentUpdates).toEqual([]);
+    expect(lines.join()).not.toContain("nfe_apply_finished");
+  });
+
+  it.each([
+    { documentType: "NFE", operationType: "ENTRADA", movementType: "ENTRADA_NFE", deltas: [19, 3] },
+    { documentType: "ENVIO_FULL_ML_PDF", operationType: "SAIDA", movementType: "SAIDA_DOCUMENTO", deltas: [-19, -3] },
+  ])("reentrega de $documentType só registra movimentos após leitura completa", async ({ documentType, operationType, movementType, deltas }) => {
+    const items = [{ position: 0, sku_id: "sku-a", quantity: 19 }];
+    const { deps, captured, lines } = fakeDeps({ documentType, operationType, totalItems: 2, resolvedItems: 2, items });
+    const handler = createNfeImportApplyHandler(deps);
+
+    const primeira = await handler(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+    expect(primeira).toMatchObject({ status: "failed", retryable: true });
+    expect(captured.movements).toHaveLength(0);
+
+    items.push({ position: 1, sku_id: "sku-b", quantity: 3 });
+    const segunda = await handler({ ...ENVELOPE, attempt: 2 }, ctx(lines, { documentId: DOCUMENT_ID }));
+    expect(segunda).toEqual({ status: "done", processed: 2 });
+    expect(captured.movements.map((movement) => movement.idempotency_key)).toEqual([
+      `nfe:${DOCUMENT_ID}:0`,
+      `nfe:${DOCUMENT_ID}:1`,
+    ]);
+    expect(captured.movements.map((movement) => movement.movement_type)).toEqual([movementType, movementType]);
+    expect(captured.movements.map((movement) => movement.qty_delta)).toEqual(deltas);
+    expect(captured.documentUpdates).toEqual([expect.objectContaining({ status: "APPLIED" })]);
   });
 
   it("documento fora de APPLYING é recusado — só a confirmação humana libera este job", async () => {
@@ -327,5 +385,53 @@ describe("saída por documento não fiscal (D-375)", () => {
     await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
 
     expect(captured.movements[0]).toMatchObject({ occurred_at: "2026-09-17T09:00:00.000Z" });
+  });
+
+  it("D-746: falha ao gravar status APPLIED retorna retryable em vez de done", async () => {
+    const { deps, lines } = fakeDeps({ finalUpdateFails: true });
+
+    const outcome = await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "connection reset" });
+    expect(lines.join()).not.toContain("nfe_apply_finished");
+  });
+
+  it("D-746: pagina document_items além de 1.000 itens sem truncar silenciosamente", async () => {
+    const manyItems = Array.from({ length: 1_005 }, (_, index) => ({
+      position: index,
+      sku_id: `sku-${String(index)}`,
+      quantity: 1,
+      cfop: "1102",
+    }));
+    const { deps, captured, lines } = fakeDeps({ items: manyItems });
+
+    const outcome = await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toEqual({ status: "done", processed: 1_005 });
+    expect(captured.movements).toHaveLength(1_005);
+  });
+
+  it("D-787: falha transitória ao gravar status FAILED na recusa retorna retryable para não travar em APPLYING", async () => {
+    const { deps, captured, lines } = fakeDeps({
+      operationType: "SAIDA",
+      intermediaryCnpj: "35635824000112",
+      items: [{ position: 0, sku_id: "sku-capacete", quantity: 1, cfop: "6108" }],
+      failedUpdateFails: true,
+    });
+
+    const outcome = await createNfeImportApplyHandler(deps)(ENVELOPE, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true, reason: "connection reset" });
+    expect(captured.movements).toHaveLength(0);
+  });
+
+  it("D-815: recusa documento pertencente a outra organização sem gravar movimentos", async () => {
+    const { deps, captured, lines } = fakeDeps({});
+    const outroEnvelope = { ...ENVELOPE, organizationId: "22222222-0000-4000-8000-000000000002" };
+
+    const outcome = await createNfeImportApplyHandler(deps)(outroEnvelope, ctx(lines, { documentId: DOCUMENT_ID }));
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(captured.movements).toHaveLength(0);
   });
 });

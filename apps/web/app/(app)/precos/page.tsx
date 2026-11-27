@@ -29,6 +29,8 @@ import {
   resolvePriceWindow,
   summarizePagedWindow,
 } from "../../../lib/price-filters";
+import { resolverContaSolicitada } from "../../../lib/postgrest-search";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/request-membership";
 
@@ -80,7 +82,8 @@ export default async function PrecosPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<ReactNode> {
-  const filters = resolvePriceFilters(await searchParams);
+  const query = await searchParams;
+  const filters = resolvePriceFilters(query);
   const supabase = await createClient();
 
   const membershipPromise = currentMembership();
@@ -89,9 +92,9 @@ export default async function PrecosPage({
   );
   void accountsPromise.catch(() => undefined);
 
-  const { organizationId } = await membershipPromise;
+  const { organizationId, error: membershipError } = await membershipPromise;
 
-  if (organizationId === null) {
+  if (membershipError !== null || organizationId === null) {
     await accountsPromise;
     return (
       <>
@@ -100,23 +103,33 @@ export default async function PrecosPage({
           title="Histórico de Preços"
           subtitle="Histórico e análise das alterações de preço observadas nos anúncios."
         />
-        <Panel title="Acesso indisponível">
-          <EstadoDaTela
-            tipo="permissao"
-            titulo="Sua conta ainda não pertence a uma organização."
-            descricao="Peça a um administrador para concluir o vínculo antes de consultar o histórico de preços."
-          />
+        <Panel title={membershipError !== null ? "Não foi possível abrir o histórico" : "Acesso indisponível"}>
+          {membershipError !== null ? (
+            <EstadoDaTela
+              tipo="erro"
+              titulo="Não foi possível verificar sua organização."
+              descricao="Tente recarregar a página; nenhum registro foi alterado."
+              detalhe={membershipError.message}
+              acao={{ href: mesmaUrl("/precos", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+            />
+          ) : (
+            <EstadoDaTela
+              tipo="permissao"
+              titulo="Sua conta ainda não pertence a uma organização."
+              descricao="Peça a um administrador para concluir o vínculo antes de consultar o histórico de preços."
+            />
+          )}
         </Panel>
       </>
     );
   }
 
   // Conta desconhecida (ou de outra organização) na URL vira "sem filtro"
-  // antes de tocar a RPC — mesma regra dos conjuntos fechados.
-  const account =
-    filters.account !== null && (await accountsPromise).data?.some((row) => row.id === filters.account)
-      ? filters.account
-      : null;
+  // antes de tocar a RPC — mas erro de leitura em `ml_accounts` com `?conta=`
+  // falha fechado (D-783) em vez de listar alterações de todas as contas.
+  const earlyAccounts = filters.account !== null ? await accountsPromise : null;
+  const { conta: contaSelecionada, erro: erroConta } = resolverContaSolicitada(filters.account, earlyAccounts);
+  const account = contaSelecionada?.id ?? null;
 
   /*
     A janela mudou de casa em D-292: `resolvePriceWindow` é o ÚNICO dono da
@@ -128,16 +141,18 @@ export default async function PrecosPage({
   const janelaConsulta = resolvePriceWindow(filters, now);
 
   const [{ data, error }, accounts] = await Promise.all([
-    supabase.rpc("get_price_changes", {
-      p_organization_id: organizationId,
-      p_date_from: janelaConsulta.from,
-      p_date_to: janelaConsulta.to,
-      p_ml_account_id: account,
-      p_direction: filters.direction,
-      p_search: filters.search,
-      p_limit: PAGE_SIZE,
-      p_offset: (filters.page - 1) * PAGE_SIZE,
-    }),
+    erroConta !== null
+      ? Promise.resolve({ data: null, error: erroConta })
+      : supabase.rpc("get_price_changes", {
+          p_organization_id: organizationId,
+          p_date_from: janelaConsulta.from,
+          p_date_to: janelaConsulta.to,
+          p_ml_account_id: account,
+          p_direction: filters.direction,
+          p_search: filters.search,
+          p_limit: PAGE_SIZE,
+          p_offset: (filters.page - 1) * PAGE_SIZE,
+        }),
     accountsPromise,
   ]);
 

@@ -224,6 +224,13 @@ describe("estimateImpactBrl", () => {
   it("delta zero com preço conhecido: impacto zero (não nulo)", () => {
     expect(estimateImpactBrl(0, 30)).toBe(0);
   });
+
+  it("D-788: valores não finitos ou preço médio negativo devolvem null em vez de NaN/Infinity", () => {
+    expect(estimateImpactBrl(Number.NaN, 30)).toBeNull();
+    expect(estimateImpactBrl(-3, Number.NaN)).toBeNull();
+    expect(estimateImpactBrl(-3, Number.POSITIVE_INFINITY)).toBeNull();
+    expect(estimateImpactBrl(-3, -10)).toBeNull();
+  });
 });
 
 describe("diagnoseSalesAnomaly — sinal de SAC (D-116)", () => {
@@ -258,5 +265,13 @@ describe("diagnoseSalesAnomaly — sinal de SAC (D-116)", () => {
     const depois = diagnoseSalesAnomaly(ORG_ID, signal(QUEDA), AS_OF, [], { openClaims: 0 });
 
     expect(depois).toEqual(antes);
+  });
+
+  it("D-788: entradas NaN ou Infinity devolvem null em vez de anomalia falsa com zScore NaN", () => {
+    expect(diagnoseSalesAnomaly(ORG_ID, signal({ currentUnitsSold: Number.NaN }), AS_OF, [])).toBeNull();
+    expect(diagnoseSalesAnomaly(ORG_ID, signal({ baselineMean: Number.NaN }), AS_OF, [])).toBeNull();
+    expect(diagnoseSalesAnomaly(ORG_ID, signal({ baselineStddev: Number.NaN }), AS_OF, [])).toBeNull();
+    expect(diagnoseSalesAnomaly(ORG_ID, signal({ sampleCount: Number.NaN }), AS_OF, [])).toBeNull();
+    expect(diagnoseSalesAnomaly(ORG_ID, signal({ currentUnitsSold: Number.POSITIVE_INFINITY }), AS_OF, [])).toBeNull();
   });
 });

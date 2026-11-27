@@ -73,6 +73,7 @@ export async function triggerListingVisitsSnapshot(
 
   let enqueued = 0;
   let deduplicated = 0;
+  let enqueueFailed = false;
 
   // Ordem estável: a consulta acima não ordena, e um offset por índice sobre
   // ordem indefinida trocaria a conta de horário a cada rodada — o que
@@ -82,22 +83,31 @@ export async function triggerListingVisitsSnapshot(
   for (const [index, account] of ordered.entries()) {
     const delaySeconds = index * ACCOUNT_STAGGER_SECONDS;
 
-    const result = await deps.enqueuer.enqueue({
-      jobType: "sync.listing-visits.snapshot",
-      organizationId: account.organization_id,
-      dedupeKey: `listing-visits:${account.slug}:${businessDate}`,
-      queue: `ml-sync-${account.slug}`,
-      payload: { mlAccountId: account.id },
-      // A primeira conta sai idêntica a hoje: `enqueue.ts` testa
-      // `=== undefined` para decidir se monta `scheduleTime`, e um zero
-      // explícito produziria um agendamento onde antes não havia nenhum.
-      ...(delaySeconds > 0 ? { delaySeconds } : {}),
-    });
+    try {
+      const result = await deps.enqueuer.enqueue({
+        jobType: "sync.listing-visits.snapshot",
+        organizationId: account.organization_id,
+        dedupeKey: `listing-visits:${account.slug}:${businessDate}`,
+        queue: `ml-sync-${account.slug}`,
+        payload: { mlAccountId: account.id },
+        // A primeira conta sai idêntica a hoje: `enqueue.ts` testa
+        // `=== undefined` para decidir se monta `scheduleTime`, e um zero
+        // explícito produziria um agendamento onde antes não havia nenhum.
+        ...(delaySeconds > 0 ? { delaySeconds } : {}),
+      });
 
-    if (result.deduplicated) {
-      deduplicated += 1;
-    } else {
-      enqueued += 1;
+      if (result.deduplicated) {
+        deduplicated += 1;
+      } else {
+        enqueued += 1;
+      }
+    } catch (error) {
+      enqueueFailed = true;
+      deps.logger.error("listing_visits_schedule_enqueue_failed", {
+        ml_account_id: account.id,
+        slug: account.slug,
+        reason: error instanceof Error ? error.message : "falha ao enfileirar visitas por anúncio",
+      });
     }
   }
 
@@ -105,7 +115,13 @@ export async function triggerListingVisitsSnapshot(
     accounts_scanned: accounts.data.length,
     enqueued,
     deduplicated,
+    ...(enqueueFailed ? { failed: true } : {}),
   });
 
-  return { accountsScanned: accounts.data.length, enqueued, deduplicated };
+  return {
+    accountsScanned: accounts.data.length,
+    enqueued,
+    deduplicated,
+    ...(enqueueFailed ? { failed: true as const } : {}),
+  };
 }

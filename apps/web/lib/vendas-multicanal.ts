@@ -11,7 +11,7 @@
  * endereço de cada troca e a forma das linhas. **Nada aqui soma.**
  */
 
-import { shiftBusinessDate } from "@sb/domain";
+import { isValidBusinessDate, shiftBusinessDate } from "@sb/domain";
 
 import { buildFilterHref } from "./filters";
 import { DEFAULT_PERIOD_DAYS } from "./period";
@@ -314,13 +314,14 @@ export function pontosDoTotal(
   metrica: SalesMetric,
 ): { pontos: PontoDoGrafico[]; diasSemReceita: number } {
   const totais = dias.filter((dia) => dia.marketplace === null);
-  const semReceita = totais.filter((dia) => dia.receita_bruta === null);
-  const usados = metrica.field === "gross_revenue" ? totais.filter((dia) => dia.receita_bruta !== null) : totais;
+  const temReceita = (dia: DiaDeVendas): boolean => dia.receita_bruta !== null && Number.isFinite(dia.receita_bruta);
+  const semReceita = totais.filter((dia) => !temReceita(dia));
+  const usados = metrica.field === "gross_revenue" ? totais.filter(temReceita) : totais;
 
   return {
     pontos: usados.map((dia) => ({
       metric_date: dia.dia,
-      gross_revenue: dia.receita_bruta ?? 0,
+      gross_revenue: temReceita(dia) && dia.receita_bruta !== null ? dia.receita_bruta : 0,
       units_sold: dia.unidades,
       // O "pedido" não é métrica do consolidado; o campo existe pela forma do ponto.
       orders_count: 0,
@@ -339,6 +340,8 @@ export const HISTORICO_SHOPEE_DIAS = 90;
  * (risco T-R2) — a tela diz.
  */
 export function antesDoHistoricoShopee(dataInicial: string, hoje: string): boolean {
+  if (!isValidBusinessDate(dataInicial) || !isValidBusinessDate(hoje)) return false;
+
   return dataInicial < shiftBusinessDate(hoje, -HISTORICO_SHOPEE_DIAS);
 }
 
@@ -347,7 +350,7 @@ export const NAO_SE_APLICA_SOB_MARCA = "não se aplica sob recorte de marca: o p
 
 /** O número formatado, ou "—" quando ele não existe (nunca zero no lugar de ausência). */
 export function valorOuTraco(valor: number | null, formatar: (n: number) => string): string {
-  return valor === null ? "—" : formatar(valor);
+  return valor === null || !Number.isFinite(valor) ? "—" : formatar(valor);
 }
 
 /**

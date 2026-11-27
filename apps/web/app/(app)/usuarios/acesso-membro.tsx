@@ -82,9 +82,18 @@ export function AcessoDoMembro({
     setOcupado(true);
     setErro(null);
 
-    const resultado = await removeMember(organizationId, userId);
+    let resultado: Awaited<ReturnType<typeof removeMember>>;
 
-    setOcupado(false);
+    try {
+      resultado = await removeMember(organizationId, userId);
+    } catch {
+      // A remoção pode ter sido gravada antes de a conexão cair.
+      setErro("Não foi possível confirmar a remoção. Recarregue a página antes de tentar novamente.");
+
+      return;
+    } finally {
+      setOcupado(false);
+    }
 
     if (!resultado.ok) {
       setErro(resultado.message);

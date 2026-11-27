@@ -14,6 +14,7 @@ import { FormularioFiltro } from "../../../components/formulario-filtro";
 import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../lib/format";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { monogramaDeProduto } from "../../../lib/initials";
 import { listingStatusLabel } from "../../../lib/labels";
 import {
@@ -47,6 +48,7 @@ import {
 } from "../../../lib/listings-view";
 import { contarLojasShopee, hrefDosAnuncios } from "../../../lib/marketplace";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS } from "../../../lib/period";
+import { resolverContaSolicitada } from "../../../lib/postgrest-search";
 import { createClient } from "../../../lib/supabase/server";
 import { currentMembership } from "../../../lib/request-membership";
 
@@ -200,7 +202,23 @@ export default async function AnunciosPage({
   // Uma falha no cabeçalho pode chegar antes da resolução da organização.
   void cabecalhoPromise.catch(() => undefined);
 
-  const { organizationId } = await membershipPromise;
+  const { organizationId, error: membershipError } = await membershipPromise;
+
+  if (membershipError !== null) {
+    await cabecalhoPromise;
+    return (
+      <>
+        <PageTitle eyebrow="COMERCIAL / CATÁLOGO" title="Dashboard de anúncios" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          detalhe={membershipError.message}
+          acao={{ href: mesmaUrl("/anuncios", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
 
   if (organizationId === null) {
     await cabecalhoPromise;
@@ -212,13 +230,36 @@ export default async function AnunciosPage({
     );
   }
 
-  // A lista de contas só participa do recorte quando a URL pede um slug.
-  const contasDoRecorte = typeof query.conta === "string" ? (await accountsPromise).data ?? [] : [];
+  // A lista de contas só participa do recorte quando a URL pede um slug (falha fechado se a leitura de contas falhar).
+  const contaSolicitada = typeof query.conta === "string" && query.conta.trim() !== "" ? query.conta.trim() : null;
+  const leituraContasPedida = contaSolicitada === null ? null : await accountsPromise;
+  const { conta: selectedAccount, erro: erroConta } = resolverContaSolicitada(
+    contaSolicitada,
+    leituraContasPedida,
+    (account, slug) => account.slug === slug,
+  );
+
+  if (erroConta !== null) {
+    await cabecalhoPromise;
+    return (
+      <>
+        <PageTitle eyebrow="COMERCIAL / CATÁLOGO" title="Dashboard de anúncios" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas do Mercado Livre"
+          descricao="O filtro de conta pedido na URL não pôde ser confirmado."
+          detalhe={erroConta.message}
+          acao={{ href: mesmaUrl("/anuncios", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
+
+  const contasDoRecorte = leituraContasPedida?.data ?? [];
   const filters: Filters = resolveListingsFilters(
     query,
     contasDoRecorte.map((account) => account.slug),
   );
-  const selectedAccount = contasDoRecorte.find((a) => a.slug === filters.account) ?? null;
 
   // A janela sai do filtro (D-308). `days - 1` porque o intervalo da RPC é
   // fechado nas duas pontas: "últimos 7 dias" é hoje mais seis.

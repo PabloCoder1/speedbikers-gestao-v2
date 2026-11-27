@@ -67,20 +67,31 @@ export async function triggerAccountReconcile(
 
   let enqueued = 0;
   let deduplicated = 0;
+  let enqueueFailed = false;
 
   for (const account of accounts.data) {
-    const result = await deps.enqueuer.enqueue({
-      jobType: spec.jobType,
-      organizationId: account.organization_id,
-      dedupeKey: `${spec.dedupePrefix}:${account.slug}:${minuteWindow}`,
-      queue: `ml-sync-${account.slug}`,
-      payload: { mlAccountId: account.id },
-    });
+    try {
+      const result = await deps.enqueuer.enqueue({
+        jobType: spec.jobType,
+        organizationId: account.organization_id,
+        dedupeKey: `${spec.dedupePrefix}:${account.slug}:${minuteWindow}`,
+        queue: `ml-sync-${account.slug}`,
+        payload: { mlAccountId: account.id },
+      });
 
-    if (result.deduplicated) {
-      deduplicated += 1;
-    } else {
-      enqueued += 1;
+      if (result.deduplicated) {
+        deduplicated += 1;
+      } else {
+        enqueued += 1;
+      }
+    } catch (error) {
+      enqueueFailed = true;
+      deps.logger.error(`${spec.dedupePrefix}_enqueue_failed`, {
+        ml_account_id: account.id,
+        slug: account.slug,
+        job_type: spec.jobType,
+        reason: error instanceof Error ? error.message : "falha ao enfileirar reconciliação da conta",
+      });
     }
   }
 
@@ -88,7 +99,13 @@ export async function triggerAccountReconcile(
     accounts_scanned: accounts.data.length,
     enqueued,
     deduplicated,
+    ...(enqueueFailed ? { failed: true } : {}),
   });
 
-  return { accountsScanned: accounts.data.length, enqueued, deduplicated };
+  return {
+    accountsScanned: accounts.data.length,
+    enqueued,
+    deduplicated,
+    ...(enqueueFailed ? { failed: true as const } : {}),
+  };
 }

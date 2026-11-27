@@ -51,7 +51,7 @@ Ao liberar um caminho público, o teste prova que **apenas** aquele caminho foi 
 
 ## 3. Ferramentas
 
-Na CI, `scripts/isolate-supabase.mjs` escolhe um bloco de portas livre e um
+Na CI, `scripts/isolate-supabase.mjs` verifica portas publicadas pelo Docker, testa sockets locais e escolhe um bloco de portas e um
 `project_id` por run/job/tentativa antes de subir a stack. `SUPABASE_DB_URL`
 e `DB_URL` recebem a URL emitida por `supabase status`, sem pressupor 54322.
 Localmente, execute o script só numa worktree própria com config padrão e
@@ -84,6 +84,10 @@ docker restart supabase_rest_<projeto>
 Não acontece toda vez: depende de o seed começar antes de o `reset` ter avisado o PostgREST. É corrida, então a ausência do erro numa rodada não prova que ele não vai aparecer na próxima.
 
 **Armadilha conhecida (2026-09-10):** rodar a suíte de INTEGRAÇÃO deixa o Auth local quebrado até o próximo `db reset`. Os fixtures de RLS inserem em `auth.users` por SQL, e `confirmation_token` nasce **NULO** — o GoTrue lê aquela coluna como `string` e responde **500** em `GET /admin/users` (`"converting NULL to string is unsupported"`) para a listagem INTEIRA, não só para a linha ruim. Quem depende de `auth.admin.listUsers` para de funcionar: `e2e/seed.ts` (que procura o usuário pelo e-mail) e o convite de D-296. A ordem segura é **integração e e2e nunca compartilharem o mesmo banco sem reset entre elas**. E a lição vale além do teste: **linha de `auth.users` criada por SQL envenena a listagem do projeto todo** — quem criar usuário fora do GoTrue precisa gravar `''`, não `NULL`.
+
+**Traces de falha:** a CI envia `apps/web/test-results/` no artefato
+`playwright-test-results` quando a etapa Playwright falha. Abra o arquivo
+`trace.zip` com `pnpm --filter web exec playwright show-trace <caminho>`.
 
 **Armadilha conhecida (2026-09-11):** o Playwright sobe `pnpm run start`, que serve o `.next` **ja construido** -- e com `reuseExistingServer` fora do CI. Editar a tela e rodar a suite na sequencia testa o BUILD ANTERIOR: a assercao nova fica vermelha e o codigo esta certo. Aconteceu em D-309 com duas assercoes (uma cor e um paragrafo novos). Depois de mexer em `app/`, `components/` ou `lib/`, a ordem e `pnpm build` **antes** de `playwright test` -- e derrubar o `next start` que sobrou, senao o reuso serve o build velho mesmo apos o build novo.
 
@@ -128,6 +132,9 @@ typecheck -> lint -> unit -> integração -> build
 
 Obrigatórios antes de qualquer merge na `main`. Nenhum deploy sem CI verde.
 
+Em checkout recém-instalado, o Turbo compila os pacotes internos de que o
+lint precisa. O ESLint com informação de tipos lê as declarações em `dist`.
+
 **O tempo do job de e2e (2026-10-20).**
 - **O limite subiu de 15 para 25 minutos.** Nos 40 runs anteriores, o job com sucesso levou de 11,8 a 14,7 minutos: uns 3 de preparo (Supabase local, build, seed) e de 9,4 a 11,6 de testes. Quatro runs foram cortados entre 15,0 e 15,6 minutos sem nenhum caso vermelho. Três deles foram cortados com os testes já verdes e todos os passos concluídos. O limite existe para pegar a suíte travada, não a lenta.
 - **Como reconhecer o corte:** ele aparece como `cancelled`, não `failure`, sem relatório do Playwright e sem `✘` no log. O outro `cancelled` comum é a concorrência do workflow (`cancel-in-progress`), quando um push novo na mesma branch substitui o run. Esse pode vir a qualquer momento; o corte do limite vem sempre no limite.
@@ -166,3 +173,41 @@ Complementa `docs/PROMPT_MASTER.md` §33. Uma feature só está pronta quando, c
 - Cobertura mínima percentual como métrica de qualidade — cobre-se o que tem risco, não o que sobe o número.
 - Testes de snapshot de interface, frágeis e de baixo sinal.
 - Mock do Postgres. Integração usa banco real local.
+
+### Observação da fila gerenciada em operação normal (Q03)
+
+Em 23/11, uma leitura do Cloud Logging nas últimas 24 horas encontrou 24
+eventos `job_enqueued` da API e 24 `ping_received` do worker para
+`system.ping`. Os 24 pares coincidiram pelo identificador do job. A amostra
+vai de 22/11 13:00 UTC a 23/11 12:00 UTC. A diferença entre os dois eventos
+teve p95 de 5,934 s e máximo de 17,853 s. A medição cobre a chegada ao
+handler, incluindo espera até a execução do worker.
+Uma transação somente leitura na VM encontrou 24 execuções com IDs distintos,
+todas `done`, em `job_runs` no mesmo recorte horário.
+
+A consulta usou apenas heartbeats agendados e nenhum job adicional foi
+disparado. O ensaio local de carga representativa da aplicação está no
+PR #382.
+
+### Retentativa na fila gerenciada isolada (Q03)
+
+Em 23/11, uma fila exclusiva em `southamerica-east1` entregou **48 de 48
+tarefas sintéticas** a um Cloud Run interno descartável. O destino devolveu
+`503` na primeira tentativa de 16 tarefas. As **16** retornaram `204` na
+retentativa, houve 48 respostas bem-sucedidas em 64 tentativas e a fila
+terminou vazia. Reenfileirar um nome conhecido retornou `409`. Entre a
+primeira e a última chamada registrada passaram 112,24 s. A fila tinha
+teto de 10 despachos/s e 4 simultâneos.
+
+A rodada inicial comprovou o `409` e os 16 `503`, mas o prazo de coleta
+de 115 s acabou antes de a fila esvaziar. A nova rodada reduziu a
+concorrência e ampliou o prazo de observação. A desaceleração após `503`
+é compatível com o comportamento descrito pelo
+[Google Cloud](https://docs.cloud.google.com/tasks/docs/manage-cloud-task-scaling).
+
+A carga funcional de 1.088 requisições foi exercitada no stack local
+(#382). No Google Cloud, a sondagem usou apenas a fila e o destino de
+teste, com conta de serviço exclusiva sem papel no projeto. A concessão
+temporária para criar o serviço foi retirada. Fila, serviço, imagem e
+conta de serviço foram removidos. Q04 e V03 cobrem o aceite operacional
+da aplicação.

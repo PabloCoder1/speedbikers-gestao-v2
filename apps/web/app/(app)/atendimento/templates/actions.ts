@@ -54,7 +54,7 @@ function translate(code: string | undefined, message: string): string {
     return "Só ADMIN e GESTOR podem gerenciar templates.";
   }
 
-  return message;
+  return "Não foi possível salvar o template. Tente novamente.";
 }
 
 export async function createTemplate(name: string, body: string): Promise<TemplateActionResult> {
@@ -71,10 +71,26 @@ export async function createTemplate(name: string, body: string): Promise<Templa
     currentMembership(supabase),
   ]);
 
-  const userId = authResult.data.user?.id;
+  if (authResult.error !== null) {
+    return {
+      ok: false,
+      message:
+        authResult.error.status === 401 ||
+        authResult.error.status === 403 ||
+        authResult.error.name === "AuthSessionMissingError"
+          ? "Sessão expirada — atualize a página."
+          : "Não foi possível confirmar sua sessão — tente de novo.",
+    };
+  }
+
+  if (membershipResult.error !== null) {
+    return { ok: false, message: "Não foi possível confirmar sua organização — tente de novo." };
+  }
+
+  const userId = authResult.data.user.id;
   const organizationId = membershipResult.organizationId;
 
-  if (userId === undefined || organizationId === null) {
+  if (organizationId === null) {
     return { ok: false, message: "Sessão expirada — atualize a página." };
   }
 

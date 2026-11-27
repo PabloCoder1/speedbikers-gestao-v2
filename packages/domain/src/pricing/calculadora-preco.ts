@@ -161,8 +161,12 @@ export function calcularPreco(entrada: EntradaCalculadora): ResultadoCalculadora
     if (
       entrada.freteMl === undefined ||
       entrada.freteMl === null ||
+      !Number.isFinite(entrada.freteMl) ||
+      entrada.freteMl < 0 ||
       entrada.tarifaFixaMl === undefined ||
-      entrada.tarifaFixaMl === null
+      entrada.tarifaFixaMl === null ||
+      !Number.isFinite(entrada.tarifaFixaMl) ||
+      entrada.tarifaFixaMl < 0
     ) {
       return { ok: false, motivo: "cote o frete pelas medidas para ver a margem" };
     }

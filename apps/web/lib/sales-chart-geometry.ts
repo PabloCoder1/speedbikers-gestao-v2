@@ -27,7 +27,7 @@ export interface Ponto {
  * nada. Valores das DUAS séries entram juntos: escala compartilhada (D-137).
  */
 export function tetoDaEscala(valores: readonly number[]): number {
-  const maior = Math.max(0, ...valores);
+  const maior = Math.max(0, ...valores.filter(Number.isFinite));
 
   return maior === 0 ? 1 : maior * 1.1;
 }
@@ -41,6 +41,8 @@ export function xPct(offset: number, diasNoPeriodo: number): number {
 
 /** Posição vertical de um valor contra o teto: o teto no topo, o zero na base. */
 export function yPct(valor: number, teto: number): number {
+  if (!Number.isFinite(valor) || !Number.isFinite(teto) || teto <= 0) return 100;
+
   return 100 - (100 * valor) / teto;
 }
 

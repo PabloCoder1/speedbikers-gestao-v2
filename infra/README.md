@@ -42,11 +42,9 @@ CONFIRMO_PRODUCAO=sim bash infra/deploy-cloud-run.sh
 
 A guarda existe porque, até D-333, `PROJECT_ID` era sobrescrevível e o Supabase era **fixo** no Dev: um deploy com o projeto de produção subiria apontando para o banco do Dev, sem aviso. `infra/ambiente.test.sh` prova cada caso e roda na CI.
 
-## Migrations de produção (D-334)
+## Migrations de produção na VM
 
-O fluxo de migrations de produção é `.github/workflows/migrations-producao.yml`, disparado à mão na `main`, com duas aprovações do ambiente `producao` do GitHub, uma para ver o plano e outra para aplicar.
-
-`guarda-migrations-producao.sh` recusa disparos fora da `main`, ambiente `producao` inexistente, sem revisor obrigatório ou aberto a qualquer branch, CI sem sucesso ou sem aplicação no Dev, e divergências na ref de produção. `guarda-migrations-producao.test.sh` exercita esses casos. A configuração do ambiente está em `docs/DEPLOYMENT.md` §8.2.
+O [preflight da VM](vm/README.md#comparar-o-histórico-com-o-candidato) pode rodar localmente ou pelo workflow manual. O workflow recebe as versões exportadas por um operador e gera um plano vinculado ao commit. A aplicação continua sujeita ao procedimento de publicação da VM.
 
 ## Ordem de execução
 
@@ -61,6 +59,12 @@ bash infra/cloud-tasks-queues.sh
 ```bash
 bash infra/storage-buckets.sh
 ```
+
+O bootstrap verifica as APIs habilitadas. Depois de habilitar as ausentes, lista repositórios, contas de serviço e nomes de segredos antes de criar recursos ou conceder IAM. Uma listagem com erro interrompe o fluxo.
+
+O provisionador de Storage usa Node para validar a configuração JSON do lifecycle. A regra D-030 entra na criação de `raw-ml`. Se o bucket já existe, o script exige que a regra esteja presente e preserva as demais regras. Erros de leitura ou divergências interrompem o provisionamento antes de criar buckets ou conceder IAM.
+
+O provisionador do NAT exige uma listagem bem-sucedida para habilitar o Compute Engine. Com a API habilitada, consulta redes, sub-redes, endereços e roteadores antes de criar recursos de rede. Se o roteador existe, também lista seus gateways. A criação exige ausência pelo nome completo e o IP final precisa estar preenchido.
 
 ## O que cada um cria
 

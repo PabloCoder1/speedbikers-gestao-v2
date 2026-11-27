@@ -58,6 +58,36 @@ interface MappedRow {
   payload: Json;
 }
 
+interface ErpParseVersionArgs {
+  p_batch_id: string;
+  p_parse_version: string;
+}
+
+interface ErpParseCounts {
+  total_rows: number;
+  ok_rows: number;
+  skipped_rows: number;
+  invalid_rows: number;
+}
+
+interface ErpParseRpcResult<Data> {
+  data: Data | null;
+  error: { message: string } | null;
+}
+
+interface ErpParseRpc {
+  rpc(
+    name: "stage_erp_parse_chunk",
+    args: ErpParseVersionArgs & { p_offset: number; p_rows: MappedRow[] },
+  ): PromiseLike<ErpParseRpcResult<boolean>>;
+  rpc(
+    name: "publish_erp_parse",
+    args: ErpParseVersionArgs & { p_expected_rows: number; p_parsed_at: string },
+  ): PromiseLike<ErpParseRpcResult<ErpParseCounts[]>>;
+}
+
+const PARSE_SUPERADO = { status: "failed", retryable: true, reason: "a versão da leitura do lote foi substituída" } as const;
+
 /**
  * Converte o registro normalizado para o tipo da coluna `jsonb`.
  *
@@ -139,7 +169,10 @@ function mapRows(
 }
 
 export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
-  return async (_envelope, context: HandlerContext): Promise<JobOutcome> => {
+  // Contrato local da migration até regenerar os tipos compartilhados a partir do Dev.
+  const persistence = deps.db as unknown as ErpParseRpc;
+
+  return async (envelope, context: HandlerContext): Promise<JobOutcome> => {
     const parsed = payloadSchema.safeParse(context.payload);
 
     if (!parsed.success) {
@@ -151,7 +184,7 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
 
     const batch = await deps.db
       .from("erp_import_batches")
-      .select("id, kind, storage_path, status, organization_id")
+      .select("id, kind, storage_path, status, organization_id, updated_at, parsed_at")
       .eq("id", batchId)
       .maybeSingle();
 
@@ -163,14 +196,43 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
       return { status: "failed", retryable: false, reason: `lote ${batchId} não existe` };
     }
 
-    if (batch.data.status === "APPLIED") {
-      // Reprocessar um lote já aplicado reescreveria a conferência que
-      // sustentou a decisão humana.
-      return { status: "failed", retryable: false, reason: "lote já aplicado" };
+    if (batch.data.organization_id !== envelope.organizationId) {
+      return { status: "failed", retryable: false, reason: "lote não pertence à organização do job" };
     }
 
-    await deps.db.from("erp_import_batches").update({ status: "PARSING" }).eq("id", batchId);
+    if (batch.data.status === "APPLIED" || batch.data.status === "APPLYING") {
+      // Reprocessar um lote em aplicação ou já aplicado apagaria/reescreveria a
+      // conferência que sustentou a decisão humana (D-746).
+      return {
+        status: "failed",
+        retryable: false,
+        reason: batch.data.status === "APPLIED" ? "lote já aplicado" : "lote já em aplicação",
+      };
+    }
 
+    if (batch.data.status === "PARSED" || batch.data.status === "CANCELLED" || batch.data.parsed_at !== null) {
+      return { status: "done", processed: 0 };
+    }
+
+    // Preserva a conferência se o lote avançou desde a leitura, inclusive em outra tentativa de parse.
+    const parsing = await deps.db
+      .from("erp_import_batches")
+      .update({ status: "PARSING" })
+      .eq("id", batchId)
+      .eq("status", batch.data.status)
+      .eq("updated_at", batch.data.updated_at)
+      .select("updated_at")
+      .maybeSingle();
+
+    if (parsing.error !== null) {
+      return { status: "failed", retryable: true, reason: parsing.error.message };
+    }
+
+    if (parsing.data === null) {
+      return { status: "failed", retryable: true, reason: "lote mudou antes de iniciar a leitura" };
+    }
+
+    const version = parsing.data.updated_at;
     let sheet: readonly (readonly unknown[])[];
 
     try {
@@ -178,13 +240,8 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
     } catch (error) {
       const reason = error instanceof Error ? error.message : "falha ao ler o arquivo";
 
-      await deps.db
-        .from("erp_import_batches")
-        .update({ status: "FAILED", last_error: reason })
-        .eq("id", batchId);
-
       // Bucket indisponível é transitório; o lote volta a PARSING na próxima.
-      return { status: "failed", retryable: true, reason };
+      return marcarFalhaNoLote(deps.db, batchId, version, { last_error: reason }, true);
     }
 
     const header = sheet[0] ?? [];
@@ -195,52 +252,68 @@ export function createErpImportParseHandler(deps: ParseDeps): JobHandler {
     if (missing.length > 0) {
       const reason = `colunas ausentes: ${missing.join(", ")}`;
 
-      await deps.db
-        .from("erp_import_batches")
-        .update({ status: "FAILED", last_error: reason, total_rows: body.length })
-        .eq("id", batchId);
-
       context.logger.error("erp_parse_wrong_file", { batch_id: batchId, missing });
 
-      return { status: "failed", retryable: false, reason };
+      return marcarFalhaNoLote(deps.db, batchId, version, { last_error: reason, total_rows: body.length }, false);
     }
 
-    // Idempotência: o job pode ser reentregue. Limpar antes de inserir faz a
-    // reexecução começar do zero em vez de colidir com a chave única.
-    await deps.db.from("erp_import_rows").delete().eq("batch_id", batchId);
-    await deps.db.from("erp_stock_snapshots").delete().eq("batch_id", batchId);
-
+    const parse = { p_batch_id: batchId, p_parse_version: version };
     for (let start = 0; start < rows.length; start += CHUNK) {
-      const chunk = rows.slice(start, start + CHUNK);
-
-      const inserted = await deps.db
-        .from("erp_import_rows")
-        .insert(chunk.map((row) => ({ ...row, batch_id: batchId })));
-
-      if (inserted.error !== null) {
-        return { status: "failed", retryable: true, reason: inserted.error.message };
+      const staged = await persistence.rpc("stage_erp_parse_chunk", {
+        ...parse,
+        p_offset: start,
+        p_rows: rows.slice(start, start + CHUNK),
+      });
+      if (staged.error !== null) {
+        return { status: "failed", retryable: true, reason: staged.error.message };
+      }
+      if (staged.data !== true) {
+        return PARSE_SUPERADO;
       }
     }
 
-    const counts = {
-      total_rows: rows.length,
-      ok_rows: rows.filter((r) => r.status === "OK").length,
-      skipped_rows: rows.filter((r) => r.status === "SKIPPED").length,
-      invalid_rows: rows.filter((r) => r.status === "INVALID").length,
-    };
+    const finished = await persistence.rpc("publish_erp_parse", {
+      ...parse,
+      p_expected_rows: rows.length,
+      p_parsed_at: (deps.now?.() ?? new Date()).toISOString(),
+    });
 
-    await deps.db
-      .from("erp_import_batches")
-      .update({
-        ...counts,
-        status: "PARSED",
-        parsed_at: (deps.now?.() ?? new Date()).toISOString(),
-        last_error: null,
-      })
-      .eq("id", batchId);
+    if (finished.error !== null) {
+      return { status: "failed", retryable: true, reason: finished.error.message };
+    }
+    const counts = finished.data?.[0];
+    if (counts === undefined) {
+      return PARSE_SUPERADO;
+    }
 
     context.logger.info("erp_parse_finished", { batch_id: batchId, ...counts });
 
     return { status: "done", processed: counts.ok_rows };
   };
+}
+
+async function marcarFalhaNoLote(
+  db: AdminClient,
+  batchId: string,
+  version: string,
+  update: { last_error: string; total_rows?: number },
+  retryable: boolean,
+): Promise<JobOutcome> {
+  const failed = await db
+    .from("erp_import_batches")
+    .update({ ...update, status: "FAILED" })
+    .eq("id", batchId)
+    .eq("status", "PARSING")
+    .eq("updated_at", version)
+    .select("id")
+    .maybeSingle();
+
+  if (failed.error !== null) {
+    return { status: "failed", retryable: true, reason: failed.error.message };
+  }
+  if (failed.data === null) {
+    return PARSE_SUPERADO;
+  }
+
+  return { status: "failed", retryable, reason: update.last_error };
 }

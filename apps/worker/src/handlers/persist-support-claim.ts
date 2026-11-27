@@ -99,21 +99,25 @@ async function linkOrder(
     .eq("order_id", orderId)
     .not("sku_id", "is", null);
 
-  if (items.error === null) {
-    // O `.not("sku_id","is",null)` acima já exclui itens sem vínculo; o
-    // types gerado marca a coluna como não-nula e o lint confirma que o
-    // filtro extra seria condição morta.
-    const skuIds = [...new Set(items.data.map((item) => item.sku_id))];
+  // D-787: falha transitória na leitura de `order_items` não pode ser engolida
+  // (pularia os vínculos `ORDER_DERIVED` de SKU e ainda apagaria o fallback externo).
+  if (items.error !== null) {
+    throw persistenceError(`ler itens do pedido ${String(orderId)} do claim`, items.error);
+  }
 
-    for (const skuId of skuIds) {
-      await ensureSupportLink(db, {
-        organization_id: context.organizationId,
-        ml_account_id: context.mlAccountId,
-        support_case_id: supportCaseId,
-        sku_id: skuId,
-        link_source: "ORDER_DERIVED",
-      });
-    }
+  // O `.not("sku_id","is",null)` acima já exclui itens sem vínculo; o
+  // types gerado marca a coluna como não-nula e o lint confirma que o
+  // filtro extra seria condição morta.
+  const skuIds = [...new Set(items.data.map((item) => item.sku_id))];
+
+  for (const skuId of skuIds) {
+    await ensureSupportLink(db, {
+      organization_id: context.organizationId,
+      ml_account_id: context.mlAccountId,
+      support_case_id: supportCaseId,
+      sku_id: skuId,
+      link_source: "ORDER_DERIVED",
+    });
   }
 
   // O vínculo externo foi o fallback enquanto o pedido não existia. Só

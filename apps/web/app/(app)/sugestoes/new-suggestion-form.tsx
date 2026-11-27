@@ -29,9 +29,15 @@ export function NewSuggestionForm(): ReactNode {
     setError(null);
     setSent(false);
 
-    const result = await createSuggestion(text);
-
-    setBusy(false);
+    let result: Awaited<ReturnType<typeof createSuggestion>>;
+    try {
+      result = await createSuggestion(text);
+    } catch {
+      setError("Não foi possível confirmar o envio. Confira a lista e tente novamente.");
+      return;
+    } finally {
+      setBusy(false);
+    }
 
     if (!result.ok) {
       setError(result.message);

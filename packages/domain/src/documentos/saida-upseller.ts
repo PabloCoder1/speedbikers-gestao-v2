@@ -1,3 +1,4 @@
+import { isValidBusinessDate } from "../metrics/business-date.js";
 import { numeroBr, type CelulaPdf, type DocumentoLido, type ItemLido, type LeituraDocumento, type LinhaPdf } from "./tipos.js";
 
 /**
@@ -138,13 +139,21 @@ export function lerSaidaUpseller(linhas: readonly LinhaPdf[]): LeituraDocumento 
     só porque tinha operador.
   */
   const armazem = /Armaz[ée]m:[ \t]*([^\r\n]*?)(?:Operador:|$)/im.exec(texto)?.[1]?.trim() ?? null;
-  const observacao = linhas[linhas.findIndex((l) => /^Observa[çc][ãa]o$/i.test(l.texto.trim())) + 1]?.texto.trim();
+  const indiceObservacao = linhas.findIndex((l) => /^Observa[çc][ãa]o$/i.test(l.texto.trim()));
+  const observacao = indiceObservacao === -1 ? undefined : linhas[indiceObservacao + 1]?.texto.trim();
   const impressao = /Imprimir:\s*(\d{2})\/(\d{2})\/(\d{4})\s*(\d{2}):(\d{2})/.exec(texto);
-  const emitidoEm =
-    impressao === null
-      ? null
-      : // Horário de Brasília na impressão; guardado como instante.
-        `${impressao[3] ?? ""}-${impressao[2] ?? ""}-${impressao[1] ?? ""}T${impressao[4] ?? ""}:${impressao[5] ?? ""}:00.000-03:00`;
+  let emitidoEm: string | null = null;
+
+  if (impressao !== null) {
+    const dataIso = `${impressao[3] ?? ""}-${impressao[2] ?? ""}-${impressao[1] ?? ""}`;
+    const hora = Number(impressao[4]);
+    const minuto = Number(impressao[5]);
+
+    if (isValidBusinessDate(dataIso) && hora >= 0 && hora <= 23 && minuto >= 0 && minuto <= 59) {
+      // Horário de Brasília na impressão; guardado como instante.
+      emitidoEm = `${dataIso}T${impressao[4] ?? ""}:${impressao[5] ?? ""}:00.000-03:00`;
+    }
+  }
 
   const documento: DocumentoLido = {
     tipo: "SAIDA_UPSELLER_PDF",

@@ -43,6 +43,10 @@
  */
 import type { EtapaProcesso } from "../components/process-steps";
 
+function contagemSegura(valor: number | null): number {
+  return valor !== null && Number.isFinite(valor) && valor >= 0 ? valor : 0;
+}
+
 export function nfeEtapas(input: {
   status: string;
   parsedAt: string | null;
@@ -60,16 +64,17 @@ export function nfeEtapas(input: {
   semBaixaPorRegra?: string | null;
 }): readonly EtapaProcesso[] {
   const { status, parsedAt } = input;
+  const semBaixa = input.semBaixaPorRegra?.trim() ?? "";
 
-  if (status === "FAILED" && input.semBaixaPorRegra !== undefined && input.semBaixaPorRegra !== null) {
+  if (status === "FAILED" && semBaixa !== "") {
     return [
       { label: "Envio do arquivo", estado: "concluida" },
       { label: "Leitura do arquivo", estado: "concluida" },
-      { label: input.semBaixaPorRegra, estado: "pendente" },
+      { label: semBaixa, estado: "pendente" },
     ];
   }
-  const total = input.totalItems ?? 0;
-  const vinculados = input.resolvedItems ?? 0;
+  const total = contagemSegura(input.totalItems);
+  const vinculados = contagemSegura(input.resolvedItems);
 
   const leu = parsedAt !== null;
   /*

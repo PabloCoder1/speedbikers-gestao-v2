@@ -67,14 +67,23 @@ export function NewPreferenceForm({
     setBusy(true);
     setError(null);
 
-    const result = await createPreference({
-      eventType: eventType === ALL_TYPES ? null : eventType,
-      mlAccountId: accountId === ALL_ACCOUNTS ? null : accountId,
-      minSeverity,
-      enabled,
-    });
+    let result: Awaited<ReturnType<typeof createPreference>>;
 
-    setBusy(false);
+    try {
+      result = await createPreference({
+        eventType: eventType === ALL_TYPES ? null : eventType,
+        mlAccountId: accountId === ALL_ACCOUNTS ? null : accountId,
+        minSeverity,
+        enabled,
+      });
+    } catch {
+      // A regra pode ter sido gravada antes de a conexão cair.
+      setError("Não foi possível confirmar a criação da regra. Confira a lista antes de tentar novamente.");
+
+      return;
+    } finally {
+      setBusy(false);
+    }
 
     if (!result.ok) {
       setError(result.message);

@@ -24,6 +24,10 @@ export async function GET(request: NextRequest): Promise<Response> {
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
 
+  if (membership.error !== null) {
+    return new Response("Não foi possível verificar sua organização no momento.", { status: 503 });
+  }
+
   if (membership.organizationId === null) {
     return new Response("Sua conta não está associada a nenhuma organização.", { status: 403 });
   }
@@ -56,7 +60,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   );
 
   if (error !== null) {
-    return new Response(`Não foi possível exportar o Full: ${error.message}`, { status: 502 });
+    return new Response("Não foi possível exportar o Full no momento.", { status: 502 });
   }
 
   const total = rows[0]?.total_count ?? 0;

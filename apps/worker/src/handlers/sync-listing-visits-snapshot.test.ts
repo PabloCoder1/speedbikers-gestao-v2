@@ -64,6 +64,7 @@ interface FakeDbOptions {
     access_token_expires_at: string;
   } | null;
   links?: { item_id: string | null }[];
+  upsertError?: { message: string };
 }
 
 const DEFAULT_ACCOUNT = { id: ML_ACCOUNT_ID, organization_id: ORGANIZATION_ID, status: "CONNECTED" };
@@ -111,7 +112,7 @@ function fakeDb(options: FakeDbOptions = {}): {
       upsert: (row: unknown) => {
         inserted.push({ table, row });
 
-        return Promise.resolve({ data: null, error: null });
+        return Promise.resolve({ data: null, error: options.upsertError ?? null });
       },
       update: () => chain({ data: { ml_account_id: ML_ACCOUNT_ID }, error: null }),
     }),
@@ -265,6 +266,24 @@ describe("sync.listing-visits.snapshot (D-032)", () => {
     const syncRun = db.inserted.find((e) => e.table === "sync_runs")?.row as { status: string; reason: string | null };
     expect(syncRun.status).toBe("partial");
     expect(syncRun.reason).toContain("1");
+  });
+
+  it("D-780: falha ao gravar daily_listing_visits devolve retryable=true e registra sync_runs/sync_errors em vez de done", async () => {
+    const { deps: d, db, lines } = deps(
+      { links: [{ item_id: "MLB1" }], upsertError: { message: "lock timeout" } },
+      { MLB1: TIME_WINDOW_MLB1 },
+    );
+
+    const outcome = await run(d, lines);
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(db.inserted.find((e) => e.table === "sync_runs")?.row).toMatchObject({
+      status: "failed",
+      resource: "visits",
+    });
+    expect(db.inserted.find((e) => e.table === "sync_errors")?.row).toMatchObject({
+      error_class: "retryable",
+    });
   });
 
   it("nunca loga access_token, refresh_token nem client_secret", async () => {

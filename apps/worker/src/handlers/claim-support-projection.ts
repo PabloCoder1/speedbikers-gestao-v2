@@ -202,14 +202,19 @@ export function mapClaimMessagesToProjection(
 ): SupportClaimMessageProjection[] {
   const sellerRole = resolveSellerRole(claim);
   const projected: SupportClaimMessageProjection[] = [];
+  // Duplicatas no mesmo segundo para o mesmo remetente colidem no
+  // `ON CONFLICT DO UPDATE` (Postgres 21000); manter a primeira ocorrência.
+  const seenKeys = new Set<string>();
 
   for (const message of messages) {
     const externalMessageKey = buildClaimMessageKey(message);
     const occurredAt = message.message_date ?? message.date_created ?? null;
 
-    if (externalMessageKey === null || occurredAt === null) {
+    if (externalMessageKey === null || occurredAt === null || seenKeys.has(externalMessageKey)) {
       continue;
     }
+
+    seenKeys.add(externalMessageKey);
 
     const { body, bodyState } = resolveBody(message);
     const common = { externalMessageKey, body, bodyState, remoteStatus: message.status ?? null, occurredAt };
@@ -262,7 +267,12 @@ function resolveReplyState(claim: ParsedClaim): "UNKNOWN" | "ALLOWED" | "BLOCKED
     return "UNKNOWN";
   }
 
-  const seller = claim.players.find((player) => player.role === "respondent");
+  // Identifica o vendedor por `type === "seller"` (em `cancel_sale`, o vendedor
+  // é `complainant` e o comprador é `respondent`); só cai em `role === "respondent"`
+  // quando nenhum participante traz `type === "seller"`.
+  const seller =
+    claim.players.find((player) => player.type === "seller") ??
+    claim.players.find((player) => player.role === "respondent");
 
   if (seller?.available_actions == null) {
     return "UNKNOWN";

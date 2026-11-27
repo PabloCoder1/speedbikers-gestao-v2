@@ -6,7 +6,7 @@ import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
 import { z } from "zod";
 
-import { readAllPages } from "../read-all-pages.js";
+import { POSTGREST_MAX_ROWS, readAllPages } from "../read-all-pages.js";
 import { recordDomainEvents } from "./domain-events.js";
 
 /**
@@ -157,6 +157,98 @@ export function itemAbsenceRecheckMs(status: AbsenceStatus, failures: number): n
 /** O `.in()` vai na URL do PostgREST: lotes de 100 ids mantêm a URL curta. */
 const ABSENCE_DELETE_CHUNK = 100;
 
+/**
+ * D-776: mesmo teto para `.in("inventory_id", ...)` na leitura de snapshots
+ * anteriores (evita HTTP 414 em contas com >100 inventários Full) + janela
+ * recente de 48 h (≤ 8 capturas × 100 = 800 linhas, cabe em 1 página) com
+ * fallback pontual pelo índice `fulfillment_stock_snapshots_unique`.
+ */
+const INVENTORY_LOOKUP_CHUNK = 100;
+const RECENT_SNAPSHOT_WINDOW_MS = 48 * HOUR_MS;
+const MAX_CONCURRENT_DB_LOOKUPS = 10;
+
+interface PreviousSnapshot {
+  quantity: number;
+  captured_at: string;
+}
+
+async function readPreviousSnapshots(
+  params: FetchFulfillmentSnapshotsParams,
+  inventories: readonly string[],
+  capturedAt: Date,
+): Promise<Map<string, PreviousSnapshot>> {
+  const previousRows = new Map<string, PreviousSnapshot>();
+
+  if (inventories.length === 0) return previousRows;
+
+  const recentCutoff = new Date(capturedAt.getTime() - RECENT_SNAPSHOT_WINDOW_MS).toISOString();
+
+  for (let start = 0; start < inventories.length; start += INVENTORY_LOOKUP_CHUNK) {
+    const chunk = inventories.slice(start, start + INVENTORY_LOOKUP_CHUNK);
+    let foundInChunk = 0;
+    let from = 0;
+
+    for (;;) {
+      const page = await params.db
+        .from("fulfillment_stock_snapshots")
+        .select("inventory_id, quantity, captured_at")
+        .eq("ml_account_id", params.mlAccountId)
+        .in("inventory_id", chunk)
+        .gte("captured_at", recentCutoff)
+        .order("captured_at", { ascending: false })
+        .order("inventory_id", { ascending: true })
+        .range(from, from + POSTGREST_MAX_ROWS - 1);
+
+      if (page.error !== null) {
+        throw new Error(`falha ao ler snapshots anteriores do Full: ${page.error.message}`);
+      }
+
+      const rows = page.data;
+
+      for (const row of rows) {
+        if (!previousRows.has(row.inventory_id)) {
+          previousRows.set(row.inventory_id, { quantity: row.quantity, captured_at: row.captured_at });
+          foundInChunk += 1;
+        }
+      }
+
+      if (foundInChunk >= chunk.length || rows.length < POSTGREST_MAX_ROWS) {
+        break;
+      }
+
+      from += POSTGREST_MAX_ROWS;
+    }
+  }
+
+  const missing = inventories.filter((id) => !previousRows.has(id));
+
+  if (missing.length > 0) {
+    await mapWithConcurrency(missing, MAX_CONCURRENT_DB_LOOKUPS, async (inventoryId) => {
+      const latest = await params.db
+        .from("fulfillment_stock_snapshots")
+        .select("inventory_id, quantity, captured_at")
+        .eq("ml_account_id", params.mlAccountId)
+        .eq("inventory_id", inventoryId)
+        .order("captured_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latest.error !== null) {
+        throw new Error(`falha ao ler snapshot anterior do Full (${inventoryId}): ${latest.error.message}`);
+      }
+
+      if (latest.data !== null) {
+        previousRows.set(inventoryId, {
+          quantity: latest.data.quantity,
+          captured_at: latest.data.captured_at,
+        });
+      }
+    });
+  }
+
+  return previousRows;
+}
+
 interface ItemAbsence {
   item_id: string;
   failures: number;
@@ -266,15 +358,23 @@ async function updateItemAbsences(
       });
 
   if (marks.length > 0) {
-    const written = await params.db
-      .from("fulfillment_item_absences")
-      .upsert(marks, { onConflict: "ml_account_id,item_id" });
+    try {
+      const written = await params.db
+        .from("fulfillment_item_absences")
+        .upsert(marks, { onConflict: "ml_account_id,item_id" });
 
-    if (written.error !== null) {
+      if (written.error !== null) {
+        params.logger.warn("fulfillment_item_absences_not_recorded", {
+          ml_account_id: params.mlAccountId,
+          items: marks.length,
+          reason: written.error.message,
+        });
+      }
+    } catch (error) {
       params.logger.warn("fulfillment_item_absences_not_recorded", {
         ml_account_id: params.mlAccountId,
         items: marks.length,
-        reason: written.error.message,
+        reason: errorMessage(error),
       });
     }
   }
@@ -297,17 +397,26 @@ async function updateItemAbsences(
 
   for (let start = 0; start < toClear.length; start += ABSENCE_DELETE_CHUNK) {
     const chunk = toClear.slice(start, start + ABSENCE_DELETE_CHUNK);
-    const cleared = await params.db
-      .from("fulfillment_item_absences")
-      .delete()
-      .eq("ml_account_id", params.mlAccountId)
-      .in("item_id", chunk);
 
-    if (cleared.error !== null) {
+    try {
+      const cleared = await params.db
+        .from("fulfillment_item_absences")
+        .delete()
+        .eq("ml_account_id", params.mlAccountId)
+        .in("item_id", chunk);
+
+      if (cleared.error !== null) {
+        params.logger.warn("fulfillment_item_absences_not_cleared", {
+          ml_account_id: params.mlAccountId,
+          items: chunk.length,
+          reason: cleared.error.message,
+        });
+      }
+    } catch (error) {
       params.logger.warn("fulfillment_item_absences_not_cleared", {
         ml_account_id: params.mlAccountId,
         items: chunk.length,
-        reason: cleared.error.message,
+        reason: errorMessage(error),
       });
     }
   }
@@ -457,6 +566,16 @@ export async function fetchFulfillmentSnapshots(
         return { link, item: null, failed: true, deferred: false, absentStatus: absenceStatusOf(error) };
       }
 
+      if (error instanceof z.ZodError) {
+        params.logger.warn("fulfillment_item_fetch_failed", {
+          ml_account_id: params.mlAccountId,
+          item_id: link.item_id,
+          reason: error.message,
+        });
+
+        return { link, item: null, failed: true, deferred: false, absentStatus: null };
+      }
+
       throw error;
     }
 
@@ -475,7 +594,7 @@ export async function fetchFulfillmentSnapshots(
     try {
       return { inventoryId, stock: await params.mercadoLivre.request({ method: "GET", path: `/inventories/${inventoryId}/stock/fulfillment`, accessToken: params.accessToken, schema: fulfillmentStockResponseSchema }), failed: false };
     } catch (error) {
-      if (error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") {
+      if ((error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") || error instanceof z.ZodError) {
         params.logger.warn("fulfillment_stock_fetch_failed", { ml_account_id: params.mlAccountId, inventory_id: inventoryId, reason: error.message });
         return { inventoryId, stock: null, failed: true };
       }
@@ -487,14 +606,7 @@ export async function fetchFulfillmentSnapshots(
   );
   itemsFailed += stockResults.filter((entry) => entry.failed).length;
 
-  const previousRows = new Map<string, { quantity: number; captured_at: string }>();
-  if (inventories.length > 0) {
-    const previous = await readAllPages<{ inventory_id: string; quantity: number; captured_at: string }>((from, to) =>
-      params.db.from("fulfillment_stock_snapshots").select("inventory_id, quantity, captured_at").eq("ml_account_id", params.mlAccountId).in("inventory_id", inventories).order("captured_at", { ascending: false }).range(from, to),
-      { label: "falha ao ler snapshots anteriores do Full" },
-    );
-    for (const row of previous) if (!previousRows.has(row.inventory_id)) previousRows.set(row.inventory_id, row);
-  }
+  const previousRows = await readPreviousSnapshots(params, inventories, capturedAt);
 
   for (const entry of uniqueItems) {
     const link = entry.link;

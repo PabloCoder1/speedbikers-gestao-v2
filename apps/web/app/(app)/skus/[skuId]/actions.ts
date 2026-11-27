@@ -40,7 +40,11 @@ export async function diagnoseSku(skuId: string): Promise<SkuDiagnosisResult> {
 
   const sku = await supabase.from("skus").select("organization_id").eq("id", skuId).maybeSingle();
 
-  if (sku.error !== null || sku.data === null) {
+  if (sku.error !== null) {
+    return { ok: false, message: "Não foi possível consultar o SKU — tente de novo." };
+  }
+
+  if (sku.data === null) {
     return { ok: false, message: "SKU não encontrado." };
   }
 

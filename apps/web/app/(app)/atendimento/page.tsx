@@ -13,6 +13,7 @@ import { LinkDeFiltro } from "../../../components/link-de-filtro";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { isPageBeyondEnd } from "../../../lib/filters";
 import { formatCount, formatDateTime } from "../../../lib/format";
+import { escaparIlike } from "../../../lib/postgrest-search";
 import {
   supportChannelLabel,
   supportExternalStatusLabel,
@@ -101,8 +102,8 @@ interface SupportMetricsRow {
   prazos_vencidos: number;
 }
 
-/** Teto da busca: é recorte para achar um caso, não para listar a base. */
-const SEARCH_LIMIT = 500;
+/** Teto da busca: mantém `.in("id", ...)` abaixo de ~4 KB na URL do PostgREST (D-783). */
+const SEARCH_LIMIT = 100;
 
 /**
  * O prazo VIGENTE de um caso — o `ACTIVE` que vence primeiro. Escolher em
@@ -152,13 +153,13 @@ async function casosDaBusca(supabase: Supabase, search: string): Promise<{ ids: 
     for (const linha of casos.data) ids.add(linha.id);
     for (const linha of pedidos.data) ids.add(linha.support_case_id);
 
-    return { ids: [...ids], error: null };
+    return { ids: [...ids].slice(0, SEARCH_LIMIT), error: null };
   }
 
   const cadastro =
     termo.kind === "anuncio"
       ? await supabase.from("listings").select("id").eq("item_id", termo.value).limit(20)
-      : await supabase.from("skus").select("id").ilike("sku", `%${termo.value}%`).limit(50);
+      : await supabase.from("skus").select("id").ilike("sku", `%${escaparIlike(termo.value)}%`).limit(50);
 
   if (cadastro.error !== null) return { ids: [], error: cadastro.error.message };
 
@@ -177,7 +178,7 @@ async function casosDaBusca(supabase: Supabase, search: string): Promise<{ ids: 
 
   for (const linha of vinculos.data) ids.add(linha.support_case_id);
 
-  return { ids: [...ids], error: null };
+  return { ids: [...ids].slice(0, SEARCH_LIMIT), error: null };
 }
 
 export default async function AtendimentoPage({
@@ -217,12 +218,13 @@ export default async function AtendimentoPage({
   const { channel, status, prazo } = filters;
   const accounts = accountsResult.data ?? [];
   const selectedAccount = accounts.find((account) => account.slug === filters.account) ?? null;
+  const contaIndisponivel = filters.account !== null && accountsResult.error !== null;
 
   // "Meus" sem saber quem está vendo não pode virar "todos": fila vazia é a
   // resposta honesta, e o aviso abaixo diz por quê.
   const semViewer = filters.mine && viewerId === null;
 
-  const busca = filters.search === null ? null : await casosDaBusca(supabase, filters.search);
+  const busca = filters.search === null || contaIndisponivel ? null : await casosDaBusca(supabase, filters.search);
 
   /*
     O embed de `support_case_links` atravessa a FK COMPOSTA (D-085). Prazo vem
@@ -268,7 +270,7 @@ export default async function AtendimentoPage({
 
   // "Meus abertos" para a faixa — uma contagem com `head`, sem trazer linha.
   const [casesResult, meusResult] = await Promise.all([
-    semViewer || busca?.error != null ? Promise.resolve(null) : casesQuery,
+    semViewer || contaIndisponivel || busca?.error != null ? Promise.resolve(null) : casesQuery,
     viewerId === null
       ? Promise.resolve(null)
       : supabase

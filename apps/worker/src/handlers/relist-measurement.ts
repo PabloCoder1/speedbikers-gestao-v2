@@ -52,6 +52,7 @@ export async function ensureRelistMeasurement(
   const childLink = await deps.db
     .from("sku_listing_links")
     .select("sku_id")
+    .eq("organization_id", operation.organization_id)
     .eq("ml_account_id", operation.ml_account_id)
     .eq("ref_kind", "ITEM")
     .eq("item_id", operation.child_item_id)
@@ -137,6 +138,7 @@ export async function ensureRelistMeasurement(
   const existingDecision = await deps.db
     .from("action_decisions")
     .select("id")
+    .eq("organization_id", operation.organization_id)
     .eq("action_id", actionId)
     .maybeSingle();
 

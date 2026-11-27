@@ -49,13 +49,17 @@ export async function GET(request: NextRequest): Promise<Response> {
     supabase.from("marketplace_accounts").select("account_id, marketplace, name, environment"),
   ]);
 
+  if (membership.error !== null) {
+    return new Response("Não foi possível verificar sua organização no momento.", { status: 503 });
+  }
+
   if (membership.organizationId === null) {
     return new Response("Sua conta não está associada a nenhuma organização.", { status: 403 });
   }
 
   // Sem as contas, um recorte de contas viraria "todas" em silêncio.
   if (contasResult.error !== null) {
-    return new Response(`Não foi possível ler as contas: ${contasResult.error.message}`, { status: 502 });
+    return new Response("Não foi possível ler as contas no momento.", { status: 502 });
   }
 
   const { range } = resolvePeriodRange(query, toSalesMetricDate(new Date()));
@@ -77,7 +81,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const resumo = await supabase.rpc("get_marketplace_sales_summary", argumentos);
 
     if (resumo.error !== null) {
-      return new Response(`Não foi possível exportar as vendas por conta: ${resumo.error.message}`, { status: 502 });
+      return new Response("Não foi possível exportar as vendas por conta no momento.", { status: 502 });
     }
 
     return csv(contasParaCsv(resumo.data, escopo), `${base}-por-conta.csv`);
@@ -87,7 +91,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const { linhas, error } = await lerSerieDiaria(supabase, argumentos);
 
   if (error !== null) {
-    return new Response(`Não foi possível exportar as vendas por dia: ${error.message}`, { status: 502 });
+    return new Response("Não foi possível exportar as vendas por dia no momento.", { status: 502 });
   }
 
   if (linhas.length >= TETO_DA_SERIE) {
@@ -121,13 +125,17 @@ async function exportarDiasDoMl(query: Readonly<Record<string, string>>): Promis
   const supabase = await createClient();
   const [membership, contas] = await Promise.all([currentMembership(supabase), supabase.from("ml_accounts").select("id, slug")]);
 
+  if (membership.error !== null) {
+    return new Response("Não foi possível verificar sua organização no momento.", { status: 503 });
+  }
+
   if (membership.organizationId === null) {
     return new Response("Sua conta não está associada a nenhuma organização.", { status: 403 });
   }
 
   // Sem as contas, um recorte de conta viraria "todas" em silêncio.
   if (contas.error !== null) {
-    return new Response(`Não foi possível ler as contas: ${contas.error.message}`, { status: 502 });
+    return new Response("Não foi possível ler as contas no momento.", { status: 502 });
   }
 
   const { range } = resolvePeriodRange(query, toSalesMetricDate(new Date()));
@@ -141,7 +149,7 @@ async function exportarDiasDoMl(query: Readonly<Record<string, string>>): Promis
   });
 
   if (error !== null) {
-    return new Response(`Não foi possível exportar as vendas por dia: ${error.message}`, { status: 502 });
+    return new Response("Não foi possível exportar as vendas por dia no momento.", { status: 502 });
   }
 
   if (data.length >= TETO_DA_SERIE) {

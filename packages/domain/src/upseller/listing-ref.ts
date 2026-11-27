@@ -73,7 +73,9 @@ export function classifyListingRef(rawListing: unknown, rawVariation: unknown): 
  * a decisão na importação, em vez de deixá-la implícita numa condição solta.
  */
 export function isMercadoLivreStore(rawStore: unknown): boolean {
-  return cell(rawStore)?.toLowerCase().startsWith("mercado-ml") ?? false;
+  const store = cell(rawStore);
+
+  return store !== null && /^mercado-ml\s*-/i.test(store);
 }
 
 /**
@@ -91,7 +93,7 @@ export function storeLabel(rawStore: unknown): string | null {
   // O prefixo do Mercado Livre contém um hífen interno (`mercado-ML`).
   // Cortar no primeiro hífen preservaria `ML-` no rótulo e criaria uma
   // segunda conta para cada loja já cadastrada sem esse prefixo.
-  const mercadoLivrePrefix = /^mercado-ml\s*-\s*/i;
+  const mercadoLivrePrefix = /^mercado-ml(?:\s*-\s*|\s*$)/i;
   const separator = store.indexOf("-");
   const label = mercadoLivrePrefix.test(store)
     ? store.replace(mercadoLivrePrefix, "")

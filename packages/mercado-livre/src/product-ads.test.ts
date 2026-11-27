@@ -88,6 +88,41 @@ describe("fetchProductAdsCampaigns", () => {
     expect(chamadas[1]?.url.searchParams.get("offset")).toBe("50");
     expect(chamadas[0]?.headers["api-version"]).toBe("2");
   });
+
+  it("D-789: avança offset por results.length, deduplica campanhas deslocadas e encerra página repetida", async () => {
+    const chamadas: Chamada[] = [];
+    const campanha = (id: number) => ({ id, name: `C${String(id)}`, status: "active" });
+
+    // API limita página a 2 itens embora pedimos 50, e desloca id=2 para aparecer nas páginas 1 e 2.
+    const c = cliente(
+      [
+        { status: 200, corpo: { paging: { total: 4, offset: 0, limit: 50 }, results: [campanha(1), campanha(2)] } },
+        { status: 200, corpo: { paging: { total: 4, offset: 2, limit: 50 }, results: [campanha(2), campanha(3)] } },
+        { status: 200, corpo: { paging: { total: 4, offset: 4, limit: 50 }, results: [campanha(4)] } },
+      ],
+      chamadas,
+    );
+
+    const campanhas = await fetchProductAdsCampaigns(c, "tok", "MLB", 222);
+
+    expect(chamadas.map((ch) => ch.url.searchParams.get("offset"))).toEqual(["0", "2", "4"]);
+    expect(campanhas.map((item) => item.id)).toEqual([1, 2, 3, 4]);
+
+    // Total inflado com páginas repetidas não entra em laço infinito.
+    const chamadasLoop: Chamada[] = [];
+    const cLoop = cliente(
+      [
+        { status: 200, corpo: { paging: { total: 500, offset: 0, limit: 50 }, results: [campanha(10)] } },
+        { status: 200, corpo: { paging: { total: 500, offset: 1, limit: 50 }, results: [campanha(10)] } },
+      ],
+      chamadasLoop,
+    );
+
+    const repetidas = await fetchProductAdsCampaigns(cLoop, "tok", "MLB", 222);
+
+    expect(repetidas.map((item) => item.id)).toEqual([10]);
+    expect(chamadasLoop).toHaveLength(2);
+  });
 });
 
 describe("fetchProductAdsCampaignDailyMetrics", () => {

@@ -38,12 +38,19 @@ export async function createPreference(input: {
 }): Promise<PreferenceActionResult> {
   const supabase = await createClient();
 
-  const { data: auth } = await supabase.auth.getUser();
-  const userId = auth.user?.id;
+  const { data: auth, error: authError } = await supabase.auth.getUser();
 
-  if (userId === undefined) {
-    return { ok: false, message: "Sessão expirada — atualize a página e tente de novo." };
+  if (authError !== null) {
+    return {
+      ok: false,
+      message:
+        authError.status === 401 || authError.status === 403 || authError.name === "AuthSessionMissingError"
+          ? "Sessão expirada — atualize a página e tente de novo."
+          : "Não foi possível confirmar sua sessão — tente de novo.",
+    };
   }
+
+  const userId = auth.user.id;
 
   const { error } = await supabase.from("notification_preferences").insert({
     user_id: userId,
@@ -70,13 +77,21 @@ export async function updatePreference(
 ): Promise<PreferenceActionResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("notification_preferences")
     .update({ min_severity: input.minSeverity, enabled: input.enabled })
-    .eq("id", id);
+    .eq("id", id)
+    .select("id");
 
   if (error !== null) {
     return { ok: false, message: "Não foi possível atualizar a preferência." };
+  }
+
+  if (data.length === 0) {
+    return {
+      ok: false,
+      message: "A preferência não foi alterada. Ela pode ter sido removida ou seu acesso mudou. Atualize a página para conferir.",
+    };
   }
 
   revalidatePath("/notificacoes/preferencias");
@@ -87,10 +102,21 @@ export async function updatePreference(
 export async function deletePreference(id: string): Promise<PreferenceActionResult> {
   const supabase = await createClient();
 
-  const { error } = await supabase.from("notification_preferences").delete().eq("id", id);
+  const { data, error } = await supabase
+    .from("notification_preferences")
+    .delete()
+    .eq("id", id)
+    .select("id");
 
   if (error !== null) {
     return { ok: false, message: "Não foi possível remover a preferência." };
+  }
+
+  if (data.length === 0) {
+    return {
+      ok: false,
+      message: "Nada foi removido. A preferência já pode ter sido removida ou seu acesso mudou. Atualize a página para conferir.",
+    };
   }
 
   revalidatePath("/notificacoes/preferencias");

@@ -23,9 +23,17 @@ export function EditarNome({ userId, nome }: { userId: string; nome: string | nu
     setSalvando(true);
     setErro(null);
 
-    const resultado = await updateProfileName(userId, valor);
+    let resultado: Awaited<ReturnType<typeof updateProfileName>>;
 
-    setSalvando(false);
+    try {
+      resultado = await updateProfileName(userId, valor);
+    } catch {
+      setErro("Não foi possível confirmar o nome. Tente novamente.");
+
+      return;
+    } finally {
+      setSalvando(false);
+    }
 
     if (!resultado.ok) {
       setErro(resultado.message);

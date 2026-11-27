@@ -8,6 +8,7 @@ import type { PillTone } from "../../../components/state-pill";
 import { KpiStrip, type KpiCellData } from "../../../components/kpi-strip";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
 import { apiBaseUrl, fetchApiHealth } from "../../../lib/api-health";
+import { isTikTokSchemaMissing } from "../../../lib/contas-e-lojas";
 import { formatDateTime } from "../../../lib/format";
 import { describeIntegrations } from "../../../lib/integrations";
 import type { Dimension, IntegrationState } from "../../../lib/integrations";
@@ -143,17 +144,22 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
   const agora = new Date();
   const inicioDoMes = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1)).toISOString();
 
-  const [accounts, lojasShopee, syncHealth, systemHealth, batches, aiRuns, aiCost, budgetEvent, apiHealth] = await Promise.all([
-    supabase.from("ml_accounts").select("id, label, status, connected_at, last_error").order("label"),
-    // As lojas Shopee (D-446) pela fonte única de contas (C-52): a mesma linha
-    // que /sincronizacao lê para o veredito da loja. O filtro por marketplace
-    // deixa o ramo do Mercado Livre da view de fora no plano.
-    supabase
-      .from("marketplace_accounts")
-      .select("name, environment, connection_status, last_error, connected_at, orders_synced_at, authorization_expires_at")
-      .eq("marketplace", "SHOPEE")
-      .order("name"),
-    supabase.rpc("get_sync_health", { p_organization_id: organizationId }),
+  const [accounts, lojasShopee, lojasTikTok, syncHealth, systemHealth, batches, aiRuns, aiCost, budgetEvent, apiHealth] =
+    await Promise.all([
+      supabase.from("ml_accounts").select("id, label, status, connected_at, last_error").order("label"),
+      // As lojas Shopee (D-446) pela fonte única de contas (C-52): a mesma linha
+      // que /sincronizacao lê para o veredito da loja. O filtro por marketplace
+      // deixa o ramo do Mercado Livre da view de fora no plano.
+      supabase
+        .from("marketplace_accounts")
+        .select("name, environment, connection_status, last_error, connected_at, orders_synced_at, authorization_expires_at")
+        .eq("marketplace", "SHOPEE")
+        .order("name"),
+      supabase
+        .from("tiktok_shops")
+        .select("shop_id, shop_name, status, last_error, connected_at, auth_expires_at")
+        .order("connected_at", { ascending: true }),
+      supabase.rpc("get_sync_health", { p_organization_id: organizationId }),
     supabase.rpc("get_system_health"),
     // Cancelado é estado terminal NORMAL (ato humano), não falha da integração:
     // fica fora para não esconder o último lote que valeu.
@@ -202,6 +208,7 @@ export default async function IntegracoesPage(): Promise<ReactNode> {
     viewerIsAdmin: membership.role === "ADMIN",
     mlAccounts: accounts.error === null ? accounts.data : null,
     shopeeShops: lojasShopee.error === null ? lojasShopee.data : null,
+    tiktokShops: lojasTikTok.error === null ? lojasTikTok.data : isTikTokSchemaMissing(lojasTikTok.error) ? [] : null,
     syncHealth: syncHealth.error === null ? syncHealth.data : null,
     jobs,
     migration:

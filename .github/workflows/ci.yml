@@ -24,9 +24,9 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
 
@@ -58,7 +58,7 @@ jobs:
       # de lockfile gravar "tudo o que havia + o novo", e o store so cresceria
       # (o pnpm nao poda sozinho). Lockfile novo paga um download inteiro, uma vez.
       - name: Cache do store do pnpm
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
@@ -134,6 +134,9 @@ jobs:
       - name: Budget de contexto dos agentes
         run: pnpm run docs:check
 
+      - name: Guarda do histórico de migrations
+        run: node --test infra/vm/check-migration-catalog.test.mjs infra/vm/plan-local-upgrade.test.mjs
+
       - name: Build
         run: pnpm run build
 
@@ -154,9 +157,9 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
 
@@ -185,7 +188,7 @@ jobs:
       # de lockfile gravar "tudo o que havia + o novo", e o store so cresceria
       # (o pnpm nao poda sozinho). Lockfile novo paga um download inteiro, uma vez.
       - name: Cache do store do pnpm
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
@@ -251,9 +254,9 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
 
@@ -282,7 +285,7 @@ jobs:
       # de lockfile gravar "tudo o que havia + o novo", e o store so cresceria
       # (o pnpm nao poda sozinho). Lockfile novo paga um download inteiro, uma vez.
       - name: Cache do store do pnpm
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
@@ -309,7 +312,7 @@ jobs:
       # vem do apt e continuam sendo instaladas. Com acerto, o passo abaixo so
       # confere que o binario esta la e segue.
       - name: Cache do navegador do Playwright
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           # `runner.os` e so "Linux": sem a imagem (`ImageOS`, ex. ubuntu24) e a
@@ -354,14 +357,15 @@ jobs:
         run: pnpm --filter web run e2e:seed
 
       - name: Testes E2E
+        id: playwright_e2e
         run: pnpm --filter web run e2e
 
-      - name: Relatorio do Playwright em caso de falha
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - name: Traces do Playwright em caso de falha
+        if: failure() && steps.playwright_e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v6
         with:
-          name: playwright-report
-          path: apps/web/playwright-report/
+          name: playwright-test-results
+          path: apps/web/test-results/
           retention-days: 7
 
       - name: Derrubar Supabase
@@ -457,14 +461,32 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Verificação do backup diário
+        run: node --test infra/vm/check-daily-backup.test.mjs
+
+      - name: Provisionamento de infraestrutura com gcloud simulado
+        run: |
+          bash infra/alertas.test.sh
+          bash infra/cloud-scheduler.test.sh
+          bash infra/cloud-tasks-queues.test.sh
+          bash infra/storage-buckets.test.sh
+          bash infra/cloud-nat.test.sh
+          bash infra/setup-dev.test.sh
+          bash infra/deploy-cloud-run.test.sh
 
       # Os scripts de infra/ rodam em bash e são versionados. Erro de sintaxe
       # aqui só apareceria na hora de provisionar, no pior momento possível.
       - name: Sintaxe dos scripts
         run: |
           for f in infra/*.sh; do
-            bash -n "$f" && echo "ok: $f"
+            bash -n "$f"
+            echo "ok: $f"
           done
 
       # Consumidor antes do produtor. Em 2026-08-20 a ordem inversa fez a api
@@ -495,12 +517,11 @@ jobs:
       - name: Guarda de ambiente (dev x prod)
         run: bash infra/ambiente.test.sh
 
-      # D-334: migrations-producao.yml só aplica a partir da main, com o ambiente
-      # travado (revisor e restrição de branch) e o mesmo commit já verde e já
-      # aplicado no Dev. Uma guarda que só roda no dia de aplicar em produção
-      # seria descoberta quebrada justamente nesse dia.
-      - name: Guarda das migrations de produção
-        run: bash infra/guarda-migrations-producao.test.sh
+      - name: Política de alerta de disco da VM
+        run: node --test infra/vm/disk-alert-policy.test.mjs
+
+      - name: Política de alerta de falha do backup
+        run: node --test infra/vm/backup-alert-policy.test.mjs infra/vm/run-backup-probe.test.mjs
 
       - name: Regra de build da Vercel (previas de feature fora do projeto de producao)
         run: bash apps/web/scripts/vercel-ignore.test.sh

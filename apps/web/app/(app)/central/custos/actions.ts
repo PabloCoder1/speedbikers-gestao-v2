@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { destinoDepoisDaAcao, falhaDaAcao } from "../../../../lib/custos-falha";
+import { destinoDepoisDaAcao, falhaDaAcao, mensagemDaFalha } from "../../../../lib/custos-falha";
 import {
   lerFormularioDespesa,
   lerFormularioEntidadeFiscal,
@@ -210,21 +210,33 @@ export async function cancelarDespesa(formData: FormData): Promise<void> {
   await concluirAcaoDeLinha(resultado);
 }
 
-export async function removerDespesa(formData: FormData): Promise<void> {
+async function removerRegistro(
+  formData: FormData,
+  nome: "operational_expenses" | "fiscal_entities" | "fiscal_entity_accounts",
+): Promise<string | null> {
   const id = campoDe(formData)("id").trim();
-  if (id === "") return;
+  if (id === "") return "Não foi possível identificar o registro. Atualize a página para conferir.";
 
   const supabase = await createClient();
   const membership = await currentMembership(supabase);
-  if (membership.organizationId === null) return;
+  if (membership.organizationId === null) return "Sessão sem organização. Atualize a página.";
 
-  const resultado = await tabela(supabase, "operational_expenses")
+  const { data, error } = await tabela(supabase, nome)
     .delete()
     .eq("id", id)
     .eq("organization_id", membership.organizationId)
     .select("id");
 
-  await concluirAcaoDeLinha(resultado);
+  const falha = falhaDaAcao(error, data?.length ?? null);
+  if (falha !== null) {
+    return mensagemDaFalha({ falha: falha.tipo, mes: falha.tipo === "mes-fechado" ? falha.mes ?? undefined : undefined });
+  }
+  revalidar();
+  return null;
+}
+
+export async function removerDespesa(formData: FormData): Promise<string | null> {
+  return removerRegistro(formData, "operational_expenses");
 }
 
 export async function salvarEntidadeFiscal(
@@ -296,21 +308,8 @@ export async function salvarVigenciaTributaria(
   return { ok: true, mensagem: "Vigência tributária salva preservando o histórico anterior.", erros: {} };
 }
 
-export async function removerEntidadeFiscal(formData: FormData): Promise<void> {
-  const id = campoDe(formData)("id").trim();
-  if (id === "") return;
-
-  const supabase = await createClient();
-  const membership = await currentMembership(supabase);
-  if (membership.organizationId === null) return;
-
-  const resultado = await tabela(supabase, "fiscal_entities")
-    .delete()
-    .eq("id", id)
-    .eq("organization_id", membership.organizationId)
-    .select("id");
-
-  await concluirAcaoDeLinha(resultado);
+export async function removerEntidadeFiscal(formData: FormData): Promise<string | null> {
+  return removerRegistro(formData, "fiscal_entities");
 }
 
 export async function vincularContaEntidade(
@@ -368,21 +367,8 @@ export async function vincularContaEntidade(
   return { ok: true, mensagem: "Conta vinculada à entidade fiscal (CNPJ).", erros: {} };
 }
 
-export async function removerVinculoContaEntidade(formData: FormData): Promise<void> {
-  const id = campoDe(formData)("id").trim();
-  if (id === "") return;
-
-  const supabase = await createClient();
-  const membership = await currentMembership(supabase);
-  if (membership.organizationId === null) return;
-
-  const resultado = await tabela(supabase, "fiscal_entity_accounts")
-    .delete()
-    .eq("id", id)
-    .eq("organization_id", membership.organizationId)
-    .select("id");
-
-  await concluirAcaoDeLinha(resultado);
+export async function removerVinculoContaEntidade(formData: FormData): Promise<string | null> {
+  return removerRegistro(formData, "fiscal_entity_accounts");
 }
 
 export async function salvarFechamentoMensal(

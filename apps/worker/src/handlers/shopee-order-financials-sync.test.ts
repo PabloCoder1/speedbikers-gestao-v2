@@ -257,4 +257,59 @@ describe("shopee.order-financials.sync (D-427)", () => {
       expect(db.rpcs).toEqual([]);
     }
   });
+
+  it("D-773: HTTP 200 HTML de proxy interrompe com retryable=true e não suprime o pedido como fora_do_contrato", async () => {
+    const db = fakeDb({ pendentes: ["A1", "A2"] });
+    const pedidos: string[] = [];
+    const client = createShopeeClient({
+      environment: "sandbox",
+      partnerId: 1248019,
+      partnerKey: "chave-de-teste-nao-real",
+      fetchImpl: ((url: URL) => {
+        pedidos.push(url.searchParams.get("order_sn") ?? "");
+
+        return Promise.resolve(new Response("<html><body>proxy ok</body></html>", { status: 200 }));
+      }) as unknown as typeof fetch,
+      now: () => NOW,
+    });
+
+    const { outcome } = await rodar(db, { client, pedidos });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(pedidos).toEqual(["A1"]);
+    expect(db.gravados).toEqual([]);
+  });
+
+  it("D-814: recusa loja de outra organização (envelope != loja.organization_id) e devolve falha retryable se enqueue da continuação falhar", async () => {
+    const dbOutraOrg = fakeDb({
+      loja: { ...LOJA, organization_id: "22222222-0000-4000-8000-000000000002" },
+      pendentes: ["A1"],
+    });
+    const shopee = fakeShopee();
+    const mismatch = await rodar(dbOutraOrg, shopee);
+
+    expect(mismatch.outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(shopee.pedidos).toEqual([]);
+
+    const loteCheio = Array.from({ length: FINANCEIRO_POR_EXECUCAO }, (_, i) => `ORD-${String(i)}`);
+    const dbCheio = fakeDb({ pendentes: loteCheio });
+    const shopeeCheio = fakeShopee();
+    const handler = createShopeeOrderFinancialsSyncHandler({
+      db: dbCheio.db,
+      client: shopeeCheio.client,
+      encryptionKey: KEY,
+      now: () => NOW,
+      enqueuer: {
+        enqueue: () => Promise.reject(new Error("Cloud Tasks fora")),
+      },
+    });
+
+    const outcome = await handler(ENVELOPE, {
+      logger: createLogger({}, { sink: () => undefined }),
+      payload: { shopeeShopId: LOJA_ID },
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(dbCheio.gravados).toHaveLength(FINANCEIRO_POR_EXECUCAO);
+  });
 });

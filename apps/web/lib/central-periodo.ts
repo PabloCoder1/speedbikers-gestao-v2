@@ -1,4 +1,4 @@
-import { previousBusinessDateRange, shiftBusinessDate } from "@sb/domain";
+import { isValidBusinessDate, previousBusinessDateRange, shiftBusinessDate } from "@sb/domain";
 
 import { formatBusinessDate } from "./format";
 import type { PeriodRange } from "./period";
@@ -43,8 +43,6 @@ export interface PeriodoCentral {
   /** O personalizado pedido era inválido e caiu no padrão. */
   readonly invalido: boolean;
 }
-
-const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 const DIAS_MOVEIS: Readonly<Record<"7d" | "15d" | "30d", number>> = { "7d": 7, "15d": 15, "30d": 30 };
 
@@ -139,7 +137,7 @@ export function resolverPeriodoCentral(
   const ate = typeof query.to === "string" ? query.to : null;
 
   if (de !== null || ate !== null) {
-    if (de !== null && ate !== null && DATA_ISO.test(de) && DATA_ISO.test(ate) && de <= ate && de <= hoje) {
+    if (de !== null && ate !== null && isValidBusinessDate(de) && isValidBusinessDate(ate) && de <= ate && de <= hoje) {
       const atual = { from: de, to: ate > hoje ? hoje : ate };
 
       return {

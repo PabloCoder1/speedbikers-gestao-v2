@@ -23,7 +23,13 @@ export function getShopInfo(client: ShopeeClient, shop: { accessToken: string; s
   return client.request({ method: "GET", path: "/api/v2/shop/get_shop_info", shop, schema: shopInfoSchema });
 }
 
-/** Epoch da Shopee (segundos) para ISO; ausente ou zero vira `null`, nunca 1970. */
+/** Epoch da Shopee (segundos) para ISO; ausente, zero ou fora da faixa vira `null`, nunca 1970. */
 export function shopeeEpochToIso(valor: number | null | undefined): string | null {
-  return typeof valor === "number" && valor > 0 ? new Date(valor * 1000).toISOString() : null;
+  if (typeof valor !== "number" || !Number.isFinite(valor) || valor <= 0) {
+    return null;
+  }
+
+  const data = new Date(valor * 1000);
+
+  return Number.isFinite(data.getTime()) ? data.toISOString() : null;
 }

@@ -31,7 +31,13 @@ interface OrderRow {
   shipping_id: number | null;
 }
 
-function fakeDb(options: { orders?: OrderRow[]; capturedOrderIds?: number[]; accountStatus?: string }): {
+function fakeDb(options: {
+  orders?: OrderRow[];
+  capturedOrderIds?: number[];
+  accountStatus?: string;
+  ordersError?: { message: string };
+  checkpointError?: { message: string };
+}): {
   db: BackfillOrderFinancialsDeps["db"];
   upserted: Record<string, unknown>[];
   syncRuns: Record<string, unknown>[];
@@ -64,7 +70,12 @@ function fakeDb(options: { orders?: OrderRow[]; capturedOrderIds?: number[]; acc
         return self;
       },
       order: () => self,
-      range: (from: number, to: number) => Promise.resolve({ data: orders.slice(from, to + 1), error: null }),
+      range: (from: number, to: number) =>
+        Promise.resolve(
+          options.ordersError !== undefined
+            ? { data: null, error: options.ordersError }
+            : { data: orders.slice(from, to + 1), error: null },
+        ),
     };
 
     return self;
@@ -107,10 +118,14 @@ function fakeDb(options: { orders?: OrderRow[]; capturedOrderIds?: number[]; acc
           // O checkpoint do pedaço: pelos ids, em lotes.
           return {
             in: (_coluna: string, ids: number[]) =>
-              Promise.resolve({
-                data: ids.filter((id) => captured.has(id)).map((order_id) => ({ order_id })),
-                error: null,
-              }),
+              Promise.resolve(
+                options.checkpointError !== undefined
+                  ? { data: null, error: options.checkpointError }
+                  : {
+                      data: ids.filter((id) => captured.has(id)).map((order_id) => ({ order_id })),
+                      error: null,
+                    },
+              ),
           };
         }
 
@@ -163,6 +178,7 @@ function run(
   db: BackfillOrderFinancialsDeps["db"],
   client: MercadoLivreClient,
   payload: Record<string, unknown> = { mlAccountId: ML_ACCOUNT_ID, ate: ATE, limite: LIMITE },
+  options: { envelopeOrganizationId?: string; enqueueError?: Error } = {},
 ) {
   const enfileirados: EnqueueRequest[] = [];
   const handler = createBackfillOrderFinancialsHandler({
@@ -174,6 +190,10 @@ function run(
     sleep: () => Promise.resolve(),
     enqueuer: {
       enqueue: (request) => {
+        if (options.enqueueError !== undefined) {
+          return Promise.reject(options.enqueueError);
+        }
+
         enfileirados.push(request);
 
         return Promise.resolve({ deduplicated: false });
@@ -182,9 +202,13 @@ function run(
   });
 
   const lines: string[] = [];
+  const envelope =
+    options.envelopeOrganizationId === undefined
+      ? ENVELOPE
+      : { ...ENVELOPE, organizationId: options.envelopeOrganizationId };
 
-  return handler(ENVELOPE, { logger: createLogger({}, { sink: (line) => lines.push(line) }), payload }).then(
-    (outcome) => ({ outcome, enfileirados }),
+  return handler(envelope, { logger: createLogger({}, { sink: (line) => lines.push(line) }), payload }).then(
+    (outcome) => ({ outcome, enfileirados, lines }),
   );
 }
 
@@ -291,5 +315,52 @@ describe("backfill.order-financials (D-396)", () => {
     const { outcome } = await run(db, client, { mlAccountId: ML_ACCOUNT_ID });
 
     expect(outcome).toMatchObject({ status: "failed", retryable: false });
+  });
+
+  it("D-780: falha ao ler orders ou checkpoint registra sync_runs failed e devolve retryable=true sem avançar a corrente", async () => {
+    const { db: dbOrders, syncRuns: runsOrders } = fakeDb({ ordersError: { message: "statement timeout" } });
+    const resOrders = await run(dbOrders, fakeClient().client);
+
+    expect(resOrders.outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(runsOrders).toHaveLength(1);
+    expect(runsOrders[0]).toMatchObject({ status: "failed", resource: "order_financials", channel: "backfill" });
+    expect(resOrders.enfileirados).toEqual([]);
+
+    const { db: dbCkpt, syncRuns: runsCkpt } = fakeDb({
+      orders: [{ id: 9001, shipping_id: 5001 }],
+      checkpointError: { message: "connection reset" },
+    });
+    const resCkpt = await run(dbCkpt, fakeClient().client);
+
+    expect(resCkpt.outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(runsCkpt).toHaveLength(1);
+    expect(runsCkpt[0]).toMatchObject({ status: "failed", resource: "order_financials", channel: "backfill" });
+    expect(resCkpt.enfileirados).toEqual([]);
+  });
+
+  it("D-817: recusa sem repetir quando a conta pertence a outra organização", async () => {
+    const { db, upserted } = fakeDb({ orders: [{ id: 9001, shipping_id: 5001 }] });
+    const { client, calls } = fakeClient();
+
+    const { outcome, enfileirados } = await run(db, client, undefined, {
+      envelopeOrganizationId: "99999999-9999-4999-8999-999999999999",
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(calls).toEqual([]);
+    expect(upserted).toEqual([]);
+    expect(enfileirados).toEqual([]);
+  });
+
+  it("D-817: falha transitória ao enfileirar próximo pedaço devolve retryable=true e registra log", async () => {
+    const { db } = fakeDb({ orders: [{ id: 9001, shipping_id: 5001 }] });
+    const { client } = fakeClient();
+
+    const { outcome, lines } = await run(db, client, undefined, {
+      enqueueError: new Error("cloud tasks timeout"),
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(lines.join("\n")).toContain("backfill_order_financials_enqueue_failed");
   });
 });

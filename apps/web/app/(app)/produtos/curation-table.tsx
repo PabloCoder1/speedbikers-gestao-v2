@@ -191,51 +191,60 @@ export function CurationTable({
   }
 
   function aplicar(acao: Pendente, alvos: string[], limpaSelecao: boolean): void {
-    startTransition(() => {
-      void (async () => {
-        const r =
+    startTransition(async () => {
+      let r: Awaited<ReturnType<typeof classifySkus>>;
+      try {
+        r =
           acao.tipo === "classificar"
             ? await classifySkus(organizationId, alvos, acao.decisao ?? "")
             : acao.tipo === "catalogo"
               ? await setForaDoCatalogo(organizationId, alvos, acao.fora === true)
               : await setSupplierBrand(organizationId, alvos, acao.marca ?? "");
-
-        setPendente(null);
-
-        if (!r.ok || r.outcome === null) {
-          setResultado({
-            texto: r.message ?? "Não foi possível concluir a ação.",
-            erro: true,
-            desfazer: [],
-            desfazerCom: null,
-          });
-
-          return;
-        }
-
-        const outcome: CurationOutcome = r.outcome;
-
-        // Desfazer manda de volta APENAS o que MUDOU — nunca os enviados.
-        // Mandar os enviados reverteria decisão que já era de outra pessoa.
-        // Só marcar fora do catálogo tem desfazer exato (tirar a marca devolve
-        // o `is_active` de antes); devolver ao catálogo não tem: marcar de novo
-        // trocaria a origem de uma marca da planilha para manual.
-        const desfazerCom: Pendente | null =
-          acao.tipo === "classificar"
-            ? { tipo: "classificar", decisao: "INDEFINIDO", rotulo: "", consequencia: "" }
-            : acao.tipo === "catalogo" && acao.fora === true
-              ? { tipo: "catalogo", fora: false, rotulo: "", consequencia: "" }
-              : null;
-
+      } catch {
         setResultado({
-          texto: describeOutcome(outcome),
-          erro: false,
-          desfazer: desfazerCom === null ? [] : outcome.changedIds,
-          desfazerCom,
+          texto: "Não foi possível confirmar a ação. Confira os produtos antes de tentar novamente.",
+          erro: true,
+          desfazer: limpaSelecao ? [] : alvos,
+          desfazerCom: limpaSelecao ? null : acao,
+        });
+        return;
+      }
+
+      setPendente(null);
+
+      if (!r.ok || r.outcome === null) {
+        setResultado({
+          texto: r.message ?? "Não foi possível concluir a ação.",
+          erro: true,
+          desfazer: [],
+          desfazerCom: null,
         });
 
-        if (limpaSelecao) setSelecionados(new Set());
-      })();
+        return;
+      }
+
+      const outcome: CurationOutcome = r.outcome;
+
+      // Desfazer manda de volta APENAS o que MUDOU — nunca os enviados.
+      // Mandar os enviados reverteria decisão que já era de outra pessoa.
+      // Só marcar fora do catálogo tem desfazer exato (tirar a marca devolve
+      // o `is_active` de antes); devolver ao catálogo não tem: marcar de novo
+      // trocaria a origem de uma marca da planilha para manual.
+      const desfazerCom: Pendente | null =
+        acao.tipo === "classificar"
+          ? { tipo: "classificar", decisao: "INDEFINIDO", rotulo: "", consequencia: "" }
+          : acao.tipo === "catalogo" && acao.fora === true
+            ? { tipo: "catalogo", fora: false, rotulo: "", consequencia: "" }
+            : null;
+
+      setResultado({
+        texto: describeOutcome(outcome),
+        erro: false,
+        desfazer: desfazerCom === null ? [] : outcome.changedIds,
+        desfazerCom,
+      });
+
+      if (limpaSelecao) setSelecionados(new Set());
     });
   }
 
@@ -305,6 +314,7 @@ export function CurationTable({
           <input
             type="checkbox"
             aria-label="Selecionar esta página"
+            disabled={emCurso}
             checked={rows.length > 0 && ids.length === rows.length}
             onChange={(e) => {
               selecionarPagina(e.target.checked);
@@ -395,6 +405,7 @@ export function CurationTable({
             }}
             placeholder="Marca do fornecedor"
             aria-label="Marca do fornecedor"
+            disabled={emCurso}
           />
           <datalist id="marcas-conhecidas">
             {marcasConhecidas.map((m) => (
@@ -486,7 +497,7 @@ export function CurationTable({
 
       {resultado !== null && (
         <p
-          role="status"
+          role={resultado.erro ? "alert" : "status"}
           className="sb-panel-body"
           style={{
             margin: 0,
@@ -589,6 +600,7 @@ export function CurationTable({
                     <input
                       type="checkbox"
                       aria-label={`Selecionar ${row.sku}`}
+                      disabled={emCurso}
                       checked={selecionados.has(row.sku_id)}
                       onChange={() => {
                         alternar(row.sku_id);

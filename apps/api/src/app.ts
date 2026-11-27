@@ -66,10 +66,14 @@ import type { ShopeePushDeps } from "./shopee-push.js";
 import { receiveShopeePush } from "./shopee-push.js";
 import type { ShopeeShopsDeps } from "./shopee-shops.js";
 import { completeShopeeConnect, startShopeeConnect } from "./shopee-shops.js";
+import type { TikTokPushDeps } from "./tiktok-push.js";
+import { receiveTikTokPush } from "./tiktok-push.js";
 import type { TikTokShopsDeps } from "./tiktok-shops.js";
 import { completeTikTokConnect, startTikTokConnect } from "./tiktok-shops.js";
 import type { ShopeeOrdersScheduleDeps } from "./shopee-orders-schedule.js";
 import { triggerShopeeOrdersSync } from "./shopee-orders-schedule.js";
+import type { TikTokOrdersScheduleDeps } from "./tiktok-orders-schedule.js";
+import { triggerTikTokOrdersSync } from "./tiktok-orders-schedule.js";
 import type { NfeImportDeps } from "./nfe-import.js";
 import { confirmNfeApply, receiveNfeUpload } from "./nfe-import.js";
 import { comandoDeItemSchema, editDocumentItem } from "./document-items.js";
@@ -126,8 +130,12 @@ export interface AppDependencies {
   tiktokShops?: TikTokShopsDeps;
   /** D-453: o push da Shopee (webhook), autenticado pela assinatura do corpo. */
   shopeePush?: ShopeePushDeps;
+  /** D-808: o webhook do TikTok Shop, autenticado por HMAC-SHA256(app_key + corpo bruto). */
+  tiktokPush?: TikTokPushDeps;
   /** D-426: o gatilho horário dos pedidos da Shopee; `undefined` sem a Shopee configurada. */
   shopeeOrdersSchedule?: ShopeeOrdersScheduleDeps;
+  /** D-810: o gatilho horário dos pedidos e catálogo do TikTok Shop; `undefined` até handlers no worker. */
+  tiktokOrdersSchedule?: TikTokOrdersScheduleDeps;
   copilot?: CopilotDeps;
   reconcile?: ReconcileDeps;
   fulfillmentSchedule?: FulfillmentScheduleDeps;
@@ -274,7 +282,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
 
     const outcome = await receiveWebhook(webhook, rawBody);
 
-    if (outcome.status === "lookup_unavailable") {
+    if (outcome.status === "lookup_unavailable" || outcome.status === "enqueue_unavailable") {
       return context.json({ error: { code: "temporarily_unavailable" } }, 503);
     }
 
@@ -351,8 +359,12 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "invalid_payload", message: "state ausente" } }, 400);
     }
 
-    const numero = (valor: string | undefined): number | undefined =>
-      valor !== undefined && /^[0-9]+$/.test(valor) ? Number(valor) : undefined;
+    const numero = (valor: string | undefined): number | undefined => {
+      if (valor === undefined || !/^[0-9]+$/.test(valor)) return undefined;
+      const parsed = Number(valor);
+
+      return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+    };
     const code = context.req.query("code");
     const shopId = numero(context.req.query("shop_id"));
     const mainAccountId = numero(context.req.query("main_account_id"));
@@ -433,6 +445,32 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       rawBody: await context.req.text(),
       authorization: context.req.header("authorization"),
     });
+
+    return context.body(null, outcome.status === "unavailable" ? 503 : 200);
+  });
+
+  // --------------------------------------------------------------------
+  // Webhook do TikTok Shop (D-808, docs/TIKTOK_SHOP.md §10). Público: a
+  // autenticação é o HMAC-SHA256 de `app_key + corpo bruto` no cabeçalho
+  // `Authorization` (sem Bearer), conferido em tempo constante antes do parse.
+  // Assinatura inválida responde 401; falha transitória de banco/fila responde
+  // 503 para retentativa; demais casos respondem 200 com corpo vazio em <= 3 s.
+  // --------------------------------------------------------------------
+  app.post("/push/tiktok-shop", async (context) => {
+    const tiktokPush = dependencies.tiktokPush;
+
+    if (tiktokPush === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await receiveTikTokPush(tiktokPush, {
+      rawBody: await context.req.text(),
+      authorization: context.req.header("authorization"),
+    });
+
+    if (outcome.status === "invalid_signature") {
+      return context.json({ error: { code: "unauthorized" } }, 401);
+    }
 
     return context.body(null, outcome.status === "unavailable" ? 503 : 200);
   });
@@ -648,6 +686,23 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
   });
 
   // --------------------------------------------------------------------
+  // Pedidos e catálogo do TikTok Shop (D-810, M04) — por LOJA CONNECTED, com
+  // paginação por chave e isolamento de falhas de enqueue. Responde 503
+  // not_configured até ser ligado no bootstrap com os handlers do worker.
+  // --------------------------------------------------------------------
+  app.post("/internal/schedule/tiktok-orders", async (context) => {
+    const tiktokOrdersSchedule = dependencies.tiktokOrdersSchedule;
+
+    if (tiktokOrdersSchedule === undefined) {
+      return context.json({ error: { code: "not_configured" } }, 503);
+    }
+
+    const outcome = await triggerTikTokOrdersSync(tiktokOrdersSchedule);
+
+    return respostaDoAgendador(context, outcome);
+  });
+
+  // --------------------------------------------------------------------
   // Sincronização de visitas por anúncio (D-032) — mesmo formato de
   // /internal/schedule/listings acima, por CONTA. Cadência diária:
   // `infra/cloud-scheduler.sh`.
@@ -724,7 +779,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     const { dias, conta } = parsed.data;
     const opcoes = conta === undefined ? { dias } : { dias, conta };
 
-    return context.json(await triggerOrderFinancialsBackfill(deps, opcoes));
+    return respostaDoAgendador(context, await triggerOrderFinancialsBackfill(deps, opcoes));
   });
 
   // --------------------------------------------------------------------
@@ -756,7 +811,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     const { dias, conta } = parsed.data;
     const opcoes = conta === undefined ? { dias } : { dias, conta };
 
-    return context.json(await triggerOrderUserProductsBackfill(deps, opcoes));
+    return respostaDoAgendador(context, await triggerOrderUserProductsBackfill(deps, opcoes));
   });
 
   // --------------------------------------------------------------------
@@ -1372,7 +1427,14 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "unauthorized" } }, authorized.status);
     }
 
-    const form = await context.req.parseBody();
+    let form: Awaited<ReturnType<typeof context.req.parseBody>>;
+
+    try {
+      form = await context.req.parseBody();
+    } catch {
+      return context.json({ error: { code: "invalid_payload", message: "corpo multipart inválido" } }, 400);
+    }
+
     const file = form.file;
     const kind = form.kind;
 
@@ -1390,6 +1452,10 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       contentType: file.type,
       body: new Uint8Array(await file.arrayBuffer()),
     });
+
+    if (outcome.status === "error") {
+      return erroInterno(context, dependencies.logger, outcome.reason);
+    }
 
     if (outcome.status === "rejected") {
       return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
@@ -1506,7 +1572,14 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       return context.json({ error: { code: "unauthorized" } }, authorized.status);
     }
 
-    const form = await context.req.parseBody();
+    let form: Awaited<ReturnType<typeof context.req.parseBody>>;
+
+    try {
+      form = await context.req.parseBody();
+    } catch {
+      return context.json({ error: { code: "invalid_payload", message: "corpo multipart inválido" } }, 400);
+    }
+
     const file = form.file;
 
     if (!(file instanceof File)) {
@@ -1518,6 +1591,10 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
       contentType: file.type,
       body: new Uint8Array(await file.arrayBuffer()),
     });
+
+    if (outcome.status === "error") {
+      return erroInterno(context, dependencies.logger, outcome.reason);
+    }
 
     if (outcome.status === "rejected") {
       return context.json({ error: { code: "rejected", message: outcome.reason } }, 400);
@@ -1610,7 +1687,8 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     const documentId = context.req.param("id");
-    const itemId = Number(context.req.param("itemId"));
+    const rawItemId = context.req.param("itemId");
+    const itemId = /^\d+$/.test(rawItemId) ? Number(rawItemId) : Number.NaN;
 
     if (!z.uuid().safeParse(documentId).success || !Number.isSafeInteger(itemId) || itemId <= 0) {
       return context.json({ error: { code: "invalid_payload", message: "identificador inválido" } }, 400);
@@ -1634,7 +1712,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     if (outcome.status === "failed") {
-      return context.json({ error: { code: "failed", message: outcome.reason } }, 500);
+      return erroInterno(context, dependencies.logger, outcome.reason);
     }
 
     return context.json({ totalItems: outcome.totalItems, resolvedItems: outcome.resolvedItems });
@@ -1681,7 +1759,7 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
     }
 
     if (outcome.status === "failed") {
-      return context.json({ error: { code: "failed", message: outcome.reason } }, 500);
+      return erroInterno(context, dependencies.logger, outcome.reason);
     }
 
     return context.json({ requestId: outcome.requestId, itens: outcome.itens, unidades: outcome.unidades });
@@ -1723,8 +1801,16 @@ export function createApp(dependencies: AppDependencies): Hono<AppEnv> {
         ? body.mlAccountId
         : undefined;
 
-    if (mlAccountId === undefined) {
-      return context.json({ error: { code: "invalid_payload", message: "mlAccountId obrigatório" } }, 400);
+    if (mlAccountId === undefined || !z.uuid().safeParse(mlAccountId).success) {
+      return context.json(
+        {
+          error: {
+            code: "invalid_payload",
+            message: mlAccountId === undefined ? "mlAccountId obrigatório" : "mlAccountId inválido",
+          },
+        },
+        400,
+      );
     }
 
     const outcome = await startConnect(mlAccounts, authorized.caller, mlAccountId);

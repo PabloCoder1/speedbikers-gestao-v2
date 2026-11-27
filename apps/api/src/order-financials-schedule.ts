@@ -49,20 +49,30 @@ export async function triggerOrderFinancialsSweep(
 
   let enqueued = 0;
   let deduplicated = 0;
+  let enqueueFailed = false;
 
   for (const account of accounts.data) {
-    const result = await deps.enqueuer.enqueue({
-      jobType: "sync.order-financials",
-      organizationId: account.organization_id,
-      dedupeKey: `order-financials:${account.slug}:${businessDate}`,
-      queue: `ml-sync-${account.slug}`,
-      payload: { mlAccountId: account.id },
-    });
+    try {
+      const result = await deps.enqueuer.enqueue({
+        jobType: "sync.order-financials",
+        organizationId: account.organization_id,
+        dedupeKey: `order-financials:${account.slug}:${businessDate}`,
+        queue: `ml-sync-${account.slug}`,
+        payload: { mlAccountId: account.id },
+      });
 
-    if (result.deduplicated) {
-      deduplicated += 1;
-    } else {
-      enqueued += 1;
+      if (result.deduplicated) {
+        deduplicated += 1;
+      } else {
+        enqueued += 1;
+      }
+    } catch (error) {
+      enqueueFailed = true;
+      deps.logger.error("order_financials_schedule_enqueue_failed", {
+        ml_account_id: account.id,
+        slug: account.slug,
+        reason: error instanceof Error ? error.message : "falha ao enfileirar financeiro de pedidos",
+      });
     }
   }
 
@@ -70,7 +80,13 @@ export async function triggerOrderFinancialsSweep(
     accounts_scanned: accounts.data.length,
     enqueued,
     deduplicated,
+    ...(enqueueFailed ? { failed: true } : {}),
   });
 
-  return { accountsScanned: accounts.data.length, enqueued, deduplicated };
+  return {
+    accountsScanned: accounts.data.length,
+    enqueued,
+    deduplicated,
+    ...(enqueueFailed ? { failed: true as const } : {}),
+  };
 }

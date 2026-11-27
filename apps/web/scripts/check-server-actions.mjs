@@ -30,6 +30,7 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import ts from "typescript";
 
 const RAIZES = ["app", "lib", "components"];
 
@@ -69,7 +70,14 @@ for (const raiz of RAIZES) {
     // A diretiva vale para o módulo inteiro só quando está na PRIMEIRA
     // instrução do arquivo. Dentro de uma função ela marca só aquela função,
     // e aí o resto do módulo é normal.
-    if (!/^\s*["']use server["'];/.test(texto)) continue;
+    const fonte = ts.createSourceFile(caminho, texto, ts.ScriptTarget.Latest);
+    const primeira = fonte.statements[0];
+    if (
+      primeira === undefined ||
+      !ts.isExpressionStatement(primeira) ||
+      !ts.isStringLiteral(primeira.expression) ||
+      primeira.expression.text !== "use server"
+    ) continue;
 
     modulos += 1;
 

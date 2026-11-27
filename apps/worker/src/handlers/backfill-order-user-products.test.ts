@@ -161,22 +161,30 @@ function fakeDb(options: { orders?: OrderRow[]; items?: ItemRow[]; links?: LinkR
 
           if (table === "order_items") {
             return {
-              in: (_coluna: string, ids: number[]) => ({
-                is: () =>
-                  Promise.resolve({
-                    data: items
-                      .filter((item) => ids.includes(item.order_id) && item.sku_id === null)
-                      .map(({ id, order_id, position, item_id, variation_id, user_product_id }) => ({
-                        id,
-                        order_id,
-                        position,
-                        item_id,
-                        variation_id,
-                        user_product_id,
-                      })),
-                    error: null,
-                  }),
-              }),
+              in: (_coluna: string, ids: number[]) => {
+                const filtrados = () =>
+                  items
+                    .filter((item) => ids.includes(item.order_id) && item.sku_id === null)
+                    .sort((a, b) => a.id.localeCompare(b.id))
+                    .map(({ id, order_id, position, item_id, variation_id, user_product_id }) => ({
+                      id,
+                      order_id,
+                      position,
+                      item_id,
+                      variation_id,
+                      user_product_id,
+                    }));
+
+                const cadeia = {
+                  order: () => cadeia,
+                  range: (from: number, to: number) =>
+                    Promise.resolve({ data: filtrados().slice(from, to + 1), error: null }),
+                  then: (resolve: (value: unknown) => unknown) =>
+                    Promise.resolve({ data: filtrados().slice(0, 1000), error: null }).then(resolve),
+                };
+
+                return { is: () => cadeia };
+              },
             };
           }
 
@@ -250,6 +258,7 @@ function run(
   db: BackfillOrderUserProductsDeps["db"],
   client: MercadoLivreClient,
   payload: Record<string, unknown> = { mlAccountId: ML_ACCOUNT_ID, ate: ATE, limite: LIMITE },
+  opcoes: { falharEnqueuePara?: (request: EnqueueRequest) => boolean; envelopeOrganizationId?: string } = {},
 ) {
   const enfileirados: EnqueueRequest[] = [];
   const handler = createBackfillOrderUserProductsHandler({
@@ -261,6 +270,10 @@ function run(
     sleep: () => Promise.resolve(),
     enqueuer: {
       enqueue: (request) => {
+        if (opcoes.falharEnqueuePara?.(request) === true) {
+          return Promise.reject(new Error("cloud tasks unavailable"));
+        }
+
         enfileirados.push(request);
 
         return Promise.resolve({ deduplicated: false });
@@ -269,8 +282,12 @@ function run(
   });
 
   const lines: string[] = [];
+  const envelope =
+    opcoes.envelopeOrganizationId === undefined
+      ? ENVELOPE
+      : { ...ENVELOPE, organizationId: opcoes.envelopeOrganizationId };
 
-  return handler(ENVELOPE, { logger: createLogger({}, { sink: (line) => lines.push(line) }), payload }).then(
+  return handler(envelope, { logger: createLogger({}, { sink: (line) => lines.push(line) }), payload }).then(
     (outcome) => ({ outcome, enfileirados, lines }),
   );
 }
@@ -509,5 +526,87 @@ describe("backfill.order-user-products (D-362, 3ª parte)", () => {
     expect(desconectada.enfileirados).toEqual([]);
     expect(invalido.outcome).toMatchObject({ status: "failed", retryable: false });
     expect(calls).toEqual([]);
+  });
+
+  it("pagina order_items além de 1.000 linhas num lote de pedidos sem estourar o teto do PostgREST (D-786)", async () => {
+    const muitosItens: ItemRow[] = Array.from({ length: 1_005 }, (_, i) => ({
+      id: `item-${String(i).padStart(4, "0")}`,
+      order_id: 9500 + (i % 5),
+      position: Math.floor(i / 5),
+      item_id: "MLB-BULK",
+      variation_id: null,
+      user_product_id: "MLBU-BULK",
+      sku_id: null,
+    }));
+    const pedidosLote: OrderRow[] = [0, 1, 2, 3, 4].map((offset) => ({
+      id: 9500 + offset,
+      date_created: "2026-09-16T10:00:00.000Z",
+    }));
+    const { db, items } = fakeDb({
+      orders: pedidosLote,
+      items: muitosItens,
+      links: [link("link-bulk", "sku-bulk", { userProduct: "MLBU-BULK" })],
+    });
+    const { client, calls } = fakeClient({});
+
+    const { outcome } = await run(db, client);
+
+    expect(outcome).toEqual({ status: "done", processed: 1_005 });
+    expect(items.every((i) => i.sku_id === "sku-bulk")).toBe(true);
+    expect(calls).toEqual([]);
+  });
+
+  it("D-797: falha ao enfileirar analytics.recompute num dia é isolada e mantém os demais dias, sync_runs e próximo pedaço", async () => {
+    const { db, syncRuns } = fakeDb({
+      orders: [
+        { id: 9001, date_created: "2026-09-15T16:00:00.000Z" },
+        { id: 9002, date_created: "2026-09-16T14:00:00.000Z" },
+      ],
+      items: [item(9001, "MLB1", "MLBU111"), item(9002, "MLB2", "MLBU222")],
+      links: [
+        link("l-up1", "sku-1", { userProduct: "MLBU111" }),
+        link("l-up2", "sku-2", { userProduct: "MLBU222" }),
+      ],
+    });
+    const { client } = fakeClient({});
+
+    const { outcome, enfileirados, lines } = await run(db, client, undefined, {
+      falharEnqueuePara: (req) =>
+        req.jobType === "analytics.recompute" && (req.payload as { metricDate?: string }).metricDate === "2026-09-15",
+    });
+
+    expect(outcome).toEqual({ status: "done", processed: 2 });
+    expect(syncRuns).toHaveLength(1);
+    expect(enfileirados.map((e) => e.jobType)).toEqual(["analytics.recompute", "backfill.order-user-products"]);
+    expect(enfileirados[0]?.payload).toMatchObject({ metricDate: "2026-09-16" });
+    expect(lines.join("\n")).toContain("backfill_order_user_products_recompute_enqueue_failed");
+  });
+
+  it("D-817: recusa sem repetir quando a conta pertence a outra organização", async () => {
+    const { db } = fakeDb({
+      orders: [{ id: 9001, date_created: "2026-09-16T10:00:00.000Z" }],
+      items: [item(9001, "MLB1")],
+    });
+    const { client, calls } = fakeClient({});
+
+    const { outcome, enfileirados } = await run(db, client, undefined, {
+      envelopeOrganizationId: "99999999-9999-4999-8999-999999999999",
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(calls).toEqual([]);
+    expect(enfileirados).toEqual([]);
+  });
+
+  it("D-817: falha transitória ao enfileirar próximo pedaço devolve retryable=true e registra log", async () => {
+    const { db } = fakeDb({ orders: [] });
+    const { client } = fakeClient({});
+
+    const { outcome, lines } = await run(db, client, undefined, {
+      falharEnqueuePara: (req) => req.jobType === "backfill.order-user-products",
+    });
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(lines.join("\n")).toContain("backfill_order_user_products_enqueue_failed");
   });
 });

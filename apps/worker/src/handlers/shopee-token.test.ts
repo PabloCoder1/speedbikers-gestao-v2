@@ -27,7 +27,13 @@ function credencial(acesso: string, refresh: string, venceEmMin: number): Creden
 }
 
 /** `shopee_credentials` e `shopee_shops`, com a trava devolvendo a linha do momento dela. */
-function fakeDb(opcoes: { lida: Credencial | null; travada?: Credencial | null; travaPerdida?: boolean }) {
+function fakeDb(opcoes: {
+  lida: Credencial | null;
+  travada?: Credencial | null;
+  erroNaTrava?: { message: string };
+  lancaAoSoltar?: boolean;
+  travaPerdida?: boolean;
+}) {
   const updates: { table: string; row: Record<string, unknown>; filtros: Record<string, unknown> }[] = [];
   const recusas: { name: string; args: Record<string, unknown> }[] = [];
 
@@ -66,7 +72,20 @@ function fakeDb(opcoes: { lida: Credencial | null; travada?: Credencial | null; 
       update: (row: Record<string, unknown>) => {
         // A trava: o update que devolve a linha (`select().maybeSingle()`).
         if (table === "shopee_credentials" && "refresh_locked_until" in row && row.refresh_locked_until !== null) {
+          if (opcoes.erroNaTrava !== undefined) {
+            return chain({ data: null, error: opcoes.erroNaTrava }, row, table);
+          }
+
           return chain({ data: opcoes.travada === undefined ? opcoes.lida : opcoes.travada, error: null }, row, table);
+        }
+
+        if (table === "shopee_credentials" && row.refresh_locked_until === null && opcoes.lancaAoSoltar === true) {
+          const self: Record<string, unknown> = {};
+          self.eq = () => self;
+          self.then = (_resolve: unknown, reject: (err: Error) => unknown) =>
+            Promise.reject(new Error("socket hang up ao soltar trava")).then(undefined, reject);
+
+          return self;
         }
 
         return chain({ data: { shopee_shop_id: LOJA.id }, error: null }, row, table);
@@ -220,5 +239,83 @@ describe("ensureShopeeAccessToken (D-426)", () => {
       ok: false,
       retryable: false,
     });
+  });
+
+  it("D-780: erro do banco ao reservar a trava reporta o motivo explícito em vez de corrida", async () => {
+    const { db } = fakeDb({ lida: credencial("a", "r", 5), erroNaTrava: { message: "statement timeout" } });
+    const { client } = clienteShopee(RENOVADO);
+
+    expect(await ensureShopeeAccessToken({ db, client, encryptionKey: KEY }, LOJA, NOW)).toEqual({
+      ok: false,
+      retryable: true,
+      reason: "falha ao reservar a trava de renovação da loja: statement timeout",
+    });
+  });
+
+  it("D-780: falha de transporte ao soltar a trava não descarta token já renovado nem mascara erro transitório da Shopee", async () => {
+    const { db: dbJaRenovado } = fakeDb({
+      lida: credencial("a", "r", 5),
+      travada: credencial("ja-renovado", "r2", 230),
+      lancaAoSoltar: true,
+    });
+    expect(await ensureShopeeAccessToken({ db: dbJaRenovado, client: clienteShopee(RENOVADO).client, encryptionKey: KEY }, LOJA, NOW)).toEqual({
+      ok: true,
+      accessToken: "ja-renovado",
+    });
+
+    const { db: dbErro } = fakeDb({ lida: credencial("a", "r", 5), lancaAoSoltar: true });
+    const { client: clientErro } = clienteShopee({ error: "error_server", message: "Something wrong." });
+    expect(await ensureShopeeAccessToken({ db: dbErro, client: clientErro, encryptionKey: KEY }, LOJA, NOW)).toMatchObject({
+      ok: false,
+      retryable: true,
+    });
+  });
+
+  it("D-831: ciphertext corrompido ou chave incompatível falha fechado (retryable=false) e solta a trava", async () => {
+    const { client, chamadas } = clienteShopee(RENOVADO);
+
+    // Caminho 1: access_token válido mas corrompido na leitura inicial
+    const { db: db1 } = fakeDb({
+      lida: {
+        access_token_ciphertext: "ciphertext-corrompido",
+        refresh_token_ciphertext: "ciphertext-corrompido",
+        access_token_expires_at: new Date(NOW.getTime() + 2 * 3600_000).toISOString(),
+      },
+    });
+    await expect(ensureShopeeAccessToken({ db: db1, client, encryptionKey: KEY }, LOJA, NOW)).resolves.toMatchObject({
+      ok: false,
+      retryable: false,
+    });
+
+    // Caminho 2: access_token renovado por outra execução mas corrompido na trava
+    const { db: db2, updates: updates2 } = fakeDb({
+      lida: credencial("a", "r", 5),
+      travada: {
+        access_token_ciphertext: "ciphertext-corrompido",
+        refresh_token_ciphertext: "ciphertext-corrompido",
+        access_token_expires_at: new Date(NOW.getTime() + 2 * 3600_000).toISOString(),
+      },
+    });
+    await expect(ensureShopeeAccessToken({ db: db2, client, encryptionKey: KEY }, LOJA, NOW)).resolves.toMatchObject({
+      ok: false,
+      retryable: false,
+    });
+    expect(updates2.at(-1)?.row).toEqual({ refresh_locked_until: null, refresh_lock_id: null });
+
+    // Caminho 3: refresh_token corrompido na trava — solta trava e não chama Shopee
+    const { db: db3, updates: updates3 } = fakeDb({
+      lida: credencial("a", "r", 5),
+      travada: {
+        access_token_ciphertext: "ciphertext-corrompido",
+        refresh_token_ciphertext: "ciphertext-corrompido",
+        access_token_expires_at: new Date(NOW.getTime() + 60_000).toISOString(),
+      },
+    });
+    await expect(ensureShopeeAccessToken({ db: db3, client, encryptionKey: KEY }, LOJA, NOW)).resolves.toMatchObject({
+      ok: false,
+      retryable: false,
+    });
+    expect(chamadas).toHaveLength(0);
+    expect(updates3.at(-1)?.row).toEqual({ refresh_locked_until: null, refresh_lock_id: null });
   });
 });

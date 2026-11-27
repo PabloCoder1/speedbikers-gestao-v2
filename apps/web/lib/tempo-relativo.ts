@@ -20,10 +20,11 @@ export function tempoRelativo(iso: string | null, agora: Date = new Date()): str
   if (iso === null) return null;
 
   const instante = Date.parse(iso);
+  const agoraMs = agora.getTime();
 
-  if (Number.isNaN(instante)) return null;
+  if (Number.isNaN(instante) || !Number.isFinite(agoraMs)) return null;
 
-  const segundos = Math.round((instante - agora.getTime()) / 1000);
+  const segundos = Math.round((instante - agoraMs) / 1000);
   const distancia = Math.abs(segundos);
 
   if (distancia < MINUTO) return "agora há pouco";

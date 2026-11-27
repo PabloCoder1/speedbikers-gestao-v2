@@ -97,13 +97,18 @@ export async function completeShopeeConnect(
   params: ShopeeCallbackParams,
 ): Promise<ShopeeCallbackOutcome> {
   const now = deps.now?.() ?? new Date();
+  const state = params.state.trim();
+
+  if (state === "") {
+    return { status: "invalid_state" };
+  }
 
   // Consumo ATÔMICO, como em `ml-accounts.ts`: duas chamadas com o mesmo
   // `state` (aba duplicada, retry do navegador) só deixam uma passar.
   const claimed = await deps.db
     .from("shopee_oauth_states")
     .update({ consumed_at: now.toISOString() })
-    .eq("state", params.state)
+    .eq("state", state)
     .is("consumed_at", null)
     .gt("expires_at", now.toISOString())
     .select("organization_id, environment, created_by")
@@ -123,19 +128,28 @@ export async function completeShopeeConnect(
     return { status: "rejected", reason: "autorização iniciada em outro ambiente; inicie a conexão novamente" };
   }
 
-  if (params.code === undefined || (params.shopId === undefined && params.mainAccountId === undefined)) {
+  const isPositiveShopeeId = (value: number | undefined): value is number =>
+    value !== undefined && Number.isSafeInteger(value) && value > 0;
+  const invalidShopId = params.shopId !== undefined && !isPositiveShopeeId(params.shopId);
+  const invalidMainAccountId = params.mainAccountId !== undefined && !isPositiveShopeeId(params.mainAccountId);
+  const code = params.code?.trim() ?? "";
+  const tokenRequest =
+    code === "" || invalidShopId || invalidMainAccountId
+      ? null
+      : isPositiveShopeeId(params.shopId)
+        ? { code, shopId: params.shopId }
+        : isPositiveShopeeId(params.mainAccountId)
+          ? { code, mainAccountId: params.mainAccountId }
+          : null;
+
+  if (tokenRequest === null) {
     return { status: "rejected", reason: "autorização não concluída na Shopee" };
   }
 
   let token;
 
   try {
-    token = await getAccessToken(
-      deps.client,
-      params.shopId === undefined
-        ? { code: params.code, mainAccountId: params.mainAccountId ?? 0 }
-        : { code: params.code, shopId: params.shopId },
-    );
+    token = await getAccessToken(deps.client, tokenRequest);
   } catch (error) {
     deps.logger.error("shopee_oauth_exchange_failed", {
       reason: error instanceof Error ? error.message : "erro desconhecido",
@@ -144,7 +158,9 @@ export async function completeShopeeConnect(
     return { status: "rejected", reason: "não foi possível concluir a autorização com a Shopee" };
   }
 
-  const shopIds = params.shopId === undefined ? [...new Set(token.shop_id_list ?? [])] : [params.shopId];
+  const shopIds = isPositiveShopeeId(params.shopId)
+    ? [params.shopId]
+    : [...new Set((token.shop_id_list ?? []).filter((id) => isPositiveShopeeId(id)))];
 
   if (shopIds.length === 0) {
     return { status: "rejected", reason: "a Shopee não devolveu nenhuma loja autorizada" };

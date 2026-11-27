@@ -12,19 +12,19 @@
 
 | | |
 |---|---|
-| **Atualizado em** | 2026-11-23 |
+| **Atualizado em** | 2026-11-27 |
 | **Branch** | `main` (única; em 23/09 a `fix/guardas-prod-d348` foi renomeada para `main`, virou a branch padrão do repositório e a `v3` foi aposentada — a tag `v2-final` guarda o último estado da main antiga, da V2). |
-| **HEAD conhecido** | `main`: `c6b45881` (#332, incluindo #330), conferido no alias Vercel Production. CI verde em `2da04c93`: 1.197 SQL e 342 E2E. Fechamento documental sem mudança de código. Página nova deve ser dinâmica (D-331). |
-| **Fechamento da V3** | **190 de 213 itens do ROADMAP fechados (89%)** — 21 abertos e 2 parciais (recontados em D-337; o item de produção fechou em D-350). Dos 21, **3 são bloqueadores**, todos hardening/lançamento (D-223): backup e restore verificados, testes de carga e rollout. Saíram a revisão de segurança (D-331), a UX da republicação (D-295) e a criação de produção (D-350) |
-| **Deploy Dev** | Faturamento GCP desativado na consulta de 11/11. Revisões configuradas `api-00042-8wd` e `worker-00053-z26`. A pausa das rotinas do Dev foi registrada em D-350. |
-| **Supabase** | Hosted Dev `nmgccyqquwxecqffsidr` e antigo prod `imvjfgnaprqsfjlnsyev`: INACTIVE (MCP, 18/11). Produção operacional na VM `sb-db` (`speedbikers-prod`), conferida via IAP/SSH em READ ONLY e web autenticada. [VM](../infra/vm/README.md). |
-| **Produção** | Vercel `c6b45881`, deployment `dpl_CHapXyGvMR73VtV4Gxsq1yMPa5bF` READY, alias principal confirmado. Compras/importação/reposição conferidas sem escrita; runtime sem error/fatal na janela consultada. API/worker não revalidados nesta frente. |
-| **Migrations** | VM até `20261124130000` (D-860 a D-862 por SSH em 24/11; D-858 em 23/11); antes, 17 versões verificadas após `20261022170000`, sem reaplicação. SSH relatado em 18/11, não workflow. Snapshot READY; restore completo do dump + 17 SQLs ensaiados; 64 objetos sem divergência de definição. Workflow hosted pausado. [VM](../infra/vm/README.md). |
-| **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | No ar: compras inteligentes, pedido já feito, importação anterior (#332) e invoice/proforma com preço e documento (D-767). D-792: receber dá entrada no LOCAL (ENTRADA_COMPRA), a conferência cria o SKU que falta e a fila mostra a moeda do pedido; migration `20261119180000`. A moeda da invoice também é lida do formato numérico da célula (nota em D-767). Pendente: workflow de banco. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
-| **Notas (D-765, D-766)** | D-765 no ar (api `api-00040-fr5`, worker `worker-00059-mjc`). D-766 na main (#335), api não reconferida. |
-| **Catálogo (D-860 a D-862)** | No ar desde 24/11: migrations `20261124100000` a `130000` na VM, worker `00061` e api `00043` em `f3b05a26`. |
-| **UX (Agente 3)** | D-500 a D-518 no ar (a Central, blocos 1 a 3, pelos #255 e #258). Bloco 4 da Central (D-519, frete e Ads da `/central` no `EstadoDaTela`) integrado pelo #261. Auditoria em `docs/UX_SYSTEM.md` §6. |
-| **Frente atual** | **Multicanal** (Shopee, D-425; `docs/MULTICHANNEL_HANDOFF.md` e `_CONTRACTS.md`): dados E1–E7c no ar (D-432 a D-451; migrations até `20261015100000`, worker e api de 15/10 saindo pelo IP fixo, D-457); E7d (push, D-453) no ar e conferido (chave de push própria); telas T4–T6c, T5b–T5d, T6b/T6b2, T-R6 e devoluções no ar; Go Live da Shopee em análise (15/10); C-65 (D-459) e D-455 em produção; desempenho (medição do A3, `docs/PERFORMANCE.md`): D-461, D-463 e D-465 no ar (15/10); C-57 (busca universal com a Shopee, D-467) no ar com a T7 (15/10); C-66 (metas por marketplace, D-473) no ar (16/10); telas T0 a T11 e D-484 a D-632 no ar (21/10; a última, a D-632, a divergência de estoque da Shopee na Central de Ações), com as quatro opções do item 4 do dono feitas: o SKU com a Shopee (D-618), o cancelamento e o hoje (D-620), a marca (D-622, D-624) e os detectores da Shopee (D-626, D-632) — lista na seção do Agente 2 de `docs/MULTICHANNEL_HANDOFF.md`; 5 (estoque) no Go Live. A 5J segue com o detector de frete (D-405). |
+| **HEAD conhecido** | `origin/main` em `61d1d00b` (#427). O #364 reúne D-870 a D-879 e D-884 a D-886. [Checkpoint](agent-audit/SESSION_LOG.md). |
+| **Fechamento da V3** | 173/226 pontos (76,55%), 33/43 entregas. [Inventário Sentinel](agent-audit/CLOSURE_INVENTORY.json). [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351#issuecomment-7107161168). |
+| **Sentinel: próximo passo** | Upgrade local e catálogo da VM conferidos (D-884). Gemini conserva D-832 a D-837 no #401 e M04. D04 reúne histórico, índice temporal e teste local de transferência e restauração (#407). D04 tem ensaios locais de permissões, lotes e concorrência em `sync_runs`. O piloto de 60 dias passou em laboratório com 100 execuções, escritores concorrentes, duas identidades autenticadas e reversão após prazo vencido. A VM já tem a correção Shopee da D-879. As duas migrations da Central foram renumeradas no candidato. A produção aguarda autorização. I06 aceito com custo de outubro informado pelo dono. |
+| **Deploy Dev** | Supabase Dev `nmgccyqquwxecqffsidr` inativo, com 2,0 GB acima do limite gratuito. Google Cloud segue como ambiente atual. Retomada do Supabase Pro prevista pelo dono para 01/12/2026. Confirmar Dev ativo antes da esteira. Rotinas Dev pausadas (D-350). |
+| **Supabase** | Produção usa a VM `sb-db`. O antigo hosted `imvjfgnaprqsfjlnsyev` segue inativo em 24/11. SMTP real do Auth ativo. [VM](../infra/vm/README.md). |
+| **Produção** | D-859 a D-862 no [#388](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/388). Recuperação de senha e monitoramento no [#394](https://github.com/PabloCoder1/speedbikers-gestao-v2/pull/394). Multiget do #377 em produção, reconciliação completada. |
+| **Migrations** | Catálogo: VM 348 no preflight, candidato combinado com 350. As quatro versões financeiras de #424/#426/#427 constam na VM. As duas migrations de Notificações ficam pendentes. D-885 e D-886 usam `20261127090000` e `20261127091000`. A conciliação do #424 com o #364 inclui as quatro versões da VM que faltavam no PR financeiro isolado. Aplicação precede a publicação web. [VM](../infra/vm/README.md). |
+| **Compras (D-720 a D-725, D-760 a D-764, D-767, D-792)** | Compras inteligentes, importação anterior e invoice/proforma entregues. #347 integrado para ler a moeda da invoice. D-792 acrescenta entrada no LOCAL e criação do SKU na conferência. [Evidências](archive/handoffs/2026-11-18_integracao-compras-importacao.md). |
+| **Notas (D-765, D-766)** | #334 registrou saída para Full. #335 incorporou Saída Manual e edição de itens. O aceite operacional de ponta a ponta segue no fechamento. |
+| **UX (Agente 3)** | Central integrada até D-519. [Escopo e evidências](UX_SYSTEM.md). |
+| **Frente atual** | Recuperação e fechamento após o corte de banco. Estoque Shopee no Go Live e TikTok transacional seguem pendentes. [Multicanal](MULTICHANNEL_HANDOFF.md). |
 
 ### O que está pronto
 
@@ -37,23 +37,32 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
 
 ## P0 ativos
 
-- **Workflow de banco ainda aponta ao hosted pausado.** Dev e antigo hosted de produção continuam INACTIVE; a VM de produção e a web estão operacionais, conferidas em 18/11. O job Dev da main falhava antes desta entrega e exige reconciliação de infraestrutura; não foi desativado. Ver `infra/vm/README.md`.
-- **Avisos críticos do Next.js.** A branch local atualiza Next.js e Zod e passa a auditoria no corte alto. A publicação segue o fluxo da `main` e os deploys da API e do worker. [Achados](agent-audit/FINDINGS.md) · [Checkpoint](agent-audit/SESSION_LOG.md)
+- **Catálogo ML (D-791).** #377 consolida #368 e #376. Falta publicar o worker e confirmar a recuperação da fila.
+- **Recuperação após corte para a VM.** Navegação autenticada registrada pelo #333. Provar convite/reset, atraso de pedidos/financeiro/SAC e saldos contra ERP. Conferir os efeitos dos agendamentos no banco.
+- **Recuperação de desastre e migrations.** #333 registra restore isolado completo e ensaio dos 17 SQLs. Em 19/11 há snapshot automático READY. Prefixo `diario/` vazio na listagem. Faltam confirmar o dump recorrente, alertas e adequação do workflow à VM.
+- **Segurança: patches locais.** Next (`16.4.6`), Zod, ERP/NF-e apply e webhook Shopee corrigidos localmente; falta publicar. `pnpm audit --prod --audit-level high` passa com 1 moderado transitivo (`uuid`). [Evidências](agent-audit/STATE_AND_COMPLETION_2026-11-18.md).
+- **Proteção da publicação.** A `main` exige PR e quatro checks e bloqueia force-push e exclusão. A regra permite bypass de administradores. `v3-builder` publicou a imagem isolada e gerou log no teste regional iniciado 139 s após a concessão. Os vínculos de teste foram removidos. O candidato aceita `CLOUD_BUILD_REGION`. A conta padrão perdeu `roles/editor`. Falta adoção da identidade dedicada nos builds regulares.
 
 ---
 
 ## Riscos ativos
 
+- **Catálogo Shopee.** Offset inválido interrompe a leitura e preserva o marco para nova tentativa.
+
 - **O faturamento do ML perto do `statement_timeout`** (19/10, `docs/PERFORMANCE.md`): D-499 em produção, 47 vezes menos páginas; 90 dias com detalhe ainda 2,1 s quente, todo CPU.
-- **Produção sem alerta externo** (28/09): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
+- **Produção sem alerta externo** (rechecado em 18/11: zero uptime checks e políticas no Monitoring): a parada de D-414 durou ~27 h com o Scheduler verde. No app,
   D-417/D-418, com o vigia agendado pelo dono em 14/10 (`vigiar-sincronizacao`, 30 min; cobre as lojas live); canal externo e Cloud NAT são do dono. O app ML da V2
   (6429063609355665) ainda deve notificar o `.vercel.app` excluído: tirar a URL no painel.
 - **`frete_anomalo` passa de 8 s a frio** (D-404): na rodada de 25/09, 9,7 s na 1ª tentativa e 2,4 s na repetição do
   Cloud Tasks, que fechou o ciclo. Atacado em D-409 (migration `20260923195958`): conferir o tempo a frio depois dela.
+- **Alertas externos.** O provisionador percorre as páginas e recusa nomes ambíguos.
+
 - **Um só app do Mercado Livre para Dev e produção** (D-350). A URL de notificação é
   uma só e está em produção desde 2026-09-14 17:30 UTC; o Dev ficou sem webhooks e
   está **pausado** (15 jobs e 7 filas). Retomá-lo sem app próprio volta a disputar a
   cota e a renovar os tokens das mesmas contas.
+- **Shopee.** Cursor ausente preserva o marco dos pedidos.
+
 - **Estoque: D-351 publicada e F3 aplicada em 17/09** (§13), provada em 18/09; D-352 publicada em 18/09 (§8) e
   `v3-reconcile-balances` despausado pelo dono. Entrada manual das
   devoluções pela lista do ledger, não pelas notificações: 26 já voltaram sozinhas.
@@ -62,20 +71,18 @@ Detalhe por fase: `docs/ROADMAP.md`. Motivo de cada decisão:
   `--project`; e no Windows `--format=value()` termina a linha com `\r` — em laço,
   `tr -d '\r'`, senão só o último item funciona.
 
+- **Disco da VM:** Ops Agent publica utilização. Política em revisão, pendente de canal de alerta e ativação.
+
 - **As 22 RPCs foram varridas; sobra vigilância, não suspeita (D-305→D-307).** Duas tinham
   plano genérico, uma tinha desperdício e 16 estavam saudáveis. **A lição que fica é sobre a
   FONTE:** `get_stock_coverage` aparecia com 89 ms no `pg_stat_statements` e custava **27 s** na
   forma que a tela usa. Toda RPC nova pede ensaio deliberado como `authenticated`, em cada forma
   de chamada (detalhe no arquivo de 2026-09-17 e em `docs/PERFORMANCE.md`).
-- **`supabase start` da CI falha as vezes, e a falha nao se distingue de
-  defeito de migration pelo que a interface mostra** — aconteceu em `8dfea93`
-  (09/09): reprovou em *Subir Supabase local*, ANTES de migration ou teste, e a
-  anotação publica diz so `exit code 1`. **Baixar o log do job exige ADMIN**, e
-  um agente nao tem. Sem o log, o roteiro: o job de e2e roda `supabase start`
-  identico (`ci.yml` 100 e 153) — se passou no MESMO run, a stack sobe; e
-  reproduzir com `supabase stop --no-backup && supabase start`, que aplica as
-  migrations do zero como o runner. Os dois verdes e a CI vermelha = **re-run
-  do job**, nao correcao de codigo.
+- **CI:** o E2E da Shopee usa datas de São Paulo. Os jobs de testes usam
+  Actions com Node 24. Em falha ao subir a stack, confira o log e reproduza
+  com um projeto Supabase local isolado. [Testes](TESTING.md).
+
+- **Backup da VM:** sondagem diária às 04:25 BRT. Scheduler, incidente e entrega do alerta confirmados. [Detalhes](../infra/vm/README.md).
 
 - **Nada avisa quando o que está no ar ficou velho** (D-070). O deploy do
   Cloud Run é MANUAL; entre um e outro chegaram a se acumular 66 commits, e a
@@ -170,12 +177,8 @@ Nada disto pode ser feito por um agente.
    2026-09-14, o que não prova que está ligada (D-350). Conferir no painel:
    Authentication → Sign In / Providers → Email → *Prevent use of leaked
    passwords*, em `nmgccyqquwxecqffsidr` e em `imvjfgnaprqsfjlnsyev`.
-7. **Branch protection da `main` — FALTA.** A proteção de 2026-09-03 (2 checks
-   obrigatórios, `typecheck, lint, test, build` e integração, D-350) ficou na
-   `v3` aposentada; a `main`, que publica produção, não tem proteção nem
-   ruleset (conferido em 2026-09-28): push direto e force-push passam. Recriar
-   a mesma regra na `main` e tirar a `v3` da política de branch do ambiente
-   `producao`.
+7. **Proteção da `main` (A07):** PR e quatro checks obrigatórios confirmados
+   em 24/11. Force-push e exclusão bloqueados. Bypass administrativo permitido.
 8. ~~Deploy de `worker`/`api` para D-229~~ — feito em 2026-09-03.
 9. ~~**O repositório está PÚBLICO.**~~ — **DECIDIDO pelo usuário em
    2026-09-03: fica público**, porque o plano gratuito do GitHub não aceita
@@ -191,15 +194,15 @@ Nada disto pode ser feito por um agente.
     no painel do Mercado Livre, tópicos e redirects — e um app próprio para o
     Dev antes de retomá-lo.
 12. **Shopee (no ar desde 16/10):** cadastrar a **alíquota de imposto** em `/central/metas` — produção não tem nenhuma, e o imposto sai nulo no ML e na Shopee (`docs/SHOPEE.md` §8). Os ajustes pós-escrow: decididos por delegação (D-485, o resultado desconta).
-13. **Alerta de margem (D-858, D-859):** no ar desde 24/11, com o Scheduler e os e-mails cadastrados.
-14. ~~Esqueci a senha (D-863) e monitoramento de produção (D-868)~~: ligados em 24/11.
-15. ~~**D-869:** migration `20261124140000` em produção~~: aplicada em 24/11; falta a tela (#397).
+13. **Alerta de margem (D-858, D-859):** agendamento e e-mails em produção. D-882 pagina e isola falhas de fila no candidato.
+14. **D-863 e D-868:** recuperação por SMTP e monitoramento em produção.
+15. **D-869:** migration `20261124140000` confirmada na VM e tela integrada no #397.
 
 ---
 
 ## Próximos passos
 
-- **Sentinel.** D-714 e D-715 completam a leitura dos anúncios ML e Shopee no SKU, com regressões de 1.002 linhas por canal. D-717 recupera o popup de Vinculações após falha de transporte no vínculo manual, na resolução e no descarte de candidato. O SKU escolhido é preservado, e a operação não confirmada recebe aviso. O audit de produção da CI reprovava todo PR com um aviso alto do `picomatch` sem versão corrigida publicada: as ferramentas de lint de `@sb/config` passaram para `devDependencies` (A75). D-718 e D-719 liberam os diálogos de remover e vincular anúncio ML do SKU após falha de transporte. O inventário de 17/11 listou mais 12 componentes que aguardam Server Action sem tratar exceção, no plano. As migrations `20261117171808` e `20261117173152` foram aplicadas apenas no banco local e precedem a publicação da web. Na última consulta, o PR #328 tinha CI verde em `513c38f4`. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md) · [Medição](PERFORMANCE.md#leitura-completa-dos-anuncios-shopee-no-sku-sentinel-a72-17112026)
+- **Sentinel.** PR #328 com CI verde em `60784059` (338 casos de E2E). D-716–D-719, D-726–D-728 e D-754–D-759 recuperam diálogos e formulários após falha de transporte. A última fatia conserva os campos dos quatro cadastros da Central após falha ou recusa, incluindo o marketplace escolhido e os limites ao restaurar padrões. Os cinco componentes com `useTransition` e os quatro formulários diretos com `useActionState` inventariados foram conferidos (D-726–D-728 e D-758–D-759). Próxima reprodução: confirmação compartilhada de remover e voltar aos padrões, no plano. As migrations `20261117171808` e `20261117173152` (D-714, D-715) foram aplicadas só no banco local e precedem a web. Publicação e validação com carga real seguem pendentes. [Plano](agent-audit/PLAN.md)
 
 ### Fechamento da V3 — as cinco categorias de D-223
 
@@ -207,7 +210,7 @@ Nada disto pode ser feito por um agente.
 
 | | |
 |---|---|
-| backup e restore **verificados** | a metade do SCHEMA é provada todo dia (CI recria as migrations). A do DADO: **backup medido** (diário, ~7 dias) e **ensaio pronto** (D-332) — o comparador `check:restore` foi provado contra dano simulado, e o roteiro foi conferido e corrigido (D-347). Falta o restore real num projeto novo, que é ato humano |
+| backup e restore **verificados** | Dumps diários de 19 e 22/11 restaurados em isolamento. A sondagem automática passou em 21 e 22/11 e o alerta chegou no teste controlado. [VM](../infra/vm/README.md) |
 | ~~revisão de segurança e de secrets~~ | ✅ **FEITA em quatro fatias**: segredos e dependências (D-328); superfície de entrada conferida ao vivo, D-045 fechada e cabeçalhos da `web` confirmados na Vercel (D-329); redação de log por VALOR (D-330); CSP completa com nonce, com e2e que exige zero violações (D-331). **Sem lacuna técnica aberta.** A guarda de `pnpm audit` que ficou sem dono entrou na CI em D-336 (`--prod`, corte em alta) |
 | load tests e revisão de `pg_stat_statements` | **carga real medida (D-339)**: 65,8 mil webhooks/dia, pico de 1.050/min, e o ACK passa de 7 s nos picos. **A correção de D-339 foi publicada e voltada** (D-340): esfriou as conexões e piorou `orders_v2`. O pico continua aberto. O log do webhook passou a medir cada etapa (`lookup_ms`, `enqueue_ms`; D-343) — publicado em `api-00039-9vm`. Fora de pico, a Cloud Task custa ~185 ms fixos e a consulta da conta ~50 ms, que esfria depois de pausa. **A primeira rajada medida respondeu: é a consulta da conta** — p95 de 2,8 s na rajada, contra 103 ms fora dela, com a Cloud Task igual (D-345). Em 10 dias foram 26.748 ACKs acima de 2 s, em 78 rajadas sem horário fixo. **A correção foi publicada em D-346** (contas em memória, com carga única em voo e recarga limitada; `api-00040-qrk`): depois da primeira carga, `lookup_ms` caiu para 0 ms, e na rajada de 319/s das 13:49 UTC ficou em 0, com ACK máx 190 ms numa instância (D-346 §6). **O pico do ACK fechou.** Falta também a revisão de `pg_stat_statements` (`report:health` pede a senha do Dev — ato humano) |
 | ~~Supabase e Cloud Run de **produção**~~ | ✅ **CRIADOS em 2026-09-14** (D-348, D-349, D-350): GCP, Supabase e Vercel `speedbikers-prod`; migrations por `migrations-producao.yml`, com duas aprovações; api e worker em `36a23ad`, juntado na `v3` pelo PR #2 (`da130c0`) com CI verde |
@@ -239,11 +242,7 @@ expansão do "O que aconteceu?" · eventos adicionais de SAC · os 2 pedidos sem
 
 ### Próxima tarefa segura
 
-**Curva ABC em 17/09:** filtro A/B/C no SQL, 50 linhas e rolagem interna.
-
-**Estoque:** D-351 e D-352 em produção. D-362 e D-423 em produção; o histórico (365 dias, sem estoque) disparado em 07/10 por job temporário do Scheduler com o OIDC da `v3-scheduler-invoker`, apagado depois. A receita com SKU em 90 dias passou de ~83% para ~99% da receita.
-
-**Anúncios:** filtro de promoção (D-419) em produção; conferir no log a queda de `listing_promotion_fetch_failed` (~13 por rodada antes). D-420 (campanhas) em código: migration `20260929180000` antes do worker.
+**Rollout Sentinel.** O #364 tem a prova local de upgrade e o catálogo da VM conferido. Na retomada do Dev, verificar quais versões já constam e preservar a identidade das quatro registradas na VM. O release do SHA integrado ainda requer os gates de publicação. [Checkpoint](https://github.com/PabloCoder1/speedbikers-gestao-v2/issues/351).
 
 ---
 

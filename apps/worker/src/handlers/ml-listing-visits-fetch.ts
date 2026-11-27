@@ -2,6 +2,7 @@ import type { AdminClient } from "@sb/db";
 import type { MercadoLivreClient } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import type { Logger } from "@sb/observability";
+import { ZodError } from "zod";
 
 import { readAllPages } from "../read-all-pages.js";
 import { listingVisitsTimeWindowSchema } from "./listing-visits-schema.js";
@@ -158,7 +159,10 @@ export async function fetchListingVisits(
         schema: listingVisitsTimeWindowSchema,
       });
     } catch (error) {
-      if (error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") {
+      if (
+        (error instanceof MercadoLivreApiError && error.errorClass === "not_retryable") ||
+        error instanceof ZodError
+      ) {
         itemsFailed += 1;
         params.logger.warn("listing_visits_fetch_failed", {
           ml_account_id: params.mlAccountId,
@@ -175,23 +179,40 @@ export async function fetchListingVisits(
       throw error;
     }
 
-    let recorded = true;
-
     if (timeWindow.results.length > 0) {
-      const result = await params.db.from("daily_listing_visits").upsert(
-        timeWindow.results.map((entry) => ({
+      // D-797: deduplica por `metric_date` antes do upsert para evitar erro
+      // Postgres 21000 caso o Mercado Livre devolva duas entradas no mesmo dia.
+      const rowsByDate = new Map<
+        string,
+        {
+          organization_id: string;
+          ml_account_id: string;
+          item_id: string;
+          metric_date: string;
+          visits: number;
+          synced_at: string;
+        }
+      >();
+
+      for (const entry of timeWindow.results) {
+        // Data de negócio, sem hora — mesmo raciocínio de `formatBusinessDate`:
+        // manipulação de string, nunca `new Date(...)`, para não deslocar o
+        // dia por fuso (a API devolve `"2021-08-04T00:00:00Z"`).
+        const metricDate = entry.date.slice(0, 10);
+
+        rowsByDate.set(metricDate, {
           organization_id: params.organizationId,
           ml_account_id: params.mlAccountId,
           item_id: listing.item_id,
-          // Data de negócio, sem hora — mesmo raciocínio de `formatBusinessDate`:
-          // manipulação de string, nunca `new Date(...)`, para não deslocar o
-          // dia por fuso (a API devolve `"2021-08-04T00:00:00Z"`).
-          metric_date: entry.date.slice(0, 10),
+          metric_date: metricDate,
           visits: entry.total,
           synced_at: syncedAt.toISOString(),
-        })),
-        { onConflict: "ml_account_id,item_id,metric_date" },
-      );
+        });
+      }
+
+      const result = await params.db
+        .from("daily_listing_visits")
+        .upsert([...rowsByDate.values()], { onConflict: "ml_account_id,item_id,metric_date" });
 
       if (result.error !== null) {
         params.logger.error("listing_visits_not_recorded", {
@@ -201,13 +222,15 @@ export async function fetchListingVisits(
           reason: result.error.message,
         });
 
-        recorded = false;
+        // D-780: falha de gravação no banco não pode virar `done` silencioso
+        // sem retentativa. O que já foi gravado fica no checkpoint de 12h
+        // (D-156), este item falhou atomicamente sem checkpoint parcial e a
+        // exceção faz `sync.listing-visits.snapshot` registrar falha retentável.
+        throw new Error(`falha ao gravar daily_listing_visits (${listing.item_id}): ${result.error.message}`);
       }
     }
 
-    if (recorded) {
-      itemsProcessed += 1;
-    }
+    itemsProcessed += 1;
   }
 
   return { itemsProcessed, itemsFailed, itemsSkipped };

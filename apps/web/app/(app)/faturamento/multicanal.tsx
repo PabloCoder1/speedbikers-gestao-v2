@@ -31,7 +31,9 @@ import {
 } from "../../../lib/faturamento-multicanal";
 import { formatBusinessDate, formatCount, formatCurrency, formatDateTime, formatPercent } from "../../../lib/format";
 import { carregarLimites } from "../../../lib/limites-central";
+import { mesmaUrl } from "../../../lib/mesma-url";
 import { DEFAULT_PERIOD_DAYS, PERIOD_PRESETS, resolvePeriodRange } from "../../../lib/period";
+import { resolverContasSolicitadas } from "../../../lib/postgrest-search";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import {
@@ -111,9 +113,25 @@ export async function FaturamentoMulticanal({
   );
   // A leitura do cabeçalho pode terminar antes da associação à organização.
   void contasPromise.catch(() => undefined);
-  const { organizationId } = await membershipPromise;
+  const { organizationId, error: membershipError } = await membershipPromise;
+
+  if (membershipError !== null) {
+    await contasPromise;
+    return (
+      <>
+        <PageTitle eyebrow="COMERCIAL / RESULTADOS" title="Faturamento" barra="abaixo" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível confirmar sua organização."
+          descricao="Tente novamente em instantes."
+          acao={{ href: mesmaUrl("/faturamento", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
 
   if (organizationId === null) {
+    await contasPromise;
     return (
       <>
         <PageTitle eyebrow="COMERCIAL / RESULTADOS" title="Faturamento" />
@@ -123,11 +141,30 @@ export async function FaturamentoMulticanal({
   }
 
   const pediuLojas = typeof query.contas === "string" && query.contas.trim() !== "";
-  // Só a Shopee com filtro explícito precisa da lista para resolver as lojas visíveis.
-  const { selecionadas, descartadas } =
+  // Só a Shopee com filtro explícito precisa da lista para resolver as lojas visíveis; falha fechado se a lista falhar.
+  const { resultado: lojasResolvidas, erro: erroContas } =
     escopo === "shopee" && pediuLojas
-      ? resolverContas(query.contas, (await contasPromise).data ?? [], "shopee")
-      : { selecionadas: null, descartadas: 0 };
+      ? resolverContasSolicitadas(query.contas, await contasPromise, (raw, contas) =>
+          resolverContas(raw, contas, "shopee"),
+        )
+      : { resultado: null, erro: null };
+
+  if (erroContas !== null) {
+    return (
+      <>
+        <PageTitle eyebrow="COMERCIAL / RESULTADOS" title="Faturamento" barra="abaixo" />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as lojas do recorte"
+          descricao="O filtro de lojas pedido na URL não pôde ser confirmado."
+          detalhe={erroContas.message}
+          acao={{ href: mesmaUrl("/faturamento", query), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
+
+  const { selecionadas, descartadas } = lojasResolvidas ?? { selecionadas: null, descartadas: 0 };
   const contasIgnoradas = escopo === "todos" && pediuLojas;
   const recorte: RecorteDeFaturamento = { escopo, periodo, contas: selecionadas };
   // D-470: "Tentar de novo" é a mesma URL.
@@ -298,7 +335,6 @@ export async function FaturamentoMulticanal({
           tipo="erro"
           titulo="Não foi possível carregar as contas e lojas"
           descricao="O seletor e o filtro de lojas estão indisponíveis."
-          detalhe={contasResult.error.message}
           acao={{ href: tentarDeNovo, rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
         />
       )}
@@ -431,7 +467,6 @@ async function CorpoShopee({
       <EstadoDaTela
         tipo="erro"
         titulo="Não foi possível carregar o faturamento da Shopee"
-        detalhe={atualResult.error.message}
         acao={acao}
       />
     );
@@ -453,7 +488,6 @@ async function CorpoShopee({
           tipo="erro"
           titulo="O período anterior não carregou"
           descricao="A comparação foi omitida, e isso não é zero."
-          detalhe={anteriorResult.error.message}
           acao={acao}
         />
       )}
@@ -482,7 +516,6 @@ async function CorpoShopee({
                 <EstadoDaTela
                   tipo="erro"
                   titulo="Não foi possível carregar a composição do recebido"
-                  detalhe={composicaoResult.error.message}
                   acao={acao}
                 />
               )}
@@ -623,7 +656,6 @@ async function CorpoShopee({
               <EstadoDaTela
                 tipo="erro"
                 titulo="Não foi possível carregar a série diária"
-                detalhe={diarioResult.error.message}
                 acao={acao}
               />
             ) : diarioResult.data.length === 0 ? (
@@ -702,7 +734,7 @@ function ProdutosShopee({
   vazio: VazioDoRecorte;
 }): ReactNode {
   if (resultado.error !== null) {
-    return <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os produtos" detalhe={resultado.error.message} acao={acao} />;
+    return <EstadoDaTela tipo="erro" titulo="Não foi possível carregar os produtos" acao={acao} />;
   }
 
   const linhas = (resultado.data ?? []).map(skuParaALista).filter((linha): linha is SkuFaturamento => linha !== null);
@@ -1081,11 +1113,11 @@ async function ComparacaoTodos({
   const acao: AcaoDoEstado = { href: hrefDeFaturamento(recorte), rotulo: TENTAR_DE_NOVO, mesmaTela: true };
   const falhaMl =
     mlResult.error !== null
-      ? { titulo: "O Mercado Livre não carregou", detalhe: mlResult.error.message }
+      ? { titulo: "O Mercado Livre não carregou", detalhe: undefined }
       : ml === null
         ? { titulo: "A resposta do Mercado Livre veio num formato que esta tela não reconhece", detalhe: undefined }
         : null;
-  const falhaShopee = shopeeResult.error !== null ? { titulo: "A Shopee não carregou", detalhe: shopeeResult.error.message } : null;
+  const falhaShopee = shopeeResult.error !== null ? { titulo: "A Shopee não carregou", detalhe: undefined } : null;
   const motivoShopee =
     shopeeResult.error === null && shopee === null ? "nenhuma loja real com pedidos lidos — a loja de teste fica fora" : null;
 

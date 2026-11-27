@@ -70,7 +70,7 @@ export function avaliarVariacao(
   escala: Escala,
   opcoes: OpcoesDaVariacao = {},
 ): Variacao | null {
-  if (atual === null || anterior === null) return null;
+  if (atual === null || anterior === null || !Number.isFinite(atual) || !Number.isFinite(anterior)) return null;
 
   const diferenca = atual - anterior;
   const relativa = escala === "valor" && anterior > 0 ? diferenca / anterior : null;

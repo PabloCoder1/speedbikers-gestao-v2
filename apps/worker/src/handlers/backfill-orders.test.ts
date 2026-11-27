@@ -5,6 +5,7 @@ import type { MercadoLivreClient, RequestOptions } from "@sb/mercado-livre";
 import { MercadoLivreApiError } from "@sb/mercado-livre";
 import { createLogger } from "@sb/observability";
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
 import type { EnqueueRequest, EnqueueResult } from "../enqueue.js";
 import type { BackfillOrdersDeps } from "./backfill-orders.js";
@@ -82,6 +83,7 @@ interface FakeDbOptions {
     refresh_token_ciphertext: string;
     access_token_expires_at: string;
   } | null;
+  checkpointUpdateError?: { message: string } | null;
 }
 
 function validCredentials(now: Date): NonNullable<FakeDbOptions["credentials"]> {
@@ -94,12 +96,14 @@ function validCredentials(now: Date): NonNullable<FakeDbOptions["credentials"]> 
 
 function fakeDb(options: FakeDbOptions = {}): {
   db: BackfillOrdersDeps["db"];
+  inserted: { table: string; row: unknown }[];
   updated: { table: string; row: unknown }[];
   upserted: { table: string; rows: unknown[] }[];
 } {
   const account = "account" in options ? options.account : DEFAULT_ACCOUNT;
   const credentials = "credentials" in options ? options.credentials : validCredentials(NOW);
 
+  const inserted: { table: string; row: unknown }[] = [];
   const updated: { table: string; row: unknown }[] = [];
   const upserted: { table: string; rows: unknown[] }[] = [];
 
@@ -131,9 +135,17 @@ function fakeDb(options: FakeDbOptions = {}): {
 
         return chain({ data: credentials ?? null, error: null });
       },
-      insert: () => chain({ data: { id: "run-1" }, error: null }),
+      insert: (row: unknown) => {
+        inserted.push({ table, row });
+
+        return chain({ data: { id: "run-1" }, error: null });
+      },
       update: (row: unknown) => {
         updated.push({ table, row });
+
+        if (table === "ml_accounts" && options.checkpointUpdateError !== undefined && options.checkpointUpdateError !== null) {
+          return chain({ data: null, error: options.checkpointUpdateError });
+        }
 
         return chain({ data: null, error: null });
       },
@@ -168,7 +180,7 @@ function fakeDb(options: FakeDbOptions = {}): {
     }),
   } as unknown as BackfillOrdersDeps["db"];
 
-  return { db, updated, upserted };
+  return { db, inserted, updated, upserted };
 }
 
 interface FakePage {
@@ -451,6 +463,24 @@ describe("backfill.orders", () => {
     expect(enqueued).toHaveLength(0);
   });
 
+  it("falha ao avançar backfill_covered_until em ml_accounts: falha retryable, registra sync_runs failed e não enfileira próximo pedaço (D-786)", async () => {
+    const { deps: d, db, enqueued, lines } = deps(
+      { checkpointUpdateError: { message: "connection reset by peer" } },
+      [],
+    );
+
+    const outcome = await run(d, lines);
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: true });
+    expect(enqueued).toHaveLength(0);
+    expect(db.inserted.find((e) => e.table === "sync_runs")?.row).toMatchObject({
+      resource: "orders",
+      channel: "backfill",
+      status: "failed",
+    });
+    expect(db.inserted.find((e) => e.table === "sync_errors")).toBeDefined();
+  });
+
   it("nunca loga access_token, refresh_token nem client_secret", async () => {
     const { deps: d, lines } = deps({}, []);
 
@@ -460,5 +490,38 @@ describe("backfill.orders", () => {
     expect(joined).not.toContain("APP_USR-valido");
     expect(joined).not.toContain("TG-valido");
     expect(joined).not.toContain(OAUTH_CONFIG.clientSecret);
+  });
+
+  it("D-797: ZodError no envelope de /orders/search falha como not_retryable", async () => {
+    const { deps: d, db, enqueued, lines } = deps({}, () =>
+      Promise.reject(new ZodError([{ code: "invalid_type", expected: "object", path: ["paging"], message: "x" }])),
+    );
+
+    const outcome = await run(d, lines);
+
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(enqueued).toHaveLength(0);
+    expect(db.inserted.find((e) => e.table === "sync_errors")?.row).toMatchObject({ error_class: "not_retryable" });
+  });
+
+  it("D-797: connected_at inválido falha sem retry e backfill_covered_until inválido cai na janela de retenção sem RangeError", async () => {
+    const invalidaConnected = deps({ account: { ...DEFAULT_ACCOUNT, connected_at: "data-invalida" } }, []);
+
+    await expect(run(invalidaConnected.deps, invalidaConnected.lines)).resolves.toMatchObject({
+      status: "failed",
+      retryable: false,
+    });
+    expect(invalidaConnected.requests).toHaveLength(0);
+
+    const invalidoCheckpoint = deps(
+      { account: { ...DEFAULT_ACCOUNT, backfill_covered_until: "data-invalida" } },
+      [],
+    );
+
+    await expect(run(invalidoCheckpoint.deps, invalidoCheckpoint.lines)).resolves.toEqual({
+      status: "done",
+      processed: 0,
+    });
+    expect(invalidoCheckpoint.requests).toHaveLength(1);
   });
 });

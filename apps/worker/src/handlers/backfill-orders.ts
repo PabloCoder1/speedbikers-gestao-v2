@@ -7,6 +7,7 @@ import type { Enqueuer } from "../enqueue.js";
 import type { JobOutcome } from "../job-outcome.js";
 import type { HandlerContext, JobHandler } from "../router.js";
 import { ceilToHour, fetchOrdersWindow, floorToHour } from "./ml-orders-fetch.js";
+import { resolveMlAccountRead } from "./ml-account-read.js";
 import { ensureAccessToken } from "./ml-token.js";
 import { recordSyncRunFailure, recordSyncRunSuccess } from "./sync-runs.js";
 
@@ -58,22 +59,29 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
     const { mlAccountId } = parsed.data;
     const now = deps.now?.() ?? new Date();
 
-    const account = await deps.db
+    const accountRead = await deps.db
       .from("ml_accounts")
       .select("id, organization_id, slug, seller_id, status, connected_at, backfill_covered_until")
       .eq("id", mlAccountId)
       .maybeSingle();
 
-    if (account.error !== null || account.data === null) {
-      context.logger.warn("backfill_orders_account_missing", { ml_account_id: mlAccountId });
+    const resolvedAccount = resolveMlAccountRead(accountRead, {
+      logger: context.logger,
+      missingEvent: "backfill_orders_account_missing",
+      mlAccountId,
+      expectedOrganizationId: envelope.organizationId,
+    });
 
-      return { status: "done", processed: 0 };
+    if ("outcome" in resolvedAccount) {
+      return resolvedAccount.outcome;
     }
 
+    const account = resolvedAccount.account;
+
     if (
-      account.data.status !== "CONNECTED" ||
-      account.data.seller_id === null ||
-      account.data.connected_at === null
+      account.status !== "CONNECTED" ||
+      account.seller_id === null ||
+      account.connected_at === null
     ) {
       // Desconectada entre o enfileiramento e a execução — corrida benigna,
       // não erro. O backfill não se reenfileira sozinho a partir daqui; uma
@@ -89,11 +97,19 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
       seller_id: sellerId,
       connected_at: connectedAt,
       backfill_covered_until: coveredUntil,
-    } = account.data;
+    } = account;
 
-    const connectedAtDate = new Date(connectedAt);
+    const connectedAtMs = Date.parse(connectedAt);
 
-    if (coveredUntil !== null && new Date(coveredUntil).getTime() >= connectedAtDate.getTime()) {
+    if (!Number.isFinite(connectedAtMs)) {
+      return { status: "failed", retryable: false, reason: `connected_at inválido na conta: ${connectedAt}` };
+    }
+
+    const connectedAtDate = new Date(connectedAtMs);
+    const coveredUntilMs = coveredUntil === null ? Number.NaN : Date.parse(coveredUntil);
+    const hasValidCoveredUntil = Number.isFinite(coveredUntilMs);
+
+    if (hasValidCoveredUntil && coveredUntilMs >= connectedAtMs) {
       // Já cobriu tudo até onde a reconciliação assume — nada a fazer. Só
       // acontece se o job for reentregue depois do último pedaço já ter
       // decidido não reenfileirar mais nada.
@@ -103,7 +119,9 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
     }
 
     const chunkFrom = floorToHour(
-      coveredUntil !== null ? new Date(coveredUntil) : new Date(now.getTime() - RETENTION_MS),
+      hasValidCoveredUntil
+        ? new Date(coveredUntilMs)
+        : new Date(Math.min(now.getTime() - RETENTION_MS, connectedAtMs)),
     );
     const chunkTo = ceilToHour(
       new Date(Math.min(chunkFrom.getTime() + CHUNK_SPAN_MS, connectedAtDate.getTime())),
@@ -146,7 +164,12 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
       });
     } catch (error) {
       const finishedAt = deps.now?.() ?? new Date();
-      const errorClass = error instanceof MercadoLivreApiError ? error.errorClass : "retryable";
+      const errorClass =
+        error instanceof MercadoLivreApiError
+          ? error.errorClass
+          : error instanceof z.ZodError
+            ? "not_retryable"
+            : "retryable";
       const reason = error instanceof Error ? error.message : "erro desconhecido ao buscar pedidos";
 
       await recordSyncRunFailure(deps.db, {
@@ -170,6 +193,32 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
     const finishedAt = deps.now?.() ?? new Date();
     const partial = result.itemsSkipped > 0;
 
+    // Avança o checkpoint ANTES de registrar sucesso ou enfileirar o próximo
+    // pedaço: sem confirmar esta escrita, o pedaço seguinte releria o mesmo
+    // intervalo (ou silenciaria uma falha de banco devolvendo `done`).
+    const checkpointUpdate = await deps.db
+      .from("ml_accounts")
+      .update({ backfill_covered_until: chunkTo.toISOString() })
+      .eq("id", mlAccountId);
+
+    if (checkpointUpdate.error !== null) {
+      const reason = `falha ao avançar backfill_covered_until: ${checkpointUpdate.error.message}`;
+
+      await recordSyncRunFailure(deps.db, {
+        organizationId,
+        mlAccountId,
+        jobId: envelope.jobId,
+        resource: "orders",
+        channel: "backfill",
+        startedAt: started,
+        finishedAt,
+        reason,
+        errorClass: "retryable",
+      }, context.logger);
+
+      return { status: "failed", retryable: true, reason };
+    }
+
     await recordSyncRunSuccess(deps.db, {
       organizationId,
       mlAccountId,
@@ -185,11 +234,6 @@ export function createBackfillOrdersHandler(deps: BackfillOrdersDeps): JobHandle
         ? { reason: `${String(result.itemsSkipped)} order(s) com formato inesperado, ignoradas` }
         : {}),
     }, context.logger);
-
-    await deps.db
-      .from("ml_accounts")
-      .update({ backfill_covered_until: chunkTo.toISOString() })
-      .eq("id", mlAccountId);
 
     const hasMore = chunkTo.getTime() < connectedAtDate.getTime();
 

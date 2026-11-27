@@ -29,6 +29,7 @@
  */
 
 import { mesmaEmpresa } from "../documentos/tipos.js";
+import { isValidBusinessDate } from "../metrics/business-date.js";
 
 export interface ParsedNfeItem {
   readonly position: number;
@@ -162,7 +163,14 @@ function parseItem(raw: unknown, position: number): { ok: true; value: ParsedNfe
     return { ok: false, reason: `item ${String(position + 1)}: cProd/xProd/uCom ausente` };
   }
 
-  if (quantity === null || unitValue === null || totalValue === null) {
+  if (
+    quantity === null ||
+    unitValue === null ||
+    totalValue === null ||
+    quantity <= 0 ||
+    unitValue < 0 ||
+    totalValue < 0
+  ) {
     return { ok: false, reason: `item ${String(position + 1)}: valor numérico inválido em prod` };
   }
 
@@ -230,9 +238,10 @@ export function parseNfeXmlObject(root: unknown, ownCnpj: string): ParseNfeResul
     return { ok: false, reason: `ide/tpNF inesperado: ${tpNF ?? "ausente"} (esperado '0' ou '1')` };
   }
 
+  const datePrefix = /^(\d{4}-\d{2}-\d{2})/.exec(dhEmi)?.[1];
   const issueDate = new Date(dhEmi);
 
-  if (Number.isNaN(issueDate.getTime())) {
+  if (Number.isNaN(issueDate.getTime()) || (datePrefix !== undefined && !isValidBusinessDate(datePrefix))) {
     return { ok: false, reason: "ide/dhEmi não é uma data válida" };
   }
 

@@ -6,6 +6,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { eligibleBlockBases } from "./isolate-supabase.mjs";
+
+test("evita portas efêmeras e o intervalo de publicações do Docker", () => {
+  const ports = [54320, 54321, 54322];
+  const ephemeral = [{ first: 32768, last: 60999 }];
+  assert.equal(eligibleBlockBases(ports, ephemeral)[0], 61000);
+  assert.equal(eligibleBlockBases(ports, [...ephemeral, { first: 61021, last: 61121 }])[0], 61200);
+  assert.equal(eligibleBlockBases(ports, [{ first: 60000, last: 65535 }])[0], 20000);
+});
+
 test("uma porta ocupada faz escolher outro bloco sem tocar no serviço existente", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sb-isolation-"));
   const path = join(dir, "config.toml");

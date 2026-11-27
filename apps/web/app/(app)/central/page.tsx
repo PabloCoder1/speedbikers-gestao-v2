@@ -16,6 +16,7 @@ import {
 } from "../../../lib/central-periodo";
 import { carregarContextoFiscal, carregarDespesasComparadas } from "../../../lib/custos-fiscal";
 import { carregarLimites } from "../../../lib/limites-central";
+import { resolverContaSolicitada } from "../../../lib/postgrest-search";
 import { currentMembership } from "../../../lib/request-membership";
 import { createClient } from "../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../components/estado-da-tela";
@@ -84,22 +85,49 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
   const hoje = toSalesMetricDate(new Date());
   const periodo = resolverPeriodoCentral(query, hoje);
 
-  const requestedSlug = typeof query.account === "string" ? query.account : null;
+  const requestedSlug = typeof query.account === "string" && query.account.trim() !== "" ? query.account.trim() : null;
 
   /*
     SEM FILA ATÉ AS LEITURAS DO PERÍODO (UX_SYSTEM §6, bloco 1). Elas esperavam a
     lista de contas, e as da organização esperavam as do período começarem. Agora
     contas e organização saem juntas, e as leituras do período só esperam as
     contas quando a URL escolhe uma (é delas que sai o id); sem conta, saem na
-    hora. As mesmas leituras, com os mesmos argumentos.
+    hora. Se a URL pediu uma conta e `ml_accounts` falhar, falha fechado sem
+    consultar o consolidado de todas as contas.
   */
   const accountsPromise = Promise.resolve(supabase.from("ml_accounts").select("id, slug, label").order("label", { ascending: true }));
   const membershipPromise = currentMembership();
-  const contaPromise =
-    requestedSlug === null
-      ? Promise.resolve(null)
-      : accountsPromise.then((resultado) => (resultado.data ?? []).find((account) => account.slug === requestedSlug) ?? null);
-  const filtroPromise = contaPromise.then((conta) => (conta === null ? {} : { p_ml_account_id: conta.id }));
+  void membershipPromise.catch(() => undefined);
+
+  const { conta: selectedAccount, erro: erroConta } = resolverContaSolicitada(
+    requestedSlug,
+    requestedSlug === null ? null : await accountsPromise,
+    (account, slug) => account.slug === slug,
+  );
+
+  if (erroConta !== null) {
+    await membershipPromise;
+    const periodoAtual = periodoDaUrl(periodo);
+    return (
+      <>
+        <CabecalhoDaCentral
+          tela="central"
+          consulta={{ ...(periodo.invalido ? {} : query), account: requestedSlug ?? undefined }}
+          titulo="Central do negócio"
+          subtitulo={`${periodo.rotulo}: ${rotuloDoIntervalo(periodo.atual)}, comparado com ${rotuloDoIntervalo(periodo.anterior)}.`}
+        />
+        <EstadoDaTela
+          tipo="erro"
+          titulo="Não foi possível carregar as contas"
+          descricao="O filtro de conta pedido na URL não pôde ser confirmado."
+          detalhe={erroConta.message}
+          acao={{ href: montarHref(periodoAtual, requestedSlug), rotulo: TENTAR_DE_NOVO, mesmaTela: true }}
+        />
+      </>
+    );
+  }
+
+  const contaFiltro = selectedAccount === null ? {} : { p_ml_account_id: selectedAccount.id };
 
   // As quatro em paralelo, e a página não espera por elas: cabeçalho e filtros
   // saem antes, e os números chegam por streaming.
@@ -111,7 +139,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
   // marketplace" leem a mesma resposta. Medido em produção pelo A1, em 30 dias:
   // ~0,5 s sem detalhe e ~0,6 s com — uma `get_faturamento` a menos por carga
   // vale os ~0,1 s (os cancelamentos por tempo de 19/10 vinham das rajadas).
-  const leituras = filtroPromise.then((contaFiltro) => Promise.all([
+  const leituras = Promise.all([
     supabase.rpc("get_faturamento", {
       p_date_from: periodo.atual.from,
       p_date_to: periodo.atual.to,
@@ -126,7 +154,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
     }),
     supabase.rpc("get_ads_overview", { p_date_from: periodo.atual.from, p_date_to: periodo.atual.to, ...contaFiltro }),
     supabase.rpc("get_ads_overview", { p_date_from: periodo.anterior.from, p_date_to: periodo.anterior.to, ...contaFiltro }),
-  ]));
+  ]);
 
   // D-400: os produtos com margem negativa da central de alertas saem da mesma
   // leitura do período atual, que já vem com detalhe.
@@ -139,7 +167,7 @@ async function CentralContent({ searchParams }: { searchParams: Promise<Consulta
   void leituras.catch(() => undefined);
   void leituraProdutos.catch(() => undefined);
 
-  const [accountsResult, membership, selectedAccount] = await Promise.all([accountsPromise, membershipPromise, contaPromise]);
+  const [accountsResult, membership] = await Promise.all([accountsPromise, membershipPromise]);
   const accounts = accountsResult.data ?? [];
   const contaSlug = selectedAccount?.slug ?? null;
 

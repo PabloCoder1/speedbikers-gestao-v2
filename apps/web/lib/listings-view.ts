@@ -173,16 +173,38 @@ export function quickViewHref(view: QuickView, filters: ListingsFilters): string
  * (D-170) — nunca a média das taxas das linhas. Sem visita, indefinida.
  */
 export function recorteConversion(pedidos: number | null | undefined, visitas: number | null | undefined): number | null {
-  if (pedidos === null || pedidos === undefined || visitas === null || visitas === undefined || visitas <= 0) {
+  if (
+    pedidos === null ||
+    pedidos === undefined ||
+    visitas === null ||
+    visitas === undefined ||
+    !Number.isFinite(pedidos) ||
+    !Number.isFinite(visitas) ||
+    visitas <= 0
+  ) {
     return null;
   }
 
-  return pedidos / visitas;
+  const ratio = pedidos / visitas;
+
+  return Number.isFinite(ratio) ? ratio : null;
 }
 
 /** Participação da linha no faturamento do recorte, de 0 a 1; indefinida sem faturamento. */
 export function revenueShare(linha: number, recorte: number | null | undefined): number | null {
-  if (recorte === null || recorte === undefined || recorte <= 0) return null;
+  if (
+    recorte === null ||
+    recorte === undefined ||
+    !Number.isFinite(linha) ||
+    !Number.isFinite(recorte) ||
+    recorte <= 0
+  ) {
+    return null;
+  }
 
-  return Math.min(Math.max(linha / recorte, 0), 1);
+  const ratio = linha / recorte;
+
+  if (!Number.isFinite(ratio)) return null;
+
+  return Math.min(Math.max(ratio, 0), 1);
 }

@@ -72,4 +72,30 @@ describe("detectOrderStatusEvents", () => {
     expect(events[0]?.entityId).toBe("999");
     expect(typeof events[0]?.entityId).toBe("string");
   });
+
+  it("D-804: recusa occurredAt inválida e order.id não positivo, fracionário ou inseguro com RangeError", () => {
+    expect(() => detectOrderStatusEvents("paid", { id: 1, status: "cancelled" }, new Date("invalid"), "sync")).toThrow(
+      RangeError,
+    );
+    expect(() => detectOrderStatusEvents("paid", { id: 0, status: "cancelled" }, OCCURRED_AT, "sync")).toThrow(
+      RangeError,
+    );
+    expect(() => detectOrderStatusEvents("paid", { id: -5, status: "cancelled" }, OCCURRED_AT, "sync")).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      detectOrderStatusEvents("paid", { id: Number.NaN, status: "cancelled" }, OCCURRED_AT, "sync"),
+    ).toThrow(RangeError);
+    expect(() =>
+      detectOrderStatusEvents("paid", { id: 1.5, status: "cancelled" }, OCCURRED_AT, "sync"),
+    ).toThrow(RangeError);
+    expect(() =>
+      detectOrderStatusEvents(
+        "paid",
+        { id: Number.MAX_SAFE_INTEGER + 1, status: "cancelled" },
+        OCCURRED_AT,
+        "sync",
+      ),
+    ).toThrow(RangeError);
+  });
 });

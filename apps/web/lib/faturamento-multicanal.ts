@@ -353,10 +353,15 @@ export function montarCascataShopee(
   if (
     (composicao.pedidos_cobertos ?? 0) === 0 ||
     receita === null ||
+    !Number.isFinite(receita) ||
     receita <= 0 ||
     recebido === null ||
+    !Number.isFinite(recebido) ||
     custo === null ||
-    resultado === null
+    !Number.isFinite(custo) ||
+    resultado === null ||
+    !Number.isFinite(resultado) ||
+    (ajustes !== null && !Number.isFinite(ajustes))
   ) {
     return null;
   }
@@ -375,6 +380,10 @@ export function montarCascataShopee(
     if (valor === null) {
       naoInformados.push(componente.rotulo);
       continue;
+    }
+
+    if (!Number.isFinite(valor)) {
+      return null;
     }
 
     if (valor === 0) {

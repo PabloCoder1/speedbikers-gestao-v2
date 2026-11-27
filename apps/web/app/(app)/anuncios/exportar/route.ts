@@ -25,11 +25,20 @@ export async function GET(request: NextRequest): Promise<Response> {
     supabase.from("ml_accounts").select("id, slug"),
   ]);
 
+  if (membership.error !== null) {
+    return new Response("Não foi possível verificar sua organização no momento.", { status: 503 });
+  }
+
   if (membership.organizationId === null) {
     return new Response("Sua conta não está associada a nenhuma organização.", { status: 403 });
   }
 
-  const lista = contas.data ?? [];
+  // Sem as contas, um recorte `?conta=` viraria "todas" em silêncio.
+  if (contas.error !== null) {
+    return new Response("Não foi possível ler as contas no momento.", { status: 502 });
+  }
+
+  const lista = contas.data;
   const filters = resolveListingsFilters(
     query,
     lista.map((conta) => conta.slug),
@@ -62,7 +71,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   );
 
   if (error !== null) {
-    return new Response(`Não foi possível exportar os anúncios: ${error.message}`, { status: 502 });
+    return new Response("Não foi possível exportar os anúncios no momento.", { status: 502 });
   }
 
   const rows = linhas as unknown as ListingExportRow[];

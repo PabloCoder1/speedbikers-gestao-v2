@@ -47,6 +47,21 @@ describe("diasParaCsv", () => {
     expect(shopee).toHaveLength(1 + 2);
     expect(shopee.some((linha) => linha.includes("Todos os marketplaces"))).toBe(false);
   });
+
+  it("marketplace desconhecido ou chave de Object.prototype não estoura nem vaza função", () => {
+    const corpo = linhas(
+      diasParaCsv(
+        [
+          dia("2026-10-14", "toString" as DiaDeVendas["marketplace"], 50),
+          dia("2026-10-14", "ML", 100),
+        ],
+        "todos",
+      ),
+    );
+
+    expect(corpo[1]).toBe("14/10/2026;Mercado Livre;100;0;3;4");
+    expect(corpo[2]).toBe("14/10/2026;toString;50;0;3;4");
+  });
 });
 
 const linha = (parcial: Partial<LinhaDeVendas> & Pick<LinhaDeVendas, "nivel">): LinhaDeVendas => ({
@@ -151,5 +166,6 @@ describe("hrefDaExportacao", () => {
     // O "Todos" é o padrão da tela e não vai na URL; o da exportação também não.
     expect(hrefDaExportacao("/vendas", "conta")).toBe("/vendas/exportar?tabela=conta");
     expect(hrefDaExportacao("/vendas?marketplace=shopee", "conta")).toBe("/vendas/exportar?marketplace=shopee&tabela=conta");
+    expect(hrefDaExportacao("http://[invalido", "dia")).toBe("/vendas/exportar?tabela=dia");
   });
 });
