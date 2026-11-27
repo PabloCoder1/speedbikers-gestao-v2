@@ -6410,6 +6410,8 @@ export type Database = {
           id: string
           last_error: string | null
           open_id: string | null
+          orders_sync_locked_until: string | null
+          orders_synced_until: string | null
           organization_id: string
           region: string | null
           seller_name: string | null
@@ -6430,6 +6432,8 @@ export type Database = {
           id?: string
           last_error?: string | null
           open_id?: string | null
+          orders_sync_locked_until?: string | null
+          orders_synced_until?: string | null
           organization_id: string
           region?: string | null
           seller_name?: string | null
@@ -6450,6 +6454,8 @@ export type Database = {
           id?: string
           last_error?: string | null
           open_id?: string | null
+          orders_sync_locked_until?: string | null
+          orders_synced_until?: string | null
           organization_id?: string
           region?: string | null
           seller_name?: string | null
@@ -6476,6 +6482,345 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      tiktok_catalog_units: {
+        Row: {
+          available_stock: number | null
+          committed_stock: number | null
+          created_at: string
+          created_at_remote: string | null
+          currency: string | null
+          lifecycle: string
+          organization_id: string
+          original_price_brl: number | null
+          product_id: string
+          raw_status: string
+          sale_price_brl: number | null
+          seller_sku: string | null
+          seller_sku_key: string | null
+          sku_id: string | null
+          sku_key: string
+          tiktok_shop_id: string
+          title: string | null
+          updated_at: string
+          updated_at_remote: string | null
+        }
+        Insert: {
+          available_stock?: number | null
+          committed_stock?: number | null
+          created_at?: string
+          created_at_remote?: string | null
+          currency?: string | null
+          lifecycle: string
+          organization_id: string
+          original_price_brl?: number | null
+          product_id: string
+          raw_status: string
+          sale_price_brl?: number | null
+          seller_sku?: string | null
+          seller_sku_key?: string | null
+          sku_id?: string | null
+          sku_key: string
+          tiktok_shop_id: string
+          title?: string | null
+          updated_at?: string
+          updated_at_remote?: string | null
+        }
+        Update: {
+          available_stock?: number | null
+          committed_stock?: number | null
+          created_at?: string
+          created_at_remote?: string | null
+          currency?: string | null
+          lifecycle?: string
+          organization_id?: string
+          original_price_brl?: number | null
+          product_id?: string
+          raw_status?: string
+          sale_price_brl?: number | null
+          seller_sku?: string | null
+          seller_sku_key?: string | null
+          sku_id?: string | null
+          sku_key?: string
+          tiktok_shop_id?: string
+          title?: string | null
+          updated_at?: string
+          updated_at_remote?: string | null
+        }
+        Relationships: []
+      }
+      tiktok_order_financials: {
+        Row: {
+          created_at: string
+          currency: string | null
+          fee_and_tax_amount: number | null
+          order_id: string
+          organization_id: string
+          raw_summary: Json
+          revenue_amount: number | null
+          settlement_amount: number | null
+          shipping_cost_amount: number | null
+          sku_transactions: Json
+          tiktok_shop_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          currency?: string | null
+          fee_and_tax_amount?: number | null
+          order_id: string
+          organization_id: string
+          raw_summary?: Json
+          revenue_amount?: number | null
+          settlement_amount?: number | null
+          shipping_cost_amount?: number | null
+          sku_transactions?: Json
+          tiktok_shop_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          currency?: string | null
+          fee_and_tax_amount?: number | null
+          order_id?: string
+          organization_id?: string
+          raw_summary?: Json
+          revenue_amount?: number | null
+          settlement_amount?: number | null
+          shipping_cost_amount?: number | null
+          sku_transactions?: Json
+          tiktok_shop_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tiktok_order_items: {
+        Row: {
+          combined_listing_skus: Json
+          created_at: string
+          is_gift: boolean
+          line_item_ids: string[]
+          order_id: string
+          organization_id: string
+          original_price_total: number | null
+          platform_discount_total: number | null
+          position: number
+          product_id: string | null
+          quantity: number
+          sale_price_total: number | null
+          seller_discount_total: number | null
+          seller_sku: string | null
+          sku_id: string | null
+          tiktok_shop_id: string
+          updated_at: string
+        }
+        Insert: {
+          combined_listing_skus?: Json
+          created_at?: string
+          is_gift?: boolean
+          line_item_ids?: string[]
+          order_id: string
+          organization_id: string
+          original_price_total?: number | null
+          platform_discount_total?: number | null
+          position: number
+          product_id?: string | null
+          quantity: number
+          sale_price_total?: number | null
+          seller_discount_total?: number | null
+          seller_sku?: string | null
+          sku_id?: string | null
+          tiktok_shop_id: string
+          updated_at?: string
+        }
+        Update: {
+          combined_listing_skus?: Json
+          created_at?: string
+          is_gift?: boolean
+          line_item_ids?: string[]
+          order_id?: string
+          organization_id?: string
+          original_price_total?: number | null
+          platform_discount_total?: number | null
+          position?: number
+          product_id?: string | null
+          quantity?: number
+          sale_price_total?: number | null
+          seller_discount_total?: number | null
+          seller_sku?: string | null
+          sku_id?: string | null
+          tiktok_shop_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tiktok_orders: {
+        Row: {
+          business_date: string
+          created_at: string
+          created_at_remote: string
+          currency: string | null
+          fulfillment_channel: string
+          lifecycle: string
+          order_id: string
+          organization_id: string
+          paid_at_remote: string | null
+          raw_status: string
+          shipping_fee_brl: number | null
+          sub_total_brl: number | null
+          tiktok_shop_id: string
+          total_amount_brl: number | null
+          updated_at: string
+          updated_at_remote: string
+        }
+        Insert: {
+          business_date: string
+          created_at?: string
+          created_at_remote: string
+          currency?: string | null
+          fulfillment_channel: string
+          lifecycle: string
+          order_id: string
+          organization_id: string
+          paid_at_remote?: string | null
+          raw_status: string
+          shipping_fee_brl?: number | null
+          sub_total_brl?: number | null
+          tiktok_shop_id: string
+          total_amount_brl?: number | null
+          updated_at?: string
+          updated_at_remote: string
+        }
+        Update: {
+          business_date?: string
+          created_at?: string
+          created_at_remote?: string
+          currency?: string | null
+          fulfillment_channel?: string
+          lifecycle?: string
+          order_id?: string
+          organization_id?: string
+          paid_at_remote?: string | null
+          raw_status?: string
+          shipping_fee_brl?: number | null
+          sub_total_brl?: number | null
+          tiktok_shop_id?: string
+          total_amount_brl?: number | null
+          updated_at?: string
+          updated_at_remote?: string
+        }
+        Relationships: []
+      }
+      tiktok_returns: {
+        Row: {
+          business_date: string | null
+          completed: boolean
+          created_at: string
+          created_at_remote: string | null
+          currency: string | null
+          items: Json
+          kind: string
+          normalized_status: string
+          order_id: string
+          organization_id: string
+          refund_shipping_brl: number | null
+          refund_subtotal_brl: number | null
+          refund_total_brl: number | null
+          return_id: string
+          tiktok_shop_id: string
+          updated_at: string
+          updated_at_remote: string | null
+        }
+        Insert: {
+          business_date?: string | null
+          completed?: boolean
+          created_at?: string
+          created_at_remote?: string | null
+          currency?: string | null
+          items?: Json
+          kind: string
+          normalized_status: string
+          order_id: string
+          organization_id: string
+          refund_shipping_brl?: number | null
+          refund_subtotal_brl?: number | null
+          refund_total_brl?: number | null
+          return_id: string
+          tiktok_shop_id: string
+          updated_at?: string
+          updated_at_remote?: string | null
+        }
+        Update: {
+          business_date?: string | null
+          completed?: boolean
+          created_at?: string
+          created_at_remote?: string | null
+          currency?: string | null
+          items?: Json
+          kind?: string
+          normalized_status?: string
+          order_id?: string
+          organization_id?: string
+          refund_shipping_brl?: number | null
+          refund_subtotal_brl?: number | null
+          refund_total_brl?: number | null
+          return_id?: string
+          tiktok_shop_id?: string
+          updated_at?: string
+          updated_at_remote?: string | null
+        }
+        Relationships: []
+      }
+      tiktok_statements: {
+        Row: {
+          adjustment_amount: number | null
+          created_at: string
+          currency: string | null
+          fee_amount: number | null
+          net_sales_amount: number | null
+          organization_id: string
+          payment_status: string | null
+          revenue_amount: number | null
+          settlement_amount: number | null
+          shipping_fee_amount: number | null
+          statement_id: string
+          statement_time: string | null
+          tiktok_shop_id: string
+          updated_at: string
+        }
+        Insert: {
+          adjustment_amount?: number | null
+          created_at?: string
+          currency?: string | null
+          fee_amount?: number | null
+          net_sales_amount?: number | null
+          organization_id: string
+          payment_status?: string | null
+          revenue_amount?: number | null
+          settlement_amount?: number | null
+          shipping_fee_amount?: number | null
+          statement_id: string
+          statement_time?: string | null
+          tiktok_shop_id: string
+          updated_at?: string
+        }
+        Update: {
+          adjustment_amount?: number | null
+          created_at?: string
+          currency?: string | null
+          fee_amount?: number | null
+          net_sales_amount?: number | null
+          organization_id?: string
+          payment_status?: string | null
+          revenue_amount?: number | null
+          settlement_amount?: number | null
+          shipping_fee_amount?: number | null
+          statement_id?: string
+          statement_time?: string | null
+          tiktok_shop_id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       user_account_permissions: {
         Row: {
@@ -7797,6 +8142,19 @@ export type Database = {
       }
       shopee_orders_sync_lock: {
         Args: { p_shopee_shop_id: string; p_ttl_seconds?: number }
+        Returns: boolean
+      }
+      tiktok_orders_sync_lock: {
+        Args: { p_tiktok_shop_id: string; p_ttl_seconds?: number }
+        Returns: boolean
+      }
+      tiktok_reject_token_refresh: {
+        Args: {
+          p_error: string
+          p_locked_until: string
+          p_previous_refresh_ciphertext: string
+          p_tiktok_shop_id: string
+        }
         Returns: boolean
       }
       shopee_orders_financials_pending: {

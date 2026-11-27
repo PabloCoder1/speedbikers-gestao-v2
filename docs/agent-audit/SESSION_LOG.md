@@ -1148,3 +1148,16 @@ A sondagem de leitura validou o dump de 20/11 de 187.580.692 bytes. O teste da n
 - **Auditoria complementar:** conferidos `shopee-push.ts`, `tiktok-push.ts` (íntegros) e PR `#402` do Claude (`D-870` em produção).
 - **Próxima etapa:** integrar PR `#401` (`D-832..D-837`, 0 conflitos contra `#364` `32bfc540`), reconciliar `#364` → `main` (`V02` web) e aguardar autorização para `infra/artifact-retention.sh` (`I06`/`L04`) / remoção de `roles/editor` (`S05`) + retorno do Dev em 01/12/2026 (`M04`/`I05`).
 - **Execução GCP autorizada pelo dono (25/11 13:23 UTC):** `infra/artifact-retention.sh --project speedbikers-prod --cloudbuild-lifecycle` aplicado e verificado (`I06`), `roles/editor` removido da default compute SA (`0` bindings, `S05`), e tags `worker-m05-*` limpas no Cloud Run (`100%` em `worker-00065-ccn`, `L04`); `GET /health` da API confirmado `ok` (`c5882974`).
+
+
+### 25/11/2026 · Gemini Sentinel (Rodada 19): `M04` persistência transacional validada em PostgreSQL local (`D-838`)
+
+- **Banco & Worker (`D-838`, branch `agent/gemini-m04-tiktok-persistencia`):** criada `20261125170000_tiktok_shop_transacional.sql` (6 tabelas transacionais sem PII + `tiktok_orders_sync_lock` + RLS multi-tenant), atualizados tipos cirúrgicos em `packages/db/src/types.ts`, implementado `tiktok-supabase-repository.ts` plugado em `apps/worker/src/index.ts`, e validado em stack Supabase local isolada (340 migrations aplicadas; `tiktok-transacional.integration.test.ts` 2/2 verde provando lock atômico, RLS cross-org e bloqueio de escrita nas 6 tabelas).
+- **O que fica pendente exclusivamente para 01/12/2026 (Supabase Dev Pro):** registro da migration no Dev (`nmgccyqquwxecqffsidr`), fechamento de `I05` e validação com loja real do TikTok Shop.
+
+
+### 27/11/2026 · Gemini Sentinel (Rodada 20): revisões `#408`/`#401`/`#409` atendidas e auditoria 48 h de produção
+
+- **Produção (`sb-db`, 27/11 11:52 UTC):** `sync.listing.item` 48 h = **7.412 `done` / 2 `failed`** (`99,97%`); `maintenance.reconcile-balances` = **2 `done`**; saldos negativos `LOCAL` (`M03`) caíram de **25 → 11** após o lote UpSeller de `2026-11-26 11:38 UTC`.
+- **PR #408 (`698d1f48`):** `infra/artifact-retention.sh` corrigido para prévia 100% somente leitura + preservação de regras de lifecycle existentes + `infra/artifact-retention.test.mjs` (2/2 PASS).
+- **PR #409 (`20261127120000_tiktok_shop_transacional.sql`):** renomeada após reservas `20261127090000`/`20261127091000`, adicionada RPC atômica `tiktok_reject_token_refresh` (eliminando corrida de `markRejected` na API e no worker) e provada em PostgreSQL real (`tiktok-transacional.integration.test.ts` **3/3 PASS**).

@@ -159,45 +159,23 @@ describe("ensureTikTokAccessToken (D-833)", () => {
     });
   });
 
-  it("markRejected não marca tiktok_shops como ERROR se reconexão OAuth trocou refresh_token_ciphertext", async () => {
-    const shopUpdateSpy = vi.fn();
-    const db = {
-      from: (table: string) => {
-        if (table === "tiktok_shops") {
-          return {
-            update: () => ({
-              eq: () => {
-                shopUpdateSpy();
-
-                return Promise.resolve({ error: null });
-              },
-            }),
-          };
-        }
-
-        return {
-          update: () => ({
-            eq: () => ({
-              eq: () => ({
-                eq: () => ({
-                  select: () => ({
-                    maybeSingle: () => Promise.resolve({ data: null, error: null }),
-                  }),
-                }),
-              }),
-            }),
-          }),
-        };
-      },
-    } as unknown as TikTokTokenDeps["db"];
+  it("markRejected chama tiktok_reject_token_refresh atomicamente e devolve applied=false quando reconexão trocou o ciphertext", async () => {
+    const rpc = vi.fn(() => Promise.resolve({ data: false, error: null }));
+    const db = { rpc } as unknown as TikTokTokenDeps["db"];
 
     const store = createWorkerTikTokTokenStore({ db, encryptionKey: KEY }, SHOP_ID);
+    const previousRefreshCiphertext = encryptToken("rtk_antigo", KEY);
     const rejected = await store.markRejected(
-      { lockUntilIso: "2026-11-25T12:01:00.000Z", previousRefreshCiphertext: encryptToken("rtk_antigo", KEY) },
+      { lockUntilIso: "2026-11-25T12:01:00.000Z", previousRefreshCiphertext },
       "refresh expirado",
     );
 
     expect(rejected).toEqual({ ok: true, applied: false });
-    expect(shopUpdateSpy).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith("tiktok_reject_token_refresh", {
+      p_tiktok_shop_id: SHOP_ID,
+      p_locked_until: "2026-11-25T12:01:00.000Z",
+      p_previous_refresh_ciphertext: previousRefreshCiphertext,
+      p_error: "refresh expirado",
+    });
   });
 });

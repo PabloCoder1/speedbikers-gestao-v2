@@ -141,3 +141,24 @@ D-807 continua reservado pelo Gemini nos doze módulos do checkpoint de origem. 
 - **Próxima etapa exata:** integrar `#401` (`D-832..D-837`) em `#364`, reconciliar `#364` → `main` (`V02` web), executar `./infra/artifact-retention.sh --project speedbikers-prod --cloudbuild-lifecycle` com autorização do dono (`I06`/`L04`) e, em 01/12/2026 (retorno do Supabase Dev), aplicar migrations transacionais de `M04` + adaptador Supabase de `TikTokSyncRepository`.
 
 - **Execução GCP autorizada pelo dono (25/11 13:23 UTC):** aplicadas e verificadas em `speedbikers-prod` a política de retenção de `speedbikers-v3` (`keepCount: 10`, delete > 30d) + lifecycle de 30d em `gs://speedbikers-prod_cloudbuild` (`I06`), a remoção de `roles/editor` de `246130997439-compute@...` (`0` bindings em `roles/editor`, `S05`), e a limpeza das tags obsoletas `worker-m05-*` no Cloud Run (`100%` em `worker-00065-ccn`, `L04`).
+
+
+## 11. Rodada 19 (25/11): Camada transacional `M04` em PostgreSQL real (`D-838`)
+
+- **Branch / PR dedicado:** `agent/gemini-m04-tiktok-persistencia` (empilhada sobre `#401` `3e983e7c`, com `0` dependência de Supabase Dev Pro):
+  - `supabase/migrations/20261125170000_tiktok_shop_transacional.sql` (aplicada em stack Supabase local isolada com 340 migrations).
+  - `packages/db/src/types.ts` (adição cirúrgica das 6 tabelas `tiktok_*`, 2 colunas de `tiktok_shops` e RPC `tiktok_orders_sync_lock`).
+  - `apps/worker/src/handlers/tiktok-supabase-repository.ts` + wiring em `apps/worker/src/index.ts` (interruptor desligado sem `TIKTOK_SHOP_APP_KEY`/`SECRET`).
+  - `packages/db/src/tiktok-transacional.integration.test.ts` (2/2 contra Postgres real: lock atômico, RLS negativo cross-org e bloqueio de escrita nas 6 tabelas, upsert idempotente).
+- **Próximo ID reservado ao Gemini:** `D-839` (faixa livre `D-839..D-849`).
+- **Pendências exclusivas de 01/12/2026 (retorno do Supabase Dev Pro):** aplicar/registrar `20261125170000_tiktok_shop_transacional.sql` no Dev (`nmgccyqquwxecqffsidr`), fechar `I05` e validar `M04` com uma loja real do TikTok Shop.
+
+
+## 12. Rodada 20 (27/11): Revisões do Codex atendidas (`#408`, `#401`/`#409`) e conferência de 48 h em produção
+
+- **Conferência de produção (`sb-db` via IAP, 27/11 11:52 UTC):**
+  - `sync.listing.item` (últimas 48 h): **7.412 `done` / 2 `failed`** (`99,97%` sucesso, último `2026-11-27 11:52:01 UTC`).
+  - `maintenance.reconcile-balances` (últimas 48 h): **2 `done`** (último `2026-11-27 09:00:04 UTC`); último lote UpSeller `APPLIED` em `2026-11-26 11:38:46 UTC`.
+  - Saldos negativos `LOCAL` (`M03`): caíram de **25 → 11** (restam 11 SKUs para conferência com o ERP).
+- **PR #408 (`698d1f48`, `D-836`):** prévia de `infra/artifact-retention.sh` agora é 100% somente leitura (`describe`, exige `--apply` explícito para gravar), lifecycle do bucket preserva regras existentes via merge JSON, coberto por `infra/artifact-retention.test.mjs` (2/2 PASS).
+- **PR #409 (`D-838` + revisão de `#401`):** migration renomeada para `20261127120000_tiktok_shop_transacional.sql` (posterior às reservas `20261127090000`/`20261127091000` da Central), adicionada RPC atômica `public.tiktok_reject_token_refresh` (lock `tiktok_shops -> tiktok_credentials`) consumida por `apps/api/src/tiktok-token-store.ts` e `apps/worker/src/handlers/tiktok-token.ts`, e validada contra PostgreSQL real (`tiktok-transacional.integration.test.ts` **3/3 PASS**, incluindo caminho sem reconexão e com reconexão concorrente via `tiktok_connect_shops`).

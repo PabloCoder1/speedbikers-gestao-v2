@@ -171,33 +171,18 @@ export function createWorkerTikTokTokenStore(
 
     async markRejected(handle: TikTokLockHandle, reason: string) {
       try {
-        const liberada = await deps.db
-          .from("tiktok_credentials")
-          .update({ refresh_locked_until: null })
-          .eq("tiktok_shop_id", tiktokShopId)
-          .eq("refresh_locked_until", handle.lockUntilIso)
-          .eq("refresh_token_ciphertext", handle.previousRefreshCiphertext)
-          .select("tiktok_shop_id")
-          .maybeSingle();
-
-        if (liberada.error !== null) {
-          return { ok: false, reason: liberada.error.message };
-        }
-
-        if (liberada.data === null) {
-          return { ok: true, applied: false };
-        }
-
-        const marcada = await deps.db
-          .from("tiktok_shops")
-          .update({ status: "ERROR", last_error: reason })
-          .eq("id", tiktokShopId);
+        const marcada = await deps.db.rpc("tiktok_reject_token_refresh", {
+          p_tiktok_shop_id: tiktokShopId,
+          p_locked_until: handle.lockUntilIso,
+          p_previous_refresh_ciphertext: handle.previousRefreshCiphertext,
+          p_error: reason.slice(0, 500),
+        });
 
         if (marcada.error !== null) {
           return { ok: false, reason: marcada.error.message };
         }
 
-        return { ok: true, applied: true };
+        return { ok: true, applied: marcada.data };
       } catch (error) {
         return {
           ok: false,
