@@ -25,6 +25,7 @@ import { currentMembership } from "../../../../lib/request-membership";
 import { formatBusinessDate, formatCount, formatCurrency, formatPercent } from "../../../../lib/format";
 import { lerMargens, type LeituraMargens, type MargemRecorte } from "../../../../lib/purchase-analysis";
 import {
+  classificarMatrizRentabilidade,
   definicaoDaOrdem,
   formatPontos,
   formatVariacao,
@@ -42,6 +43,8 @@ import {
 import { createClient } from "../../../../lib/supabase/server";
 import { EstadoDaTela, TENTAR_DE_NOVO } from "../../../../components/estado-da-tela";
 import { AvisoDePeriodoInvalido, CabecalhoDaCentral, funcaoAusente, SendoAtivado } from "../comum";
+import { ExportarRankingCsv } from "./exportar-ranking";
+import { SimuladorMargemProduto } from "./simulador-margem";
 
 export const metadata = { title: "Ranking de produtos — Speed Bikers Gestão" };
 
@@ -292,6 +295,10 @@ async function RankingContent({ searchParams }: { searchParams: Promise<Consulta
 
       <KpiStrip cells={celulasDoResumo(ranking, estado)} />
 
+      <DiagnosticoEstrategico itens={ranking.itens} margemMinima={(await leituraLimites).margemMinima} />
+
+      <SimuladorMargemProduto />
+
       {/* As colunas só se explicavam no title, que o toque não abre (UX_SYSTEM §6, bloco 4). */}
       <div className="sb-central-bloco">
         <Glossario titulo="O que significa cada coluna" termos={TERMOS_DO_RANKING} />
@@ -422,6 +429,118 @@ function celulasDoResumo(r: RankingDeProdutos, estado: Estado): KpiCellData[] {
   ];
 }
 
+function DiagnosticoEstrategico({
+  itens,
+  margemMinima,
+}: {
+  itens: readonly ProdutoDoRanking[];
+  margemMinima: number;
+}): ReactNode {
+  if (itens.length === 0) return null;
+
+  const matriz = classificarMatrizRentabilidade(itens, margemMinima);
+  const cobertos =
+    matriz.estrelas.length +
+    matriz.altoFaturamentoBaixaMargem.length +
+    matriz.joiasOcultas.length +
+    matriz.baixaMargemBaixoVolume.length +
+    matriz.prejuizo.length;
+
+  if (cobertos === 0 && matriz.fretePesado.length === 0 && matriz.comCustoAtual.length === 0) {
+    return null;
+  }
+
+  const somarReceita = (lista: readonly ProdutoDoRanking[]): number =>
+    lista.reduce((acc, p) => acc + p.receita_bruta, 0);
+
+  const quadrantes = [
+    {
+      rotulo: "Estrelas (alto faturamento · margem saudável)",
+      tom: "ok" as const,
+      qtd: matriz.estrelas.length,
+      receita: somarReceita(matriz.estrelas),
+      acao: "Proteger estoque, manter preço competitivo e escalar com segurança.",
+    },
+    {
+      rotulo: "Alto faturamento · baixa margem",
+      tom: "atencao" as const,
+      qtd: matriz.altoFaturamentoBaixaMargem.length,
+      receita: somarReceita(matriz.altoFaturamentoBaixaMargem),
+      acao: `Prioridade máxima de revisão: reajuste de preço, frete ou comissão (corte ${formatPercent(margemMinima)}).`,
+    },
+    {
+      rotulo: "Joias ocultas (margem alta · menor volume)",
+      tom: "info" as const,
+      qtd: matriz.joiasOcultas.length,
+      receita: somarReceita(matriz.joiasOcultas),
+      acao: "Espaço para tráfego, Ads ou melhoria de anúncio mantendo margem saudável.",
+    },
+    {
+      rotulo: "No prejuízo (margem negativa)",
+      tom: "perigo" as const,
+      qtd: matriz.prejuizo.length,
+      receita: somarReceita(matriz.prejuizo),
+      acao: "Ação corretiva imediata: cada venda está consumindo caixa operacional.",
+    },
+  ];
+
+  return (
+    <section aria-label="Matriz de rentabilidade da página" className="sb-central-bloco">
+      <Panel
+        title="Matriz de rentabilidade e sinais estratégicos (página atual)"
+        subtitle={`Classificação automática dos ${formatCount(itens.length)} produtos exibidos (mediana de receita: ${formatCurrency(matriz.receitaMediana)}; margem mínima: ${formatPercent(margemMinima)}).`}
+      >
+        <div className="sb-panel-body">
+          <div className="sb-central-tabela">
+            <table className="sb-table">
+              <thead>
+                <tr>
+                  <th>Quadrante</th>
+                  <th className="sb-num">SKUs</th>
+                  <th className="sb-num">Receita bruta</th>
+                  <th>Direcionamento sugerido</th>
+                </tr>
+              </thead>
+              <tbody>
+                {quadrantes.map((q) => (
+                  <tr key={q.rotulo}>
+                    <td>
+                      <StatePill tone={{ tom: q.tom, label: q.rotulo }} />
+                    </td>
+                    <td className="sb-num">
+                      <strong>{formatCount(q.qtd)}</strong>
+                    </td>
+                    <td className="sb-num">{q.qtd > 0 ? formatCurrency(q.receita) : "—"}</td>
+                    <td className="sb-texto-suave">{q.acao}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {(matriz.fretePesado.length > 0 || matriz.comCustoAtual.length > 0 || matriz.semCobertura.length > 0) && (
+            <p className="sb-central-motivo">
+              {[
+                matriz.fretePesado.length > 0
+                  ? `${formatCount(matriz.fretePesado.length)} SKU(s) com frete ≥ 15% da receita`
+                  : null,
+                matriz.comCustoAtual.length > 0
+                  ? `${formatCount(matriz.comCustoAtual.length)} SKU(s) avaliados com custo atual (*)`
+                  : null,
+                matriz.semCobertura.length > 0
+                  ? `${formatCount(matriz.semCobertura.length)} SKU(s) sem cobertura de custo/frete (nunca zerados)`
+                  : null,
+              ]
+                .filter((x): x is string => x !== null)
+                .join(" · ")}
+            </p>
+          )}
+        </div>
+      </Panel>
+    </section>
+  );
+}
+
 function Resumo({ ranking, estado }: { ranking: RankingDeProdutos; estado: Estado }): ReactNode {
   const frases = frasesDoRanking(ranking.resumo);
 
@@ -503,6 +622,12 @@ function Lista({
     <Panel
       title={definicao.rotulo}
       subtitle={`${definicao.descricao} ${formatCount(ranking.total)} ${ranking.total === 1 ? "produto" : "produtos"}.`}
+      aside={
+        <ExportarRankingCsv
+          itens={ranking.itens}
+          periodoRotulo={`${ranking.periodo.inicio}_a_${ranking.periodo.fim}`}
+        />
+      }
     >
       <div className="sb-panel-body">
         <nav className="sb-sinal-filtros" aria-label="Ordem do ranking">

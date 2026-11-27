@@ -15,6 +15,7 @@ import {
 import { entradaDaCentral, montarIndicadores, type Indicador } from "../../../lib/central-indicadores";
 import { lerMetaDoMes } from "../../../lib/central-meta";
 import type { PeriodoCentral } from "../../../lib/central-periodo";
+import { DESPESAS_PERIODO_VAZIO, type ResumoDespesasPeriodo } from "../../../lib/custos-fiscal";
 import type { LimitesDaCentral } from "../../../lib/limites-central";
 import { lerDetectorFrete } from "../../../lib/detector-frete";
 import { lerFaturamento, type ProdutosDoFaturamento } from "../../../lib/faturamento";
@@ -54,6 +55,7 @@ export async function Atencao({
   leituraAds,
   leituraProdutos,
   leituraLimites,
+  leituraDespesas,
   periodo,
   hrefRanking,
 }: {
@@ -63,6 +65,7 @@ export async function Atencao({
   leituraAds: Leitura;
   leituraProdutos: PromiseLike<RespostaComCodigo>;
   leituraLimites: Promise<LimitesDaCentral>;
+  leituraDespesas?: Promise<ResumoDespesasPeriodo>;
   periodo: PeriodoCentral;
   hrefRanking: string;
 }): Promise<ReactNode> {
@@ -73,7 +76,16 @@ export async function Atencao({
     respostaAds,
     respostaProdutos,
     limites,
-  ] = await Promise.all([leituras, leituraMeta, leituraFrete, leituraAds, leituraProdutos, leituraLimites]);
+    despesas,
+  ] = await Promise.all([
+    leituras,
+    leituraMeta,
+    leituraFrete,
+    leituraAds,
+    leituraProdutos,
+    leituraLimites,
+    leituraDespesas ?? Promise.resolve(DESPESAS_PERIODO_VAZIO),
+  ]);
 
   const faltam: string[] = [];
 
@@ -95,6 +107,7 @@ export async function Atencao({
     atrasoDaMeta: limites.atrasoDaMeta,
     periodo: textoDoPeriodo(periodo),
     hrefRanking,
+    despesas,
   });
   const contagem = contarPorSeveridade(itens);
 

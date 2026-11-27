@@ -55,7 +55,7 @@ export function rotuloDaContagem(severidade: Severidade, n: number): string {
   }
 }
 
-export type Categoria = "Ads" | "Frete" | "Produtos" | "Margem" | "Meta";
+export type Categoria = "Ads" | "Frete" | "Produtos" | "Margem" | "Meta" | "Custos";
 
 export interface ItemDeAtencao {
   readonly severidade: Severidade;
@@ -81,6 +81,12 @@ export interface EntradaDaAtencao {
   /** O `/faturamento` do mesmo período e conta, onde está a lista de menor margem. */
   /** O ranking de produtos (D-402) no recorte da central; o item acrescenta a ordem. */
   readonly hrefRanking: string;
+  /** Resumo de despesas operacionais no período (para alertas de atraso ou estouro de orçamento). */
+  readonly despesas?: {
+    readonly atrasadasCount: number;
+    readonly totalPrevisto: number;
+    readonly totalRealizado: number;
+  } | null;
 }
 
 function plural(n: number, um: string, varios: string): string {
@@ -233,6 +239,31 @@ export function montarAtencao(e: EntradaDaAtencao): ItemDeAtencao[] {
       quantidade: ads.escala,
       texto: `${plural(ads.escala, "campanha tem", "campanhas têm")} espaço para escalar: acima da meta e no teto do orçamento.`,
       href: "/central/ads?nivel=escala",
+    });
+  }
+
+  if (e.despesas != null && e.despesas.atrasadasCount > 0) {
+    itens.push({
+      severidade: "atencao",
+      categoria: "Custos",
+      quantidade: e.despesas.atrasadasCount,
+      texto: `${plural(e.despesas.atrasadasCount, "despesa operacional está", "despesas operacionais estão")} vencida(s) ou em atraso ${e.periodo}.`,
+      href: "/central/custos",
+    });
+  }
+
+  if (
+    e.despesas != null &&
+    e.despesas.totalPrevisto > 0 &&
+    e.despesas.totalRealizado > e.despesas.totalPrevisto * 1.1
+  ) {
+    const excesso = Math.round((e.despesas.totalRealizado - e.despesas.totalPrevisto) * 100) / 100;
+    itens.push({
+      severidade: "atencao",
+      categoria: "Custos",
+      quantidade: 1,
+      texto: `Despesas operacionais realizadas ultrapassaram o orçamento previsto em ${formatCurrency(excesso)} ${e.periodo}.`,
+      href: "/central/custos#orcado-realizado",
     });
   }
 

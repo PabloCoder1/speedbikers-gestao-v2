@@ -57,9 +57,10 @@ test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({
   await page.locator("summary", { hasText: "Comparação completa" }).click();
   await expect(page.getByRole("region", { name: "Comparação completa" })).toBeVisible();
 
-  // As seis telas da Central, nas abas (UX_SYSTEM §6, bloco 1).
+  // As sete telas da Central, nas abas (UX_SYSTEM §6, bloco 1 + Central de Inteligência Financeira).
   await expect(abasDaCentral(page).getByRole("link")).toHaveText([
     "Central",
+    "Custos e fiscal",
     "Metas e imposto",
     "Limites",
     "Detector de frete",
@@ -67,6 +68,16 @@ test("/central: blocos, recorte na URL e o caminho para o faturamento", async ({
     "Ranking de produtos",
   ]);
   await expect(abasDaCentral(page).getByRole("link", { name: "Central", exact: true })).toHaveAttribute("aria-current", "page");
+
+  // DRE Gerencial comparativa (vs. Anterior), Simulador What-If (sem assumir custo zero fictício) e Glossário Financeiro.
+  const secaoDre = page.getByRole("region", { name: "DRE Gerencial e Inteligência Financeira" });
+  await expect(secaoDre).toBeVisible();
+  await expect(secaoDre.getByRole("columnheader", { name: "vs. Anterior" })).toBeVisible();
+  const resumoSimulador = page.locator("summary", { hasText: "Simulador financeiro (What-If)" });
+  await expect(resumoSimulador).toBeVisible();
+  await resumoSimulador.click();
+  await expect(page.getByText("BASE INSUFICIENTE PARA SIMULAÇÃO")).toBeVisible();
+  await expect(page.locator("summary", { hasText: "Glossário financeiro da Central" })).toBeVisible();
 
   await expect(page.getByText("Não foi possível carregar o período")).toHaveCount(0);
   await expect(page.getByText("Não foi possível carregar a meta")).toHaveCount(0);
@@ -298,6 +309,9 @@ test("/central/frete: resumo, filtro de nível e o caminho a partir da central",
   await expect(page.getByRole("region", { name: "Anúncios para revisar" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Como o detector decide" })).toBeVisible();
 
+  await page.locator("summary", { hasText: "Simulador de impacto do frete na margem oficial" }).click();
+  await expect(page.getByRole("region", { name: "Simulador de impacto do frete na margem" })).toBeVisible();
+
   await page.getByRole("link", { name: /^Forte indício \(/ }).click();
   await expect(page).toHaveURL(/nivel=forte/);
   await expect(page.getByRole("region", { name: "Anúncios para revisar" }).getByText("Só forte indício.")).toBeVisible();
@@ -334,6 +348,8 @@ test("/central/ads: abre a partir da central, sem erro, com o motivo quando não
 
   if ((await vazio.count()) > 0) {
     await expect(vazio).toBeVisible();
+    await page.locator("summary", { hasText: "Simulador de ROAS e ACOS de equilíbrio" }).click();
+    await expect(page.getByRole("region", { name: "Simulador de ROAS e ACOS de equilíbrio" })).toBeVisible();
 
     return;
   }
@@ -449,4 +465,102 @@ test("/central: a Shopee entra lado a lado, sem total de resultado, e some com u
   await page.goto("/central?account=e2e-loja");
   await expect(page.getByRole("heading", { level: 1, name: "Central do negócio" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Por marketplace" })).toHaveCount(0);
+});
+
+test("/central/custos: cadastrar despesa fixa e entidade fiscal, validar DRE e limpar", async ({ page }) => {
+  await login(page, "/central/custos");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Custos operacionais e fiscal" })).toBeVisible();
+
+  if ((await page.getByText("SENDO ATIVADO").count()) > 0) {
+    test.skip(true, "banco sem a migration da Central de Inteligência Financeira");
+  }
+
+  await expect(page.getByRole("region", { name: "Visão por regime de caixa" })).toBeVisible();
+
+  // Cadastra uma despesa operacional fixa mensal
+  await page.locator("summary", { hasText: "Cadastrar nova despesa operacional" }).click();
+  const formDespesa = page.getByRole("form", { name: "Cadastrar despesa operacional" });
+
+  const doisDiasAtras = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
+
+  await formDespesa.getByLabel("Nome da despesa").fill("Aluguel Galpão E2E");
+  await formDespesa.getByLabel("Valor previsto (R$)").fill("4.500,00");
+  await formDespesa.getByLabel("Valor realizado (R$, opcional)").fill("4.500,00");
+  await formDespesa.getByLabel("Data de competência").fill(doisDiasAtras);
+  await formDespesa.getByRole("button", { name: "Cadastrar despesa" }).click();
+  await expect(formDespesa.getByRole("status")).toContainText("Despesa operacional salva");
+  await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true }).first()).toBeVisible();
+
+  // Testa geração idempotente de despesas recorrentes para o mês seguinte
+  await page.locator("summary", { hasText: "Gerar recorrentes do próximo mês" }).click();
+  const formRecorrentes = page.getByRole("form", { name: "Gerar despesas recorrentes para o mês seguinte" });
+
+  await formRecorrentes.getByLabel("Mês de origem das despesas mensais").fill(doisDiasAtras.slice(0, 7));
+  await formRecorrentes.getByRole("button", { name: "Gerar recorrentes do próximo mês" }).click();
+  await expect(formRecorrentes.getByRole("status")).toContainText("1 despesa(s) recorrente(s) gerada(s)");
+  await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true })).toHaveCount(2);
+
+  // Segunda chamada no mesmo mês não pode duplicar
+  await formRecorrentes.getByRole("button", { name: "Gerar recorrentes do próximo mês" }).click();
+  await expect(formRecorrentes.getByRole("status")).toContainText("nenhuma duplicidade criada");
+  await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true })).toHaveCount(2);
+
+  // Marca uma despesa como paga e confirma registro na trilha de auditoria
+  await page.getByRole("button", { name: "Marcar paga" }).first().click();
+  await expect(page.getByText("paga", { exact: true }).first()).toBeVisible();
+  await page.locator("summary", { hasText: "Trilha de auditoria de despesas" }).click();
+  await expect(page.getByRole("table").filter({ hasText: "Status alterado" }).first()).toBeVisible();
+
+  // Confirma que a despesa fixa cadastrada alimenta a DRE Gerencial na /central
+  await abasDaCentral(page).getByRole("link", { name: "Central", exact: true }).click();
+  await expect(page.getByRole("region", { name: "DRE Gerencial e Inteligência Financeira" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "DRE Gerencial e Inteligência Financeira" })).toContainText("4.500,00");
+
+  // Volta para /central/custos e cadastra entidade fiscal com CNPJ matematicamente válido
+  await abasDaCentral(page).getByRole("link", { name: "Custos e fiscal", exact: true }).click();
+  await page.locator("summary", { hasText: "Cadastrar empresa (CNPJ)" }).click();
+  const formEntidade = page.getByRole("form", { name: "Cadastrar entidade fiscal" });
+
+  await formEntidade.getByLabel("Razão social").fill("SpeedBikers E2E LTDA");
+  await formEntidade.getByLabel("CNPJ").fill("11.222.333/0001-81");
+  await formEntidade.getByRole("button", { name: "Salvar entidade fiscal" }).click();
+  await expect(formEntidade.getByRole("status")).toContainText("Entidade fiscal (CNPJ) salva");
+  await expect(page.getByRole("cell", { name: "SpeedBikers E2E LTDA", exact: true })).toBeVisible();
+
+  // Limpa os dois registros de despesa (mês atual + recorrente gerado) e a entidade fiscal
+  await page.getByRole("button", { name: "Remover Aluguel Galpão E2E" }).first().click();
+  await confirmarRemocao(page, /Remover Aluguel Galpão E2E/);
+  await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true })).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Remover Aluguel Galpão E2E" }).first().click();
+  await confirmarRemocao(page, /Remover Aluguel Galpão E2E/);
+  await expect(page.getByRole("cell", { name: "Aluguel Galpão E2E", exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Remover SpeedBikers E2E LTDA" }).click();
+  await confirmarRemocao(page, /Remover SpeedBikers E2E LTDA/);
+  await expect(page.getByRole("cell", { name: "SpeedBikers E2E LTDA", exact: true })).toHaveCount(0);
+});
+
+test("/central/produtos: simulador de preço por margem oficial calcula corretamente", async ({ page }) => {
+  await login(page, "/central/produtos");
+
+  await expect(page.getByRole("heading", { level: 1, name: "Ranking de produtos" })).toBeVisible();
+  await page.locator("summary", { hasText: "Simulador de preço de venda e margem desejada" }).click();
+  await expect(page.getByRole("region", { name: "Simulador de preço por margem desejada" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "30,0%" })).toBeVisible();
+});
+
+test("/central e /central/custos: responsividade sem overflow horizontal em desktop e mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await login(page, "/central");
+  await expect(page.getByRole("region", { name: "DRE Gerencial e Inteligência Financeira" })).toBeVisible();
+  const overflowDesktop = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflowDesktop).toBeLessThanOrEqual(2);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/central/custos");
+  await expect(page.getByRole("heading", { level: 1, name: "Custos operacionais e fiscal" })).toBeVisible();
+  const overflowMobile = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflowMobile).toBeLessThanOrEqual(2);
 });

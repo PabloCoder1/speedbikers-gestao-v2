@@ -184,15 +184,15 @@ const TEXTOS: Readonly<Record<CampoDosLimites, TextoDoLimite>> = {
   },
   points_neutral: {
     rotulo: "Variação estável em pontos (p.p.)",
-    dica: "O mesmo para margem, ACOS e TACoS, que mudam em pontos percentuais.",
+    dica: "O mesmo para margem, ACOS e TACoS, que mudam em pontos percentuais (ex.: 20% → 25% = +5 p.p., não +5%).",
     ajuda:
-      "Para os indicadores que já são porcentagens (margem, participação da comissão e do custo na receita, ACOS, TACoS e as margens após imposto e de contribuição), a mudança se mede em pontos percentuais: a margem de 12% para 11,6% mudou 0,4 p.p. Abaixo deste valor, fica sem cor. Aumentar silencia mudanças pequenas; diminuir colore mais.",
+      "Para indicadores que já são porcentagens (margem do produto, participação da comissão e do custo, ACOS, TACoS e margem de contribuição), a variação é medida em pontos percentuais (p.p.), não em variação percentual relativa. Exemplo: uma margem que sobe de 20% para 25% teve aumento de 5 p.p. (diferença direta) e crescimento relativo de 25% ((25 − 20) ÷ 20). Movimentos menores que este limite em p.p. ficam sem cor (estáveis). Aumentar silencia oscilações menores; diminuir destaca variações menores.",
   },
   points_strong: {
     rotulo: "Variação forte em pontos (p.p.)",
-    dica: "Contra o indicador, abaixo disto é atenção; a partir disto, perigo.",
+    dica: "Contra o indicador, abaixo disto é atenção; a partir disto, perigo (medido em p.p., diferença direta entre porcentagens).",
     ajuda:
-      "A variação forte, em pontos percentuais: contra o indicador, entre a estável em pontos e esta é atenção; a partir desta, perigo. Aumentar deixa menos coisa vermelha; diminuir faz o vermelho aparecer mais cedo. Precisa ser maior que a estável em pontos.",
+      "A variação forte em pontos percentuais (diferença direta entre duas porcentagens, ex.: margem caindo de 25% para 20% = −5 p.p.). Contra o indicador, entre a estável em pontos e esta é atenção (amarelo); a partir desta, perigo (vermelho). Aumentar deixa menos alertas vermelhos; diminuir sinaliza quedas mais cedo. Precisa ser maior que a estável em pontos.",
   },
   goal_delay_warning: {
     rotulo: "Atraso da meta que ainda é atenção (%)",

@@ -20,3 +20,4 @@ export * from "./support/index.js";
 export * from "./listings/index.js";
 export * from "./pricing/index.js";
 export * from "./tiktok-shop/index.js";
+export * from "./financial/index.js";

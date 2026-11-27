@@ -419,7 +419,7 @@
       "peso": 8,
       "status": "Bloqueado",
       "responsavel": "Dono/Infra",
-      "evidencia": "O preflight local passou de bloqueado a pendente após conciliar D04. O catálogo observado tem 343 versões, até a correção Shopee de D-879. O plano lista a extensão de Compras e as duas versões da Central. O #424 corrigiu a numeração financeira e ainda carece de quatro versões aplicadas que estão no #364; a aplicação coordenada e sua validação seguem pendentes.",
+      "evidencia": "O preflight local passou de bloqueado a pendente após conciliar D04. A VM observada tem 344 versões, até a extensão de Compras. O plano combinado com #424 reconhece todas as versões aplicadas e deixa quatro pendências posteriores; a aplicação coordenada e sua validação seguem pendentes.",
       "fase": 5
     },
     {
